@@ -53,6 +53,9 @@ func _register_tower_spots() -> void:
 
 
 func _draw() -> void:
+	# Background fill (placeholder — replaced by tilemap art in Phase 41).
+	draw_rect(Rect2(Vector2.ZERO, Vector2(375, 812)), Color(0.32, 0.52, 0.28, 1))
+
 	for path_id in _paths_by_id:
 		var p: Path2D = _paths_by_id[path_id]
 		if p.curve == null:
@@ -60,6 +63,7 @@ func _draw() -> void:
 		var pts := p.curve.get_baked_points()
 		if pts.size() >= 2:
 			draw_polyline(pts, Color(0.55, 0.4, 0.25), 14.0)
+
 	for child in tower_spots_node.get_children():
 		if child is Marker2D:
 			draw_circle(child.position, 26.0, Color(0.85, 0.75, 0.35, 0.85))

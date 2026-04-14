@@ -9,6 +9,7 @@ const PATH_TOP := "top"
 
 @onready var paths_node: Node2D = $Paths
 @onready var tower_spots_node: Node2D = $TowerSpots
+@onready var spawn_markers_node: Node2D = $SpawnMarkers
 @onready var grid_manager: Node = $GridManager
 
 var _paths_by_id: Dictionary = {}
@@ -18,7 +19,11 @@ func _ready() -> void:
 	_build_curves()
 	_register_tower_spots()
 	queue_redraw()
-	print("[Map] ready — %d paths, %d spots" % [_paths_by_id.size(), grid_manager.get_spot_count()])
+	print("[Map] ready — %d paths, %d spots, %d spawn markers" % [
+		_paths_by_id.size(),
+		grid_manager.get_spot_count(),
+		spawn_markers_node.get_child_count()
+	])
 
 
 func _build_curves() -> void:

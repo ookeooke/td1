@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" path="res://map/Map.gd" id="1_map"]
 [ext_resource type="Script" path="res://map/GridManager.gd" id="2_grid"]
+[ext_resource type="PackedScene" path="res://map/SpawnMarker.tscn" id="3_sm"]
 
 [node name="Map" type="Node2D"]
 script = ExtResource("1_map")
@@ -41,6 +42,23 @@ position = Vector2(180, 460)
 
 [node name="Spot6" type="Marker2D" parent="TowerSpots"]
 position = Vector2(280, 740)
+
+[node name="SpawnMarkers" type="Node2D" parent="."]
+
+[node name="SpawnMarkerLeft" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+position = Vector2(26, 420)
+path_id = "left"
+direction_degrees = 0.0
+
+[node name="SpawnMarkerRight" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+position = Vector2(349, 220)
+path_id = "right"
+direction_degrees = 180.0
+
+[node name="SpawnMarkerTop" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+position = Vector2(280, 26)
+path_id = "top"
+direction_degrees = 90.0
 
 [node name="GridManager" type="Node" parent="."]
 script = ExtResource("2_grid")

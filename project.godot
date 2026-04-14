@@ -1,0 +1,49 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Fantasy Tower Defense"
+run/main_scene="res://main/Main.tscn"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+EventBus="*res://autoloads/EventBus.gd"
+GameState="*res://autoloads/GameState.gd"
+WaveManager="*res://autoloads/WaveManager.gd"
+DamageCalculator="*res://autoloads/DamageCalculator.gd"
+SaveManager="*res://autoloads/SaveManager.gd"
+UnlockManager="*res://autoloads/UnlockManager.gd"
+
+[display]
+
+window/size/viewport_width=375
+window/size/viewport_height=812
+window/size/window_width_override=562
+window/size/window_height_override=1218
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+rendering_device/driver.windows="d3d12"
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

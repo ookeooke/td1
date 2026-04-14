@@ -1,15 +1,9 @@
-[gd_scene load_steps=2 format=3 uid="uid://b1td1main0000"]
+[gd_scene load_steps=3 format=3 uid="uid://b1td1main0000"]
 
 [ext_resource type="Script" path="res://main/Main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://map/Map.tscn" id="2_map"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
 
-[node name="Label" type="Label" parent="."]
-offset_left = 24.0
-offset_top = 24.0
-offset_right = 351.0
-offset_bottom = 120.0
-text = "Phase 1: Skeleton
-
-Check Output panel for 6 autoload lines."
+[node name="Map" parent="." instance=ExtResource("2_map")]

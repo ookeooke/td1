@@ -1,5 +1,9 @@
 extends Node2D
 
+@onready var map: Node2D = $Map
+
+
 func _ready() -> void:
-	print("[Main] Phase 1 skeleton running")
-	print("[Main] EventBus signals available: ", EventBus.get_signal_list().size())
+	print("[Main] EventBus signals: ", EventBus.get_signal_list().size())
+	var grid: Node = map.get_node("GridManager")
+	print("[Main] Map loaded — free spots: ", grid.get_free_spot_ids())

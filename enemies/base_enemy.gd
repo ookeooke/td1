@@ -41,6 +41,21 @@ func _physics_process(delta: float) -> void:
 			pass
 
 
+func take_damage(amount: float, type: int, _source: Node = null) -> void:
+	if state == State.DYING or data == null:
+		return
+	var final: float = DamageCalculator.calculate_damage(amount, type, self)
+	current_health -= int(ceil(final))
+	if current_health <= 0:
+		_die()
+
+
+func _die() -> void:
+	change_state(State.DYING)
+	EventBus.enemy_died.emit(self, data.gold_worth)
+	_despawn()
+
+
 func _reach_end() -> void:
 	change_state(State.DYING)
 	EventBus.enemy_reached_end.emit(self, data.lives_worth)

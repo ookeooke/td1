@@ -48,3 +48,13 @@ One line per session: date, phase, what worked, what broke.
 - Works: red disc appears at left edge, walks the brown path, prints "reached end" and vanishes
 - Broke: none
 - Next: Phase 5 — Damage type system + DamageCalculator
+
+---
+
+## 2026-04-15 — Phase 5: DamageCalculator + take_damage
+- `autoloads/DamageCalculator.gd`: real enum `DamageType { PHYSICAL, MAGIC, TRUE }`, `calculate_damage(amount, type, target)` respecting armor / magic_resist / true-damage rules. Clamps resist 0..1. Missing `target.data` → unmitigated pass-through.
+- `enemies/base_enemy.gd`: add `take_damage(amount, type, source)` → routes through DamageCalculator, `ceil()`s to int, triggers `_die()` at 0 hp. `_die()` emits `enemy_died(self, gold_worth)` and despawns.
+- `main/Main.gd`: connects `enemy_died`; test harness now applies 999 TRUE damage 3 seconds after spawn so the enemy dies mid-path instead of reaching the end.
+- Works: enemy spawns, walks partway, test damage kills it, prints `+5 gold`.
+- Broke: none.
+- Next: Phase 6 — one tower detecting, shooting, killing.

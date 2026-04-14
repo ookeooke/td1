@@ -6,7 +6,7 @@ extends Node2D
 
 @export var path_id: String = ""
 @export_range(0.0, 360.0) var direction_degrees: float = 0.0
-@export var enemy_icon_color: Color = Color(0.75, 0.2, 0.2)
+@export var enemy_icon_color: Color = Color(0.55, 0.55, 0.65, 0.85)
 
 
 func _ready() -> void:

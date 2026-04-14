@@ -58,3 +58,16 @@ One line per session: date, phase, what worked, what broke.
 - Works: enemy spawns, walks partway, test damage kills it, prints `+5 gold`.
 - Broke: none.
 - Next: Phase 6 — one tower detecting, shooting, killing.
+
+---
+
+## 2026-04-15 — Phase 6: Archer tower + arrows
+- `towers/TowerData.gd`: Resource with all spec fields. Added one extra field beyond the spec: `projectile_scene` (asset reference — not a gameplay stat, lives in data for per-tower configurability).
+- `towers/data/tower_archer.tres`: Archer Tower — 4 physical dmg, 160 range, 1.2 atk/s, 50g cost, arrow projectile.
+- `towers/base_tower.gd` (class_name BaseTower): Node2D root with a child Area2D RangeArea (collision_mask=2 picks up enemy layer), CollisionShape2D sized from data.attack_range at `_ready()`, and an AttackTimer wired to `_on_attack_tick`. Target picking polls `range_area.get_overlapping_areas()` each tick, filters DYING and flying-without-targets_flying, picks the enemy with highest `PathFollow2D.progress_ratio` (standard first-target TD strategy).
+- `towers/TowerArcher.tscn`: Node2D + RangeArea(Area2D) + CollisionShape2D + AttackTimer. Placeholder `_draw()` = blue disc.
+- `projectiles/Arrow.gd` + `Arrow.tscn`: Node2D that homes on target each frame, applies damage on hit (< hit_radius), despawns on hit or if target becomes invalid mid-flight.
+- `main/Main.gd`: removed Phase 4/5 test methods. New `_phase6_test_tower_vs_enemy()` places an archer on `Spot1` then spawns an enemy on the left path; the tower kills it with ~3 arrows during the horizontal segment.
+- Works: tower fires arrows at moving enemy, enemy dies before reaching end, `+5 gold` printed.
+- Broke: none.
+- Next: Phase 7 — Gold + lives economy (GameState).

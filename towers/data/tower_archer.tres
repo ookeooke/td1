@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TowerData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://towers/TowerData.gd" id="1_data"]
+[ext_resource type="PackedScene" path="res://projectiles/Arrow.tscn" id="2_arrow"]
+
+[resource]
+script = ExtResource("1_data")
+tower_name = "Archer Tower"
+tower_id = "archer"
+requires_unlock = false
+damage = 4.0
+damage_type = 0
+attack_range = 160.0
+attack_speed = 1.2
+cost = 50
+sell_value = 30
+targets_flying = false
+upgrade_cost_lvl2 = 75
+upgrade_cost_lvl3 = 120
+projectile_scene = ExtResource("2_arrow")
+encyclopedia_entry = "Quick, low-damage volleys. Cheap and reliable."

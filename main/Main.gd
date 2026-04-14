@@ -1,5 +1,7 @@
 extends Node2D
 
+const ARCHER_SCENE: PackedScene = preload("res://towers/TowerArcher.tscn")
+
 @onready var map: Node2D = $Map
 
 
@@ -12,21 +14,23 @@ func _ready() -> void:
 	EventBus.enemy_reached_end.connect(_on_enemy_reached_end)
 	EventBus.enemy_died.connect(_on_enemy_died)
 
-	_phase4_test_spawn()
+	_phase6_test_tower_vs_enemy()
 
 
-func _phase4_test_spawn() -> void:
+func _phase6_test_tower_vs_enemy() -> void:
+	_place_archer_on_spot("Spot1")
 	await get_tree().create_timer(1.0).timeout
 	var left_path: Path2D = map.get_path_by_id("left")
-	var enemy: Node = WaveManager.spawn_enemy(left_path, "left")
-	_phase5_test_damage(enemy)
+	WaveManager.spawn_enemy(left_path, "left")
 
 
-func _phase5_test_damage(enemy: Node) -> void:
-	await get_tree().create_timer(3.0).timeout
-	if is_instance_valid(enemy):
-		print("[Main] applying test TRUE damage to enemy...")
-		enemy.take_damage(999.0, DamageCalculator.DamageType.TRUE)
+func _place_archer_on_spot(spot_id: String) -> void:
+	var grid: Node = map.get_node("GridManager")
+	var pos: Vector2 = grid.get_spot_position(spot_id)
+	var archer: Node2D = ARCHER_SCENE.instantiate()
+	archer.position = pos
+	map.add_child(archer)
+	print("[Main] placed archer at %s %s" % [spot_id, pos])
 
 
 func _on_enemy_spawned(_enemy: Node, path_id: String) -> void:

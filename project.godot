@@ -24,6 +24,10 @@ DamageCalculator="*res://autoloads/DamageCalculator.gd"
 SaveManager="*res://autoloads/SaveManager.gd"
 UnlockManager="*res://autoloads/UnlockManager.gd"
 
+[debug]
+
+gdscript/warnings/unused_signal=0
+
 [display]
 
 window/size/viewport_width=375

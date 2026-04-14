@@ -35,3 +35,16 @@ One line per session: date, phase, what worked, what broke.
 - Works: 3 arrows visible at screen edges pointing into the map
 - Broke: none
 - Next: Phase 4 — one enemy walking one path and dying
+
+---
+
+## 2026-04-14 — Phase 4: One enemy walking + dying
+- `enemies/EnemyData.gd`: Resource with all spec fields (health, speed, armor, flags, etc.)
+- `enemies/data/enemy_basic.tres`: Orc Grunt, 10hp, 70 px/s, 1 life, 5 gold
+- `enemies/base_enemy.gd` (class_name BaseEnemy, extends Area2D): state machine via `change_state()`, `_physics_process` increments parent PathFollow2D progress, emits `enemy_reached_end` on arrival and despawns itself + PathFollow2D
+- `enemies/EnemyBasic.tscn`: Area2D with CircleShape2D on collision_layer 2; `_draw()` paints a red placeholder disc
+- `autoloads/WaveManager.gd`: added `spawn_enemy(path, path_id, scene)` — creates PathFollow2D under target Path2D, instances enemy as its child, calls setup(), emits `enemy_spawned`
+- `main/Main.gd`: connects enemy signals to printouts, spawns one enemy on "left" path 1s after ready (Phase 11 replaces with real waves)
+- Works: red disc appears at left edge, walks the brown path, prints "reached end" and vanishes
+- Broke: none
+- Next: Phase 5 — Damage type system + DamageCalculator

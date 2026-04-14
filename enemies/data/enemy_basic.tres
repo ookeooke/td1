@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+enemy_name = "Orc Grunt"
+max_health = 10
+move_speed = 70.0
+armor = 0.0
+magic_resist = 0.0
+lives_worth = 1
+gold_worth = 5
+is_flying = false
+can_stealth = false
+encyclopedia_entry = "A basic orc. Slow, weak, but comes in numbers."

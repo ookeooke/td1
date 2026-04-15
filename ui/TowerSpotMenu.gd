@@ -22,7 +22,10 @@ var _current_tower: Node = null
 
 
 func _ready() -> void:
-	root.visible = false
+	# Toggle the CanvasLayer itself — the Main.tscn instance may be saved with
+	# visible=false, which would block input regardless of inner Control state.
+	visible = false
+	root.visible = true
 	archer_button.pressed.connect(_on_archer_pressed)
 	sell_button.pressed.connect(_on_sell_pressed)
 	close_button.pressed.connect(_dismiss)
@@ -41,7 +44,7 @@ func _on_spot_tapped(spot_id: String) -> void:
 	else:
 		_current_tower = null
 		_show_build_mode()
-	root.visible = true
+	visible = true
 
 
 func _show_build_mode() -> void:
@@ -71,7 +74,7 @@ func _refresh_sell_button() -> void:
 
 
 func _on_gold_changed(_amount: int) -> void:
-	if root.visible and build_row.visible:
+	if visible and build_row.visible:
 		_refresh_build_buttons()
 
 
@@ -102,7 +105,7 @@ func _on_backdrop_input(event: InputEvent) -> void:
 func _dismiss() -> void:
 	_current_spot_id = ""
 	_current_tower = null
-	root.visible = false
+	visible = false
 	EventBus.tower_menu_dismissed.emit()
 
 

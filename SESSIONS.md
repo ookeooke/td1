@@ -71,3 +71,13 @@ One line per session: date, phase, what worked, what broke.
 - Works: tower fires arrows at moving enemy, enemy dies before reaching end, `+5 gold` printed.
 - Broke: none.
 - Next: Phase 7 — Gold + lives economy (GameState).
+
+---
+
+## 2026-04-14 — Phase 7: Gold + Lives economy + HUD
+- `autoloads/GameState.gd`: real economy. `STARTING_GOLD=100`, `STARTING_LIVES=20`. `add_gold` / `spend_gold` / `lose_lives` mutators emit `gold_changed` / `lives_changed` / `game_over`. Subscribes to `EventBus.enemy_died` (→ add gold worth) and `enemy_reached_end` (→ lose lives worth).
+- `ui/HUD.gd` + `ui/HUD.tscn`: CanvasLayer with a top-left VBox showing `Gold: N` + `Lives: N` labels (unique_name_in_owner, font 22). Connects to `gold_changed` / `lives_changed` on ready.
+- `main/Main.tscn`: instances `HUD.tscn` alongside Map.
+- Works: HUD shows Gold 100 / Lives 20 at start; killing the archer-target enemy ticks gold to 105.
+- Broke: none.
+- Next: Phase 8 — tower placement UI (tap empty spot → build menu → buy tower).

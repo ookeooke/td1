@@ -1,4 +1,4 @@
-[gd_scene load_steps=3 format=3 uid="uid://b1td1archer000"]
+[gd_scene format=3 uid="uid://ct8yfwjowqvnj"]
 
 [ext_resource type="Script" path="res://towers/base_tower.gd" id="1_tower"]
 [ext_resource type="Resource" path="res://towers/data/tower_archer.tres" id="2_data"]

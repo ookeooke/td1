@@ -1,8 +1,18 @@
 extends Node2D
 
-const ARCHER_SCENE: PackedScene = preload("res://towers/TowerArcher.tscn")
+# Phase 8: interactive placement. User taps empty spots → TowerSpotMenu →
+# Build Archer → TowerPlacer spends gold and spawns the tower.
+# Test harness now loops enemies on rotating paths so players have targets
+# before WaveManager comes online in Phase 11.
+
+const ENEMY_BASIC_SCENE: PackedScene = preload("res://enemies/EnemyBasic.tscn")
+const ENEMY_SPAWN_INTERVAL: float = 2.5
+const ENEMY_PATHS: Array[String] = ["left", "right", "top"]
 
 @onready var map: Node2D = $Map
+@onready var towers: Node2D = $Towers
+
+var _spawn_index: int = 0
 
 
 func _ready() -> void:
@@ -13,24 +23,35 @@ func _ready() -> void:
 	EventBus.enemy_spawned.connect(_on_enemy_spawned)
 	EventBus.enemy_reached_end.connect(_on_enemy_reached_end)
 	EventBus.enemy_died.connect(_on_enemy_died)
+	EventBus.tower_built.connect(_on_tower_built)
+	EventBus.tower_spot_tapped.connect(_on_spot_tapped)
 
-	_phase6_test_tower_vs_enemy()
-
-
-func _phase6_test_tower_vs_enemy() -> void:
-	_place_archer_on_spot("Spot1")
-	await get_tree().create_timer(1.0).timeout
-	var left_path: Path2D = map.get_path_by_id("left")
-	WaveManager.spawn_enemy(left_path, "left")
+	_start_enemy_loop()
 
 
-func _place_archer_on_spot(spot_id: String) -> void:
-	var grid: Node = map.get_node("GridManager")
-	var pos: Vector2 = grid.get_spot_position(spot_id)
-	var archer: Node2D = ARCHER_SCENE.instantiate()
-	archer.position = pos
-	map.add_child(archer)
-	print("[Main] placed archer at %s %s" % [spot_id, pos])
+func _start_enemy_loop() -> void:
+	var t := Timer.new()
+	t.wait_time = ENEMY_SPAWN_INTERVAL
+	t.autostart = true
+	t.timeout.connect(_spawn_test_enemy)
+	add_child(t)
+
+
+func _spawn_test_enemy() -> void:
+	var path_id: String = ENEMY_PATHS[_spawn_index % ENEMY_PATHS.size()]
+	_spawn_index += 1
+	var p: Path2D = map.get_path_by_id(path_id)
+	if p == null:
+		return
+	WaveManager.spawn_enemy(p, path_id, ENEMY_BASIC_SCENE)
+
+
+func _on_spot_tapped(spot_id: String) -> void:
+	print("[Main] spot tapped: %s" % spot_id)
+
+
+func _on_tower_built(_tower: Node, spot_id: String) -> void:
+	print("[Main] tower built on %s" % spot_id)
 
 
 func _on_enemy_spawned(_enemy: Node, path_id: String) -> void:

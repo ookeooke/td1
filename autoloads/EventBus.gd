@@ -12,6 +12,8 @@ signal tower_upgraded(tower, new_level)
 signal tower_branch_chosen(tower, branch)
 signal tower_spot_tapped(spot_id)
 signal tower_range_preview_requested(tower)
+signal tower_build_requested(spot_id, tower_id)
+signal tower_menu_dismissed()
 
 # Soldiers
 signal soldier_spawned(soldier, tower)

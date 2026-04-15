@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://map/Map.gd" id="1_map"]
 [ext_resource type="Script" path="res://map/GridManager.gd" id="2_grid"]
 [ext_resource type="PackedScene" path="res://map/SpawnMarker.tscn" id="3_sm"]
+[ext_resource type="Script" path="res://map/SpotInputManager.gd" id="4_sim"]
 
 [node name="Map" type="Node2D"]
 script = ExtResource("1_map")
@@ -62,3 +63,6 @@ direction_degrees = 90.0
 
 [node name="GridManager" type="Node" parent="."]
 script = ExtResource("2_grid")
+
+[node name="SpotInputManager" type="Node" parent="."]
+script = ExtResource("4_sim")

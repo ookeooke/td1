@@ -81,3 +81,17 @@ One line per session: date, phase, what worked, what broke.
 - Works: HUD shows Gold 100 / Lives 20 at start; killing the archer-target enemy ticks gold to 105.
 - Broke: none.
 - Next: Phase 8 — tower placement UI (tap empty spot → build menu → buy tower).
+
+---
+
+## 2026-04-15 — Phase 8: Tower placement UI
+- `EventBus.gd`: added `tower_build_requested(spot_id, tower_id)` and `tower_menu_dismissed()`.
+- `map/GridManager.gd`: added `set_tower_at`, `clear_tower_at`, `get_tower_at`, `find_nearest_spot(world_pos, max_distance)`.
+- `map/SpotInputManager.gd` (new): unhandled-input handler that converts screen-space `InputEventScreenTouch` to Map-local coords, finds nearest free spot within 36 px, emits `tower_spot_tapped`.
+- `ui/TowerSpotMenu.tscn` + `.gd`: CanvasLayer bottom-sheet popup with Backdrop (tap-outside-to-dismiss, mouse_filter=STOP), PanelContainer with "Build Archer (50g)" + Close buttons (80px touch targets). Auto-enables/disables Archer button when `gold_changed` fires.
+- `ui/TowerPlacer.gd` (new): listens to `tower_build_requested`, resolves tower_id via a registry (currently only "archer" → TowerArcher.tscn + tower_archer.tres), calls `GameState.spend_gold(cost)` (refund-free if broke), instances the tower under a Towers Node2D, registers it in GridManager, emits `tower_built`.
+- `main/Main.tscn`: added Towers Node2D, TowerPlacer node (wired via `towers_parent_path` + `grid_manager_path`), and TowerSpotMenu instance.
+- `main/Main.gd`: removed Phase 6 auto-placement. Added a Timer-driven test-enemy spawner (one enemy every 2.5s, rotating left → right → top paths) so the player always has targets while placing towers. Phase 11 replaces this with real waves.
+- Works: tap any yellow spot → menu appears → Build Archer deducts 50g, spawns a blue archer tower; tap outside to dismiss; archers shoot the looping test enemies; second tower can be built after ~1 kill.
+- Broke: none.
+- Next: Phase 9 — tower sell + refund (extend TowerSpotMenu for occupied spots).

@@ -30,3 +30,33 @@ func get_free_spot_ids() -> Array:
 
 func get_spot_count() -> int:
 	return _spots.size()
+
+
+func set_tower_at(spot_id: String, tower: Node) -> void:
+	if not _spots.has(spot_id):
+		push_warning("[GridManager] set_tower_at: unknown spot '%s'" % spot_id)
+		return
+	_spots[spot_id].tower = tower
+
+
+func clear_tower_at(spot_id: String) -> void:
+	if not _spots.has(spot_id):
+		return
+	_spots[spot_id].tower = null
+
+
+func get_tower_at(spot_id: String) -> Node:
+	if not _spots.has(spot_id):
+		return null
+	return _spots[spot_id].tower
+
+
+func find_nearest_spot(world_pos: Vector2, max_distance: float) -> String:
+	var best_id := ""
+	var best_d := max_distance
+	for id in _spots:
+		var d := world_pos.distance_to(_spots[id].position)
+		if d <= best_d:
+			best_d = d
+			best_id = id
+	return best_id

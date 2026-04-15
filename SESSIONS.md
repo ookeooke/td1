@@ -107,3 +107,13 @@ One line per session: date, phase, what worked, what broke.
 - Works: tap existing archer → "Sell (+30g)" → gold increments by 30, tower disappears, spot is free to rebuild.
 - Broke: none.
 - Next: Phase 10 — tower range circle preview on tap.
+
+---
+
+## 2026-04-15 — Phase 10: Tower range circle preview
+- `ui/RangePreview.gd` + `.tscn` (new): single Node2D instance in Main.tscn that listens to `tower_spot_tapped`. If the spot is occupied, snaps `global_position` to the tower and `_draw()`s a hollow yellow ring with a faint fill using the tower's `data.attack_range`. One-shot Timer hides after 2 seconds; re-tap restarts the timer. Also auto-hides on `tower_sold` so a stale preview doesn't linger on an empty spot.
+- `main/Main.tscn`: added RangePreview instance above HUD (z_index=5 so it renders above towers but below CanvasLayer UI).
+- No changes to base_tower.gd — preview is fully decoupled, resolved through GridManager lookups.
+- Works: tap an archer → yellow ring at its 160 px radius appears for 2 s alongside the sell menu; re-tap extends the timer; sell dismisses the ring immediately.
+- Broke: none.
+- Next: Phase 11 — wave system (WaveManager + multi-path wave data).

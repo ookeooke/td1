@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="WaveList" load_steps=14 format=3 uid="uid://b1td1lvl1waves"]
+[gd_resource type="Resource" script_class="WaveList" format=3 uid="uid://ct8yq1taf8q1c"]
 
 [ext_resource type="Script" path="res://waves/WaveList.gd" id="1_list"]
 [ext_resource type="Script" path="res://waves/WaveData.gd" id="2_wave"]

@@ -6,6 +6,7 @@
 [ext_resource type="Script" uid="uid://cia00jfopb0ri" path="res://ui/TowerPlacer.gd" id="4_placer"]
 [ext_resource type="PackedScene" uid="uid://c70svntlw28u6" path="res://ui/TowerSpotMenu.tscn" id="5_menu"]
 [ext_resource type="PackedScene" uid="uid://c70rgmgd86rq6" path="res://ui/RangePreview.tscn" id="6_range"]
+[ext_resource type="PackedScene" uid="uid://ct8ylftl7uafj" path="res://ui/GameOverScreen.tscn" id="7_gameover"]
 
 [node name="Main" type="Node2D" unique_id=2036122815]
 script = ExtResource("1_main")
@@ -25,3 +26,5 @@ grid_manager_path = NodePath("../Level1/GridManager")
 
 [node name="TowerSpotMenu" parent="." unique_id=541253450 instance=ExtResource("5_menu")]
 visible = false
+
+[node name="GameOverScreen" parent="." instance=ExtResource("7_gameover")]

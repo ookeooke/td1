@@ -1,0 +1,64 @@
+[gd_scene format=3 uid="uid://ct8ylftl7uafj"]
+
+[ext_resource type="Script" path="res://ui/GameOverScreen.gd" id="1_gos"]
+
+[node name="GameOverScreen" type="CanvasLayer"]
+layer = 20
+script = ExtResource("1_gos")
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 0
+
+[node name="Dim" type="ColorRect" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.65)
+
+[node name="Center" type="CenterContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Card" type="PanelContainer" parent="Root/Center"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Root/Center/Card"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="VBox" type="VBoxContainer" parent="Root/Center/Card/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="TitleLabel" type="Label" parent="Root/Center/Card/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Defeat"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 36
+
+[node name="SummaryLabel" type="Label" parent="Root/Center/Card/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 18
+
+[node name="RestartButton" type="Button" parent="Root/Center/Card/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+text = "Restart"
+theme_override_font_sizes/font_size = 22

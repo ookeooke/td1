@@ -141,3 +141,14 @@ One line per session: date, phase, what worked, what broke.
 - Works: F5 → Wave: 1/3 appears after 3 s countdown → 8 orcs from the left; building archers drops the leak count. Wave 2 kicks in once wave 1 clears, adds a second path. Wave 3 uses all three paths. Bounty gold appears at each clear.
 - Broke: none.
 - Next: Phase 12 — win/lose conditions + GameOverScreen.
+
+---
+
+## 2026-04-15 — Phase 12: Win/lose + GameOverScreen
+- `autoloads/WaveManager.gd`: added `stop()` — clears `_running` / `_wave_active` and nulls the wave_list/level refs. In-flight spawner `await` coroutines already re-check `_running` after each timer, so they bail cleanly on scene reload without leaking half-spawned enemies.
+- `ui/GameOverScreen.gd` + `.tscn` (new): CanvasLayer (layer=20) with dim ColorRect (alpha 0.65) + centered PanelContainer card containing TitleLabel (36px), SummaryLabel (18px), and a big Restart button (220×80). `process_mode = PROCESS_MODE_WHEN_PAUSED` so the button keeps firing while the tree is paused. Listens to `game_over` (→ "Defeat" with wave reached) and `all_waves_completed` (→ "Victory!" with lives/gold, guarded by `lives > 0` so a simultaneous game_over doesn't double-trigger). `_shown` flag prevents re-entry.
+- Restart flow: unpause → `WaveManager.stop()` → `GameState.reset()` → re-emit gold/lives_changed so the HUD snaps back before reload → `get_tree().reload_current_scene()`.
+- `main/Main.tscn`: instanced GameOverScreen after TowerSpotMenu.
+- Works: leaking all 20 lives → "Defeat" card with wave number, Restart returns to Gold 100 / Lives 20 / Wave --. Clearing all 3 waves → "Victory!" card with summary, Restart begins a fresh run.
+- Broke: none.
+- Next: Phase 13 — status effects (slow first, then stun).

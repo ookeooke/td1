@@ -139,6 +139,18 @@ func _on_game_over() -> void:
 	_wave_active = false
 
 
+func stop() -> void:
+	# Called before scene reload / restart. In-flight `await` spawner coroutines
+	# check _running on resume and bail, so they exit cleanly without spawning.
+	_running = false
+	_wave_active = false
+	_wave_list = null
+	_level = null
+	_wave_index = -1
+	_active_spawners = 0
+	_alive_count = 0
+
+
 # Public helper (kept from Phase 4) for manual spawning + used internally above.
 func spawn_enemy(path: Path2D, path_id: String, scene: PackedScene) -> Node:
 	if path == null or scene == null:

@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://b1td1rangeprev0"]
+[gd_scene format=3 uid="uid://c70rgmgd86rq6"]
 
 [ext_resource type="Script" path="res://ui/RangePreview.gd" id="1_rp"]
 

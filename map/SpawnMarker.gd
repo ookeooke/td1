@@ -1,3 +1,4 @@
+@tool
 extends Node2D
 
 # Edge-of-screen indicator showing where the next wave will spawn.

@@ -117,3 +117,15 @@ One line per session: date, phase, what worked, what broke.
 - Works: tap an archer → yellow ring at its 160 px radius appears for 2 s alongside the sell menu; re-tap extends the timer; sell dismisses the ring immediately.
 - Broke: none.
 - Next: Phase 11 — wave system (WaveManager + multi-path wave data).
+
+---
+
+## 2026-04-15 — Detour: editor-editable Level1 (pre-Phase 11)
+- Before Phase 11 the map was authored entirely in code (`Map.gd._build_curves()` + hardcoded Marker2D coords) and nothing rendered in the editor — you were dragging invisible nodes. Fixed so level layout is fully editor-editable.
+- `levels/Level1.gd` + `levels/Level1.tscn` (new): `@tool` script that draws green background, brown paths, and yellow spot circles both in the editor and at runtime. Paths live in the scene as Path2D children with real `Curve2D` sub-resources (so Godot's built-in curve editor works — drag points, Bezier handles, right-click to add/remove). Path node name IS the path_id ("left", "right", "top"). Spots live as Marker2D children — drag them, `_process` queue_redraws in editor so the preview tracks live.
+- `map/SpawnMarker.gd`: `@tool` so arrow/icon render in editor too.
+- `map/Map.tscn` + `map/Map.gd`: deleted. `map/` now only holds shared systems (GridManager, SpotInputManager, SpawnMarker) reused by all levels.
+- `main/Main.tscn` + `main/Main.gd`: instance `Level1.tscn` instead of `Map.tscn`; node renamed `Map` → `Level1`.
+- Works: opening `levels/Level1.tscn` in the editor shows the full playable map; dragging Spot5 or a Path2D curve point updates the preview immediately. F5 still runs the same gameplay as before.
+- Broke: none.
+- Next: Phase 11 — wave system.

@@ -1,7 +1,7 @@
 [gd_scene load_steps=7 format=3 uid="uid://b1td1main0000"]
 
 [ext_resource type="Script" path="res://main/Main.gd" id="1_main"]
-[ext_resource type="PackedScene" path="res://map/Map.tscn" id="2_map"]
+[ext_resource type="PackedScene" path="res://levels/Level1.tscn" id="2_level"]
 [ext_resource type="PackedScene" path="res://ui/HUD.tscn" id="3_hud"]
 [ext_resource type="Script" path="res://ui/TowerPlacer.gd" id="4_placer"]
 [ext_resource type="PackedScene" path="res://ui/TowerSpotMenu.tscn" id="5_menu"]
@@ -10,14 +10,14 @@
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
 
-[node name="Map" parent="." instance=ExtResource("2_map")]
+[node name="Level1" parent="." instance=ExtResource("2_level")]
 
 [node name="Towers" type="Node2D" parent="."]
 
 [node name="TowerPlacer" type="Node" parent="."]
 script = ExtResource("4_placer")
 towers_parent_path = NodePath("../Towers")
-grid_manager_path = NodePath("../Map/GridManager")
+grid_manager_path = NodePath("../Level1/GridManager")
 
 [node name="RangePreview" parent="." instance=ExtResource("6_range")]
 

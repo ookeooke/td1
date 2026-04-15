@@ -1,28 +1,49 @@
-[gd_scene format=3 uid="uid://b1td1map00000"]
+[gd_scene load_steps=8 format=3 uid="uid://b1td1level1000"]
 
-[ext_resource type="Script" path="res://map/Map.gd" id="1_map"]
+[ext_resource type="Script" path="res://levels/Level1.gd" id="1_lvl"]
 [ext_resource type="Script" path="res://map/GridManager.gd" id="2_grid"]
 [ext_resource type="PackedScene" path="res://map/SpawnMarker.tscn" id="3_sm"]
 [ext_resource type="Script" path="res://map/SpotInputManager.gd" id="4_sim"]
 
-[node name="Map" type="Node2D"]
-script = ExtResource("1_map")
+[sub_resource type="Curve2D" id="Curve_Left"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 0, 420, 0, 0, 0, 0, 180, 420, 0, 0, 0, 0, 180, 680, 0, 0, 0, 0, 375, 680)
+}
+point_count = 4
+
+[sub_resource type="Curve2D" id="Curve_Right"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 375, 220, 0, 0, 0, 0, 220, 220, 0, 0, 0, 0, 220, 520, 0, 0, 0, 0, 0, 520)
+}
+point_count = 4
+
+[sub_resource type="Curve2D" id="Curve_Top"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 280, 0, 0, 0, 0, 0, 280, 140, 0, 0, 0, 0, 80, 140, 0, 0, 0, 0, 80, 300)
+}
+point_count = 4
+
+[node name="Level1" type="Node2D"]
+script = ExtResource("1_lvl")
 
 [node name="NavigationRegion2D" type="NavigationRegion2D" parent="."]
 
 [node name="Paths" type="Node2D" parent="."]
 
-[node name="PathLeft" type="Path2D" parent="Paths"]
+[node name="left" type="Path2D" parent="Paths"]
+curve = SubResource("Curve_Left")
 
-[node name="PathFollow2D" type="PathFollow2D" parent="Paths/PathLeft"]
+[node name="PathFollow2D" type="PathFollow2D" parent="Paths/left"]
 
-[node name="PathRight" type="Path2D" parent="Paths"]
+[node name="right" type="Path2D" parent="Paths"]
+curve = SubResource("Curve_Right")
 
-[node name="PathFollow2D" type="PathFollow2D" parent="Paths/PathRight"]
+[node name="PathFollow2D" type="PathFollow2D" parent="Paths/right"]
 
-[node name="PathTop" type="Path2D" parent="Paths"]
+[node name="top" type="Path2D" parent="Paths"]
+curve = SubResource("Curve_Top")
 
-[node name="PathFollow2D" type="PathFollow2D" parent="Paths/PathTop"]
+[node name="PathFollow2D" type="PathFollow2D" parent="Paths/top"]
 
 [node name="TowerSpots" type="Node2D" parent="."]
 

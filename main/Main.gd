@@ -9,7 +9,7 @@ const ENEMY_BASIC_SCENE: PackedScene = preload("res://enemies/EnemyBasic.tscn")
 const ENEMY_SPAWN_INTERVAL: float = 2.5
 const ENEMY_PATHS: Array[String] = ["left", "right", "top"]
 
-@onready var map: Node2D = $Map
+@onready var level: Node2D = $Level1
 @onready var towers: Node2D = $Towers
 
 var _spawn_index: int = 0
@@ -17,8 +17,8 @@ var _spawn_index: int = 0
 
 func _ready() -> void:
 	print("[Main] EventBus signals: ", EventBus.get_signal_list().size())
-	var grid: Node = map.get_node("GridManager")
-	print("[Main] Map loaded — free spots: ", grid.get_free_spot_ids())
+	var grid: Node = level.get_node("GridManager")
+	print("[Main] Level1 loaded — free spots: ", grid.get_free_spot_ids())
 
 	EventBus.enemy_spawned.connect(_on_enemy_spawned)
 	EventBus.enemy_reached_end.connect(_on_enemy_reached_end)
@@ -40,7 +40,7 @@ func _start_enemy_loop() -> void:
 func _spawn_test_enemy() -> void:
 	var path_id: String = ENEMY_PATHS[_spawn_index % ENEMY_PATHS.size()]
 	_spawn_index += 1
-	var p: Path2D = map.get_path_by_id(path_id)
+	var p: Path2D = level.get_path_by_id(path_id)
 	if p == null:
 		return
 	WaveManager.spawn_enemy(p, path_id, ENEMY_BASIC_SCENE)

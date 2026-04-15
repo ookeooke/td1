@@ -9,6 +9,11 @@ class_name EnemyData
 @export var lives_worth: int = 1
 @export var gold_worth: int = 5
 
+# Melee counter-attack stats — used by BaseEnemy while engaged in COMBAT
+# state (vs. a blocking soldier). Flying units skip engagement entirely.
+@export var attack_damage: float = 3.0
+@export var attack_speed: float = 1.0
+
 @export var is_flying: bool = false
 @export var can_stealth: bool = false
 @export_range(0.0, 1.0) var stealth_threshold: float = 0.5

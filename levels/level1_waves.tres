@@ -5,7 +5,7 @@
 [ext_resource type="Script" uid="uid://bn01uqj5y40yv" path="res://waves/WaveSpawn.gd" id="3_spawn"]
 [ext_resource type="PackedScene" uid="uid://ct8yjsiicg7nj" path="res://enemies/EnemyBasic.tscn" id="4_basic"]
 [ext_resource type="PackedScene" uid="uid://b1td1flysc002" path="res://enemies/EnemyFlying.tscn" id="5_fly"]
-[ext_resource type="PackedScene" uid="uid://b1td1healsc02" path="res://enemies/EnemyHealer.tscn" id="6_heal"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyHealer.tscn" id="6_heal"]
 
 [sub_resource type="Resource" id="Spawn_W1_Left"]
 script = ExtResource("3_spawn")
@@ -32,9 +32,7 @@ start_delay = 2.0
 
 [sub_resource type="Resource" id="Spawn_W2_Healer"]
 script = ExtResource("3_spawn")
-path_id = "left"
 enemy_scene = ExtResource("6_heal")
-count = 1
 start_delay = 3.0
 
 [sub_resource type="Resource" id="Wave2"]

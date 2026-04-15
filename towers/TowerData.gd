@@ -23,4 +23,10 @@ class_name TowerData
 # Asset reference — per tower; not a "stat" so keeping alongside config.
 @export var projectile_scene: PackedScene
 
+# Barracks fields (unused on attack towers). Phase 16.
+@export var soldier_scene: PackedScene
+@export var soldier_data: Resource
+@export var soldier_blocking_offset: Vector2 = Vector2(0, 45)
+@export var soldier_spread: Vector2 = Vector2(16, 10)
+
 @export_multiline var encyclopedia_entry: String = ""

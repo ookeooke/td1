@@ -15,6 +15,10 @@ var _path_id: String = ""
 # replaces the prior effect (refreshes duration / takes stronger value).
 var _effects: Dictionary = {}
 
+# Combat engagement — set by soldiers calling engage_combat(self).
+var _blocker: Node = null
+var _combat_cooldown: float = 0.0
+
 
 func _ready() -> void:
 	if data:
@@ -42,8 +46,41 @@ func _physics_process(delta: float) -> void:
 			_path_follow.progress += _effective_speed() * delta
 			if _path_follow.progress_ratio >= 1.0:
 				_reach_end()
-		State.STUNNED, State.COMBAT, State.STEALTHED, State.DYING:
+		State.COMBAT:
+			_combat_tick(delta)
+		State.STUNNED, State.STEALTHED, State.DYING:
 			pass
+
+
+func engage_combat(soldier: Node) -> void:
+	if state == State.DYING or soldier == null:
+		return
+	_blocker = soldier
+	_combat_cooldown = 1.0 / maxf(0.01, data.attack_speed) if data != null else 1.0
+	change_state(State.COMBAT)
+
+
+func release_combat(soldier: Node = null) -> void:
+	# If a specific soldier is provided, only release if it matches the
+	# current blocker (prevents stale release calls).
+	if soldier != null and _blocker != soldier:
+		return
+	_blocker = null
+	_combat_cooldown = 0.0
+	if state == State.COMBAT:
+		change_state(State.WALKING)
+
+
+func _combat_tick(delta: float) -> void:
+	if _blocker == null or not is_instance_valid(_blocker) or data == null:
+		release_combat()
+		return
+	_combat_cooldown -= delta
+	if _combat_cooldown > 0.0:
+		return
+	_combat_cooldown = 1.0 / maxf(0.01, data.attack_speed)
+	if _blocker.has_method("take_damage"):
+		_blocker.take_damage(data.attack_damage, DamageCalculator.DamageType.PHYSICAL, self)
 
 
 func apply_status_effect(effect) -> void:

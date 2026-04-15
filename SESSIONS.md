@@ -204,3 +204,27 @@ One line per session: date, phase, what worked, what broke.
 - Works: F5 → wave 2 left path → after ~3 s a green "+" medic trails the orcs and, every 2 s, heals nearby allies by 3 (console logs `[Enemy/heal] Orc Grunt N → M`). Orcs shot by archers survive noticeably longer; killing the Shaman first ends the sustain.
 - Broke: none.
 - Next: Phase 16 — barracks tower + soldier blocking.
+
+---
+
+## 2026-04-15 — Log-order clarification (not a bug)
+- The "leak after Victory" in prior runs is not a miscount. enemy_reached_end listeners fire in connection order GameState → WaveManager → Main. For the final leak WaveManager's handler runs first (prints acct line + cascades wave_completed / all_waves_completed synchronously), and only after that whole chain unwinds does Main's handler print `leak — lives -1 (remaining: N)`. So `[Main] leak` appears after `[WaveManager] all waves complete` but it's the same signal emit, not a phantom enemy. Accounting across the run was 13 spawns / 13 removes.
+
+---
+
+## 2026-04-15 — Phase 16: Barracks tower + soldier blocking
+- `soldiers/SoldierData.gd` (new Resource): max_health / attack_damage / attack_speed / move_speed / armor / magic_resist / respawn_time / max_count / melee_range.
+- `soldiers/data/soldier_basic.tres`: Militia — 22 hp, 4 dmg, 1.0 atk/s, 70 px/s, armor 0.1, respawn 4 s, max 3, melee_range 18.
+- `soldiers/base_soldier.gd` (CharacterBody2D, states MOVING / BLOCKING / DEAD): straight-line walk to assigned `_blocking_position`, then on reaching BLOCKING polls `MeleeRange.get_overlapping_areas()` each physics tick and engages the first non-flying non-DYING BaseEnemy — calls `enemy.engage_combat(self)` and trades blows on a cooldown (1 / attack_speed). On HP ≤ 0: calls `_engaged_enemy.release_combat(self)`, emits `soldier_died`, queue_frees. `data` typed as `Resource` (SoldierData indexed later) to avoid LSP red before Godot rescan.
+- `soldiers/Soldier.tscn`: CharacterBody2D on `collision_layer = 2` (ground), child `MeleeRange` Area2D with `collision_mask = 2`, `monitorable = false`. Melee shape sized at runtime from `data.melee_range`.
+- `enemies/EnemyData.gd`: added `attack_damage` + `attack_speed` (defaults 3.0 / 1.0) — used only by BaseEnemy while engaged; flying units skip engagement entirely.
+- `enemies/base_enemy.gd`: new `_blocker` + `_combat_cooldown` plus public `engage_combat(soldier)` / `release_combat(soldier = null)`. COMBAT branch in `_physics_process` drives `_combat_tick`: every `1 / attack_speed` seconds call `_blocker.take_damage(data.attack_damage, PHYSICAL, self)`. If blocker becomes invalid mid-tick, auto-releases back to WALKING. `release_combat(soldier)` is a no-op when a non-matching soldier is passed, which prevents stale release calls.
+- `towers/TowerData.gd`: added barracks fields — `soldier_scene` / `soldier_data` / `soldier_blocking_offset (0, 45)` / `soldier_spread (16, 10)`. Unused on attack towers.
+- `towers/data/tower_barracks.tres` (new): Barracks — cost 70, sell 40, wires soldier_scene + soldier_data.
+- `towers/TowerBarracks.gd` (new, Node2D): on ready builds 3 slot positions fanning around `global_position + soldier_blocking_offset`, spawns a full squad parented to itself (selling cleans them up with the barracks). Listens to `EventBus.soldier_died`; when a tracked soldier dies, schedules `_respawn_after(respawn_time, slot)` via a SceneTree timer. `is_inside_tree()` guard on resume so respawn coroutines bail cleanly if the barracks was sold mid-timer.
+- `towers/TowerBarracks.tscn` (new): Node2D + script + data.
+- `ui/TowerPlacer.gd`: registered `"barracks"` alongside archer.
+- `ui/TowerSpotMenu.gd` + `.tscn`: added `BarracksButton` (70 g) to BuildRow. Bumped panel `offset_top` to -320 to fit the extra row + sell + close with enough breathing room.
+- Works: F5 → tap empty spot → menu now offers Build Archer + Build Barracks → tap barracks for 70 g → brown square drops 3 yellow militia squares that march to a triangle below the tower. Ground orcs entering that triangle stop (COMBAT state), trade melee with the militia; militia die and respawn after 4 s. Harpies ignore soldiers and fly past. Selling the barracks removes all 3 soldiers.
+- Broke: none.
+- Next: Phase 17 — enemy health bar (visible on hit, auto-hide).

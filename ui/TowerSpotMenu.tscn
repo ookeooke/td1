@@ -29,7 +29,7 @@ anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_top = -220.0
+offset_top = -320.0
 grow_horizontal = 2
 grow_vertical = 0
 
@@ -54,6 +54,13 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 80)
 layout_mode = 2
 text = "Build Archer (50g)"
+theme_override_font_sizes/font_size = 22
+
+[node name="BarracksButton" type="Button" parent="Root/Panel/VBox/BuildRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+text = "Build Barracks (70g)"
 theme_override_font_sizes/font_size = 22
 
 [node name="SellRow" type="VBoxContainer" parent="Root/Panel/VBox"]

@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://b1td1soldsc02"]
+
+[ext_resource type="Script" path="res://soldiers/base_soldier.gd" id="1_sold"]
+[ext_resource type="Resource" path="res://soldiers/data/soldier_basic.tres" id="2_data"]
+
+[sub_resource type="RectangleShape2D" id="RectShape_body"]
+size = Vector2(12, 12)
+
+[node name="Soldier" type="CharacterBody2D"]
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("1_sold")
+data = ExtResource("2_data")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectShape_body")
+
+[node name="MeleeRange" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="MeleeRange"]

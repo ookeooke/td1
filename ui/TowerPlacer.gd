@@ -7,6 +7,8 @@ extends Node
 
 const ARCHER_SCENE: PackedScene = preload("res://towers/TowerArcher.tscn")
 const ARCHER_DATA: Resource = preload("res://towers/data/tower_archer.tres")
+const BARRACKS_SCENE: PackedScene = preload("res://towers/TowerBarracks.tscn")
+const BARRACKS_DATA: Resource = preload("res://towers/data/tower_barracks.tres")
 
 @export var towers_parent_path: NodePath
 @export var grid_manager_path: NodePath
@@ -27,6 +29,11 @@ func _ready() -> void:
 		"scene": ARCHER_SCENE,
 		"data": ARCHER_DATA,
 		"cost": ARCHER_DATA.cost,
+	}
+	_registry["barracks"] = {
+		"scene": BARRACKS_SCENE,
+		"data": BARRACKS_DATA,
+		"cost": BARRACKS_DATA.cost,
 	}
 	EventBus.tower_build_requested.connect(_on_build_requested)
 	EventBus.tower_sell_requested.connect(_on_sell_requested)

@@ -11,11 +11,14 @@ extends CanvasLayer
 @onready var build_row: VBoxContainer = %BuildRow
 @onready var sell_row: VBoxContainer = %SellRow
 @onready var archer_button: Button = %ArcherButton
+@onready var barracks_button: Button = %BarracksButton
 @onready var sell_button: Button = %SellButton
 @onready var close_button: Button = %CloseButton
 
 const ARCHER_ID: String = "archer"
 const ARCHER_COST: int = 50
+const BARRACKS_ID: String = "barracks"
+const BARRACKS_COST: int = 70
 
 var _current_spot_id: String = ""
 var _current_tower: Node = null
@@ -27,6 +30,7 @@ func _ready() -> void:
 	visible = false
 	root.visible = true
 	archer_button.pressed.connect(_on_archer_pressed)
+	barracks_button.pressed.connect(_on_barracks_pressed)
 	sell_button.pressed.connect(_on_sell_pressed)
 	close_button.pressed.connect(_dismiss)
 	backdrop.gui_input.connect(_on_backdrop_input)
@@ -64,6 +68,8 @@ func _show_sell_mode() -> void:
 func _refresh_build_buttons() -> void:
 	archer_button.text = "Build Archer (%dg)" % ARCHER_COST
 	archer_button.disabled = GameState.gold < ARCHER_COST
+	barracks_button.text = "Build Barracks (%dg)" % BARRACKS_COST
+	barracks_button.disabled = GameState.gold < BARRACKS_COST
 
 
 func _refresh_sell_button() -> void:
@@ -87,6 +93,13 @@ func _on_archer_pressed() -> void:
 	if _current_spot_id == "":
 		return
 	EventBus.tower_build_requested.emit(_current_spot_id, ARCHER_ID)
+	_dismiss()
+
+
+func _on_barracks_pressed() -> void:
+	if _current_spot_id == "":
+		return
+	EventBus.tower_build_requested.emit(_current_spot_id, BARRACKS_ID)
 	_dismiss()
 
 

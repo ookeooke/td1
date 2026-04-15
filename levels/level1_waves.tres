@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://bi3tyyql6gp6g" path="res://waves/WaveData.gd" id="2_wave"]
 [ext_resource type="Script" uid="uid://bn01uqj5y40yv" path="res://waves/WaveSpawn.gd" id="3_spawn"]
 [ext_resource type="PackedScene" uid="uid://ct8yjsiicg7nj" path="res://enemies/EnemyBasic.tscn" id="4_basic"]
+[ext_resource type="PackedScene" uid="uid://b1td1flysc002" path="res://enemies/EnemyFlying.tscn" id="5_fly"]
 
 [sub_resource type="Resource" id="Spawn_W1_Left"]
 script = ExtResource("3_spawn")
@@ -49,9 +50,10 @@ start_delay = 0.5
 [sub_resource type="Resource" id="Spawn_W3_Top"]
 script = ExtResource("3_spawn")
 path_id = "top"
-enemy_scene = ExtResource("4_basic")
-count = 5
-start_delay = 1.0
+enemy_scene = ExtResource("5_fly")
+count = 3
+interval = 1.2
+start_delay = 2.0
 
 [sub_resource type="Resource" id="Wave3"]
 script = ExtResource("2_wave")

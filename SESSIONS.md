@@ -165,3 +165,22 @@ One line per session: date, phase, what worked, what broke.
 - Works: F5 → first orc spawns → ~1 s in turns cyan and crawls at half speed → ~2.8 s in turns yellow and freezes mid-path for 1.5 s → resumes normal speed + color. Wave 1 still clears normally. Console prints both applications.
 - Broke: none.
 - Next: Phase 14 — flying enemy (collision layer 3).
+
+---
+
+## 2026-04-15 — Phase 13 follow-up: swap modulate for overlay rings
+- On the red placeholder enemy, `modulate` tints were visually invisible (red × cyan ≈ red, red × yellow ≈ red). Replaced in `enemies/base_enemy.gd` with explicit `draw_arc()` rings inside `_draw()`: cyan ring at r=19 while slowed, yellow ring at r=23 while stunned (stun outermost so it stays readable when both are active). `apply_status_effect` / `_tick_effects` now call `queue_redraw()` instead of `modulate =`.
+- Godot also reserialised `levels/level1_waves.tres` during this session as it indexed the new script UIDs (defaults stripped, typed arrays rewritten as ExtResource refs — no semantic change).
+- Works: first-enemy demo now has obvious cyan/yellow halos in addition to the speed changes.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 14: Flying enemy (collision layer 3)
+- `enemies/data/enemy_flying.tres` (new): Harpy — 8 hp, 90 px/s, 1 life, 6 gold, magic_resist 0.2, `is_flying = true`.
+- `enemies/enemy_flying.gd` (new, extends BaseEnemy): overrides `_draw()` only — purple body (r=12) plus two short grey wing bars — so the placeholder reads as visibly different from the orc. Status-effect rings are redrawn here too (same cyan/yellow convention) since `_draw()` is a full override.
+- `enemies/EnemyFlying.tscn` (new): Area2D on `collision_layer = 4` (bit 3 = layer 3), `collision_mask = 0`, CircleShape2D r=12. Archer RangeArea uses `collision_mask = 2` (layer 2 only) so flying units never enter `get_overlapping_areas()` — they sail past ground towers for free, which is the intended Phase-14 demo. Targeting filter in BaseTower (`is_flying and not targets_flying`) is a second-line defense for when an AA tower *does* see a flying enemy via a broader mask.
+- `levels/level1_waves.tres`: W3 "top" spawn flipped from 5 orcs to 3 Harpies (interval 1.2, start_delay 2.0). W1 + W2 unchanged.
+- Works: wave 3 on top path spawns purple harpies that cruise through untouched by any archer placed on any spot — lives drop by 3 if the player doesn't kill them some other way, confirming layer-3 passthrough. Ground orcs on left/right still get shot normally.
+- Broke: none.
+- Next: Phase 15 — healer enemy (Timer-based ally healing).

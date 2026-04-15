@@ -95,3 +95,15 @@ One line per session: date, phase, what worked, what broke.
 - Works: tap any yellow spot → menu appears → Build Archer deducts 50g, spawns a blue archer tower; tap outside to dismiss; archers shoot the looping test enemies; second tower can be built after ~1 kill.
 - Broke: none.
 - Next: Phase 9 — tower sell + refund (extend TowerSpotMenu for occupied spots).
+
+---
+
+## 2026-04-15 — Phase 9: Tower sell + refund
+- `EventBus.gd`: added `tower_sell_requested(spot_id)`.
+- `ui/TowerPlacer.gd`: added `_on_sell_requested` — reads tower via `grid.get_tower_at`, refunds `tower.data.sell_value` through `GameState.add_gold`, clears spot, emits `tower_sold(tower, refund)`, queue_frees the tower.
+- `ui/TowerSpotMenu.gd`: now dual-mode. Empty spot → BuildRow (Archer 50g). Occupied spot → SellRow showing "Sell (+Ng)" with refund pulled from `tower.data.sell_value`. Listens to `tower_sold` to auto-dismiss after the sale.
+- `ui/TowerSpotMenu.tscn`: split VBox into BuildRow + SellRow containers (hidden/shown per mode), TitleLabel re-labels per mode, Panel offset bumped to -220 for the extra row.
+- Archer refund: 30g (tower_archer.tres `sell_value = 30`).
+- Works: tap existing archer → "Sell (+30g)" → gold increments by 30, tower disappears, spot is free to rebuild.
+- Broke: none.
+- Next: Phase 10 — tower range circle preview on tap.

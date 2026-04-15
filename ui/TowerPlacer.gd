@@ -29,6 +29,7 @@ func _ready() -> void:
 		"cost": ARCHER_DATA.cost,
 	}
 	EventBus.tower_build_requested.connect(_on_build_requested)
+	EventBus.tower_sell_requested.connect(_on_sell_requested)
 
 
 func _on_build_requested(spot_id: String, tower_id: String) -> void:
@@ -51,3 +52,19 @@ func _on_build_requested(spot_id: String, tower_id: String) -> void:
 	_grid.set_tower_at(spot_id, tower)
 	EventBus.tower_built.emit(tower, spot_id)
 	print("[TowerPlacer] built %s on %s for %dg (gold left: %d)" % [tower_id, spot_id, cost, GameState.gold])
+
+
+func _on_sell_requested(spot_id: String) -> void:
+	if _grid == null:
+		return
+	var tower: Node = _grid.get_tower_at(spot_id)
+	if tower == null:
+		return
+	var refund: int = 0
+	if "data" in tower and tower.data != null and "sell_value" in tower.data:
+		refund = int(tower.data.sell_value)
+	_grid.clear_tower_at(spot_id)
+	GameState.add_gold(refund)
+	EventBus.tower_sold.emit(tower, refund)
+	tower.queue_free()
+	print("[TowerPlacer] sold tower on %s for +%dg (gold now: %d)" % [spot_id, refund, GameState.gold])

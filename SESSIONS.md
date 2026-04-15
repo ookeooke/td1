@@ -152,3 +152,16 @@ One line per session: date, phase, what worked, what broke.
 - Works: leaking all 20 lives → "Defeat" card with wave number, Restart returns to Gold 100 / Lives 20 / Wave --. Clearing all 3 waves → "Victory!" card with summary, Restart begins a fresh run.
 - Broke: none.
 - Next: Phase 13 — status effects (slow first, then stun).
+
+---
+
+## 2026-04-15 — Phase 13: Status effects (slow + stun)
+- `systems/StatusEffect.gd` (new, RefCounted): base class with `id`, `duration`, and `apply(enemy)` / `remove(enemy)` hooks for subclasses that need entry/exit side effects. Tick-down lives on BaseEnemy — effects are simple data containers.
+- `systems/SlowEffect.gd` (new): `id = "slow"`, clamps `slow_factor` to 0..1. BaseEnemy reads `slow_factor` directly to scale effective speed.
+- `systems/StunEffect.gd` (new): `id = "stun"`, zero-speed freeze. `_init(duration)`.
+- All three use string-path `extends "res://systems/StatusEffect.gd"` so the LSP resolves them without waiting for Godot's class_name index to catch up on newly created files.
+- `enemies/base_enemy.gd`: added `_effects: Dictionary` keyed by effect id (reapply same id = replace), plus `apply_status_effect(effect)`, `_tick_effects(delta)`, `_effective_speed()`, and `_refresh_visuals()`. `_physics_process` now ticks effects every frame and multiplies `data.move_speed` by `(1 - slow_factor)` during WALKING. Stun forces `change_state(State.STUNNED)` on apply and reverts to WALKING on expire (COMBAT path wires in during Phase 16 barracks work). Modulate tint: yellow while stunned, cyan while slowed, white otherwise. `apply_status_effect` param is intentionally untyped — typed `StatusEffect` fails LSP before editor rescan, runtime duck-typing works identically.
+- `main/Main.gd`: Phase 13 demo harness — listens to `enemy_spawned` and, on the first enemy of the run only, awaits 1 s then applies `SlowEffect(0.5, 1.5)`, then 1.8 s later applies `StunEffect(1.5)`. Uses `preload()` consts (`SlowEffectScript` / `StunEffectScript`) to sidestep the class_name index cascade. Single-shot via `_phase13_demo_used` flag. Restart re-enters _ready so the demo can play again on each run.
+- Works: F5 → first orc spawns → ~1 s in turns cyan and crawls at half speed → ~2.8 s in turns yellow and freezes mid-path for 1.5 s → resumes normal speed + color. Wave 1 still clears normally. Console prints both applications.
+- Broke: none.
+- Next: Phase 14 — flying enemy (collision layer 3).

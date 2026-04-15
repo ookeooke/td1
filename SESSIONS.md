@@ -184,3 +184,23 @@ One line per session: date, phase, what worked, what broke.
 - Works: wave 3 on top path spawns purple harpies that cruise through untouched by any archer placed on any spot — lives drop by 3 if the player doesn't kill them some other way, confirming layer-3 passthrough. Ground orcs on left/right still get shot normally.
 - Broke: none.
 - Next: Phase 15 — healer enemy (Timer-based ally healing).
+
+---
+
+## 2026-04-15 — Debug: status-effect arrows + WaveManager accounting
+- `projectiles/Arrow.gd`: `setup()` now accepts an optional `status_effect` param. On hit, after damage, the arrow calls `apply_status_effect` on the target if the target is still valid (BaseEnemy's DYING guard blocks application on kill shots, which is what we want).
+- `towers/base_tower.gd`: `DEBUG_STATUS_ARROWS` const + per-tower shot counter + `_next_buff_threshold` (randi_range 3..6). Every N shots one arrow carries a random SlowEffect(0.5, 2.0) or StunEffect(0.8) rolled via 50/50 coin flip, logged to console. Swap the const to false to disable.
+- `autoloads/WaveManager.gd`: spawn/die/leak handlers now call `_log_alive(tag, enemy, path_id)` which prints the enemy name + current alive/spawners/wave_active. Added to diagnose a suspected post-Victory leak; live run confirmed the accounting is consistent across waves.
+- Works: arrows mid-wave visibly apply cyan/yellow rings to orcs; wave-completion accounting lines up with actual alive enemies.
+
+---
+
+## 2026-04-15 — Phase 15: Healer enemy
+- `enemies/data/enemy_healer.tres` (new): Shaman — 18 hp, 55 px/s, magic_resist 0.1, 12g, `heals_allies = true`, heal_range 130, heal_amount 3, heal_interval 2.0.
+- `enemies/enemy_healer.gd` (new, extends BaseEnemy): adds a child `HealArea` (Area2D, `collision_mask = 6` → detects ground layer 2 + flying layer 4) plus a `HealTimer`. `_ready()` calls `super._ready()`, sizes the heal shape from `data.heal_range`, wires the timer to `_on_heal_pulse` at `data.heal_interval`. `_on_heal_pulse` polls `heal_area.get_overlapping_areas()` once per tick (Timer-based per the mobile rule "Enemy healing: Timer-based only — never _physics_process"), skips self + DYING allies, calls `ally.heal(data.heal_amount)`. Green body + white plus sign so it reads as a medic at a glance. Status rings reused from Phase 13/14.
+- `enemies/EnemyHealer.tscn` (new): Area2D `collision_layer = 2` (ground, so archers still shoot it), child HealArea with `collision_layer = 0`, `monitorable = false` so other HealAreas can't pick it up. Shape sized at runtime.
+- `enemies/base_enemy.gd`: added `heal(amount)` — clamps to `data.max_health`, ignores DYING/null-data, ceils to int, logs `[Enemy/heal] name before → after` so the effect is observable pre-Phase-17 health bars.
+- `levels/level1_waves.tres`: W2 gains a third spawner — 1 Shaman on left, start_delay 3.0 — so the healer trails the 6 orcs already on that path and keeps them alive longer than the archer DPS would otherwise allow.
+- Works: F5 → wave 2 left path → after ~3 s a green "+" medic trails the orcs and, every 2 s, heals nearby allies by 3 (console logs `[Enemy/heal] Orc Grunt N → M`). Orcs shot by archers survive noticeably longer; killing the Shaman first ends the sustain.
+- Broke: none.
+- Next: Phase 16 — barracks tower + soldier blocking.

@@ -94,6 +94,17 @@ func take_damage(amount: float, type: int, _source: Node = null) -> void:
 		_die()
 
 
+func heal(amount: float) -> void:
+	if state == State.DYING or data == null:
+		return
+	if current_health >= data.max_health:
+		return
+	var before: int = current_health
+	current_health = mini(data.max_health, current_health + int(ceil(amount)))
+	if current_health != before:
+		print("[Enemy/heal] %s %d → %d" % [data.enemy_name, before, current_health])
+
+
 func _die() -> void:
 	change_state(State.DYING)
 	EventBus.enemy_died.emit(self, data.gold_worth)

@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3 uid="uid://b1td1heal001"]
+
+[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+enemy_name = "Shaman"
+max_health = 18
+move_speed = 55.0
+armor = 0.0
+magic_resist = 0.1
+lives_worth = 1
+gold_worth = 12
+is_flying = false
+can_stealth = false
+heals_allies = true
+heal_range = 130.0
+heal_amount = 3.0
+heal_interval = 2.0
+encyclopedia_entry = "Slow but sustains nearby allies. Kill it first."

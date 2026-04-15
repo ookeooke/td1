@@ -4,7 +4,7 @@
 [ext_resource type="Script" uid="uid://bi3tyyql6gp6g" path="res://waves/WaveData.gd" id="2_wave"]
 [ext_resource type="Script" uid="uid://bn01uqj5y40yv" path="res://waves/WaveSpawn.gd" id="3_spawn"]
 [ext_resource type="PackedScene" uid="uid://ct8yjsiicg7nj" path="res://enemies/EnemyBasic.tscn" id="4_basic"]
-[ext_resource type="PackedScene" uid="uid://b1td1flysc002" path="res://enemies/EnemyFlying.tscn" id="5_fly"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyFlying.tscn" id="5_fly"]
 
 [sub_resource type="Resource" id="Spawn_W1_Left"]
 script = ExtResource("3_spawn")

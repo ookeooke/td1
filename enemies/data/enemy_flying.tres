@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3 uid="uid://b1td1harpy001"]
+[gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://b1td1harpy001"]
 
 [ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
 

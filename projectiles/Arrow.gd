@@ -8,13 +8,15 @@ var _target: Node = null
 var _damage: float = 0.0
 var _damage_type: int = 0
 var _source: Node = null
+var _status_effect = null  # optional StatusEffect subclass, applied on hit
 
 
-func setup(target: Node, damage: float, damage_type: int, source: Node) -> void:
+func setup(target: Node, damage: float, damage_type: int, source: Node, status_effect = null) -> void:
 	_target = target
 	_damage = damage
 	_damage_type = damage_type
 	_source = source
+	_status_effect = status_effect
 
 
 func _process(delta: float) -> void:
@@ -26,6 +28,8 @@ func _process(delta: float) -> void:
 	if dist <= hit_radius:
 		if _target.has_method("take_damage"):
 			_target.take_damage(_damage, _damage_type, _source)
+		if _status_effect != null and is_instance_valid(_target) and _target.has_method("apply_status_effect"):
+			_target.apply_status_effect(_status_effect)
 		queue_free()
 		return
 	var step: float = minf(speed * delta, dist)

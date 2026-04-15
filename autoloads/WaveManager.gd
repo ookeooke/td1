@@ -120,18 +120,33 @@ func _unique_path_ids(wave: Resource) -> Array:
 	return ids
 
 
-func _on_enemy_spawned(_enemy: Node, _path_id: String) -> void:
+func _on_enemy_spawned(enemy: Node, path_id: String) -> void:
 	_alive_count += 1
+	_log_alive("spawn", enemy, path_id)
 
 
-func _on_enemy_died(_enemy: Node, _gold: int) -> void:
+func _on_enemy_died(enemy: Node, _gold: int) -> void:
 	_alive_count = maxi(0, _alive_count - 1)
+	_log_alive("died", enemy, "")
 	_maybe_wave_complete()
 
 
-func _on_enemy_reached_end(_enemy: Node, _lives: int) -> void:
+func _on_enemy_reached_end(enemy: Node, _lives: int) -> void:
 	_alive_count = maxi(0, _alive_count - 1)
+	_log_alive("leak", enemy, "")
 	_maybe_wave_complete()
+
+
+func _log_alive(tag: String, enemy: Node, path_id: String) -> void:
+	var ename := "?"
+	if enemy != null and "data" in enemy and enemy.data != null:
+		ename = enemy.data.enemy_name
+	var extras := ""
+	if path_id != "":
+		extras = " path=" + path_id
+	print("[WaveManager/acct] %s %s%s  alive=%d  spawners=%d  wave_active=%s" % [
+		tag, ename, extras, _alive_count, _active_spawners, str(_wave_active)
+	])
 
 
 func _on_game_over() -> void:

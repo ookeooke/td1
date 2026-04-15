@@ -1,60 +1,49 @@
 [gd_resource type="Resource" script_class="WaveList" format=3 uid="uid://ct8yq1taf8q1c"]
 
-[ext_resource type="Script" path="res://waves/WaveList.gd" id="1_list"]
-[ext_resource type="Script" path="res://waves/WaveData.gd" id="2_wave"]
-[ext_resource type="Script" path="res://waves/WaveSpawn.gd" id="3_spawn"]
+[ext_resource type="Script" uid="uid://b20v3766p6m5g" path="res://waves/WaveList.gd" id="1_list"]
+[ext_resource type="Script" uid="uid://bi3tyyql6gp6g" path="res://waves/WaveData.gd" id="2_wave"]
+[ext_resource type="Script" uid="uid://bn01uqj5y40yv" path="res://waves/WaveSpawn.gd" id="3_spawn"]
 [ext_resource type="PackedScene" uid="uid://ct8yjsiicg7nj" path="res://enemies/EnemyBasic.tscn" id="4_basic"]
 
 [sub_resource type="Resource" id="Spawn_W1_Left"]
 script = ExtResource("3_spawn")
-path_id = "left"
 enemy_scene = ExtResource("4_basic")
 count = 8
-interval = 1.0
-start_delay = 0.0
 
 [sub_resource type="Resource" id="Wave1"]
 script = ExtResource("2_wave")
-spawns = Array[WaveSpawn]([SubResource("Spawn_W1_Left")])
-countdown = 3.0
+spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W1_Left")])
 bounty = 15
 
 [sub_resource type="Resource" id="Spawn_W2_Left"]
 script = ExtResource("3_spawn")
-path_id = "left"
 enemy_scene = ExtResource("4_basic")
 count = 6
 interval = 0.8
-start_delay = 0.0
 
 [sub_resource type="Resource" id="Spawn_W2_Right"]
 script = ExtResource("3_spawn")
 path_id = "right"
 enemy_scene = ExtResource("4_basic")
 count = 4
-interval = 1.0
 start_delay = 2.0
 
 [sub_resource type="Resource" id="Wave2"]
 script = ExtResource("2_wave")
-spawns = Array[WaveSpawn]([SubResource("Spawn_W2_Left"), SubResource("Spawn_W2_Right")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W2_Left"), SubResource("Spawn_W2_Right")])
 countdown = 4.0
 bounty = 25
 
 [sub_resource type="Resource" id="Spawn_W3_Left"]
 script = ExtResource("3_spawn")
-path_id = "left"
 enemy_scene = ExtResource("4_basic")
 count = 5
-interval = 1.0
-start_delay = 0.0
 
 [sub_resource type="Resource" id="Spawn_W3_Right"]
 script = ExtResource("3_spawn")
 path_id = "right"
 enemy_scene = ExtResource("4_basic")
 count = 5
-interval = 1.0
 start_delay = 0.5
 
 [sub_resource type="Resource" id="Spawn_W3_Top"]
@@ -62,15 +51,14 @@ script = ExtResource("3_spawn")
 path_id = "top"
 enemy_scene = ExtResource("4_basic")
 count = 5
-interval = 1.0
 start_delay = 1.0
 
 [sub_resource type="Resource" id="Wave3"]
 script = ExtResource("2_wave")
-spawns = Array[WaveSpawn]([SubResource("Spawn_W3_Left"), SubResource("Spawn_W3_Right"), SubResource("Spawn_W3_Top")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W3_Left"), SubResource("Spawn_W3_Right"), SubResource("Spawn_W3_Top")])
 countdown = 5.0
 bounty = 40
 
 [resource]
 script = ExtResource("1_list")
-waves = Array[WaveData]([SubResource("Wave1"), SubResource("Wave2"), SubResource("Wave3")])
+waves = Array[ExtResource("2_wave")]([SubResource("Wave1"), SubResource("Wave2"), SubResource("Wave3")])

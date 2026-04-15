@@ -55,7 +55,7 @@ func apply_status_effect(effect) -> void:
 	effect.apply(self)
 	if effect.id == "stun" and state != State.STUNNED:
 		change_state(State.STUNNED)
-	_refresh_visuals()
+	queue_redraw()
 
 
 func _tick_effects(delta: float) -> void:
@@ -75,7 +75,7 @@ func _tick_effects(delta: float) -> void:
 		_effects.erase(id)
 		if id == "stun" and state == State.STUNNED:
 			change_state(State.WALKING)
-	_refresh_visuals()
+	queue_redraw()
 
 
 func _effective_speed() -> float:
@@ -83,16 +83,6 @@ func _effective_speed() -> float:
 	if _effects.has("slow"):
 		s *= (1.0 - _effects["slow"].slow_factor)
 	return s
-
-
-func _refresh_visuals() -> void:
-	# Stun takes visual priority over slow.
-	if _effects.has("stun"):
-		modulate = Color(1.0, 1.0, 0.3)
-	elif _effects.has("slow"):
-		modulate = Color(0.5, 0.8, 1.0)
-	else:
-		modulate = Color(1, 1, 1)
 
 
 func take_damage(amount: float, type: int, _source: Node = null) -> void:
@@ -125,3 +115,9 @@ func _despawn() -> void:
 func _draw() -> void:
 	draw_circle(Vector2.ZERO, 14.0, Color(0.75, 0.2, 0.2))
 	draw_arc(Vector2.ZERO, 14.0, 0, TAU, 24, Color(0.15, 0.05, 0.05), 2.0)
+	# Status-effect overlay rings. Stun drawn outermost so it's visible even
+	# if a slow is also active.
+	if _effects.has("slow"):
+		draw_arc(Vector2.ZERO, 19.0, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
+	if _effects.has("stun"):
+		draw_arc(Vector2.ZERO, 23.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)

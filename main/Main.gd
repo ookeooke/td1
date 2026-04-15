@@ -1,18 +1,13 @@
 extends Node2D
 
-# Phase 8: interactive placement. User taps empty spots → TowerSpotMenu →
-# Build Archer → TowerPlacer spends gold and spawns the tower.
-# Test harness now loops enemies on rotating paths so players have targets
-# before WaveManager comes online in Phase 11.
+# Phase 11: real wave system. Main loads level1_waves.tres and hands it to
+# WaveManager. Player places/sells archers while waves run. Phase 12 adds
+# win/lose screens on all_waves_completed / game_over.
 
-const ENEMY_BASIC_SCENE: PackedScene = preload("res://enemies/EnemyBasic.tscn")
-const ENEMY_SPAWN_INTERVAL: float = 2.5
-const ENEMY_PATHS: Array[String] = ["left", "right", "top"]
+const LEVEL1_WAVES: Resource = preload("res://levels/level1_waves.tres")
 
 @onready var level: Node2D = $Level1
 @onready var towers: Node2D = $Towers
-
-var _spawn_index: int = 0
 
 
 func _ready() -> void:
@@ -20,47 +15,30 @@ func _ready() -> void:
 	var grid: Node = level.get_node("GridManager")
 	print("[Main] Level1 loaded — free spots: ", grid.get_free_spot_ids())
 
-	EventBus.enemy_spawned.connect(_on_enemy_spawned)
+	EventBus.wave_started.connect(_on_wave_started)
+	EventBus.wave_completed.connect(_on_wave_completed)
+	EventBus.all_waves_completed.connect(_on_all_waves_completed)
 	EventBus.enemy_reached_end.connect(_on_enemy_reached_end)
-	EventBus.enemy_died.connect(_on_enemy_died)
 	EventBus.tower_built.connect(_on_tower_built)
-	EventBus.tower_spot_tapped.connect(_on_spot_tapped)
 
-	_start_enemy_loop()
-
-
-func _start_enemy_loop() -> void:
-	var t := Timer.new()
-	t.wait_time = ENEMY_SPAWN_INTERVAL
-	t.autostart = true
-	t.timeout.connect(_spawn_test_enemy)
-	add_child(t)
+	WaveManager.start(LEVEL1_WAVES, level)
 
 
-func _spawn_test_enemy() -> void:
-	var path_id: String = ENEMY_PATHS[_spawn_index % ENEMY_PATHS.size()]
-	_spawn_index += 1
-	var p: Path2D = level.get_path_by_id(path_id)
-	if p == null:
-		return
-	WaveManager.spawn_enemy(p, path_id, ENEMY_BASIC_SCENE)
+func _on_wave_started(wave_number: int, path_ids: Array) -> void:
+	print("[Main] wave %d started — paths=%s" % [wave_number, path_ids])
 
 
-func _on_spot_tapped(spot_id: String) -> void:
-	print("[Main] spot tapped: %s" % spot_id)
+func _on_wave_completed(wave_number: int) -> void:
+	print("[Main] wave %d cleared" % wave_number)
+
+
+func _on_all_waves_completed() -> void:
+	print("[Main] VICTORY — all waves cleared")
 
 
 func _on_tower_built(_tower: Node, spot_id: String) -> void:
 	print("[Main] tower built on %s" % spot_id)
 
 
-func _on_enemy_spawned(_enemy: Node, path_id: String) -> void:
-	print("[Main] enemy spawned on path '%s'" % path_id)
-
-
 func _on_enemy_reached_end(_enemy: Node, lives_lost: int) -> void:
-	print("[Main] enemy reached end — lives lost: %d" % lives_lost)
-
-
-func _on_enemy_died(_enemy: Node, gold: int) -> void:
-	print("[Main] enemy died — +%d gold" % gold)
+	print("[Main] leak — lives -%d (remaining: %d)" % [lives_lost, GameState.lives])

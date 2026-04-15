@@ -129,3 +129,15 @@ One line per session: date, phase, what worked, what broke.
 - Works: opening `levels/Level1.tscn` in the editor shows the full playable map; dragging Spot5 or a Path2D curve point updates the preview immediately. F5 still runs the same gameplay as before.
 - Broke: none.
 - Next: Phase 11 — wave system.
+
+---
+
+## 2026-04-15 — Phase 11: Wave system (WaveManager + multi-path wave data)
+- New Resource chain for easy Inspector editing: `waves/WaveSpawn.gd` (path_id / enemy_scene / count / interval / start_delay), `waves/WaveData.gd` (Array[WaveSpawn] + countdown + bounty), `waves/WaveList.gd` (Array[WaveData]). Each is its own .gd with `class_name` so they appear as "New Resource" options in the Godot Inspector.
+- `levels/level1_waves.tres`: concrete WaveList — W1: 8 basics on left (bounty 15g), W2: 6 left + 4 right after 2 s (bounty 25g), W3: 5×3 across all paths (bounty 40g). Load_steps audited, typed arrays declared `Array[WaveData]` / `Array[WaveSpawn]` to match the script fields.
+- `autoloads/WaveManager.gd`: replaced the Phase 4 stub with a real runner. `start(wave_list, level)` kicks the loop. Each wave: countdown with per-path `spawn_direction_changed` signals → `wave_started(n, path_ids)` → one async spawner per WaveSpawn (create_timer-based) → wave completes only when every spawner finished AND alive_count == 0 → bounty gold via GameState → next wave. Game-over stops the loop (`_wave_active=false`). Autoload keeps resource types as `Resource` rather than `WaveList` / `WaveData` / `WaveSpawn` — autoloads can't reliably resolve class_names from peer scripts at parse time; runtime duck-typing works identically.
+- `ui/HUD.tscn` + `.gd`: added `WaveLabel` ("Wave: X/Y"), bumped `TopLeft` bottom offset to 120 for the extra row. Listens to `wave_started` (live counter) and `all_waves_completed` ("Victory!").
+- `main/Main.gd`: deleted the Phase 8 test-enemy Timer loop. On _ready now calls `WaveManager.start(LEVEL1_WAVES, level)` after connecting logging hooks.
+- Works: F5 → Wave: 1/3 appears after 3 s countdown → 8 orcs from the left; building archers drops the leak count. Wave 2 kicks in once wave 1 clears, adds a second path. Wave 3 uses all three paths. Bounty gold appears at each clear.
+- Broke: none.
+- Next: Phase 12 — win/lose conditions + GameOverScreen.

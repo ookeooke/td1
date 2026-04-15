@@ -1,15 +1,15 @@
-[gd_scene load_steps=8 format=3 uid="uid://b1td1level1000"]
+[gd_scene format=3 uid="uid://ct8yqj3l40vnj"]
 
-[ext_resource type="Script" path="res://levels/Level1.gd" id="1_lvl"]
-[ext_resource type="Script" path="res://map/GridManager.gd" id="2_grid"]
-[ext_resource type="PackedScene" path="res://map/SpawnMarker.tscn" id="3_sm"]
-[ext_resource type="Script" path="res://map/SpotInputManager.gd" id="4_sim"]
+[ext_resource type="Script" uid="uid://eesn6ai2ngnt" path="res://levels/Level1.gd" id="1_lvl"]
+[ext_resource type="Script" uid="uid://dc37fqwyab2la" path="res://map/GridManager.gd" id="2_grid"]
+[ext_resource type="PackedScene" uid="uid://ct8yxr78jyvnj" path="res://map/SpawnMarker.tscn" id="3_sm"]
+[ext_resource type="Script" uid="uid://dfxik7tpohcj3" path="res://map/SpotInputManager.gd" id="4_sim"]
 
 [sub_resource type="Curve2D" id="Curve_Left"]
 _data = {
-"points": PackedVector2Array(0, 0, 0, 0, 0, 420, 0, 0, 0, 0, 180, 420, 0, 0, 0, 0, 180, 680, 0, 0, 0, 0, 375, 680)
+"points": PackedVector2Array(0, 0, 0, 0, 0, 420, 0, 0, 0, 0, 91, 386, 0, 0, 0, 0, 180, 420, 0, 0, 0, 0, 140, 560, 0, 0, 0, 0, 152, 618, 0, 0, 0, 0, 180, 680, 0, 0, 0, 0, 375, 680)
 }
-point_count = 4
+point_count = 7
 
 [sub_resource type="Curve2D" id="Curve_Right"]
 _data = {
@@ -23,67 +23,72 @@ _data = {
 }
 point_count = 4
 
-[node name="Level1" type="Node2D"]
+[node name="Level1" type="Node2D" unique_id=2145161280]
 script = ExtResource("1_lvl")
 
-[node name="NavigationRegion2D" type="NavigationRegion2D" parent="."]
+[node name="NavigationRegion2D" type="NavigationRegion2D" parent="." unique_id=129224258]
 
-[node name="Paths" type="Node2D" parent="."]
+[node name="Paths" type="Node2D" parent="." unique_id=506082588]
 
-[node name="left" type="Path2D" parent="Paths"]
+[node name="left" type="Path2D" parent="Paths" unique_id=223512851]
 curve = SubResource("Curve_Left")
 
-[node name="PathFollow2D" type="PathFollow2D" parent="Paths/left"]
+[node name="PathFollow2D" type="PathFollow2D" parent="Paths/left" unique_id=1885134568]
+position = Vector2(0, 420)
+rotation = -0.35756588
 
-[node name="right" type="Path2D" parent="Paths"]
+[node name="right" type="Path2D" parent="Paths" unique_id=2017371806]
 curve = SubResource("Curve_Right")
 
-[node name="PathFollow2D" type="PathFollow2D" parent="Paths/right"]
+[node name="PathFollow2D" type="PathFollow2D" parent="Paths/right" unique_id=35684064]
+position = Vector2(375, 220)
+rotation = 3.1415927
 
-[node name="top" type="Path2D" parent="Paths"]
+[node name="top" type="Path2D" parent="Paths" unique_id=1393201053]
 curve = SubResource("Curve_Top")
 
-[node name="PathFollow2D" type="PathFollow2D" parent="Paths/top"]
+[node name="PathFollow2D" type="PathFollow2D" parent="Paths/top" unique_id=1381327975]
+position = Vector2(280, 0)
+rotation = 1.5707964
 
-[node name="TowerSpots" type="Node2D" parent="."]
+[node name="TowerSpots" type="Node2D" parent="." unique_id=648341223]
 
-[node name="Spot1" type="Marker2D" parent="TowerSpots"]
+[node name="Spot1" type="Marker2D" parent="TowerSpots" unique_id=661654873]
 position = Vector2(110, 340)
 
-[node name="Spot2" type="Marker2D" parent="TowerSpots"]
+[node name="Spot2" type="Marker2D" parent="TowerSpots" unique_id=677798106]
 position = Vector2(280, 340)
 
-[node name="Spot3" type="Marker2D" parent="TowerSpots"]
+[node name="Spot3" type="Marker2D" parent="TowerSpots" unique_id=1250679985]
 position = Vector2(110, 600)
 
-[node name="Spot4" type="Marker2D" parent="TowerSpots"]
+[node name="Spot4" type="Marker2D" parent="TowerSpots" unique_id=894908184]
 position = Vector2(280, 600)
 
-[node name="Spot5" type="Marker2D" parent="TowerSpots"]
-position = Vector2(180, 460)
+[node name="Spot5" type="Marker2D" parent="TowerSpots" unique_id=1029897238]
+position = Vector2(96, 468)
 
-[node name="Spot6" type="Marker2D" parent="TowerSpots"]
+[node name="Spot6" type="Marker2D" parent="TowerSpots" unique_id=203523561]
 position = Vector2(280, 740)
 
-[node name="SpawnMarkers" type="Node2D" parent="."]
+[node name="SpawnMarkers" type="Node2D" parent="." unique_id=1913527537]
 
-[node name="SpawnMarkerLeft" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+[node name="SpawnMarkerLeft" parent="SpawnMarkers" unique_id=2120535699 instance=ExtResource("3_sm")]
 position = Vector2(26, 420)
 path_id = "left"
-direction_degrees = 0.0
 
-[node name="SpawnMarkerRight" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+[node name="SpawnMarkerRight" parent="SpawnMarkers" unique_id=1229605125 instance=ExtResource("3_sm")]
 position = Vector2(349, 220)
 path_id = "right"
 direction_degrees = 180.0
 
-[node name="SpawnMarkerTop" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+[node name="SpawnMarkerTop" parent="SpawnMarkers" unique_id=100274747 instance=ExtResource("3_sm")]
 position = Vector2(280, 26)
 path_id = "top"
 direction_degrees = 90.0
 
-[node name="GridManager" type="Node" parent="."]
+[node name="GridManager" type="Node" parent="." unique_id=1706413596]
 script = ExtResource("2_grid")
 
-[node name="SpotInputManager" type="Node" parent="."]
+[node name="SpotInputManager" type="Node" parent="." unique_id=199138842]
 script = ExtResource("4_sim")

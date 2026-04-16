@@ -1,6 +1,6 @@
 [gd_resource type="Resource" script_class="ShieldBashSkillData" format=3 uid="uid://ct8yxpps385f0"]
 
-[ext_resource type="Script" path="res://heroes/skills/shield_bash_skill_data.gd" id="1_bash"]
+[ext_resource type="Script" uid="uid://rrnvnvmqtmnj" path="res://heroes/skills/shield_bash_skill_data.gd" id="1_bash"]
 
 [resource]
 script = ExtResource("1_bash")
@@ -8,8 +8,6 @@ skill_name = "Bash"
 skill_id = "shield_bash"
 skill_range = 300.0
 damage = 22.0
-damage_type = 0
 cooldown = 10.0
 target_type = 1
-aoe_radius = 175.0
 description = "Slam the ground: all enemies within a small radius of the target point take physical damage."

@@ -34,7 +34,16 @@ const _EnemyBasicScene: PackedScene = preload("res://enemies/EnemyBasic.tscn")
 const _EnemyFlyingScene: PackedScene = preload("res://enemies/EnemyFlying.tscn")
 const _EnemyHealerScene: PackedScene = preload("res://enemies/EnemyHealer.tscn")
 const _Boss1Scene: PackedScene = preload("res://enemies/bosses/Boss1.tscn")
-const _PATH_IDS: Array[String] = ["left", "right", "top"]
+# Boss scenes ride the centerline (h_offset = 0) and skip speed jitter. Add
+# new boss PackedScenes here — single source of truth for "is this a boss".
+const _BOSS_SCENES: Array[PackedScene] = [
+	preload("res://enemies/bosses/Boss1.tscn"),
+]
+# Phase 43: one Path2D per spawn direction. Each enemy rides the same curve
+# but gets a random perpendicular offset (PathFollow2D.h_offset) so the
+# swarm spreads into a lateral band. Bosses stay centered.
+const _BASE_PATH_IDS: Array[String] = ["left", "right", "top"]
+const SWARM_H_OFFSET: float = 35.0  # ± pixels perpendicular to the curve
 
 
 func _ready() -> void:
@@ -164,7 +173,9 @@ func _run_spawner(spawn: Resource) -> void:
 			break
 		spawn_enemy(path, spawn.path_id, spawn.enemy_scene)
 		if i < count - 1:
-			await get_tree().create_timer(interval).timeout
+			# Phase 42: spawn jitter breaks uniform spacing.
+			var jitter: float = randf_range(-0.25, 0.25)
+			await get_tree().create_timer(maxf(0.1, interval + jitter)).timeout
 	_active_spawners -= 1
 	_maybe_wave_complete()
 
@@ -263,10 +274,10 @@ func _generate_endless_wave(wave_num: int) -> Resource:
 	var base_count: int = 4 + wave_num * 2
 	# Pick paths — early waves use 1-2 paths, later use all 3.
 	@warning_ignore("integer_division")
-	var num_paths: int = mini(1 + wave_num / 3, _PATH_IDS.size())
+	var num_paths: int = mini(1 + wave_num / 3, _BASE_PATH_IDS.size())
 	var active_paths: Array[String] = []
 	for i in num_paths:
-		active_paths.append(_PATH_IDS[i % _PATH_IDS.size()])
+		active_paths.append(_BASE_PATH_IDS[i % _BASE_PATH_IDS.size()])
 
 	# Distribute enemies across paths with type mixing.
 	@warning_ignore("integer_division")
@@ -321,6 +332,9 @@ func _pick_enemy_for_wave(wave_num: int) -> PackedScene:
 
 
 # Public helper (kept from Phase 4) for manual spawning + used internally above.
+# Phase 43: enemies ride one Path2D per direction. Each non-boss gets a
+# random perpendicular offset (h_offset) so the swarm spreads into a
+# lateral band without authoring multiple rails. Boss scenes ride centered.
 func spawn_enemy(path: Path2D, path_id: String, scene: PackedScene) -> Node:
 	if path == null or scene == null:
 		push_warning("[WaveManager] spawn_enemy: missing path or scene")
@@ -328,6 +342,10 @@ func spawn_enemy(path: Path2D, path_id: String, scene: PackedScene) -> Node:
 	var follow := PathFollow2D.new()
 	follow.loop = false
 	follow.rotates = false
+	if scene in _BOSS_SCENES:
+		follow.h_offset = 0.0
+	else:
+		follow.h_offset = randf_range(-SWARM_H_OFFSET, SWARM_H_OFFSET)
 	path.add_child(follow)
 	var enemy: Node = scene.instantiate()
 	follow.add_child(enemy)

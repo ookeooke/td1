@@ -1,13 +1,6 @@
-[gd_resource type="Resource" script_class="UnitVisualData" format=3 uid="uid://b1td1vis_ebasic"]
+[gd_resource type="Resource" script_class="UnitVisualData" format=3 uid="uid://dsacomlillar2"]
 
-[ext_resource type="Script" path="res://systems/UnitVisualData.gd" id="1_vis"]
+[ext_resource type="Script" uid="uid://uarc3rqaigxt" path="res://systems/UnitVisualData.gd" id="1_vis"]
 
 [resource]
 script = ExtResource("1_vis")
-shape = 0
-body_color = Color(0.75, 0.2, 0.2, 1.0)
-outline_color = Color(0.15, 0.05, 0.05, 1.0)
-accent_color = Color(1, 1, 1, 1)
-accent_type = 0
-radius = 35.0
-outline_width = 5.0

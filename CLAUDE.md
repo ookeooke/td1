@@ -257,8 +257,40 @@ Procedural `_draw()` shapes for all visuals. Data-driven via `UnitVisualData` re
 
 ---
 
+## Movement System — Golden Hybrid
+
+**Hero & soldiers** use `NavigationAgent2D` for smart pathfinding (only ~10 agents). **Enemies** stay on `PathFollow2D` rails with swarm effects (zero nav CPU).
+
+### Hero Movement (Kingdom Rush style)
+- `SeekRange` Area2D (2.5x attack_range) detects enemies → hero auto-walks toward them via nav agent
+- Melee heroes walk right up (within `MELEE_ENGAGE_DISTANCE = 30px`) for face-to-face combat
+- Ranged heroes stop at attack_range edge
+- Enemy leaves attack range → hero **chases** (instead of dropping target)
+- Player tap always overrides auto-seek and combat
+- Repathing throttled to every 0.5s (`NAV_REPATH_INTERVAL`) for mobile perf
+
+### Soldier Movement
+- Nav-paths to rally position (paths around obstacles instead of straight line)
+- First-frame fallback: direct movement if nav_agent not ready yet
+- BLOCKING + melee engagement unchanged
+
+### Enemy Swarm — Single Path + h_offset (no NavAgent)
+Each spawn direction has **one Path2D** (`left`, `right`, `top`). At spawn, `WaveManager.spawn_enemy` assigns each non-boss enemy a random `PathFollow2D.h_offset` in `[-SWARM_H_OFFSET, +SWARM_H_OFFSET]` (currently ±35px). The offset shifts each follower perpendicular to the curve tangent, so a single authored path produces a lateral swarm band. **Bosses ride centered (`h_offset = 0`).**
+
+- **Speed jitter** — `±10%` random speed multiplier per instance (bosses excluded via `EnemyData.is_boss`). Faster enemies overtake slower ones.
+- **Spawn timing jitter** — `±0.25s` variation on each spawn interval in WaveManager.
+- **Boss detection** — `WaveManager._BOSS_SCENES` is the single source of truth. Add new boss PackedScenes there to have them auto-centered.
+- **Visual editing** — Level1.gd is `@tool`: each path renders as a brown polyline in the editor. Click the `Path2D`, drag curve handles to reshape. One curve per direction — no rail-parallelism chore.
+
+**Adding a direction to a new level:** create one Path2D under `Paths/` named with the base id (e.g. `east`). Reference the id in wave `.tres` spawns.
+
+### NavigationPolygon per level
+`Level1.tscn` has a `NavigationRegion2D` with a `NavigationPolygon` covering `map_bounds`. Future levels cut holes for terrain obstacles (rocks, rivers).
+
+---
+
 ## Current Status
 
-All 41 build phases complete. Resolution: 1920x1080 landscape, `keep_height`. Camera system (pan, zoom, gesture classifier, map borders, zoom-scaled drawing). Safe area via MarginContainer + `GameState.get_safe_insets()`. QoL features: tactical pause, tower damage tracking, upgrade stat deltas, targeting modes, early wave call, clean view toggle, floating damage numbers.
+Phase 43 complete. Resolution: 1920x1080 landscape, `keep_height`. Camera system (pan, zoom, gesture classifier, map borders, zoom-scaled drawing). Safe area via MarginContainer + `GameState.get_safe_insets()`. NavigationAgent2D for hero/soldiers. Enemies ride a single Path2D per direction with per-instance h_offset for lateral swarm spread, plus speed jitter + spawn jitter. Boss detection unified on `EnemyData.is_boss` and `WaveManager._BOSS_SCENES`. QoL features: tactical pause, tower damage tracking, upgrade stat deltas, targeting modes, early wave call, clean view toggle, floating damage numbers.
 
 Known bugs: none

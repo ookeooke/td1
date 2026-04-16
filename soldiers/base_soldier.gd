@@ -1,12 +1,12 @@
 extends CharacterBody2D
 class_name BaseSoldier
 
-# Phase 16: ground blocker. Spawned by TowerBarracks, walks in a straight
-# line to its `blocking_position`, then engages the first non-flying
-# BaseEnemy that overlaps its MeleeRange. Engagement pins the enemy to
-# State.COMBAT so its path progress halts. Both sides attack on Timers.
-# On soldier death the enemy is released back to WALKING and the barracks
-# schedules a respawn via the soldier_died signal.
+# Phase 16+42: ground blocker with NavigationAgent2D pathfinding.
+# Spawned by TowerBarracks, nav-paths to its `blocking_position`, then
+# engages the first non-flying BaseEnemy that overlaps its MeleeRange.
+# Engagement pins the enemy to State.COMBAT so its path progress halts.
+# Both sides attack on Timers. On soldier death the enemy is released
+# back to WALKING and the barracks schedules a respawn via soldier_died.
 
 enum State { MOVING, BLOCKING, DEAD }
 
@@ -40,6 +40,7 @@ var _ability_host: RefCounted = null
 
 @onready var melee_range: Area2D = $MeleeRange
 @onready var melee_shape: CollisionShape2D = $MeleeRange/CollisionShape2D
+@onready var nav_agent: NavigationAgent2D = $NavigationAgent2D
 
 
 func _ready() -> void:
@@ -58,12 +59,16 @@ func _ready() -> void:
 
 func setup(blocking_position: Vector2) -> void:
 	_blocking_position = blocking_position
+	if nav_agent != null:
+		nav_agent.target_position = blocking_position
 
 
 func set_blocking_position(new_pos: Vector2) -> void:
 	# Called when the player drags the barracks flag. Break any engagement
 	# and walk to the new rally slot.
 	_blocking_position = new_pos
+	if nav_agent != null:
+		nav_agent.target_position = new_pos
 	if _engaged_enemy != null and is_instance_valid(_engaged_enemy):
 		_engaged_enemy.release_combat(self)
 	_engaged_enemy = null
@@ -87,12 +92,21 @@ func _physics_process(delta: float) -> void:
 		_ability_host.tick(delta)
 	match state:
 		State.MOVING:
-			var to_target: Vector2 = _blocking_position - global_position
-			if to_target.length() < 3.0:
-				velocity = Vector2.ZERO
-				change_state(State.BLOCKING)
+			if nav_agent == null or not nav_agent.is_inside_tree():
+				# Fallback: direct movement until nav agent is ready (first frame).
+				var to_target: Vector2 = _blocking_position - global_position
+				if to_target.length() < 3.0:
+					velocity = Vector2.ZERO
+					change_state(State.BLOCKING)
+				else:
+					velocity = to_target.normalized() * data.move_speed
 			else:
-				velocity = to_target.normalized() * data.move_speed
+				if nav_agent.is_navigation_finished():
+					velocity = Vector2.ZERO
+					change_state(State.BLOCKING)
+				else:
+					var next_pos: Vector2 = nav_agent.get_next_path_position()
+					velocity = (next_pos - global_position).normalized() * data.move_speed
 			move_and_slide()
 		State.BLOCKING:
 			_try_engage()

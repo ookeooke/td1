@@ -1,20 +1,34 @@
 [gd_resource type="Resource" script_class="HeroData" format=3 uid="uid://ct8ymjywf8nnk"]
 
 [ext_resource type="Script" uid="uid://dhkkla25ah1bs" path="res://heroes/HeroData.gd" id="1_data"]
-[ext_resource type="Resource" uid="uid://b1td1vis_hwarrior" path="res://heroes/data/visual_warrior.tres" id="9_vis"]
 [ext_resource type="Resource" uid="uid://c70sqhllc0nnn" path="res://heroes/data/skills/skill_slash.tres" id="2_slash"]
-[ext_resource type="Resource" path="res://heroes/data/skills/skill_shield_bash.tres" id="3_bash"]
-[ext_resource type="Resource" path="res://heroes/data/skills/skill_rally.tres" id="4_rally"]
-[ext_resource type="Script" path="res://progression/TalentData.gd" id="5_talent"]
-[ext_resource type="Script" path="res://systems/abilities/LifestealAbility.gd" id="6_lifesteal"]
-[ext_resource type="Script" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="7_bonusdmg"]
-[ext_resource type="Script" path="res://systems/abilities/RegenAbility.gd" id="8_regen"]
+[ext_resource type="Resource" uid="uid://ct8yxpps385f0" path="res://heroes/data/skills/skill_shield_bash.tres" id="3_bash"]
+[ext_resource type="Resource" uid="uid://c70sqhllboyg5" path="res://heroes/data/skills/skill_rally.tres" id="4_rally"]
+[ext_resource type="Script" uid="uid://yklkyt4lmkcv" path="res://progression/TalentData.gd" id="5_talent"]
+[ext_resource type="Script" uid="uid://dlq0ex8y336kj" path="res://systems/abilities/LifestealAbility.gd" id="6_lifesteal"]
+[ext_resource type="Script" uid="uid://c7gd214j4vheq" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="7_bonusdmg"]
+[ext_resource type="Script" uid="uid://dttyqvth8occr" path="res://systems/abilities/RegenAbility.gd" id="8_regen"]
+[ext_resource type="Resource" uid="uid://fcdhosfxtqow" path="res://heroes/data/visual_warrior.tres" id="9_vis"]
+
+[sub_resource type="Resource" id="Regen_Ability"]
+script = ExtResource("8_regen")
+heal_amount = 2.0
+ability_id = "warrior_endurance"
+trigger = 1
+interval = 2.0
+
+[sub_resource type="Resource" id="Talent_Endurance"]
+script = ExtResource("5_talent")
+talent_id = "warrior_endurance"
+talent_name = "Endurance"
+description = "Passively regenerate 2 HP every 2 seconds."
+star_cost = 2
+ability = SubResource("Regen_Ability")
 
 [sub_resource type="Resource" id="Lifesteal_Ability"]
 script = ExtResource("6_lifesteal")
 ability_id = "warrior_lifesteal"
 trigger = 3
-heal_amount = 2.0
 
 [sub_resource type="Resource" id="Talent_Vampiric"]
 script = ExtResource("5_talent")
@@ -26,9 +40,9 @@ ability = SubResource("Lifesteal_Ability")
 
 [sub_resource type="Resource" id="BonusDmg_Ability"]
 script = ExtResource("7_bonusdmg")
+bonus_damage = 4.0
 ability_id = "warrior_heavy_blows"
 trigger = 3
-bonus_damage = 4.0
 
 [sub_resource type="Resource" id="Talent_HeavyBlows"]
 script = ExtResource("5_talent")
@@ -39,30 +53,15 @@ star_cost = 3
 prerequisite_id = "warrior_vampiric"
 ability = SubResource("BonusDmg_Ability")
 
-[sub_resource type="Resource" id="Regen_Ability"]
-script = ExtResource("8_regen")
-ability_id = "warrior_endurance"
-trigger = 1
-interval = 2.0
-heal_amount = 2.0
-
-[sub_resource type="Resource" id="Talent_Endurance"]
-script = ExtResource("5_talent")
-talent_id = "warrior_endurance"
-talent_name = "Endurance"
-description = "Passively regenerate 2 HP every 2 seconds."
-star_cost = 2
-ability = SubResource("Regen_Ability")
-
 [resource]
 script = ExtResource("1_data")
 hero_name = "Knight"
 hero_id = "warrior"
-visual = ExtResource("9_vis")
 max_health = 120
 attack_damage = 12.0
 attack_range = 75.0
 armor = 0.25
 skills = Array[Resource]([ExtResource("2_slash"), ExtResource("3_bash"), ExtResource("4_rally")])
 talents = Array[Resource]([SubResource("Talent_Endurance"), SubResource("Talent_Vampiric"), SubResource("Talent_HeavyBlows")])
+visual = ExtResource("9_vis")
 encyclopedia_entry = "Sword-and-board melee hero. Strong armor, tanks ground enemies. Hits flying foes when in range."

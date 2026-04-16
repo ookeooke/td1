@@ -1,20 +1,15 @@
 [gd_resource type="Resource" script_class="ReinforcementsSpellData" format=3 uid="uid://6ajd6q5o3e0k"]
 
-[ext_resource type="Script" path="res://spells/reinforcements_spell_data.gd" id="1_reinforce"]
-[ext_resource type="PackedScene" path="res://soldiers/Soldier.tscn" id="2_soldier"]
+[ext_resource type="Script" uid="uid://bk7ta7nfjm5mt" path="res://spells/reinforcements_spell_data.gd" id="1_reinforce"]
+[ext_resource type="PackedScene" uid="uid://b1td1soldsc02" path="res://soldiers/Soldier.tscn" id="2_soldier"]
 
 [resource]
 script = ExtResource("1_reinforce")
+soldier_scene = ExtResource("2_soldier")
+spread_radius = 45.0
 spell_id = "reinforcements"
 spell_name = "Recruit"
-cast_range = 0.0
 radius = 0.0
-damage = 0.0
 damage_type = 0
 cooldown = 40.0
-target_type = 0
-soldier_scene = ExtResource("2_soldier")
-squad_size = 4
-lifetime = 20.0
-spread_radius = 45.0
 description = "Drop a squad of 4 militia anywhere on the map. They engage enemies for 20 seconds, then vanish."

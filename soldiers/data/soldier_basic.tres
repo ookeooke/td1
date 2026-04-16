@@ -1,19 +1,11 @@
 [gd_resource type="Resource" script_class="SoldierData" format=3 uid="uid://b1td1sold001"]
 
-[ext_resource type="Script" path="res://soldiers/SoldierData.gd" id="1_data"]
-[ext_resource type="Resource" uid="uid://b1td1vis_soldier" path="res://soldiers/data/visual_soldier.tres" id="2_vis"]
+[ext_resource type="Script" uid="uid://dvlbdetyl4lyd" path="res://soldiers/SoldierData.gd" id="1_data"]
+[ext_resource type="Resource" uid="uid://bw1p8lmshuvfh" path="res://soldiers/data/visual_soldier.tres" id="2_vis"]
 
 [resource]
 script = ExtResource("1_data")
 soldier_name = "Militia"
-visual = ExtResource("2_vis")
 max_health = 22
-attack_damage = 4.0
-attack_speed = 1.0
-move_speed = 175.0
-armor = 0.1
-magic_resist = 0.0
-respawn_time = 4.0
-max_count = 3
-melee_range = 45.0
+visual = ExtResource("2_vis")
 encyclopedia_entry = "Blocks ground enemies. Trades blows until killed, then respawns after a delay."

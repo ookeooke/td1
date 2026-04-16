@@ -5,11 +5,16 @@
 [ext_resource type="PackedScene" uid="uid://ct8yxr78jyvnj" path="res://map/SpawnMarker.tscn" id="3_sm"]
 [ext_resource type="Script" uid="uid://dfxik7tpohcj3" path="res://map/SpotInputManager.gd" id="4_sim"]
 
+[sub_resource type="NavigationPolygon" id="NavPoly_Level1"]
+vertices = PackedVector2Array(466, 275.67188, 466, 80.328125, 535.9375, 82.65625, 534.96875, 269.25, 606.40625, 408.0078, 703.7578, 384.89844, 9.890625, 644.9297, 9.1015625, 569.1719, 299.15625, 574.0469, 303.96094, 643.0078, 509.64844, 507.22656, 487.89844, 437.5078, 602.6875, 419.9375, 984.84375, 470.75, 799.90625, 388, 1008.60156, 385.03906, 1203.4531, 538.1719, 1154.6719, 591.28125, 408.96094, 1004.97656, 10.3203125, 1003.03906, 12.6875, 927.2031, 399.03125, 935.0781, 609.8906, 810.0625, 600.09375, 736.02344, 899.3672, 738.02344, 889.75, 806.03125, 1108.7734, 706.03125, 1047.0469, 662.64844, 1912.6563, 696.1172, 1907.3281, 539.96875)
+polygons = Array[PackedInt32Array]([PackedInt32Array(0, 1, 2, 3), PackedInt32Array(4, 0, 3, 5), PackedInt32Array(6, 7, 8, 9), PackedInt32Array(10, 9, 8, 11, 12), PackedInt32Array(13, 10, 12), PackedInt32Array(13, 12, 4, 5, 14), PackedInt32Array(13, 14, 15, 16), PackedInt32Array(17, 13, 16), PackedInt32Array(18, 19, 20, 21), PackedInt32Array(22, 18, 21, 23), PackedInt32Array(22, 23, 24, 25), PackedInt32Array(26, 25, 24, 27), PackedInt32Array(26, 27, 17, 28), PackedInt32Array(28, 17, 16, 29)])
+outlines = Array[PackedVector2Array]([PackedVector2Array(-1, 559, 296, 564, 484, 428, 595, 411, 456, 280, 456, 70, 546, 73, 545, 264, 707, 375, 800, 378, 1012, 375, 1206.9204, 528.1811, 1917, 530, 1923, 706, 1111, 716, 892, 816, 614, 820, 413, 1015, 0, 1013, 3, 917, 395, 925, 596, 726, 897, 728, 1042, 654, 1137, 591, 982, 481, 513, 517, 307, 653, 0, 655)])
+
 [sub_resource type="Curve2D" id="Curve_Left"]
 _data = {
-"points": PackedVector2Array(0, 0, 0, 0, 0, 540, 0, 0, 0, 0, 300, 540, 0, 0, 0, 0, 500, 400, 0, 0, 0, 0, 800, 400, 0, 0, 0, 0, 1000, 540, 0, 0, 0, 0, 1400, 540, 0, 0, 0, 0, 1920, 540)
+"points": PackedVector2Array(0, 0, 0, 0, 0, 540, 0, 0, 0, 0, 18, 539, 0, 0, 0, 0, 166, 544, 0, 0, 0, 0, 300, 540, 0, 0, 0, 0, 508, 433, 0, 0, 0, 0, 800, 400, 0, 0, 0, 0, 1007, 357, 0, 0, 0, 0, 1199, 497, 0, 0, 0, 0, 1920, 540)
 }
-point_count = 7
+point_count = 9
 
 [sub_resource type="Curve2D" id="Curve_Right"]
 _data = {
@@ -27,53 +32,46 @@ point_count = 7
 script = ExtResource("1_lvl")
 
 [node name="NavigationRegion2D" type="NavigationRegion2D" parent="." unique_id=129224258]
+position = Vector2(0, -69)
+navigation_polygon = SubResource("NavPoly_Level1")
 
 [node name="Paths" type="Node2D" parent="." unique_id=506082588]
 
-[node name="left" type="Path2D" parent="Paths" unique_id=223512851]
+[node name="left" type="Path2D" parent="Paths" unique_id=2044606571]
+position = Vector2(0, -46)
 curve = SubResource("Curve_Left")
 
-[node name="PathFollow2D" type="PathFollow2D" parent="Paths/left" unique_id=1885134568]
-position = Vector2(0, 540)
-
-[node name="right" type="Path2D" parent="Paths" unique_id=2017371806]
+[node name="right" type="Path2D" parent="Paths" unique_id=1429650189]
 curve = SubResource("Curve_Right")
 
-[node name="PathFollow2D" type="PathFollow2D" parent="Paths/right" unique_id=35684064]
-position = Vector2(500, 0)
-rotation = 1.5707964
-
-[node name="top" type="Path2D" parent="Paths" unique_id=1393201053]
+[node name="top" type="Path2D" parent="Paths" unique_id=1798429188]
 curve = SubResource("Curve_Top")
-
-[node name="PathFollow2D" type="PathFollow2D" parent="Paths/top" unique_id=1381327975]
-position = Vector2(0, 900)
 
 [node name="TowerSpots" type="Node2D" parent="." unique_id=648341223]
 
 [node name="Spot1" type="Marker2D" parent="TowerSpots" unique_id=661654873]
-position = Vector2(350, 300)
+position = Vector2(399, 290)
 
 [node name="Spot2" type="Marker2D" parent="TowerSpots" unique_id=677798106]
-position = Vector2(500, 500)
+position = Vector2(548, 535)
 
 [node name="Spot3" type="Marker2D" parent="TowerSpots" unique_id=1250679985]
-position = Vector2(900, 450)
+position = Vector2(782, 536)
 
 [node name="Spot4" type="Marker2D" parent="TowerSpots" unique_id=894908184]
-position = Vector2(250, 700)
+position = Vector2(386, 666)
 
 [node name="Spot5" type="Marker2D" parent="TowerSpots" unique_id=1029897238]
-position = Vector2(1300, 400)
+position = Vector2(1243, 375)
 
 [node name="Spot6" type="Marker2D" parent="TowerSpots" unique_id=203523561]
-position = Vector2(1100, 700)
+position = Vector2(1142, 734)
 
-[node name="Spot7" type="Marker2D" parent="TowerSpots"]
-position = Vector2(500, 800)
+[node name="Spot7" type="Marker2D" parent="TowerSpots" unique_id=1708541862]
+position = Vector2(650, 830)
 
-[node name="Spot8" type="Marker2D" parent="TowerSpots"]
-position = Vector2(1500, 650)
+[node name="Spot8" type="Marker2D" parent="TowerSpots" unique_id=2035614145]
+position = Vector2(1437, 724)
 
 [node name="SpawnMarkers" type="Node2D" parent="." unique_id=1913527537]
 

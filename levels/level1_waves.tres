@@ -71,7 +71,6 @@ bounty = 40
 [sub_resource type="Resource" id="Spawn_W4_Boss"]
 script = ExtResource("3_spawn")
 enemy_scene = ExtResource("7_boss")
-count = 1
 
 [sub_resource type="Resource" id="Spawn_W4_Escort"]
 script = ExtResource("3_spawn")
@@ -85,7 +84,6 @@ script = ExtResource("3_spawn")
 path_id = "top"
 enemy_scene = ExtResource("5_fly")
 count = 4
-interval = 1.0
 start_delay = 4.0
 
 [sub_resource type="Resource" id="Wave4"]

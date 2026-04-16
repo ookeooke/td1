@@ -1,16 +1,17 @@
 [gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://b1td1harpy001"]
 
 [ext_resource type="Script" uid="uid://bfgo62wek7fpf" path="res://enemies/EnemyData.gd" id="1_data"]
-[ext_resource type="Resource" uid="uid://b1td1vis_eflying" path="res://enemies/data/visual_flying.tres" id="2_vis"]
+[ext_resource type="Resource" uid="uid://ccwpk13iw55jr" path="res://enemies/data/visual_flying.tres" id="2_vis"]
 
 [resource]
 script = ExtResource("1_data")
+enemy_id = "enemy_flying"
 enemy_name = "Harpy"
-visual = ExtResource("2_vis")
 max_health = 8
 move_speed = 225.0
 magic_resist = 0.2
 gold_worth = 6
 xp_worth = 8
 is_flying = true
+visual = ExtResource("2_vis")
 encyclopedia_entry = "Bypasses ground-only towers and soldiers. Faster and fragile."

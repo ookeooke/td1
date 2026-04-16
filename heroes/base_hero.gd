@@ -1,19 +1,20 @@
 extends CharacterBody2D
 class_name BaseHero
 
-# Phase 18: tap-to-move + auto-attack. One hero per level (Phase 30 wires
-# selection in HeroRoom). NavigationAgent2D is intentionally skipped this
-# phase — Level1 has no obstacles, so straight-line movement is sufficient.
-# Switch to NavigationAgent2D once a level introduces blocked tiles.
+# Phase 18+42: Kingdom Rush-style hero with NavigationAgent2D pathfinding.
+# One hero per level (Phase 30 wires selection in HeroRoom).
 #
 # States:
-#   IDLE     → standing, polls AttackRange Area2D for a target each frame
-#   MOVING   → walking toward _move_target until inside MOVE_REACHED_TOLERANCE
-#   COMBAT   → swinging at _target_enemy on attack_speed cooldown
+#   IDLE     → standing, scans SeekRange for enemies to auto-walk toward
+#   MOVING   → nav-pathing toward tap target or auto-seek enemy
+#   COMBAT   → melee: face-to-face; ranged: attack from distance
 #   DEAD     → death anim placeholder, ignored by _physics_process
 #
-# Player taps that don't hit a tower spot or consumed UI cancel any active
-# combat and switch to MOVING — explicit move command beats auto-attack.
+# Auto-seek: hero scans a large SeekRange (2.5x attack_range). When an
+# enemy enters, the hero nav-paths toward it. Melee heroes walk right up
+# (within MELEE_ENGAGE_DISTANCE); ranged heroes stop at attack_range edge.
+# If an enemy leaves attack range during combat, the hero chases.
+# Player tap-to-move always overrides auto-seek and combat.
 
 enum State { IDLE, MOVING, COMBAT, DEAD }
 
@@ -29,6 +30,12 @@ const SELECTION_RING_RADIUS: float = 45.0
 # node allocated (cheaper, and a new attack just resets the clock).
 const LUNGE_DURATION: float = 0.12
 const LUNGE_DISTANCE: float = 18.0
+# Auto-seek: hero walks toward enemies within this multiplied range.
+const SEEK_RANGE_MULTIPLIER: float = 2.5
+# Throttle repathing toward a moving seek target (mobile perf).
+const NAV_REPATH_INTERVAL: float = 0.5
+# Melee heroes walk up this close before entering COMBAT face-to-face.
+const MELEE_ENGAGE_DISTANCE: float = 30.0
 
 @export var data: HeroData
 
@@ -46,10 +53,11 @@ var current_xp: int = 0
 const LEVEL_HEALTH_GROWTH: float = 0.15
 const LEVEL_DAMAGE_GROWTH: float = 0.10
 
-var _move_target: Vector2 = Vector2.ZERO
-var _has_move_target: bool = false
 var _target_enemy: Node = null
 var _attack_cooldown: float = 0.0
+# Auto-seek: enemy the hero is walking toward (not yet in attack range).
+var _seek_target_enemy: Node = null
+var _nav_repath_timer: float = 0.0
 
 var _lunge_dir: Vector2 = Vector2.ZERO
 var _lunge_t: float = 0.0
@@ -74,6 +82,9 @@ var _ability_host: RefCounted = null
 
 @onready var attack_range_area: Area2D = $AttackRange
 @onready var attack_range_shape: CollisionShape2D = $AttackRange/CollisionShape2D
+@onready var nav_agent: NavigationAgent2D = $NavigationAgent2D
+@onready var seek_range_area: Area2D = $SeekRange
+@onready var seek_range_shape: CollisionShape2D = $SeekRange/CollisionShape2D
 
 
 func _ready() -> void:
@@ -84,6 +95,10 @@ func _ready() -> void:
 	var atk_circle := CircleShape2D.new()
 	atk_circle.radius = data.attack_range
 	attack_range_shape.shape = atk_circle
+	# SeekRange — hero auto-walks toward enemies in this larger radius.
+	var seek_circle := CircleShape2D.new()
+	seek_circle.radius = data.attack_range * SEEK_RANGE_MULTIPLIER
+	seek_range_shape.shape = seek_circle
 	_skill_cooldowns.resize(data.skills.size())
 	_skill_cooldowns.fill(0.0)
 	_ability_host = _AbilityHostScript.new(self)
@@ -246,11 +261,11 @@ func change_state(new_state: int) -> void:
 func move_to(world_pos: Vector2) -> void:
 	if state == State.DEAD or data == null:
 		return
-	_move_target = world_pos
-	_has_move_target = true
-	# Explicit move overrides any active engagement.
+	# Explicit move overrides any active engagement or auto-seek.
+	_seek_target_enemy = null
 	_target_enemy = null
 	_attack_cooldown = 0.0
+	nav_agent.target_position = world_pos
 	# Auto-deselect on move command — Option B. Next stray tap won't re-move
 	# the hero until the player taps the body to re-arm.
 	if is_selected:
@@ -301,7 +316,7 @@ func _physics_process(delta: float) -> void:
 			velocity = Vector2.ZERO
 			_seek_target()
 		State.MOVING:
-			_move_step()
+			_move_step(delta)
 		State.COMBAT:
 			velocity = Vector2.ZERO
 			_attack_step(delta)
@@ -330,38 +345,73 @@ func _lunge_offset() -> Vector2:
 	return _lunge_dir * (LUNGE_DISTANCE * phase)
 
 
-func _move_step() -> void:
-	var to_target: Vector2 = _move_target - global_position
-	if to_target.length() < MOVE_REACHED_TOLERANCE:
+func _move_step(delta: float) -> void:
+	# While auto-seeking, repath toward the moving enemy periodically.
+	if _seek_target_enemy != null:
+		_nav_repath_timer -= delta
+		if _nav_repath_timer <= 0.0:
+			_nav_repath_timer = NAV_REPATH_INTERVAL
+			if is_instance_valid(_seek_target_enemy) and _seek_target_enemy.state != BaseEnemy.State.DYING:
+				nav_agent.target_position = _seek_target_enemy.global_position
+			else:
+				_seek_target_enemy = null
+		# Check if enemy entered attack range while we walk toward it.
+		var atk_target: Node = _find_nearest_enemy_in_area(attack_range_area)
+		if atk_target != null:
+			# Melee: walk right up close before entering combat.
+			var dist: float = global_position.distance_to(atk_target.global_position)
+			if dist <= MELEE_ENGAGE_DISTANCE or atk_target in attack_range_area.get_overlapping_areas():
+				_target_enemy = atk_target
+				_seek_target_enemy = null
+				_attack_cooldown = 0.0
+				change_state(State.COMBAT)
+				return
+	# Follow nav agent path.
+	if nav_agent.is_navigation_finished():
 		velocity = Vector2.ZERO
-		_has_move_target = false
+		_seek_target_enemy = null
 		change_state(State.IDLE)
 		return
-	velocity = to_target.normalized() * data.move_speed
+	var next_pos: Vector2 = nav_agent.get_next_path_position()
+	velocity = (next_pos - global_position).normalized() * data.move_speed
 
 
-func _seek_target() -> void:
+func _find_nearest_enemy_in_area(area: Area2D) -> Node:
 	var nearest: Node = null
 	var nearest_d2: float = INF
-	for area in attack_range_area.get_overlapping_areas():
-		if not (area is BaseEnemy):
+	for a in area.get_overlapping_areas():
+		if not (a is BaseEnemy):
 			continue
-		var enemy: BaseEnemy = area
+		var enemy: BaseEnemy = a
 		if enemy.state == BaseEnemy.State.DYING:
 			continue
 		if enemy.data == null:
 			continue
-		# targets_flying is true for the warrior, so we don't filter on is_flying.
 		if enemy.data.is_flying and not data.targets_flying:
 			continue
 		var d2: float = global_position.distance_squared_to(enemy.global_position)
 		if d2 < nearest_d2:
 			nearest_d2 = d2
 			nearest = enemy
-	if nearest != null:
-		_target_enemy = nearest
+	return nearest
+
+
+func _seek_target() -> void:
+	# Phase 1: check attack range — immediate combat.
+	var nearest_attack: Node = _find_nearest_enemy_in_area(attack_range_area)
+	if nearest_attack != null:
+		_target_enemy = nearest_attack
+		_seek_target_enemy = null
 		_attack_cooldown = 0.0
 		change_state(State.COMBAT)
+		return
+	# Phase 2: check seek range — auto-walk toward enemy via nav agent.
+	var nearest_seek: Node = _find_nearest_enemy_in_area(seek_range_area)
+	if nearest_seek != null and nearest_seek != _seek_target_enemy:
+		_seek_target_enemy = nearest_seek
+		nav_agent.target_position = nearest_seek.global_position
+		_nav_repath_timer = 0.0
+		change_state(State.MOVING)
 
 
 func _attack_step(delta: float) -> void:
@@ -374,10 +424,13 @@ func _attack_step(delta: float) -> void:
 		_target_enemy = null
 		change_state(State.IDLE)
 		return
-	# Drop the engagement if the enemy walked out of attack range.
+	# Enemy walked out of attack range — chase instead of dropping.
 	if not (enemy in attack_range_area.get_overlapping_areas()):
+		_seek_target_enemy = enemy
 		_target_enemy = null
-		change_state(State.IDLE)
+		nav_agent.target_position = enemy.global_position
+		_nav_repath_timer = 0.0
+		change_state(State.MOVING)
 		return
 	_attack_cooldown -= delta
 	if _attack_cooldown > 0.0:

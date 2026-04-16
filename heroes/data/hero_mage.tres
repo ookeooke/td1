@@ -1,21 +1,20 @@
 [gd_resource type="Resource" script_class="HeroData" format=3 uid="uid://b1td1heromage"]
 
-[ext_resource type="Script" path="res://heroes/HeroData.gd" id="1_data"]
-[ext_resource type="Resource" uid="uid://b1td1vis_hmage" path="res://heroes/data/visual_mage.tres" id="9_vis"]
-[ext_resource type="Resource" path="res://heroes/data/skills/skill_arcane_bolt.tres" id="2_bolt"]
-[ext_resource type="Resource" path="res://heroes/data/skills/skill_frost_nova.tres" id="3_frost"]
-[ext_resource type="Resource" path="res://heroes/data/skills/skill_mana_shield.tres" id="4_shield"]
-[ext_resource type="Script" path="res://progression/TalentData.gd" id="5_talent"]
-[ext_resource type="Script" path="res://systems/abilities/RegenAbility.gd" id="6_regen"]
-[ext_resource type="Script" path="res://systems/abilities/LifestealAbility.gd" id="7_lifesteal"]
-[ext_resource type="Script" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="8_bonusdmg"]
+[ext_resource type="Script" uid="uid://dhkkla25ah1bs" path="res://heroes/HeroData.gd" id="1_data"]
+[ext_resource type="Resource" uid="uid://i6344oaigd4i" path="res://heroes/data/skills/skill_arcane_bolt.tres" id="2_bolt"]
+[ext_resource type="Resource" uid="uid://c70sqhlkx62n0" path="res://heroes/data/skills/skill_frost_nova.tres" id="3_frost"]
+[ext_resource type="Resource" uid="uid://bhbexkr1g636t" path="res://heroes/data/skills/skill_mana_shield.tres" id="4_shield"]
+[ext_resource type="Script" uid="uid://yklkyt4lmkcv" path="res://progression/TalentData.gd" id="5_talent"]
+[ext_resource type="Script" uid="uid://dttyqvth8occr" path="res://systems/abilities/RegenAbility.gd" id="6_regen"]
+[ext_resource type="Script" uid="uid://dlq0ex8y336kj" path="res://systems/abilities/LifestealAbility.gd" id="7_lifesteal"]
+[ext_resource type="Script" uid="uid://c7gd214j4vheq" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="8_bonusdmg"]
+[ext_resource type="Resource" uid="uid://3vv2r58lnaxo" path="res://heroes/data/visual_mage.tres" id="9_vis"]
 
 [sub_resource type="Resource" id="MageRegen"]
 script = ExtResource("6_regen")
 ability_id = "mage_meditation"
 trigger = 1
 interval = 3.0
-heal_amount = 3.0
 
 [sub_resource type="Resource" id="Talent_Meditation"]
 script = ExtResource("5_talent")
@@ -27,9 +26,9 @@ ability = SubResource("MageRegen")
 
 [sub_resource type="Resource" id="MageLifesteal"]
 script = ExtResource("7_lifesteal")
+heal_amount = 3.0
 ability_id = "mage_siphon"
 trigger = 3
-heal_amount = 3.0
 
 [sub_resource type="Resource" id="Talent_Siphon"]
 script = ExtResource("5_talent")
@@ -42,10 +41,10 @@ ability = SubResource("MageLifesteal")
 
 [sub_resource type="Resource" id="MageBonusDmg"]
 script = ExtResource("8_bonusdmg")
-ability_id = "mage_power"
-trigger = 3
 bonus_damage = 5.0
 bonus_damage_type = 1
+ability_id = "mage_power"
+trigger = 3
 
 [sub_resource type="Resource" id="Talent_ArcanePower"]
 script = ExtResource("5_talent")
@@ -59,7 +58,6 @@ ability = SubResource("MageBonusDmg")
 script = ExtResource("1_data")
 hero_name = "Mage"
 hero_id = "mage"
-visual = ExtResource("9_vis")
 requires_unlock = true
 max_health = 80
 attack_damage = 8.0
@@ -69,8 +67,8 @@ move_speed = 225.0
 armor = 0.05
 magic_resist = 0.3
 damage_type = 1
-targets_flying = true
 respawn_time = 35.0
 skills = Array[Resource]([ExtResource("2_bolt"), ExtResource("3_frost"), ExtResource("4_shield")])
 talents = Array[Resource]([SubResource("Talent_Meditation"), SubResource("Talent_Siphon"), SubResource("Talent_ArcanePower")])
+visual = ExtResource("9_vis")
 encyclopedia_entry = "Fragile ranged caster. High magic damage, crowd control, and self-sustain. Keep away from melee."

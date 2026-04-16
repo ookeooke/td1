@@ -1,6 +1,6 @@
 [gd_resource type="Resource" script_class="TowerData" format=3 uid="uid://b1td1towart"]
 
-[ext_resource type="Script" path="res://towers/TowerData.gd" id="1_data"]
+[ext_resource type="Script" uid="uid://eg36tioogljo" path="res://towers/TowerData.gd" id="1_data"]
 [ext_resource type="PackedScene" uid="uid://b1td1artshell" path="res://projectiles/ArtilleryShell.tscn" id="2_proj"]
 
 [resource]
@@ -8,13 +8,11 @@ script = ExtResource("1_data")
 tower_name = "Artillery"
 tower_id = "artillery"
 damage = 25.0
-damage_type = 0
 attack_range = 500.0
 attack_speed = 0.4
 cost = 120
 sell_value = 70
-targets_flying = false
 aoe_radius = 200.0
-body_color = Color(0.6, 0.35, 0.2, 1.0)
+body_color = Color(0.6, 0.35, 0.2, 1)
 projectile_scene = ExtResource("2_proj")
 encyclopedia_entry = "Massive ground explosions. Devastating AoE but can't hit flying enemies. Slow reload."

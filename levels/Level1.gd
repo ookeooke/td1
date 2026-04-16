@@ -12,7 +12,12 @@ extends Node2D
 const MAP_SIZE := Vector2(1920, 1080)
 const BG_COLOR := Color(0.32, 0.52, 0.28, 1.0)
 const PATH_COLOR := Color(0.55, 0.40, 0.25)
-const PATH_WIDTH := 35.0
+# Road visual must cover the enemy swarm band — enemies get a PathFollow2D
+# h_offset in ±WaveManager.SWARM_H_OFFSET (35px), and their body draws at
+# roughly ±35px around their center. So the road needs to be at least
+# 2 * (35 + 35) = 140px wide to visually contain every enemy that walks it.
+# Keep in sync with WaveManager.SWARM_H_OFFSET if that constant changes.
+const PATH_WIDTH := 140.0
 const SPOT_FILL := Color(0.85, 0.75, 0.35, 0.85)
 const SPOT_OUTLINE := Color(0.25, 0.18, 0.08)
 const SPOT_RADIUS := 65.0

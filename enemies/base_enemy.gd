@@ -5,6 +5,8 @@ enum State { WALKING, STUNNED, COMBAT, STEALTHED, DYING }
 
 const HP_BAR_SIZE: Vector2 = Vector2(70.0, 10.0)
 const HP_BAR_Y_OFFSET: float = -65.0
+# Phase 42: swarm effect — speed jitter breaks uniform spacing.
+const SPEED_JITTER_RANGE: float = 0.10  # ±10% speed variation per instance
 
 @export var data: EnemyData
 
@@ -26,6 +28,8 @@ var _combat_cooldown: float = 0.0
 # when the hero landed the killing blow (last-hit semantics). Towers get
 # gold, not XP.
 var _last_damage_source: Node = null
+# Swarm: per-instance speed multiplier (set once at spawn).
+var _speed_jitter: float = 1.0
 
 # Phase 20.5: per-unit ability dispatcher. Populated from data.abilities
 # in _ready(); ticked each physics frame; triggered on death so
@@ -39,6 +43,9 @@ var _ability_host: RefCounted = null
 func _ready() -> void:
 	if data:
 		current_health = data.max_health
+		# Swarm: speed jitter for non-boss enemies.
+		if not data.is_boss:
+			_speed_jitter = randf_range(1.0 - SPEED_JITTER_RANGE, 1.0 + SPEED_JITTER_RANGE)
 	# Phase 20: group membership so skill targeting can enumerate live
 	# enemies without walking the whole tree. get_tree().get_nodes_in_group
 	# is only called on tap (targeting), not per-frame — perf rule intact.
@@ -145,7 +152,7 @@ func _tick_effects(delta: float) -> void:
 
 
 func _effective_speed() -> float:
-	var s: float = data.move_speed
+	var s: float = data.move_speed * _speed_jitter
 	if _effects.has("slow"):
 		s *= (1.0 - _effects["slow"].slow_factor)
 	return s

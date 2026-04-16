@@ -1,17 +1,14 @@
 [gd_resource type="Resource" script_class="FireballSpellData" format=3 uid="uid://cr68n0j8fy4hx"]
 
-[ext_resource type="Script" path="res://spells/fireball_spell_data.gd" id="1_fireball"]
-[ext_resource type="PackedScene" uid="uid://b1td1fireballvfx" path="res://spells/FireballVFX.tscn" id="2_vfx"]
+[ext_resource type="Script" uid="uid://cnagiakfjq247" path="res://spells/fireball_spell_data.gd" id="1_fireball"]
+[ext_resource type="PackedScene" uid="uid://is2eweacpyv2" path="res://spells/FireballVFX.tscn" id="2_vfx"]
 
 [resource]
 script = ExtResource("1_fireball")
 spell_id = "fireball"
 spell_name = "Fireball"
-cast_range = 0.0
 radius = 225.0
 damage = 55.0
-damage_type = 1
 cooldown = 25.0
-target_type = 0
 vfx_scene = ExtResource("2_vfx")
 description = "Slam a burst of fire anywhere on the map. Deals heavy magic damage to all enemies in the blast radius."

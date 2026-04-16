@@ -434,21 +434,23 @@ func _draw() -> void:
 	# covers the inside of the ring.
 	if is_selected:
 		draw_arc(Vector2.ZERO, SELECTION_RING_RADIUS, 0, TAU, 32, Color(1.0, 0.95, 0.3, 0.85), 2.5)
-	# Body + accent translated by the lunge offset. Color varies by damage
-	# type so the Knight (gold/sword) and Mage (blue/staff) are visually
-	# distinct without per-hero _draw() subclasses.
+	# Body + accent translated by the lunge offset.
 	var off: Vector2 = _lunge_offset()
-	if off != Vector2.ZERO:
-		draw_set_transform(off, 0.0, Vector2.ONE)
-	var is_magic: bool = data != null and data.damage_type == 1
-	var body_color: Color = Color(0.3, 0.4, 0.85) if is_magic else Color(0.85, 0.7, 0.2)
-	var outline_color: Color = Color(0.1, 0.12, 0.3) if is_magic else Color(0.2, 0.15, 0.05)
-	var accent_color: Color = Color(0.6, 0.7, 1.0) if is_magic else Color(0.9, 0.9, 0.95)
-	draw_rect(Rect2(-10, -10, 20, 20), body_color)
-	draw_rect(Rect2(-10, -10, 20, 20), outline_color, false, 2.0)
-	draw_line(Vector2(0, -10), Vector2(0, -16), accent_color, 2.5)
-	if off != Vector2.ZERO:
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if data != null and data.visual != null:
+		UnitVisualDrawer.draw_unit(self, data.visual, off)
+	else:
+		# Legacy fallback: color varies by damage type.
+		if off != Vector2.ZERO:
+			draw_set_transform(off, 0.0, Vector2.ONE)
+		var is_magic: bool = data != null and data.damage_type == 1
+		var body_color: Color = Color(0.3, 0.4, 0.85) if is_magic else Color(0.85, 0.7, 0.2)
+		var outline_color: Color = Color(0.1, 0.12, 0.3) if is_magic else Color(0.2, 0.15, 0.05)
+		var accent_color: Color = Color(0.6, 0.7, 1.0) if is_magic else Color(0.9, 0.9, 0.95)
+		draw_rect(Rect2(-10, -10, 20, 20), body_color)
+		draw_rect(Rect2(-10, -10, 20, 20), outline_color, false, 2.0)
+		draw_line(Vector2(0, -10), Vector2(0, -16), accent_color, 2.5)
+		if off != Vector2.ZERO:
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_health_bar()
 
 

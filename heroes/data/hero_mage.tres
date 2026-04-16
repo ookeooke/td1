@@ -1,6 +1,7 @@
 [gd_resource type="Resource" script_class="HeroData" format=3 uid="uid://b1td1heromage"]
 
 [ext_resource type="Script" path="res://heroes/HeroData.gd" id="1_data"]
+[ext_resource type="Resource" uid="uid://b1td1vis_hmage" path="res://heroes/data/visual_mage.tres" id="9_vis"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_arcane_bolt.tres" id="2_bolt"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_frost_nova.tres" id="3_frost"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_mana_shield.tres" id="4_shield"]
@@ -58,6 +59,7 @@ ability = SubResource("MageBonusDmg")
 script = ExtResource("1_data")
 hero_name = "Mage"
 hero_id = "mage"
+visual = ExtResource("9_vis")
 requires_unlock = true
 max_health = 80
 attack_damage = 8.0

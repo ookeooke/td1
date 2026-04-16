@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://c70svntlw28u6"]
+[gd_scene load_steps=3 format=3 uid="uid://c70svntlw28u6"]
 
 [ext_resource type="Script" path="res://ui/TowerSpotMenu.gd" id="1_tsm"]
+[ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
 
 [node name="TowerSpotMenu" type="CanvasLayer"]
 layer = 10
@@ -12,6 +13,7 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+theme = ExtResource("2_theme")
 mouse_filter = 1
 
 [node name="Backdrop" type="Control" parent="Root"]

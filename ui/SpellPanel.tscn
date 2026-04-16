@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://ui/SpellPanel.gd" id="1_panel"]
 [ext_resource type="Resource" path="res://spells/data/spell_fireball.tres" id="2_fireball"]
 [ext_resource type="Resource" path="res://spells/data/spell_reinforcements.tres" id="3_recruit"]
+[ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="4_theme"]
 
 [node name="SpellPanel" type="CanvasLayer"]
 layer = 7
@@ -14,6 +15,7 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+theme = ExtResource("4_theme")
 mouse_filter = 2
 
 [node name="ButtonColumn" type="VBoxContainer" parent="Root"]

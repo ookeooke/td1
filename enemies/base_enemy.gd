@@ -204,14 +204,18 @@ func _despawn() -> void:
 
 
 func _draw() -> void:
-	draw_circle(Vector2.ZERO, 14.0, Color(0.75, 0.2, 0.2))
-	draw_arc(Vector2.ZERO, 14.0, 0, TAU, 24, Color(0.15, 0.05, 0.05), 2.0)
+	if data != null and data.visual != null:
+		UnitVisualDrawer.draw_unit(self, data.visual)
+	else:
+		draw_circle(Vector2.ZERO, 14.0, Color(0.75, 0.2, 0.2))
+		draw_arc(Vector2.ZERO, 14.0, 0, TAU, 24, Color(0.15, 0.05, 0.05), 2.0)
 	# Status-effect overlay rings. Stun drawn outermost so it's visible even
 	# if a slow is also active.
+	var ring_r: float = (data.visual.radius if data != null and data.visual != null else 14.0) + 5.0
 	if _effects.has("slow"):
-		draw_arc(Vector2.ZERO, 19.0, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
+		draw_arc(Vector2.ZERO, ring_r, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
 	if _effects.has("stun"):
-		draw_arc(Vector2.ZERO, 23.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)
+		draw_arc(Vector2.ZERO, ring_r + 4.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)
 	_draw_health_bar()
 
 

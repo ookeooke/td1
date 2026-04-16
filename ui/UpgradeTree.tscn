@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" path="res://ui/UpgradeTree.gd" id="1_tree"]
 [ext_resource type="Script" path="res://progression/UpgradeData.gd" id="2_upg"]
+[ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="3_theme"]
 
 [sub_resource type="Resource" id="Upg_WarChest"]
 script = ExtResource("2_upg")
@@ -64,6 +65,7 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+theme = ExtResource("3_theme")
 script = ExtResource("1_tree")
 upgrades = Array[Resource]([SubResource("Upg_WarChest"), SubResource("Upg_SharpArrows"), SubResource("Upg_ExtendedRange"), SubResource("Upg_HeroTraining"), SubResource("Upg_FastLearner"), SubResource("Upg_SpellMastery")])
 

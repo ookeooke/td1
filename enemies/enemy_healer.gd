@@ -8,11 +8,14 @@ class_name EnemyHealer
 
 
 func _draw() -> void:
+	if data != null and data.visual != null:
+		super._draw()
+		return
+	# Legacy fallback: green body + white crosshair.
 	draw_circle(Vector2.ZERO, 15.0, Color(0.3, 0.7, 0.3))
 	draw_arc(Vector2.ZERO, 15.0, 0, TAU, 24, Color(0.08, 0.25, 0.08), 2.0)
 	draw_line(Vector2(-6, 0), Vector2(6, 0), Color(1, 1, 1), 2.5)
 	draw_line(Vector2(0, -6), Vector2(0, 6), Color(1, 1, 1), 2.5)
-	# Status rings — reuse BaseEnemy's convention.
 	if _effects.has("slow"):
 		draw_arc(Vector2.ZERO, 20.0, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
 	if _effects.has("stun"):

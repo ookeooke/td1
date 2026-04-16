@@ -1,5 +1,26 @@
-# CLAUDE.md — Fantasy Tower Defense (Kingdom Rush Style)
-> Godot 4.6.2 | GDScript | Android + iOS + PC | Touch + Mouse  in claude code terminal
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Fantasy Tower Defense (Kingdom Rush Style)
+> Godot 4.6.2 | GDScript | Android + iOS + PC | Touch + Mouse
+
+---
+
+## 🛠️ Development Commands
+
+```bash
+# Run the project (from Godot editor or CLI)
+# Godot must be installed and in PATH as `godot` or full path used
+godot --path . --editor          # Open in editor
+godot --path .                   # Run the game directly
+
+# The project entry point is res://ui/MainMenu.tscn (see project.godot)
+# Default viewport: 375×812 (portrait, iPhone-sized)
+# Rendering: GL Compatibility (mobile-first)
+```
+
+There is no build system, linter, or test suite — this is a pure GDScript/Godot project. All validation is done by running the game in the Godot editor.
 
 ---
 
@@ -64,7 +85,10 @@ res://
 │   ├── SaveManager.gd            # save/load all persistence (JSON)
 │   ├── UnlockManager.gd          # IAP + unlock state (stub)
 │   ├── SceneManager.gd           # scene transitions with fade
-│   └── ContentRegistry.gd        # master index of all content .tres
+│   ├── ContentRegistry.gd        # master index of all content .tres
+│   ├── PurchaseManager.gd       # IAP client stub
+│   ├── VFXSpawner.gd            # FloatingText + DeathVFX spawner
+│   └── SoundManager.gd          # SFX pool + music player
 │
 ├── towers/
 │   ├── base_tower.gd             # attack towers (archer, mage, artillery)
@@ -129,6 +153,8 @@ res://
 ├── systems/
 │   ├── AbilityData.gd            # base Resource: trigger enum + apply() virtual
 │   ├── AbilityHost.gd            # per-unit dispatcher (RefCounted)
+│   ├── UnitVisualData.gd         # Resource: shape, colors, accent for _draw()
+│   ├── UnitVisualDrawer.gd       # static draw_unit() helper (not autoload)
 │   ├── StatusEffect.gd           # base class (per-target mutable state)
 │   ├── SlowEffect.gd
 │   ├── StunEffect.gd
@@ -170,9 +196,19 @@ res://
 │   ├── UpgradeTree.gd + .tscn    # permanent upgrades (spend stars)
 │   ├── EncyclopediaScreen.gd + .tscn # codex: auto-stat tabs (enemies/towers/heroes)
 │   ├── LeaderboardScreen.gd + .tscn  # endless top scores
-│   └── world_map/
-│       ├── LevelNodeData.gd      # Resource: one level entry
-│       └── level_list.tres        # (optional, WorldMap uses inline sub_resources)
+│   ├── world_map/
+│   │   ├── LevelNodeData.gd      # Resource: one level entry
+│   │   └── level_list.tres        # (optional, WorldMap uses inline sub_resources)
+│   └── theme/
+│       ├── ThemeColors.gd        # canonical color palette constants
+│       └── game_theme.tres       # global Theme resource (buttons, panels, labels)
+│
+├── vfx/
+│   ├── FloatingText.gd + .tscn   # Tween-based floating damage/gold/XP text
+│   └── DeathVFX.gd + .tscn       # expanding ring + flash on enemy death
+│
+├── audio/
+│   └── sfx/                      # drop .wav files here; SoundManager auto-detects
 │
 └── main/
     ├── Main.gd                   # gameplay orchestrator (wave start, signal logging)
@@ -193,6 +229,9 @@ res://
 | UnlockManager | autoloads/UnlockManager.gd | IAP + unlock state (stub) |
 | SceneManager | autoloads/SceneManager.gd | Scene transitions with fade |
 | ContentRegistry | autoloads/ContentRegistry.gd | Master index of all content .tres |
+| PurchaseManager | autoloads/PurchaseManager.gd | IAP client stub (auto-succeeds) |
+| VFXSpawner | autoloads/VFXSpawner.gd | FloatingText + DeathVFX on EventBus signals |
+| SoundManager | autoloads/SoundManager.gd | SFX pool + music player (graceful missing files) |
 
 ---
 
@@ -1021,7 +1060,7 @@ Working:
 [x] Heroic+Iron       [x] Endless mode       [x] Leaderboard
 [x] Encyclopedia      [x] Hero 2             [x] UnlockManager
 [x] IAP               [x] Boss system        [x] Tower types 2+3
-[x] Skill tree        [ ] Polish
+[x] Skill tree        [x] Polish
 
 Extras beyond the phase list:
 - Editor-editable Level1 (detour, before Phase 11)
@@ -1033,9 +1072,6 @@ Extras beyond the phase list:
 - Fast-forward (1x/2x/3x) + Reset Progress button
 
 Known bugs: none
-Last committed phase: Phase 16 (commit fde7ee0). Phases 17–38 and follow-ups uncommitted on disk.
-Next task: Phase 41 — Polish (sound, particles, animations, menus)
-- Soldier health bar (mirrors enemy bar; same damage/auto-hide rules)
-- MainMenu + WorldMap + PauseMenu screen flow (pre-Phase 27 foundation)
-- SceneManager autoload for all scene transitions
+Last committed phase: Phase 16 (commit fde7ee0). Phases 17–41 and follow-ups uncommitted on disk.
+Next task: All 41 phases complete. Game ready for content expansion and playtesting.
 ```

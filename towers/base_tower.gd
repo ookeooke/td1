@@ -160,7 +160,12 @@ func upgrade() -> bool:
 	return true
 
 
+var _recoil_t: float = 0.0
+
 func _physics_process(delta: float) -> void:
+	if _recoil_t > 0.0:
+		_recoil_t -= delta
+		queue_redraw()
 	if data == null:
 		return
 	if _attack_cooldown > 0.0:
@@ -227,6 +232,8 @@ func _fire_projectile(target: Node) -> void:
 	var aoe: float = data.aoe_radius if data != null else 0.0
 	if proj.has_method("setup"):
 		proj.setup(target, get_effective_damage(), data.damage_type, self, effect, aoe)
+	_recoil_t = 0.08
+	queue_redraw()
 
 
 func _build_on_hit_effect():
@@ -256,6 +263,10 @@ func _maybe_roll_debug_effect():
 
 
 func _draw() -> void:
+	# Recoil: brief scale-down pulse on shoot.
+	var recoil_scale: float = 1.0 - (0.12 * clampf(_recoil_t / 0.08, 0.0, 1.0))
+	if recoil_scale < 1.0:
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(recoil_scale, recoil_scale))
 	var base_body: Color = data.body_color if data != null else Color(0.35, 0.45, 0.75)
 	var ov: Resource = _level_override()
 	if ov != null:
@@ -266,3 +277,5 @@ func _draw() -> void:
 	# see the upgrade level at a glance.
 	for i in level:
 		draw_circle(Vector2(-6.0 + i * 6.0, -28.0), 2.2, Color(1.0, 0.85, 0.2))
+	if recoil_scale < 1.0:
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

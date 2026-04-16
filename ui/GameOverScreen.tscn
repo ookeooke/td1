@@ -1,6 +1,7 @@
-[gd_scene format=3 uid="uid://ct8ylftl7uafj"]
+[gd_scene load_steps=3 format=3 uid="uid://ct8ylftl7uafj"]
 
 [ext_resource type="Script" path="res://ui/GameOverScreen.gd" id="1_gos"]
+[ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
 
 [node name="GameOverScreen" type="CanvasLayer"]
 layer = 20
@@ -11,6 +12,7 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+theme = ExtResource("2_theme")
 mouse_filter = 0
 
 [node name="Dim" type="ColorRect" parent="Root"]

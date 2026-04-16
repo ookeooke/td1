@@ -33,4 +33,5 @@ class_name EnemyData
 @export var boss_phases: Array[Resource] = []
 @export var is_boss: bool = false
 
+@export var visual: Resource  # UnitVisualData — drives _draw() when set
 @export_multiline var encyclopedia_entry: String = ""

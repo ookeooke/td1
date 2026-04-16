@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="UnitVisualData" format=3 uid="uid://b1td1vis_soldier"]
+
+[ext_resource type="Script" path="res://systems/UnitVisualData.gd" id="1_vis"]
+
+[resource]
+script = ExtResource("1_vis")
+shape = 1
+body_color = Color(0.8, 0.8, 0.2, 1.0)
+outline_color = Color(0.3, 0.25, 0.05, 1.0)
+accent_color = Color(1.0, 1.0, 1.0, 1.0)
+accent_type = 0
+body_size = Vector2(12, 12)
+outline_width = 1.5

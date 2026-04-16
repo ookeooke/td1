@@ -16,4 +16,5 @@ class_name SoldierData
 # Composed passives — heal aura (Paladin), damage block (Shield Bearer),
 # enrage under HP (Berserker), etc. Same AbilityData primitive enemies use.
 @export var abilities: Array[Resource] = []
+@export var visual: Resource  # UnitVisualData — drives _draw() when set
 @export_multiline var encyclopedia_entry: String = ""

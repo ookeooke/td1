@@ -103,18 +103,29 @@ func _combat_tick(delta: float) -> void:
 
 
 func _draw() -> void:
-	# Larger body with phase tint.
-	var body_color: Color = Color(0.6, 0.15, 0.15) * _phase_tint
-	draw_circle(Vector2.ZERO, BOSS_BODY_RADIUS, body_color)
-	draw_arc(Vector2.ZERO, BOSS_BODY_RADIUS, 0, TAU, 32, Color(0.2, 0.05, 0.05), 3.0)
-	# Crown/horns indicator.
-	draw_line(Vector2(-10, -BOSS_BODY_RADIUS), Vector2(-6, -BOSS_BODY_RADIUS - 10), Color(0.9, 0.8, 0.2), 2.5)
-	draw_line(Vector2(10, -BOSS_BODY_RADIUS), Vector2(6, -BOSS_BODY_RADIUS - 10), Color(0.9, 0.8, 0.2), 2.5)
-	# Status rings.
-	if _effects.has("slow"):
-		draw_arc(Vector2.ZERO, 28.0, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
-	if _effects.has("stun"):
-		draw_arc(Vector2.ZERO, 32.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)
+	if data != null and data.visual != null:
+		# Data-driven body with multiplicative phase tint.
+		var v: Resource = data.visual
+		var tinted: Color = v.body_color * _phase_tint
+		draw_circle(Vector2.ZERO, v.radius, tinted)
+		draw_arc(Vector2.ZERO, v.radius, 0, TAU, 32, v.outline_color, v.outline_width)
+		UnitVisualDrawer._draw_accent(self, v)
+		var ring_r: float = v.radius + 6.0
+		if _effects.has("slow"):
+			draw_arc(Vector2.ZERO, ring_r, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
+		if _effects.has("stun"):
+			draw_arc(Vector2.ZERO, ring_r + 4.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)
+	else:
+		# Legacy fallback: larger body with phase tint.
+		var body_color: Color = Color(0.6, 0.15, 0.15) * _phase_tint
+		draw_circle(Vector2.ZERO, BOSS_BODY_RADIUS, body_color)
+		draw_arc(Vector2.ZERO, BOSS_BODY_RADIUS, 0, TAU, 32, Color(0.2, 0.05, 0.05), 3.0)
+		draw_line(Vector2(-10, -BOSS_BODY_RADIUS), Vector2(-6, -BOSS_BODY_RADIUS - 10), Color(0.9, 0.8, 0.2), 2.5)
+		draw_line(Vector2(10, -BOSS_BODY_RADIUS), Vector2(6, -BOSS_BODY_RADIUS - 10), Color(0.9, 0.8, 0.2), 2.5)
+		if _effects.has("slow"):
+			draw_arc(Vector2.ZERO, 28.0, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
+		if _effects.has("stun"):
+			draw_arc(Vector2.ZERO, 32.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)
 	_draw_boss_health_bar()
 
 

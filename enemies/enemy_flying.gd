@@ -8,14 +8,15 @@ class_name EnemyFlying
 
 
 func _draw() -> void:
-	# Purple body + gray wing bars. Larger than the basic orc so it's
-	# obviously a different unit at a glance.
+	if data != null and data.visual != null:
+		# Data-driven: BaseEnemy._draw() handles body + status rings + HP bar.
+		super._draw()
+		return
+	# Legacy fallback: purple body + gray wing bars.
 	draw_circle(Vector2.ZERO, 12.0, Color(0.55, 0.3, 0.75))
 	draw_arc(Vector2.ZERO, 12.0, 0, TAU, 24, Color(0.15, 0.05, 0.2), 2.0)
-	# Wings (static, perpendicular to travel direction — placeholder).
 	draw_line(Vector2(-22, -2), Vector2(-12, -2), Color(0.8, 0.8, 0.85), 3.0)
 	draw_line(Vector2(12, -2), Vector2(22, -2), Color(0.8, 0.8, 0.85), 3.0)
-	# Status rings (reuse BaseEnemy's conventions).
 	if _effects.has("slow"):
 		draw_arc(Vector2.ZERO, 19.0, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
 	if _effects.has("stun"):

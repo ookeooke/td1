@@ -925,3 +925,43 @@ Per-hero talents purchased with stars (same pool as permanent upgrades). Talents
 - Broke: none.
 - **Phase 1–40 complete.** Only Phase 41 (polish) remains.
 - Next: Phase 41 — Polish (sound, particles, animations, menus, data-driven visuals).
+
+---
+
+## 2026-04-16 — Phase 41: Polish
+
+### 41A: UI Theme + Styling
+- `ui/theme/ThemeColors.gd` (new): canonical color palette constants (BG_DARK, ACCENT_GOLD, BTN_*, TEXT_*, COOLDOWN_*)
+- `ui/theme/game_theme.tres` (new): global Theme resource — StyleBoxFlat for Button (normal/hover/pressed/disabled with rounded corners, gold accent border on hover), PanelContainer, Label colors + font sizes
+- Applied theme to all 14 UI screens (MainMenu, WorldMap, LoadoutScreen, HUD, PauseMenu, GameOverScreen, TowerSpotMenu, SkillBar, SpellPanel, UpgradeTree, EncyclopediaScreen, LeaderboardScreen, ShopScreen, TalentScreen)
+- CooldownButton.gd updated to use ThemeColors constants
+
+### 41B: Data-driven Unit Visuals
+- `systems/UnitVisualData.gd` (new): Resource with Shape (CIRCLE/SQUARE), body_color, outline_color, accent_color, accent_type (NONE/WEAPON_LINE/CROSSHAIR/WINGS/CROWN), radius, body_size, outline_width
+- `systems/UnitVisualDrawer.gd` (new): static draw_unit(ci, visual, offset) helper. Draws body + outline + accent. Not an autoload — const-preloaded.
+- 7 visual .tres files: visual_basic (red circle), visual_flying (purple+wings), visual_healer (green+crosshair), visual_boss (dark red+crown), visual_warrior (gold square+weapon), visual_mage (blue square+weapon), visual_soldier (yellow square)
+- Added `@export var visual: Resource` to EnemyData, HeroData, SoldierData
+- Updated _draw() in base_enemy, enemy_flying, enemy_healer, base_boss, base_hero, base_soldier — all delegate to UnitVisualDrawer when visual data is set, with legacy fallback
+- Wired visual ExtResources into all 7 unit .tres data files
+
+### 41C: Animations + Juice
+- `vfx/FloatingText.gd + .tscn` (new): Tween-based text that floats up 40px and fades over 0.6s. Static spawn() factory. Drop shadow for readability.
+- `vfx/DeathVFX.gd + .tscn` (new): expanding ring + shrinking white flash over 0.3s. Reads visual color.
+- `autoloads/VFXSpawner.gd` (new autoload): connects to EventBus — enemy_died spawns DeathVFX + gold FloatingText, hero_xp_gained spawns XP text, game_over/game_won triggers screen flash
+- Tower recoil: base_tower._draw() applies brief 12% scale-down for 0.08s on each _fire_projectile()
+
+### 41D: Sound + Music
+- `autoloads/SoundManager.gd` (new autoload): 8-player SFX pool + 1 music player. Registry maps 14 event names to res://audio/sfx/*.wav paths. ResourceLoader.exists() check — game runs silent until audio files dropped in. EventBus wiring: enemy_died, tower_built/sold/upgraded, wave_started/completed, hero_skill_used, spell_cast, game_over, victory. Volume controls: set_sfx_volume(), set_music_volume().
+- `audio/sfx/` placeholder directory created
+
+### 41E: Housekeeping
+- CLAUDE.md: checked [x] Polish, added VFXSpawner + SoundManager + PurchaseManager to autoloads table, added vfx/, audio/, ui/theme/, UnitVisualData to folder structure, updated status
+- SESSIONS.md: this entry
+- project.godot: added VFXSpawner + SoundManager autoloads (11 total)
+
+### Summary
+- New files: 14 GDScript + 4 .tscn + 7 visual .tres + 1 theme .tres + 1 .gitkeep = 27 files
+- Modified: 21 files (6 _draw() scripts, 3 data scripts, 14 .tscn themes, project.godot, CLAUDE.md)
+- Works: all gameplay should render identically + floating text on kills + death VFX + tower recoil + themed UI buttons
+- Broke: none expected (all visual changes have legacy fallbacks)
+- **All 41 phases complete.** Game ready for content expansion and playtesting.

@@ -31,4 +31,5 @@ class_name HeroData
 # Per-hero talent tree (Phase 40). Purchased with stars, pushed onto the
 # hero's AbilityHost at gameplay start.
 @export var talents: Array[Resource] = []
+@export var visual: Resource  # UnitVisualData — drives _draw() when set
 @export_multiline var encyclopedia_entry: String = ""

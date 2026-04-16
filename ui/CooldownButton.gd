@@ -66,9 +66,9 @@ func _gui_input(event: InputEvent) -> void:
 func _draw() -> void:
 	var rect: Rect2 = Rect2(Vector2.ZERO, size)
 	var is_ready: bool = _cooldown_fraction() <= 0.0
-	var base: Color = Color(0.85, 0.4, 0.15) if is_ready else Color(0.35, 0.2, 0.1)
+	var base: Color = ThemeColors.COOLDOWN_READY if is_ready else ThemeColors.COOLDOWN_ACTIVE
 	draw_rect(rect, base)
-	draw_rect(rect, Color(0.1, 0.05, 0.0), false, 2.0)
+	draw_rect(rect, ThemeColors.COOLDOWN_BORDER, false, 2.0)
 
 	# Radial cooldown overlay — pie slice that starts full on cast and
 	# shrinks counter-clockwise as the cooldown drains. Dark so the tile

@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" path="res://ui/WorldMap.gd" id="1_map"]
 [ext_resource type="Script" path="res://ui/world_map/LevelNodeData.gd" id="2_lnd"]
+[ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="3_theme"]
 
 [sub_resource type="Resource" id="Level1_Data"]
 script = ExtResource("2_lnd")
@@ -15,6 +16,7 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+theme = ExtResource("3_theme")
 script = ExtResource("1_map")
 levels = Array[Resource]([SubResource("Level1_Data")])
 

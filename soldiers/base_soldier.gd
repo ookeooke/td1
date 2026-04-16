@@ -179,12 +179,16 @@ func _die() -> void:
 
 func _draw() -> void:
 	var off: Vector2 = _lunge_offset()
-	if off != Vector2.ZERO:
-		draw_set_transform(off, 0.0, Vector2.ONE)
-	draw_rect(Rect2(-6, -6, 12, 12), Color(0.8, 0.8, 0.2))
-	draw_rect(Rect2(-6, -6, 12, 12), Color(0.3, 0.25, 0.05), false, 1.5)
-	if off != Vector2.ZERO:
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if data != null and data.visual != null:
+		UnitVisualDrawer.draw_unit(self, data.visual, off)
+	else:
+		# Legacy fallback.
+		if off != Vector2.ZERO:
+			draw_set_transform(off, 0.0, Vector2.ONE)
+		draw_rect(Rect2(-6, -6, 12, 12), Color(0.8, 0.8, 0.2))
+		draw_rect(Rect2(-6, -6, 12, 12), Color(0.3, 0.25, 0.05), false, 1.5)
+		if off != Vector2.ZERO:
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_health_bar()
 
 

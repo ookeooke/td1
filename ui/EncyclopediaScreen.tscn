@@ -1,12 +1,14 @@
-[gd_scene format=3 uid="uid://2d8cbqwo223q"]
+[gd_scene load_steps=3 format=3 uid="uid://2d8cbqwo223q"]
 
 [ext_resource type="Script" path="res://ui/EncyclopediaScreen.gd" id="1_enc"]
+[ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
 
 [node name="EncyclopediaScreen" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+theme = ExtResource("2_theme")
 script = ExtResource("1_enc")
 
 [node name="Background" type="ColorRect" parent="."]

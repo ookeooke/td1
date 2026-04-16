@@ -74,7 +74,9 @@ func _register_tower_spots() -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, MAP_SIZE), BG_COLOR)
+	# Bleed the background far beyond the design viewport so wider/taller
+	# devices (iPad 4:3, Galaxy Fold) see grass instead of gray void.
+	draw_rect(Rect2(Vector2(-1000, -1000), Vector2(3000, 3000)), BG_COLOR)
 
 	# Paths come from children so the Godot Path2D curve editor works.
 	var source := paths_node if paths_node != null else get_node_or_null("Paths")

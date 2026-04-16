@@ -1,14 +1,14 @@
 extends Node2D
 
-# Phase 11: real wave system. Main loads level1_waves.tres and hands it to
-# WaveManager. Player places/sells towers while waves run. Phase 12 adds
-# win/lose screens on all_waves_completed / game_over. Status-effect demo
-# harness was removed once towers started applying effects via arrows.
+# Gameplay scene. Spawns the hero dynamically from ContentRegistry +
+# GameState.selected_hero_id, then starts waves (campaign or endless).
 
 const LEVEL1_WAVES: Resource = preload("res://levels/level1_waves.tres")
+const HERO_TEMPLATE: PackedScene = preload("res://heroes/HeroWarrior.tscn")
 
 @onready var level: Node2D = $Level1
 @onready var towers: Node2D = $Towers
+@onready var hero_input: Node = $HeroInputManager
 
 
 func _ready() -> void:
@@ -24,10 +24,35 @@ func _ready() -> void:
 	EventBus.hero_spawned.connect(_on_hero_spawned)
 	EventBus.hero_died.connect(_on_hero_died)
 
+	_spawn_hero()
+
 	if GameState.current_mode == "endless":
 		WaveManager.start_endless(level)
 	else:
 		WaveManager.start(LEVEL1_WAVES, level)
+
+
+func _spawn_hero() -> void:
+	# Look up the selected hero data from ContentRegistry. Fall back to
+	# first registered hero if the ID isn't found.
+	var hero_data: Resource = ContentRegistry.find_hero(GameState.selected_hero_id)
+	if hero_data == null and ContentRegistry.heroes.size() > 0:
+		hero_data = ContentRegistry.heroes[0]
+	if hero_data == null:
+		push_warning("[Main] no hero data found for '%s'" % GameState.selected_hero_id)
+		return
+	# Instantiate the template scene and override its data with the
+	# selected hero's resource. The scene structure (CharacterBody2D +
+	# AttackRange) is hero-agnostic — only the data differs.
+	var hero: Node = HERO_TEMPLATE.instantiate()
+	hero.data = hero_data
+	hero.position = Vector2(188, 460)
+	# Insert before HeroInputManager so tree-order for _unhandled_input
+	# is correct (hero selection before move commands).
+	add_child(hero)
+	move_child(hero, hero_input.get_index())
+	# Wire HeroInputManager to the dynamically spawned hero.
+	hero_input._hero = hero
 
 
 func _on_hero_spawned(hero: Node) -> void:

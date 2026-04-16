@@ -14,6 +14,7 @@ extends Control
 @onready var endless_button: Button = %EndlessButton
 @onready var leaderboard_button: Button = %LeaderboardButton
 @onready var encyclopedia_button: Button = %EncyclopediaButton
+@onready var shop_button: Button = %ShopButton
 
 
 func _ready() -> void:
@@ -22,7 +23,8 @@ func _ready() -> void:
 	endless_button.pressed.connect(_on_endless)
 	leaderboard_button.pressed.connect(_on_leaderboard)
 	encyclopedia_button.pressed.connect(_on_encyclopedia)
-	heroes_button.disabled = true
+	shop_button.pressed.connect(_on_shop)
+	heroes_button.pressed.connect(_on_heroes)
 	_build_level_entries()
 
 
@@ -46,6 +48,14 @@ func _on_leaderboard() -> void:
 
 func _on_encyclopedia() -> void:
 	SceneManager.goto("res://ui/EncyclopediaScreen.tscn")
+
+
+func _on_heroes() -> void:
+	SceneManager.goto("res://ui/TalentScreen.tscn")
+
+
+func _on_shop() -> void:
+	SceneManager.goto("res://ui/ShopScreen.tscn")
 
 
 func _build_level_entries() -> void:

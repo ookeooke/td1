@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" uid="uid://ct8yjsiicg7nj" path="res://enemies/EnemyBasic.tscn" id="4_basic"]
 [ext_resource type="PackedScene" uid="uid://b1td1flysc002" path="res://enemies/EnemyFlying.tscn" id="5_fly"]
 [ext_resource type="PackedScene" uid="uid://b1td1healsc02" path="res://enemies/EnemyHealer.tscn" id="6_heal"]
+[ext_resource type="PackedScene" uid="uid://b1td1boss1scn" path="res://enemies/bosses/Boss1.tscn" id="7_boss"]
 
 [sub_resource type="Resource" id="Spawn_W1_Left"]
 script = ExtResource("3_spawn")
@@ -67,6 +68,32 @@ spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W3_Left"), SubResourc
 countdown = 5.0
 bounty = 40
 
+[sub_resource type="Resource" id="Spawn_W4_Boss"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("7_boss")
+count = 1
+
+[sub_resource type="Resource" id="Spawn_W4_Escort"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("4_basic")
+count = 6
+interval = 1.5
+start_delay = 2.0
+
+[sub_resource type="Resource" id="Spawn_W4_Fly"]
+script = ExtResource("3_spawn")
+path_id = "top"
+enemy_scene = ExtResource("5_fly")
+count = 4
+interval = 1.0
+start_delay = 4.0
+
+[sub_resource type="Resource" id="Wave4"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W4_Boss"), SubResource("Spawn_W4_Escort"), SubResource("Spawn_W4_Fly")])
+countdown = 5.0
+bounty = 80
+
 [resource]
 script = ExtResource("1_list")
-waves = Array[ExtResource("2_wave")]([SubResource("Wave1"), SubResource("Wave2"), SubResource("Wave3")])
+waves = Array[ExtResource("2_wave")]([SubResource("Wave1"), SubResource("Wave2"), SubResource("Wave3"), SubResource("Wave4")])

@@ -26,6 +26,7 @@ var _endless: bool = false
 const _EnemyBasicScene: PackedScene = preload("res://enemies/EnemyBasic.tscn")
 const _EnemyFlyingScene: PackedScene = preload("res://enemies/EnemyFlying.tscn")
 const _EnemyHealerScene: PackedScene = preload("res://enemies/EnemyHealer.tscn")
+const _Boss1Scene: PackedScene = preload("res://enemies/bosses/Boss1.tscn")
 const _PATH_IDS: Array[String] = ["left", "right", "top"]
 
 
@@ -121,7 +122,7 @@ func _run_spawner(spawn: Resource) -> void:
 		interval *= 0.85
 	for i in count:
 		if not _running:
-			return
+			break
 		spawn_enemy(path, spawn.path_id, spawn.enemy_scene)
 		if i < count - 1:
 			await get_tree().create_timer(interval).timeout
@@ -244,6 +245,14 @@ func _generate_endless_wave(wave_num: int) -> Resource:
 		heal_spawn.interval = 3.0
 		heal_spawn.start_delay = 3.0
 		spawns.append(heal_spawn)
+	# Boss every 10 waves in endless.
+	if wave_num >= 10 and wave_num % 10 == 0:
+		var boss_spawn := spawn_script.new()
+		boss_spawn.path_id = active_paths[0]
+		boss_spawn.enemy_scene = _Boss1Scene
+		boss_spawn.count = 1
+		boss_spawn.start_delay = 5.0
+		spawns.append(boss_spawn)
 
 	wave_data.spawns = spawns
 	return wave_data

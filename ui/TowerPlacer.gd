@@ -1,14 +1,19 @@
 extends Node
 
-# Phase 8: listens for tower_build_requested, resolves tower_id → scene/data/cost,
-# spends gold through GameState, instances the tower at the spot position,
-# parents it under @towers_parent, and registers it with GridManager.
-# New tower types register here in later phases (mage, artillery, barracks).
+# Phase 8 + 38 refactor: resolves tower_id → scene/data/cost via
+# ContentRegistry + a scene map. Adding a new tower = one .tres in
+# ContentRegistry + one scene_map entry here (needed because attack
+# towers and barracks use different scene structures).
 
-const ARCHER_SCENE: PackedScene = preload("res://towers/TowerArcher.tscn")
-const ARCHER_DATA: Resource = preload("res://towers/data/tower_archer.tres")
-const BARRACKS_SCENE: PackedScene = preload("res://towers/TowerBarracks.tscn")
-const BARRACKS_DATA: Resource = preload("res://towers/data/tower_barracks.tres")
+# Scene map: tower_id → PackedScene. The only hardcoded part — needed
+# because BaseTower vs TowerBarracks have different scene structures.
+# ContentRegistry provides the data; this provides the scene.
+const _SCENE_MAP: Dictionary = {
+	"archer": preload("res://towers/TowerArcher.tscn"),
+	"barracks": preload("res://towers/TowerBarracks.tscn"),
+	"mage": preload("res://towers/TowerMage.tscn"),
+	"artillery": preload("res://towers/TowerArtillery.tscn"),
+}
 
 @export var towers_parent_path: NodePath
 @export var grid_manager_path: NodePath
@@ -25,16 +30,19 @@ func _ready() -> void:
 	_grid = get_node_or_null(grid_manager_path)
 	if _grid == null:
 		_grid = get_tree().root.find_child("GridManager", true, false)
-	_registry["archer"] = {
-		"scene": ARCHER_SCENE,
-		"data": ARCHER_DATA,
-		"cost": ARCHER_DATA.cost,
-	}
-	_registry["barracks"] = {
-		"scene": BARRACKS_SCENE,
-		"data": BARRACKS_DATA,
-		"cost": BARRACKS_DATA.cost,
-	}
+	# Build the registry from ContentRegistry's tower data + the scene map.
+	for tower_data in ContentRegistry.towers:
+		if tower_data == null:
+			continue
+		var tid: String = tower_data.tower_id
+		if tid == "" or not _SCENE_MAP.has(tid):
+			push_warning("[TowerPlacer] no scene mapped for tower_id '%s'" % tid)
+			continue
+		_registry[tid] = {
+			"scene": _SCENE_MAP[tid],
+			"data": tower_data,
+			"cost": int(tower_data.cost),
+		}
 	EventBus.tower_build_requested.connect(_on_build_requested)
 	EventBus.tower_sell_requested.connect(_on_sell_requested)
 	EventBus.tower_upgrade_requested.connect(_on_upgrade_requested)

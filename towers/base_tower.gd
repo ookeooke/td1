@@ -17,8 +17,6 @@ const MAX_LEVEL: int = 3
 # index into `data.level_3_branches`. Decision is permanent once set.
 var branch_idx: int = -1
 
-const _SlowEffectScriptBranch := preload("res://systems/SlowEffect.gd")
-const _StunEffectScriptBranch := preload("res://systems/StunEffect.gd")
 
 # Phase 19 review fix: attack loop moved off a Timer node and onto a float
 # cooldown ticked in _physics_process. This makes the first shot fire the
@@ -99,15 +97,13 @@ func upgrade_to_branch(idx: int) -> bool:
 
 func get_effective_damage() -> float:
 	var base: float = _level_override().damage if _level_override() != null else data.damage
-	# Phase 28: apply permanent upgrade multiplier (Sharp Arrows = type 0).
-	base *= GameState.get_upgrade_multiplier(0)
+	base *= GameState.get_upgrade_multiplier(GameState.MOD_ARCHER_DAMAGE)
 	return base
 
 
 func get_effective_range() -> float:
 	var base: float = _level_override().attack_range if _level_override() != null else data.attack_range
-	# Phase 28: apply permanent upgrade multiplier (Extended Range = type 1).
-	base *= GameState.get_upgrade_multiplier(1)
+	base *= GameState.get_upgrade_multiplier(GameState.MOD_TOWER_RANGE)
 	return base
 
 
@@ -228,8 +224,9 @@ func _fire_projectile(target: Node) -> void:
 	var effect = _build_on_hit_effect()
 	if effect == null:
 		effect = _maybe_roll_debug_effect()
+	var aoe: float = data.aoe_radius if data != null else 0.0
 	if proj.has_method("setup"):
-		proj.setup(target, get_effective_damage(), data.damage_type, self, effect)
+		proj.setup(target, get_effective_damage(), data.damage_type, self, effect, aoe)
 
 
 func _build_on_hit_effect():
@@ -237,9 +234,9 @@ func _build_on_hit_effect():
 	if ov == null:
 		return null
 	if ov.on_hit_slow_factor > 0.0 and ov.on_hit_slow_duration > 0.0:
-		return _SlowEffectScriptBranch.new(ov.on_hit_slow_factor, ov.on_hit_slow_duration)
+		return _SlowEffectScript.new(ov.on_hit_slow_factor, ov.on_hit_slow_duration)
 	if ov.on_hit_stun_duration > 0.0:
-		return _StunEffectScriptBranch.new(ov.on_hit_stun_duration)
+		return _StunEffectScript.new(ov.on_hit_stun_duration)
 	return null
 
 
@@ -259,7 +256,7 @@ func _maybe_roll_debug_effect():
 
 
 func _draw() -> void:
-	var base_body: Color = Color(0.35, 0.45, 0.75)
+	var base_body: Color = data.body_color if data != null else Color(0.35, 0.45, 0.75)
 	var ov: Resource = _level_override()
 	if ov != null:
 		base_body = base_body * ov.tint

@@ -10,19 +10,12 @@ extends CanvasLayer
 @onready var title_label: Label = %TitleLabel
 @onready var build_row: VBoxContainer = %BuildRow
 @onready var sell_row: VBoxContainer = %SellRow
-@onready var archer_button: Button = %ArcherButton
-@onready var barracks_button: Button = %BarracksButton
 @onready var sell_button: Button = %SellButton
 @onready var upgrade_button: Button = %UpgradeButton
 @onready var branch_a_button: Button = %BranchARow
 @onready var branch_b_button: Button = %BranchBRow
 @onready var move_rally_button: Button = %MoveRallyButton
 @onready var close_button: Button = %CloseButton
-
-const ARCHER_ID: String = "archer"
-const ARCHER_COST: int = 50
-const BARRACKS_ID: String = "barracks"
-const BARRACKS_COST: int = 70
 
 var _current_spot_id: String = ""
 var _current_tower: Node = null
@@ -46,8 +39,6 @@ func _ready() -> void:
 	# visible=false, which would block input regardless of inner Control state.
 	visible = false
 	root.visible = true
-	archer_button.pressed.connect(_on_archer_pressed)
-	barracks_button.pressed.connect(_on_barracks_pressed)
 	sell_button.pressed.connect(_on_sell_pressed)
 	upgrade_button.pressed.connect(_on_upgrade_pressed)
 	branch_a_button.pressed.connect(_on_branch_pressed.bind(0))
@@ -108,10 +99,23 @@ func _show_sell_mode() -> void:
 
 
 func _refresh_build_buttons() -> void:
-	archer_button.text = "Build Archer (%dg)" % ARCHER_COST
-	archer_button.disabled = GameState.gold < ARCHER_COST
-	barracks_button.text = "Build Barracks (%dg)" % BARRACKS_COST
-	barracks_button.disabled = GameState.gold < BARRACKS_COST
+	# Dynamic: generate one button per unlocked tower from ContentRegistry.
+	for child in build_row.get_children():
+		child.queue_free()
+	for tower_data in ContentRegistry.towers:
+		if tower_data == null:
+			continue
+		var tid: String = tower_data.tower_id
+		if not UnlockManager.is_unlocked(tid):
+			continue
+		var cost: int = int(tower_data.cost)
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(0, 80)
+		btn.set("theme_override_font_sizes/font_size", 22)
+		btn.text = "Build %s (%dg)" % [tower_data.tower_name, cost]
+		btn.disabled = GameState.gold < cost
+		btn.pressed.connect(_on_build_pressed.bind(tid))
+		build_row.add_child(btn)
 
 
 func _refresh_sell_button() -> void:
@@ -183,17 +187,10 @@ func _on_tower_upgraded(tower: Node, _new_level: int) -> void:
 		_refresh_sell_button()
 
 
-func _on_archer_pressed() -> void:
+func _on_build_pressed(tower_id: String) -> void:
 	if not _actions_enabled or _current_spot_id == "":
 		return
-	EventBus.tower_build_requested.emit(_current_spot_id, ARCHER_ID)
-	_dismiss()
-
-
-func _on_barracks_pressed() -> void:
-	if not _actions_enabled or _current_spot_id == "":
-		return
-	EventBus.tower_build_requested.emit(_current_spot_id, BARRACKS_ID)
+	EventBus.tower_build_requested.emit(_current_spot_id, tower_id)
 	_dismiss()
 
 

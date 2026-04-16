@@ -28,4 +28,7 @@ class_name HeroData
 # subclasses. Items equipped later will also push AbilityData via the same
 # dispatcher, so passives + item-granted effects use one pipeline.
 @export var abilities: Array[Resource] = []
+# Per-hero talent tree (Phase 40). Purchased with stars, pushed onto the
+# hero's AbilityHost at gameplay start.
+@export var talents: Array[Resource] = []
 @export_multiline var encyclopedia_entry: String = ""

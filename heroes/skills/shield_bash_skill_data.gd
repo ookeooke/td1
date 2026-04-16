@@ -8,7 +8,12 @@ class_name ShieldBashSkillData
 # Proves the TargetType.AREA flow: SkillBar passes a Vector2 world-pos
 # as `target`, not a Node.
 
+const _SlowEffectScript: Script = preload("res://systems/SlowEffect.gd")
+
 @export var aoe_radius: float = 70.0
+# Optional: apply a slow to each enemy hit. Leave at 0 for pure-damage AoE.
+@export_range(0.0, 1.0) var on_hit_slow_factor: float = 0.0
+@export var on_hit_slow_duration: float = 0.0
 
 
 func apply(hero: Node, target) -> void:
@@ -25,3 +30,5 @@ func apply(hero: Node, target) -> void:
 			continue
 		if center.distance_squared_to(enemy.global_position) <= r2:
 			enemy.take_damage(damage, damage_type, hero)
+			if on_hit_slow_factor > 0.0 and on_hit_slow_duration > 0.0:
+				enemy.apply_status_effect(_SlowEffectScript.new(on_hit_slow_factor, on_hit_slow_duration))

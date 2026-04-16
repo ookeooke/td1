@@ -793,9 +793,135 @@ Data-driven encyclopedia using ContentRegistry (auto-stat from Resources) + unlo
 
 ---
 
+## 2026-04-16 — Phase 35: Second hero type (Mage) — data-driven hero architecture validated
+The Mage hero lands with 2 new GDScript files (both generic/reusable), 4 new .tres files, and zero hero-specific code. Proves the "50+ heroes as data" pattern works.
+- `systems/abilities/RegenAbility.gd` (new): ON_INTERVAL, heals owner by `heal_amount` per tick. Owner-agnostic — works on heroes, enemies, soldiers, anything with `heal()` or `current_health`. Used by Mana Shield buff.
+- `heroes/skills/buff_skill_data.gd` (new generic): SELF-cast that duplicates a configured `buff_ability: Resource` sub-resource, sets its `duration`, pushes onto hero's AbilityHost. Replaces the need for one-off buff skill scripts. Rally could be refactored to use this too (deferred).
+- `heroes/skills/shield_bash_skill_data.gd` (extended): added `on_hit_slow_factor` + `on_hit_slow_duration` fields. When > 0, each AoE-hit enemy gets a fresh SlowEffect. Frost Nova uses this — pure data parameterization, no new script.
+- **Mage data files (all .tres, zero .gd):**
+  - `hero_mage.tres` — HP 80, DMG 8, Range 140, SPD 0.8, Armor 0.05, M.Resist 0.3, damage_type=MAGIC, targets_flying=true.
+  - `skill_arcane_bolt.tres` — reuses SlashSkillData (single target, MAGIC, 35 dmg, 5 s CD, range 140).
+  - `skill_frost_nova.tres` — reuses ShieldBashSkillData (AoE 90 px, MAGIC 18 dmg, 60% slow for 3 s, 12 s CD).
+  - `skill_mana_shield.tres` — uses new BuffSkillData (SELF cast, pushes RegenAbility: 4 HP/s for 8 s, 20 s CD).
+- `heroes/base_hero.gd`:
+  - New `heal(amount)` method so RegenAbility can heal the hero.
+  - `_draw()` now data-driven: body color blue for magic heroes (damage_type==1), gold for physical. Accent color follows. No per-hero _draw() subclass needed.
+- **Dynamic hero spawning** (replacing hardcoded HeroWarrior instance):
+  - `main/Main.tscn`: removed the `[node name="HeroWarrior" instance=...]` hardcoded instance. HeroInputManager `hero_path` set to empty.
+  - `main/Main.gd`: new `_spawn_hero()` — looks up `GameState.selected_hero_id` in `ContentRegistry.find_hero()`, instantiates `HeroWarrior.tscn` as a template scene, overrides `hero.data` with the selected hero's Resource, positions at (188, 460), inserts before HeroInputManager in tree order, and wires `hero_input._hero` directly. Same scene template for all heroes — only data differs.
+  - `heroes/HeroInputManager.gd`: gracefully handles empty `hero_path` (Main.gd sets `_hero` directly).
+- `autoloads/GameState.gd`: new `selected_hero_id: String = "warrior"`. LoadoutScreen sets it.
+- `autoloads/ContentRegistry.gd`: added `hero_mage.tres` to heroes array.
+- `ui/LoadoutScreen.tscn + .gd`: replaced "— Hero —" label with "◀ Switch Hero ▶" Button. `_on_hero_title_tapped()` cycles `selected_hero_id` through `ContentRegistry.heroes`. Hero info auto-updates showing name, damage type, stats, skills. Works with any number of heroes.
+- **Scorecard — new GDScript per hero: 0.** Mage is pure data: 1 HeroData .tres + 3 SkillData .tres (reusing existing script classes). The 2 new .gd files (RegenAbility, BuffSkillData) are generic and reusable for every future hero/item/buff. This is the architecture delivering on the "50+ heroes" promise.
+- Works: F5 → LoadoutScreen → "◀ Switch Hero ▶" → cycles between Knight (gold square, physical, Slash/Bash/Rally) and Mage (blue square, magic, Arcane Bolt/Frost Nova/Mana Shield). Start with Mage → blue hero in gameplay, attacks at range (140 px!), Arcane Bolt zaps single targets, Frost Nova slows a cluster, Mana Shield regens HP. Switch to Knight → gold hero, melee. All skills + abilities work. SkillBar auto-rebuilds from hero.data.skills.
+- Broke: none.
+- Next: Phase 36 — UnlockManager (locked content states).
+
+---
+
+## 2026-04-16 — Bugfixes (reset order, spawner leak, duplicate preloads) + Phase 36: UnlockManager
+- **Bugfix #1** (GameState.gd): `reset()` now clears upgrade caches BEFORE calling `reset_for_level()`. Previously, reset_for_level read stale upgrade cache and granted ghost bonus gold on full progress reset.
+- **Bugfix #2** (WaveManager.gd): spawner loop changed `return` → `break` when `_running` is false, so `_active_spawners -= 1` always executes. Not a live bug (stop() zeroes it) but defensively correct.
+- **Bugfix #3** (base_tower.gd): removed duplicate `_SlowEffectScriptBranch` / `_StunEffectScriptBranch` preloads. Updated `_build_on_hit_effect()` to use the original `_SlowEffectScript` / `_StunEffectScript` constants.
+- **Phase 36 — UnlockManager** (`autoloads/UnlockManager.gd`): full implementation replacing the Phase 1 stub. Three unlock paths:
+  1. Free content: `requires_unlock == false` on the data Resource → always available (warrior, archer, barracks).
+  2. Explicit unlock: ID in `GameState.unlocked_content` — set by `UnlockManager.unlock(id)` (for IAP Phase 37, progression events).
+  3. Star-threshold auto-unlock: configurable `_star_thresholds` dictionary — reaching N total stars auto-grants access (no spending). Currently empty; uncomment `"hero_mage": 5` to gate the Mage behind 5★.
+  `is_unlocked(id)` checks all three paths in order. `_find_content_data(id)` searches ContentRegistry across heroes/towers/spells.
+- `autoloads/GameState.gd`: added `unlocked_content: Array[String]`. Cleared on `reset()`.
+- `autoloads/SaveManager.gd`: persists `unlocked_content` array.
+- `ui/LoadoutScreen.gd`: hero cycle (`_on_hero_title_tapped`) now skips locked heroes — only cycles through unlocked ones.
+- `ui/TowerSpotMenu.gd`: build buttons check `UnlockManager.is_unlocked(tower_id)`. Locked towers are hidden entirely (not greyed — hidden, so the player doesn't see content they can't use yet).
+- Currently all content has `requires_unlock = false`, so everything is available. Phase 37 (IAP) sets `requires_unlock = true` on premium content and wires purchase → `UnlockManager.unlock(id)`.
+- Works: F5 → all heroes/towers available (both have requires_unlock=false). If `_star_thresholds["mage"] = 5` is uncommented, Mage disappears from hero picker until player earns 5★. `UnlockManager.unlock("mage")` from console adds it back. Persists via save.
+- Broke: none.
+- Next: Phase 37 — IAP integration.
+
+---
+
 ## 2026-04-16 — Fast-forward button + save reset
 Two quality-of-life features before the upgrade tree phase.
 - **Fast-forward** (`ui/HUD.tscn + .gd`): SpeedButton (80×60) in a new TopRight HBoxContainer alongside PauseButton. Cycles 1x → 2x → 3x → 1x via `Engine.time_scale`. Affects everything uniformly (towers, enemies, timers, waves) — exactly what TD fast-forward needs. `SceneManager.goto()` resets time_scale to 1.0 so menus don't run accelerated. `PauseMenu._on_pause_requested()` saves current scale and restores on Resume.
 - **Reset Progress** (`ui/MainMenu.tscn + .gd`): small red-tinted button anchored bottom-center of MainMenu. Two-tap confirm: first tap → "Are you sure?" (auto-reverts after 3 s); second tap → `SaveManager.delete_save()` + "Progress reset!" feedback. Wipes `user://save.json` and calls `GameState.reset()`.
 - Works: F5 → gameplay → tap 1x button → text changes to 2x, everything moves twice as fast. Tap again → 3x. Tap again → back to 1x. Pause while at 2x → pause overlay runs at normal speed; Resume → restores 2x. Quit to WorldMap → speed resets to 1x. MainMenu → tap "Reset Progress" → "Are you sure?" → tap again → save wiped, stars gone.
 - Broke: none.
+
+---
+
+## 2026-04-16 — Phase 37: IAP (client-side stub)
+Minimal purchase infrastructure. Real billing SDK swaps in when store accounts are ready.
+- `progression/ProductData.gd` (new Resource): product_id, display_name, description, price_text, unlock_id.
+- `autoloads/PurchaseManager.gd` (new autoload stub): `purchase()` auto-succeeds → `UnlockManager.unlock()` → emits `iap_purchase_completed`. `restore_purchases()` no-op. TODO comments mark where real SDK calls go.
+- `ui/ShopScreen.tscn + .gd` (new): product list with Buy/"Owned" buttons + Restore Purchases. One product: Mage Hero $0.99.
+- `heroes/data/hero_mage.tres`: set `requires_unlock = true` — Mage locked by default, must purchase.
+- WorldMap: added Shop button in bottom bar.
+- Works: F5 → Shop → Buy Mage → auto-succeeds → Owned. Hero picker shows Mage. Persists. Reset → re-locked.
+- Next: Phase 38 — Boss system.
+
+---
+
+## 2026-04-16 — Phase 38: Boss system (multi-phase Orc Warlord)
+Justified subclass per Rule 11 — bosses have multi-phase state machines.
+- `enemies/bosses/BossPhaseData.gd` (new Resource): `hp_threshold` (0.0–1.0), `phase_name`, `damage_mult`, `speed_mult`, `abilities: Array[Resource]`, `tint`. Sorted by threshold descending at runtime.
+- `enemies/bosses/base_boss.gd` (new, extends BaseEnemy): `_check_phase_transition()` runs on every `take_damage` — when HP% crosses a threshold, pops old phase abilities from AbilityHost and pushes new ones. `_phase_damage_mult` / `_phase_speed_mult` scale base stats. Overrides `_effective_speed()` and `_combat_tick()` with multipliers. Always-visible health bar (bigger, red below 25%) with white phase-threshold markers. Larger body (r=22) with crown/horns indicator. Phase tint multiplies body color.
+- `enemies/EnemyData.gd`: added `boss_phases: Array[Resource]`, `is_boss: bool`.
+- `enemies/data/boss_orc_warlord.tres`: Orc Warlord — 200 HP, 0.3 armor, 40 speed, 10 dmg, 50 gold, 60 XP. Three phases:
+  - Normal (100–50%): base stats.
+  - Enraged (50–25%): ×1.5 damage, ×1.3 speed, gains HealAuraAbility (heals nearby allies).
+  - Desperate (25–0%): ×2.0 damage, ×1.5 speed, red tint. Pure aggression.
+- `enemies/bosses/Boss1.tscn`: Area2D on layer 2 (ground), r=22 collision shape.
+- `levels/level1_waves.tres`: added Wave 4 — boss + 6 orc escort + 4 harpies from top. Bounty 80g.
+- `autoloads/WaveManager.gd`: endless mode spawns a boss every 10 waves (wave 10, 20, 30...).
+- `autoloads/ContentRegistry.gd`: added boss_orc_warlord.tres to enemies array.
+- Works: F5 → waves 1–3 play normally → wave 4: large red boss appears with always-visible health bar + phase markers. As HP drops below 50%, boss turns orange-tinted, speeds up, starts healing nearby orcs. Below 25% → red tint, ×2 damage. Boss worth 50g + 60 XP on kill. Endless wave 10 also spawns the boss.
+- Broke: none.
+- Next: Phase 39 — second + third tower types.
+
+---
+
+## 2026-04-16 — Bugfixes (soldier HP bar, magic numbers, TowerPlacer registry, hero selector) + Phase 39: Mage Tower + Artillery Tower
+- **Bugfix: soldier ghost health bar** — `_effective_max_hp` now computed at spawn with upgrade multiplier. Health bar uses it as denominator. No more phantom 100%.
+- **Bugfix: magic numbers** — 8 named constants on GameState (`MOD_ARCHER_DAMAGE` through `MOD_SOLDIER_HEALTH`). All 7 call sites updated from raw ints.
+- **Bugfix: TowerPlacer** — now builds registry from ContentRegistry.towers + scene map. Adding tower = 1 .tres + 1 scene_map entry.
+- **Bugfix: hero selector** — validates current selection is still unlocked on LoadoutScreen open. Falls back to first unlocked on mismatch.
+- **Phase 39 — Mage Tower + Artillery Tower:**
+  - `towers/TowerData.gd`: added `aoe_radius: float` (0=single target, >0=splash) + `body_color: Color`.
+  - `projectiles/Arrow.gd`: refactored with `_aoe_radius` + `_on_hit()` splash logic (50% damage to nearby enemies within radius). Added `proj_color` export for visual differentiation.
+  - `projectiles/MageBolt.tscn` + `ArtilleryShell.tscn`: same Arrow.gd script, different speed/hit_radius/color.
+  - `towers/data/tower_mage.tres`: Mage Tower — 8 magic dmg, 140 range, 0.7 spd, 60 px AoE splash, targets flying, cost 90g. Purple body.
+  - `towers/data/tower_artillery.tres`: Artillery — 25 physical dmg, 200 range, 0.4 spd, 80 px AoE, ground-only, cost 120g. Brown body.
+  - `towers/TowerMage.tscn` + `TowerArtillery.tscn`: same BaseTower script, different data. Mage's RangeArea mask=6 (ground+flying), Artillery mask=2 (ground only).
+  - `base_tower.gd._draw()` now reads `data.body_color` for the tower circle color. No per-tower visual subclass.
+  - **TowerSpotMenu fully dynamic** — removed hardcoded ArcherButton/BarracksButton from .tscn and .gd. `_refresh_build_buttons()` now loops `ContentRegistry.towers`, creates a button per unlocked tower with name + cost. Adding tower type N+1 = zero TowerSpotMenu changes.
+  - `autoloads/ContentRegistry.gd`: added both tower data files.
+  - `ui/TowerPlacer.gd`: added both to scene map.
+- **Scorecard: 0 new tower-specific .gd files.** Both towers are pure data (.tres) + scene template (BaseTower script) + projectile visual (.tscn reusing Arrow.gd). Architecture delivers.
+- Works: F5 → tap spot → build menu shows 4 towers (Archer 50g, Barracks 70g, Mage Tower 90g, Artillery 120g). Build Mage → purple tower fires blue bolts that splash in 60px radius, hits flying. Build Artillery → brown tower fires orange shells with 80px splash, ground only, devastating vs clusters but misses harpies. Splash = 50% damage to non-primary targets.
+- Broke: none.
+- Next: Phase 40 — Skill tree / talent points per hero.
+
+---
+
+## 2026-04-16 — Phase 40: Skill tree / talent points per hero
+Per-hero talents purchased with stars (same pool as permanent upgrades). Talents push AbilityData onto the hero at gameplay start via the existing AbilityHost.
+- `progression/TalentData.gd` (new Resource): talent_id, talent_name, description, star_cost, prerequisite_id, ability (AbilityData to push).
+- `systems/abilities/LifestealAbility.gd` (new): ON_HIT_DEALT, heals owner by `heal_amount` on every attack. Used by both heroes' lifesteal talents.
+- `heroes/HeroData.gd`: added `talents: Array[Resource]` field.
+- `autoloads/GameState.gd`: added `hero_talents: Dictionary` (hero_id → Array[String] of purchased talent_ids). `get_spent_talent_stars()` iterates all heroes' purchased talents to compute star spending. `get_available_stars()` now subtracts both upgrade + talent spending. Cleared on reset().
+- `autoloads/SaveManager.gd`: persists `hero_talents` dictionary.
+- `heroes/base_hero.gd`: in `_ready()`, after pushing passive abilities, iterates purchased talents for the current hero and pushes their abilities (duplicated per instance to avoid shared state).
+- **Knight talents** (authored inline in hero_warrior.tres):
+  - Endurance (2★): RegenAbility — 2 HP/2s passive regen.
+  - Vampiric Strike (2★): LifestealAbility — heal 2 HP per attack.
+  - Heavy Blows (3★, prereq: Vampiric): OnHitBonusDamageAbility — +4 physical per attack.
+- **Mage talents** (authored inline in hero_mage.tres):
+  - Meditation (2★): RegenAbility — 3 HP/3s passive regen.
+  - Arcane Siphon (3★, prereq: Meditation): LifestealAbility — heal 3 HP per attack.
+  - Arcane Power (3★): OnHitBonusDamageAbility — +5 magic per attack.
+- `ui/TalentScreen.tscn + .gd` (new): per-hero talent tree UI. Switch button cycles heroes. Shows talent list with name/description/cost/prereq status/purchase button. Mirrors UpgradeTree pattern. Accessible from WorldMap "Talents" button (renamed from "Heroes").
+- WorldMap bottom bar now: Talents | Upgrades | Endless | Scores | Shop | Codex
+- Works: F5 → WorldMap → Talents → Knight talents shown → purchase Endurance (2★) → back → play level → Knight passively regens 2 HP/2s during combat. Switch to Mage talents → purchase Meditation → Mage regens 3 HP/3s. Prereq chain: Heavy Blows locked until Vampiric Strike owned. Stars shared between upgrades + talents. Persists via save.
+- Broke: none.
+- **Phase 1–40 complete.** Only Phase 41 (polish) remains.
+- Next: Phase 41 — Polish (sound, particles, animations, menus, data-driven visuals).

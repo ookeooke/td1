@@ -21,6 +21,7 @@ const LUNGE_DISTANCE: float = 5.0
 
 var state: int = State.MOVING
 var current_health: int = 0
+var _effective_max_hp: int = 0  # set in _ready with upgrade multiplier
 
 var _blocking_position: Vector2 = Vector2.ZERO
 var _engaged_enemy: Node = null
@@ -43,7 +44,8 @@ var _ability_host: RefCounted = null
 func _ready() -> void:
 	if data:
 		# Phase 28: permanent upgrade (Reinforced Walls / Soldier HP = type 7).
-		current_health = int(ceil(float(data.max_health) * GameState.get_upgrade_multiplier(7)))
+		_effective_max_hp = int(ceil(float(data.max_health) * GameState.get_upgrade_multiplier(GameState.MOD_SOLDIER_HEALTH)))
+		current_health = _effective_max_hp
 		var circle := CircleShape2D.new()
 		circle.radius = data.melee_range
 		melee_shape.shape = circle
@@ -187,11 +189,12 @@ func _draw() -> void:
 
 
 func _draw_health_bar() -> void:
-	if data == null or data.max_health <= 0:
+	var max_hp: int = _effective_max_hp if _effective_max_hp > 0 else (data.max_health if data != null else 0)
+	if max_hp <= 0:
 		return
-	if current_health >= data.max_health:
+	if current_health >= max_hp:
 		return
-	var pct: float = clampf(float(current_health) / float(data.max_health), 0.0, 1.0)
+	var pct: float = clampf(float(current_health) / float(max_hp), 0.0, 1.0)
 	var origin: Vector2 = Vector2(-HP_BAR_SIZE.x * 0.5, HP_BAR_Y_OFFSET)
 	draw_rect(Rect2(origin, HP_BAR_SIZE), Color(0.12, 0.12, 0.12))
 	if pct > 0.0:

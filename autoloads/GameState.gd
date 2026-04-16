@@ -3,12 +3,24 @@ extends Node
 const STARTING_GOLD: int = 100
 const STARTING_LIVES: int = 20
 
+# Mirrors UpgradeData.EffectType so call sites don't use magic ints.
+# Values must match the enum in progression/UpgradeData.gd exactly.
+const MOD_ARCHER_DAMAGE: int = 0
+const MOD_TOWER_RANGE: int = 1
+const MOD_HERO_HEALTH: int = 2
+const MOD_HERO_DAMAGE: int = 3
+const MOD_HERO_XP: int = 4
+const MOD_SPELL_COOLDOWN: int = 5
+const MOD_STARTING_GOLD: int = 6
+const MOD_SOLDIER_HEALTH: int = 7
+
 var gold: int = 0
 var lives: int = 0
 var score: int = 0
 var wave_number: int = 0
 var current_mode: String = "campaign"  # "campaign" / "heroic" / "iron" / "endless"
 var current_level_id: String = "level_1"
+var selected_hero_id: String = "warrior"
 var stars_earned: int = 0  # set on victory, 0 otherwise
 
 # Progression state — survives level restarts and scene transitions. Only
@@ -21,6 +33,9 @@ var heroic_complete: Dictionary = {}   # level_id → true
 var iron_complete: Dictionary = {}     # level_id → true
 var purchased_upgrades: Array[String] = []
 var encyclopedia_unlocked: Array[String] = []  # content IDs unlocked by first encounter
+var unlocked_content: Array[String] = []       # explicitly unlocked (IAP, star-gate, event)
+# Per-hero purchased talents: hero_id → Array[String] of talent_ids.
+var hero_talents: Dictionary = {}
 var endless_best_score: int = 0
 # Local leaderboard — top 20 entries, sorted descending. Each entry:
 # { "name": String, "score": int, "wave": int }
@@ -113,8 +128,22 @@ func get_spent_stars() -> int:
 	return _spent_stars_cache
 
 
+func get_spent_talent_stars() -> int:
+	# Caller must pass talent data to compute cost. For simplicity,
+	# we iterate all heroes' talents via ContentRegistry.
+	var total: int = 0
+	for hero_data in ContentRegistry.heroes:
+		if hero_data == null or not ("talents" in hero_data):
+			continue
+		var purchased: Array = hero_talents.get(hero_data.hero_id, [])
+		for talent in hero_data.talents:
+			if talent != null and talent.talent_id in purchased:
+				total += int(talent.star_cost)
+	return total
+
+
 func get_available_stars() -> int:
-	return get_total_stars() - get_spent_stars()
+	return get_total_stars() - get_spent_stars() - get_spent_talent_stars()
 
 
 var _spent_stars_cache: int = 0
@@ -145,7 +174,7 @@ func rebuild_upgrade_cache(all_upgrades: Array) -> void:
 		total_cost += int(data.star_cost)
 		var etype: int = int(data.effect_type)
 		# STARTING_GOLD_BONUS is additive; everything else multiplicative.
-		if etype == 6:  # UpgradeData.EffectType.STARTING_GOLD_BONUS
+		if etype == MOD_STARTING_GOLD:
 			_upgrade_add_cache[etype] = _upgrade_add_cache.get(etype, 0.0) + data.effect_value
 		else:
 			_upgrade_mult_cache[etype] = _upgrade_mult_cache.get(etype, 1.0) * data.effect_value
@@ -156,7 +185,7 @@ func reset_for_level() -> void:
 	# Resets per-level volatile state (gold/lives/wave) while preserving
 	# cross-level progression (stars, unlocks, level_id, mode). Use this
 	# when restarting a level or transitioning from WorldMap to gameplay.
-	gold = STARTING_GOLD + int(get_upgrade_bonus(6))  # STARTING_GOLD_BONUS
+	gold = STARTING_GOLD + int(get_upgrade_bonus(MOD_STARTING_GOLD))
 	lives = 1 if current_mode == "iron" else STARTING_LIVES
 	score = 0
 	wave_number = 0
@@ -190,21 +219,26 @@ func _on_hero_spawned_for_encyclopedia(hero: Node) -> void:
 
 
 func reset() -> void:
+	# Clear caches + progression BEFORE reset_for_level() so the gold
+	# bonus calc doesn't read stale upgrade data (was granting ghost
+	# bonus gold from the prior save).
 	current_mode = "campaign"
-	reset_for_level()
+	current_level_id = "level_1"
+	selected_hero_id = "warrior"
 	level_stars = {"level_1": 0}
 	levels_unlocked = {"level_1": true}
 	heroic_complete = {}
 	iron_complete = {}
 	purchased_upgrades = []
-	endless_best_score = 0
-	endless_leaderboard = []
-	encyclopedia_unlocked = []
 	_upgrade_mult_cache.clear()
 	_upgrade_add_cache.clear()
 	_spent_stars_cache = 0
-	current_level_id = "level_1"
-	current_mode = "campaign"
+	endless_best_score = 0
+	endless_leaderboard = []
+	encyclopedia_unlocked = []
+	unlocked_content = []
+	hero_talents = {}
+	reset_for_level()  # now reads zeroed caches → correct starting gold
 
 
 func add_gold(amount: int) -> void:

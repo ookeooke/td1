@@ -7,11 +7,10 @@
 [ext_resource type="PackedScene" uid="uid://c70svntlw28u6" path="res://ui/TowerSpotMenu.tscn" id="5_menu"]
 [ext_resource type="PackedScene" uid="uid://c70rgmgd86rq6" path="res://ui/RangePreview.tscn" id="6_range"]
 [ext_resource type="PackedScene" uid="uid://ct8ylftl7uafj" path="res://ui/GameOverScreen.tscn" id="7_gameover"]
-[ext_resource type="PackedScene" uid="uid://ct8ymjywf8nnl" path="res://heroes/HeroWarrior.tscn" id="8_hero"]
 [ext_resource type="Script" path="res://heroes/HeroInputManager.gd" id="9_heroinput"]
 [ext_resource type="PackedScene" uid="uid://b1td1skillbar" path="res://ui/SkillBar.tscn" id="10_skillbar"]
 [ext_resource type="PackedScene" uid="uid://b1td1spellpanel" path="res://ui/SpellPanel.tscn" id="11_spellpanel"]
-[ext_resource type="PackedScene" uid="uid://b1td1pausemenu" path="res://ui/PauseMenu.tscn" id="12_pause"]
+[ext_resource type="PackedScene" uid="uid://ct8yuf20wlabe" path="res://ui/PauseMenu.tscn" id="12_pause"]
 
 [node name="Main" type="Node2D" unique_id=2036122815]
 script = ExtResource("1_main")
@@ -27,12 +26,9 @@ grid_manager_path = NodePath("../Level1/GridManager")
 
 [node name="RangePreview" parent="." unique_id=2115949086 instance=ExtResource("6_range")]
 
-[node name="HeroWarrior" parent="." instance=ExtResource("8_hero")]
-position = Vector2(188, 460)
-
 [node name="HeroInputManager" type="Node" parent="."]
 script = ExtResource("9_heroinput")
-hero_path = NodePath("../HeroWarrior")
+hero_path = NodePath("")
 grid_manager_path = NodePath("../Level1/GridManager")
 map_path = NodePath("../Level1")
 

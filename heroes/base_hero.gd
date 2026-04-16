@@ -89,6 +89,12 @@ func _ready() -> void:
 	if "abilities" in data:
 		for ability in data.abilities:
 			_ability_host.add_ability(ability)
+	# Phase 40: push purchased talents' abilities onto the hero.
+	if "talents" in data and data.hero_id in GameState.hero_talents:
+		var purchased_ids: Array = GameState.hero_talents[data.hero_id]
+		for talent in data.talents:
+			if talent != null and talent.talent_id in purchased_ids and talent.ability != null:
+				_ability_host.add_ability(talent.ability.duplicate())
 	# Deferred so sibling nodes (HUD, Main) have finished _ready() and
 	# connected to hero_spawned before we fire it. Without this, Main.tscn
 	# sibling-order has HUD readying AFTER the hero, so the initial Lv/XP
@@ -106,8 +112,7 @@ func _effective_damage() -> float:
 	if data == null:
 		return 0.0
 	var base: float = data.attack_damage * (1.0 + (level - 1) * LEVEL_DAMAGE_GROWTH)
-	# Phase 28: permanent upgrade (Hero Training = type 3).
-	base *= GameState.get_upgrade_multiplier(3)
+	base *= GameState.get_upgrade_multiplier(GameState.MOD_HERO_DAMAGE)
 	return base
 
 
@@ -208,8 +213,7 @@ func gain_xp(amount: int) -> void:
 		return
 	if level >= data.max_level:
 		return
-	# Phase 28: permanent upgrade (Fast Learner = type 4).
-	var scaled: int = int(ceil(float(amount) * GameState.get_upgrade_multiplier(4)))
+	var scaled: int = int(ceil(float(amount) * GameState.get_upgrade_multiplier(GameState.MOD_HERO_XP)))
 	current_xp += scaled
 	EventBus.hero_xp_gained.emit(amount)
 	var needed: int = _xp_needed_for_next_level()
@@ -387,6 +391,16 @@ func _attack_step(delta: float) -> void:
 			_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_KILL, {"victim": enemy})
 
 
+func heal(amount: float) -> void:
+	if state == State.DEAD or data == null:
+		return
+	var max_hp: int = _effective_max_health()
+	if current_health >= max_hp:
+		return
+	current_health = mini(max_hp, current_health + int(ceil(amount)))
+	queue_redraw()
+
+
 func take_damage(amount: float, type: int, source: Node = null) -> void:
 	if state == State.DEAD or data == null:
 		return
@@ -420,13 +434,19 @@ func _draw() -> void:
 	# covers the inside of the ring.
 	if is_selected:
 		draw_arc(Vector2.ZERO, SELECTION_RING_RADIUS, 0, TAU, 32, Color(1.0, 0.95, 0.3, 0.85), 2.5)
-	# Body + sword translated by the lunge offset.
+	# Body + accent translated by the lunge offset. Color varies by damage
+	# type so the Knight (gold/sword) and Mage (blue/staff) are visually
+	# distinct without per-hero _draw() subclasses.
 	var off: Vector2 = _lunge_offset()
 	if off != Vector2.ZERO:
 		draw_set_transform(off, 0.0, Vector2.ONE)
-	draw_rect(Rect2(-10, -10, 20, 20), Color(0.85, 0.7, 0.2))
-	draw_rect(Rect2(-10, -10, 20, 20), Color(0.2, 0.15, 0.05), false, 2.0)
-	draw_line(Vector2(0, -10), Vector2(0, -16), Color(0.9, 0.9, 0.95), 2.5)
+	var is_magic: bool = data != null and data.damage_type == 1
+	var body_color: Color = Color(0.3, 0.4, 0.85) if is_magic else Color(0.85, 0.7, 0.2)
+	var outline_color: Color = Color(0.1, 0.12, 0.3) if is_magic else Color(0.2, 0.15, 0.05)
+	var accent_color: Color = Color(0.6, 0.7, 1.0) if is_magic else Color(0.9, 0.9, 0.95)
+	draw_rect(Rect2(-10, -10, 20, 20), body_color)
+	draw_rect(Rect2(-10, -10, 20, 20), outline_color, false, 2.0)
+	draw_line(Vector2(0, -10), Vector2(0, -16), accent_color, 2.5)
 	if off != Vector2.ZERO:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_health_bar()

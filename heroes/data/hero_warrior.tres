@@ -4,6 +4,54 @@
 [ext_resource type="Resource" uid="uid://c70sqhllc0nnn" path="res://heroes/data/skills/skill_slash.tres" id="2_slash"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_shield_bash.tres" id="3_bash"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_rally.tres" id="4_rally"]
+[ext_resource type="Script" path="res://progression/TalentData.gd" id="5_talent"]
+[ext_resource type="Script" path="res://systems/abilities/LifestealAbility.gd" id="6_lifesteal"]
+[ext_resource type="Script" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="7_bonusdmg"]
+[ext_resource type="Script" path="res://systems/abilities/RegenAbility.gd" id="8_regen"]
+
+[sub_resource type="Resource" id="Lifesteal_Ability"]
+script = ExtResource("6_lifesteal")
+ability_id = "warrior_lifesteal"
+trigger = 3
+heal_amount = 2.0
+
+[sub_resource type="Resource" id="Talent_Vampiric"]
+script = ExtResource("5_talent")
+talent_id = "warrior_vampiric"
+talent_name = "Vampiric Strike"
+description = "Each attack heals the Knight for 2 HP."
+star_cost = 2
+ability = SubResource("Lifesteal_Ability")
+
+[sub_resource type="Resource" id="BonusDmg_Ability"]
+script = ExtResource("7_bonusdmg")
+ability_id = "warrior_heavy_blows"
+trigger = 3
+bonus_damage = 4.0
+
+[sub_resource type="Resource" id="Talent_HeavyBlows"]
+script = ExtResource("5_talent")
+talent_id = "warrior_heavy_blows"
+talent_name = "Heavy Blows"
+description = "+4 bonus physical damage on every attack."
+star_cost = 3
+prerequisite_id = "warrior_vampiric"
+ability = SubResource("BonusDmg_Ability")
+
+[sub_resource type="Resource" id="Regen_Ability"]
+script = ExtResource("8_regen")
+ability_id = "warrior_endurance"
+trigger = 1
+interval = 2.0
+heal_amount = 2.0
+
+[sub_resource type="Resource" id="Talent_Endurance"]
+script = ExtResource("5_talent")
+talent_id = "warrior_endurance"
+talent_name = "Endurance"
+description = "Passively regenerate 2 HP every 2 seconds."
+star_cost = 2
+ability = SubResource("Regen_Ability")
 
 [resource]
 script = ExtResource("1_data")
@@ -14,4 +62,5 @@ attack_damage = 12.0
 attack_range = 30.0
 armor = 0.25
 skills = Array[Resource]([ExtResource("2_slash"), ExtResource("3_bash"), ExtResource("4_rally")])
+talents = Array[Resource]([SubResource("Talent_Endurance"), SubResource("Talent_Vampiric"), SubResource("Talent_HeavyBlows")])
 encyclopedia_entry = "Sword-and-board melee hero. Strong armor, tanks ground enemies. Hits flying foes when in range."

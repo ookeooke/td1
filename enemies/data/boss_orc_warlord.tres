@@ -1,0 +1,55 @@
+[gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://b1td1boss1"]
+
+[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Script" path="res://enemies/bosses/BossPhaseData.gd" id="2_phase"]
+[ext_resource type="Script" path="res://systems/abilities/HealAuraAbility.gd" id="3_heal"]
+
+[sub_resource type="Resource" id="Phase1"]
+script = ExtResource("2_phase")
+hp_threshold = 1.0
+phase_name = "Normal"
+damage_mult = 1.0
+speed_mult = 1.0
+tint = Color(1, 1, 1, 1)
+
+[sub_resource type="Resource" id="HealAura_Boss"]
+script = ExtResource("3_heal")
+ability_id = "boss_heal_aura"
+trigger = 1
+interval = 3.0
+heal_range = 100.0
+heal_amount = 2.0
+
+[sub_resource type="Resource" id="Phase2"]
+script = ExtResource("2_phase")
+hp_threshold = 0.5
+phase_name = "Enraged"
+damage_mult = 1.5
+speed_mult = 1.3
+abilities = Array[Resource]([SubResource("HealAura_Boss")])
+tint = Color(1.3, 0.8, 0.6, 1)
+
+[sub_resource type="Resource" id="Phase3"]
+script = ExtResource("2_phase")
+hp_threshold = 0.25
+phase_name = "Desperate"
+damage_mult = 2.0
+speed_mult = 1.5
+tint = Color(1.5, 0.5, 0.5, 1)
+
+[resource]
+script = ExtResource("1_data")
+enemy_id = "boss_orc_warlord"
+enemy_name = "Orc Warlord"
+max_health = 200
+move_speed = 40.0
+armor = 0.3
+magic_resist = 0.1
+lives_worth = 5
+gold_worth = 50
+xp_worth = 60
+attack_damage = 10.0
+attack_speed = 0.8
+boss_phases = Array[Resource]([SubResource("Phase1"), SubResource("Phase2"), SubResource("Phase3")])
+is_boss = true
+encyclopedia_entry = "Massive orc chieftain. Three combat phases — gets faster and hits harder as HP drops. Heals nearby allies when enraged."

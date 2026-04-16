@@ -21,11 +21,11 @@ var _map: Node2D
 
 
 func _ready() -> void:
-	_hero = get_node_or_null(hero_path)
+	if hero_path != NodePath(""):
+		_hero = get_node_or_null(hero_path)
+	# _hero may also be set directly by Main.gd after dynamic hero spawn.
 	_grid = get_node_or_null(grid_manager_path)
 	_map = get_node_or_null(map_path) as Node2D
-	if _hero == null:
-		push_error("[HeroInputManager] hero not found at %s" % hero_path)
 	if _grid == null:
 		push_error("[HeroInputManager] GridManager not found at %s" % grid_manager_path)
 	if _map == null:

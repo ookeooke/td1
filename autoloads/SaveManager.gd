@@ -60,6 +60,8 @@ func save_game() -> void:
 		"endless_best_score": GameState.endless_best_score,
 		"endless_leaderboard": GameState.endless_leaderboard,
 		"encyclopedia_unlocked": GameState.encyclopedia_unlocked,
+		"unlocked_content": GameState.unlocked_content,
+		"hero_talents": GameState.hero_talents,
 		# Future phases extend here:
 		# "total_stars": computed from level_stars
 		# "endless_best_score": int
@@ -126,6 +128,18 @@ func load_game() -> void:
 	if data.has("iron_complete") and data.iron_complete is Dictionary:
 		for key in data.iron_complete:
 			GameState.iron_complete[key] = bool(data.iron_complete[key])
+	if data.has("hero_talents") and data.hero_talents is Dictionary:
+		GameState.hero_talents = {}
+		for hero_id in data.hero_talents:
+			var ids: Array = []
+			if data.hero_talents[hero_id] is Array:
+				for tid in data.hero_talents[hero_id]:
+					ids.append(str(tid))
+			GameState.hero_talents[hero_id] = ids
+	if data.has("unlocked_content") and data.unlocked_content is Array:
+		GameState.unlocked_content.clear()
+		for id in data.unlocked_content:
+			GameState.unlocked_content.append(str(id))
 	if data.has("encyclopedia_unlocked") and data.encyclopedia_unlocked is Array:
 		GameState.encyclopedia_unlocked.clear()
 		for id in data.encyclopedia_unlocked:

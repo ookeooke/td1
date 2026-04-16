@@ -1019,24 +1019,22 @@ Working:
 [x] Branch choice     [x] Stars              [x] SaveManager
 [x] Upgrade tree      [x] WorldMap           [x] HeroRoom
 [x] Heroic+Iron       [x] Endless mode       [x] Leaderboard
-[x] Encyclopedia      [ ] Hero 2             [ ] UnlockManager
-[ ] IAP               [ ] Boss system        [ ] Tower types 2+3
-[ ] Skill tree        [ ] Polish
+[x] Encyclopedia      [x] Hero 2             [x] UnlockManager
+[x] IAP               [x] Boss system        [x] Tower types 2+3
+[x] Skill tree        [ ] Polish
 
 Extras beyond the phase list:
 - Editor-editable Level1 (detour, before Phase 11)
 - Draggable rally flag on barracks (Phase 16 follow-up)
 - Tap-to-place rally via TowerSpotMenu "Move Rally" + range circle (Phase 17 follow-up 2)
 - Soldier health bar (mirrors enemy bar; same damage/auto-hide rules)
+- MainMenu + WorldMap + PauseMenu screen flow (pre-Phase 27 foundation)
+- SceneManager autoload for all scene transitions
+- Fast-forward (1x/2x/3x) + Reset Progress button
 
 Known bugs: none
-Last committed phase: Phase 16 (commit fde7ee0). Phases 17 + 18 + 19 + 20 + 20.5 + 21 + 22 + 23 + 24 + 25 and follow-ups uncommitted on disk.
-Next task: Phase 35 — Second hero type
-
-Extras beyond the phase list:
-- Editor-editable Level1 (detour, before Phase 11)
-- Draggable rally flag on barracks (Phase 16 follow-up)
-- Tap-to-place rally via TowerSpotMenu "Move Rally" + range circle (Phase 17 follow-up 2)
+Last committed phase: Phase 16 (commit fde7ee0). Phases 17–38 and follow-ups uncommitted on disk.
+Next task: Phase 41 — Polish (sound, particles, animations, menus)
 - Soldier health bar (mirrors enemy bar; same damage/auto-hide rules)
 - MainMenu + WorldMap + PauseMenu screen flow (pre-Phase 27 foundation)
 - SceneManager autoload for all scene transitions

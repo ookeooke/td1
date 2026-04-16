@@ -25,6 +25,7 @@ SaveManager="*res://autoloads/SaveManager.gd"
 UnlockManager="*res://autoloads/UnlockManager.gd"
 SceneManager="*res://autoloads/SceneManager.gd"
 ContentRegistry="*res://autoloads/ContentRegistry.gd"
+PurchaseManager="*res://autoloads/PurchaseManager.gd"
 
 [debug]
 

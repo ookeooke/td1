@@ -29,5 +29,8 @@ class_name EnemyData
 # bool+param pairs on this data class. Keeps EnemyData lean and lets
 # designers mix-and-match behaviours on a single enemy in the Inspector.
 @export var abilities: Array[Resource] = []
+# Phase 38: boss phase transitions. Empty for non-bosses.
+@export var boss_phases: Array[Resource] = []
+@export var is_boss: bool = false
 
 @export_multiline var encyclopedia_entry: String = ""

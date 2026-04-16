@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TowerData" format=3 uid="uid://b1td1towmage"]
+
+[ext_resource type="Script" path="res://towers/TowerData.gd" id="1_data"]
+[ext_resource type="PackedScene" uid="uid://b1td1magebolt" path="res://projectiles/MageBolt.tscn" id="2_proj"]
+
+[resource]
+script = ExtResource("1_data")
+tower_name = "Mage Tower"
+tower_id = "mage"
+damage = 8.0
+damage_type = 1
+attack_range = 140.0
+attack_speed = 0.7
+cost = 90
+sell_value = 50
+targets_flying = true
+aoe_radius = 60.0
+body_color = Color(0.45, 0.3, 0.75, 1.0)
+projectile_scene = ExtResource("2_proj")
+encyclopedia_entry = "Slow magic bolts that splash in an area. Hits flying. Low single-target DPS, high crowd control."

@@ -12,6 +12,12 @@ class_name TowerData
 @export var cost: int = 50
 @export var sell_value: int = 30
 @export var targets_flying: bool = false
+# AoE splash radius. 0 = single target (arrow). > 0 = projectile splashes
+# on hit, damaging all enemies within this radius of the impact point.
+@export var aoe_radius: float = 0.0
+# Placeholder body color for _draw(). Lets each tower type have a distinct
+# visual without per-tower _draw() subclasses.
+@export var body_color: Color = Color(0.35, 0.45, 0.75)
 
 # Phase 24: per-level upgrade stats. Index 0 = L2 data, index 1 = L3 data
 # (ignored when `level_3_branches` is non-empty — branches take over).

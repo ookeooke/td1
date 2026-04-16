@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="BuffSkillData" format=3 uid="uid://bhbexkr1g636t"]
+
+[ext_resource type="Script" path="res://heroes/skills/buff_skill_data.gd" id="1_buff"]
+[ext_resource type="Script" path="res://systems/abilities/RegenAbility.gd" id="2_regen"]
+
+[sub_resource type="Resource" id="ManaShieldRegen"]
+script = ExtResource("2_regen")
+ability_id = "mana_shield_regen"
+trigger = 1
+interval = 1.0
+heal_amount = 4.0
+
+[resource]
+script = ExtResource("1_buff")
+skill_name = "Mana Shield"
+skill_id = "mana_shield"
+skill_range = 0.0
+damage = 0.0
+damage_type = 0
+cooldown = 20.0
+target_type = 2
+buff_ability = SubResource("ManaShieldRegen")
+buff_duration = 8.0
+description = "Arcane barrier that regenerates 4 HP per second for 8 seconds."

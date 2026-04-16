@@ -70,6 +70,7 @@ signal game_over()
 signal game_won()
 signal pause_requested()
 signal encyclopedia_entry_unlocked(content_id)
+signal iap_purchase_completed(product_id, unlock_id)
 
 
 func _ready() -> void:

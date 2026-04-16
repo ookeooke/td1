@@ -11,15 +11,19 @@ var enemies: Array[Resource] = [
 	preload("res://enemies/data/enemy_basic.tres"),
 	preload("res://enemies/data/enemy_flying.tres"),
 	preload("res://enemies/data/enemy_healer.tres"),
+	preload("res://enemies/data/boss_orc_warlord.tres"),
 ]
 
 var towers: Array[Resource] = [
 	preload("res://towers/data/tower_archer.tres"),
 	preload("res://towers/data/tower_barracks.tres"),
+	preload("res://towers/data/tower_mage.tres"),
+	preload("res://towers/data/tower_artillery.tres"),
 ]
 
 var heroes: Array[Resource] = [
 	preload("res://heroes/data/hero_warrior.tres"),
+	preload("res://heroes/data/hero_mage.tres"),
 ]
 
 var spells: Array[Resource] = [

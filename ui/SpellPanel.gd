@@ -116,7 +116,7 @@ func _input(event: InputEvent) -> void:
 	# Otherwise we enforce the range. Current Fireball uses 0.
 	spell.apply(world_pos, self)
 	# Phase 28: permanent upgrade (Spell Mastery = type 5).
-	_cooldowns[_targeting_idx] = spell.cooldown * GameState.get_upgrade_multiplier(5)
+	_cooldowns[_targeting_idx] = spell.cooldown * GameState.get_upgrade_multiplier(GameState.MOD_SPELL_COOLDOWN)
 	EventBus.spell_cast.emit(spell.spell_name, world_pos)
 	EventBus.spell_cooldown_started.emit(spell.spell_name, spell.cooldown)
 	_cancel_targeting()

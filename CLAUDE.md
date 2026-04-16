@@ -15,6 +15,9 @@
 8. **All save/load through SaveManager only.** No other script touches the save file.
 9. **Before changing anything working, explain why the change is needed.** Then wait for approval.
 10. **Never skip or combine build phases.** Each phase must be committed to Git before starting the next.
+11. **New content is authored as data, not code.** Every new hero / soldier / enemy / skill / spell / ability / item is a `.tres` resource composed from existing base classes + AbilityData components. Only subclass a base script when the variant needs genuinely new *structural* behavior (collision layer, multi-phase state machine, projectile vs. melee). Visual + stat + passive differences are never a reason to write a new script.
+12. **One primitive for mechanics: AbilityData.** Every "verb on a unit" — passives, on-hit effects, auras, items, talents, endless modifiers, status effects — is an `AbilityData` Resource with a `Trigger` and an `apply(owner, ctx)` override. Units hold `abilities: Array[Resource]`; the `AbilityHost` dispatcher is owner-agnostic. If a new mechanic makes you reach for `if owner is BaseX` inside an ability, split the ability.
+13. **Stable content IDs.** Every authored Resource has a `*_id: String` field (`hero_id`, `tower_id`, `enemy_id`, `soldier_id`, `spell_id`, `skill_id`, `ability_id`). IDs are the key used in save files, unlock checks, leaderboard payloads, and loot tables. **Never rename an ID after the first release** — doing so breaks save compatibility. Convention: `snake_case`, scoped by type (e.g. `hero_warrior`, `tower_archer`, `enemy_basic`, `spell_fireball`).
 
 ---
 
@@ -44,7 +47,7 @@
 | Monetization | Heroes and towers as IAP |
 | Save system | Full persistence — stars, progress, unlocks between sessions |
 | Encyclopedia | Yes — towers, enemies, heroes |
-| Enemy health bars | Visible only when enemy takes damage |
+| Enemy health bars | Visible whenever HP is not full (stays after any damage) |
 | Tower range preview | Circle shown when tower is tapped |
 
 ---
@@ -55,114 +58,125 @@
 res://
 ├── autoloads/
 │   ├── EventBus.gd               # signals only, zero logic
-│   ├── GameState.gd              # gold, lives, score, wave number
-│   ├── WaveManager.gd            # wave data + multi-path spawning
+│   ├── GameState.gd              # gold, lives, score, wave, progression
+│   ├── WaveManager.gd            # wave data + multi-path spawning + endless gen
 │   ├── DamageCalculator.gd       # ALL damage math lives here only
-│   ├── SaveManager.gd            # save/load all persistence
-│   └── UnlockManager.gd          # IAP + unlock state
+│   ├── SaveManager.gd            # save/load all persistence (JSON)
+│   ├── UnlockManager.gd          # IAP + unlock state (stub)
+│   ├── SceneManager.gd           # scene transitions with fade
+│   └── ContentRegistry.gd        # master index of all content .tres
 │
 ├── towers/
-│   ├── base_tower.gd
+│   ├── base_tower.gd             # attack towers (archer, mage, artillery)
+│   ├── TowerBarracks.gd          # soldier-spawning tower (separate control loop)
+│   ├── TowerData.gd              # Resource: tower stats
+│   ├── TowerUpgradeData.gd       # Resource: per-level upgrade stats + on-hit
 │   ├── TowerArcher.tscn
-│   ├── TowerMage.tscn
-│   ├── TowerArtillery.tscn
 │   ├── TowerBarracks.tscn
 │   └── data/
-│       ├── tower_archer.tres
-│       ├── tower_mage.tres
-│       ├── tower_artillery.tres
-│       ├── tower_barracks.tres
-│       └── upgrades/
-│           ├── archer_upgrade_a.tres
-│           ├── archer_upgrade_b.tres
-│           ├── mage_upgrade_a.tres
-│           └── mage_upgrade_b.tres
+│       ├── tower_archer.tres      # L1 stats + L2/L3 upgrades + Ranger/Musketeer branches
+│       └── tower_barracks.tres
 │
 ├── soldiers/
 │   ├── base_soldier.gd
+│   ├── SoldierData.gd            # Resource: soldier stats + abilities
 │   ├── Soldier.tscn
-│   ├── Paladin.tscn
 │   └── data/
-│       ├── soldier_basic.tres
-│       └── soldier_paladin.tres
+│       └── soldier_basic.tres
 │
 ├── enemies/
-│   ├── base_enemy.gd
+│   ├── base_enemy.gd             # ground enemy with AbilityHost
+│   ├── enemy_flying.gd           # subclass: collision layer 3 + visual (Rule 11 exception)
+│   ├── enemy_healer.gd           # subclass: visual only (Rule 11 exception, Phase 41 removes)
+│   ├── EnemyData.gd              # Resource: enemy stats + abilities
 │   ├── EnemyBasic.tscn
-│   ├── EnemyArmored.tscn
 │   ├── EnemyFlying.tscn
 │   ├── EnemyHealer.tscn
-│   ├── EnemyFast.tscn
-│   ├── bosses/
-│   │   ├── base_boss.gd
-│   │   └── Boss1.tscn
 │   └── data/
 │       ├── enemy_basic.tres
-│       ├── enemy_armored.tres
 │       ├── enemy_flying.tres
-│       └── enemy_healer.tres
+│       └── enemy_healer.tres      # HealAuraAbility as inline sub_resource
 │
 ├── heroes/
-│   ├── base_hero.gd
+│   ├── base_hero.gd              # movement, combat, XP, skills, selection
+│   ├── HeroData.gd               # Resource: hero stats + skills + abilities
+│   ├── HeroInputManager.gd       # tap-to-move routing
 │   ├── HeroWarrior.tscn
-│   ├── HeroMage.tscn
+│   ├── skills/                   # skill scripts (SkillData subclasses)
+│   │   ├── skill_data.gd         # base Resource with TargetType enum
+│   │   ├── slash_skill_data.gd
+│   │   ├── shield_bash_skill_data.gd
+│   │   └── rally_skill_data.gd
 │   └── data/
 │       ├── hero_warrior.tres
-│       ├── hero_mage.tres
-│       └── skills/
-│           ├── skill_base.gd
-│           ├── SkillSlash.tres
-│           ├── SkillHeal.tres
-│           └── SkillAoe.tres
+│       └── skills/               # skill .tres instances
+│           ├── skill_slash.tres
+│           ├── skill_shield_bash.tres
+│           └── skill_rally.tres
 │
 ├── spells/
-│   ├── base_spell.gd
-│   ├── SpellFireball.tscn
-│   ├── SpellReinforcements.tscn
+│   ├── SpellData.gd              # base Resource with TargetType enum
+│   ├── fireball_spell_data.gd
+│   ├── reinforcements_spell_data.gd
+│   ├── FireballVFX.gd + .tscn    # expanding-circle placeholder effect
 │   └── data/
 │       ├── spell_fireball.tres
 │       └── spell_reinforcements.tres
 │
 ├── projectiles/
-│   ├── Arrow.tscn
-│   ├── Bullet.tscn
-│   └── Fireball.tscn
+│   └── Arrow.gd + Arrow.tscn     # homing projectile (future: Bullet, Fireball)
 │
 ├── systems/
-│   ├── StatusEffect.gd           # base class
+│   ├── AbilityData.gd            # base Resource: trigger enum + apply() virtual
+│   ├── AbilityHost.gd            # per-unit dispatcher (RefCounted)
+│   ├── StatusEffect.gd           # base class (per-target mutable state)
 │   ├── SlowEffect.gd
 │   ├── StunEffect.gd
-│   ├── PoisonEffect.gd
-│   └── ArmorBreakEffect.gd
+│   └── abilities/                # concrete AbilityData subclasses
+│       ├── HealAuraAbility.gd
+│       ├── OnHitBonusDamageAbility.gd
+│       └── LifetimeAbility.gd
+│
+├── levels/
+│   ├── Level1.gd + Level1.tscn   # @tool — editor-editable map + paths + spots
+│   └── level1_waves.tres          # WaveList for campaign waves
+│
+├── waves/
+│   ├── WaveData.gd               # Resource: one wave (spawns + countdown + bounty)
+│   ├── WaveList.gd               # Resource: ordered array of WaveData
+│   └── WaveSpawn.gd              # Resource: one spawn group (path + enemy + count)
 │
 ├── map/
-│   ├── Map.tscn                  # TileMap + multiple Path2Ds + fixed spots
-│   │                             # + NavigationRegion2D + SpawnMarkers
 │   ├── GridManager.gd            # tracks occupied/free tower spots
-│   └── SpawnMarker.tscn          # edge-of-screen direction indicator UI
-│
-├── ui/
-│   ├── HUD.tscn                  # gold, lives, wave info, spell buttons
-│   ├── TowerShop.tscn            # bottom panel: select tower type
-│   ├── TowerSpotMenu.tscn        # popup: build / upgrade / sell
-│   ├── UpgradeMenu.tscn          # branching choice at level 3
-│   ├── SkillBar.tscn             # hero skill buttons + cooldown overlay
-│   ├── HeroHealthBar.tscn        # floating above hero
-│   ├── SpellPanel.tscn           # global spell buttons + cooldown
-│   ├── WaveDirectionUI.tscn      # spawn direction markers on screen edges
-│   ├── WorldMap.tscn             # level select
-│   ├── HeroRoom.tscn             # hero select + unlock screen
-│   ├── UpgradeTree.tscn          # permanent upgrade tree
-│   ├── Encyclopedia.tscn         # codex: towers, enemies, heroes
-│   ├── EndlessLeaderboard.tscn   # online leaderboard for endless mode
-│   └── GameOverScreen.tscn
+│   ├── SpotInputManager.gd       # screen-tap → tower_spot_tapped routing
+│   ├── SpawnMarker.gd + .tscn    # edge-of-screen direction indicators
 │
 ├── progression/
-│   ├── LevelData.tres            # per-level: paths, spots, waves, star thresholds
-│   └── SkillTreeData.tres        # talent tree structure
+│   └── UpgradeData.gd            # Resource: permanent upgrade node (star cost + effect)
+│
+├── ui/
+│   ├── MainMenu.gd + .tscn       # entry point: title + Play + Reset
+│   ├── WorldMap.gd + .tscn       # hub: level select + Upgrades/Endless/Scores/Codex
+│   ├── LoadoutScreen.gd + .tscn  # pre-level: mode selector + hero/tower/spell preview
+│   ├── HUD.gd + .tscn            # in-game: gold, lives, wave, hero XP, pause, speed
+│   ├── TowerSpotMenu.gd + .tscn  # popup: build / upgrade / branch / sell / move rally
+│   ├── TowerPlacer.gd            # build/sell/upgrade transaction handler
+│   ├── SkillBar.gd + .tscn       # hero skill buttons with CooldownButton
+│   ├── SpellPanel.gd + .tscn     # global spell buttons with CooldownButton
+│   ├── CooldownButton.gd + .tscn # reusable radial-fill button (provider-agnostic)
+│   ├── RangePreview.gd + .tscn   # tower range circle on tap
+│   ├── PauseMenu.gd + .tscn      # in-game: resume / restart / quit to map
+│   ├── GameOverScreen.gd + .tscn # victory (continue) / defeat (restart)
+│   ├── UpgradeTree.gd + .tscn    # permanent upgrades (spend stars)
+│   ├── EncyclopediaScreen.gd + .tscn # codex: auto-stat tabs (enemies/towers/heroes)
+│   ├── LeaderboardScreen.gd + .tscn  # endless top scores
+│   └── world_map/
+│       ├── LevelNodeData.gd      # Resource: one level entry
+│       └── level_list.tres        # (optional, WorldMap uses inline sub_resources)
 │
 └── main/
-    └── Main.tscn
+    ├── Main.gd                   # gameplay orchestrator (wave start, signal logging)
+    └── Main.tscn                 # instances Level1 + Towers + Hero + all UI
 ```
 
 ---
@@ -172,11 +186,13 @@ res://
 | Name | File | Purpose |
 |---|---|---|
 | EventBus | autoloads/EventBus.gd | Signals only |
-| GameState | autoloads/GameState.gd | Gold, lives, score, wave |
-| WaveManager | autoloads/WaveManager.gd | Multi-path spawn logic |
+| GameState | autoloads/GameState.gd | Gold, lives, score, wave, progression |
+| WaveManager | autoloads/WaveManager.gd | Multi-path spawn + endless generation |
 | DamageCalculator | autoloads/DamageCalculator.gd | All damage math |
-| SaveManager | autoloads/SaveManager.gd | All persistence |
-| UnlockManager | autoloads/UnlockManager.gd | IAP + unlock state |
+| SaveManager | autoloads/SaveManager.gd | All persistence (JSON) |
+| UnlockManager | autoloads/UnlockManager.gd | IAP + unlock state (stub) |
+| SceneManager | autoloads/SceneManager.gd | Scene transitions with fade |
+| ContentRegistry | autoloads/ContentRegistry.gd | Master index of all content .tres |
 
 ---
 
@@ -195,11 +211,17 @@ signal tower_upgraded(tower, new_level)
 signal tower_branch_chosen(tower, branch)   # "A" or "B"
 signal tower_spot_tapped(spot_id)
 signal tower_range_preview_requested(tower) # show range circle
+signal tower_build_requested(spot_id, tower_id)
+signal tower_sell_requested(spot_id)
+signal tower_upgrade_requested(spot_id)
+signal tower_branch_upgrade_requested(spot_id, branch_idx)
+signal tower_menu_dismissed()
 
 # Soldiers
 signal soldier_spawned(soldier, tower)
 signal soldier_died(soldier)
 signal soldier_blocking(soldier, enemy)
+signal barracks_rally_move_requested(barracks)
 
 # Wave
 signal wave_started(wave_number, path_ids)  # which paths active this wave
@@ -342,6 +364,25 @@ Level 1  →  Level 2  →  Level 3: PERMANENT BRANCH CHOICE
 @export var encyclopedia_entry: String    # shown in codex
 ```
 
+### Tower Upgrade System (Phase 24–25)
+```gdscript
+# TowerUpgradeData.gd — per-level stat override + on-hit effects
+@export var upgrade_name: String
+@export var damage: float
+@export var attack_range: float
+@export var attack_speed: float
+@export var cost: int
+@export var sell_value: int
+@export var on_hit_slow_factor: float = 0.0
+@export var on_hit_slow_duration: float = 0.0
+@export var on_hit_stun_duration: float = 0.0
+@export var tint: Color = Color.WHITE
+
+# On TowerData:
+@export var level_upgrades: Array[Resource]     # [L2_data, L3_linear]
+@export var level_3_branches: Array[Resource]   # [Ranger, Musketeer] — overrides level_upgrades[1]
+```
+
 ---
 
 ## 🪖 Barracks / Soldier System
@@ -373,6 +414,115 @@ TowerBarracks → spawns → Soldier (CharacterBody2D)
 
 ---
 
+## 🧱 Modular content pattern (the rule for every new unit / skill / spell / item)
+
+**Default rule:** every piece of new content is a `.tres` file plus (optionally) a `[sub_resource]` of AbilityData. Authoring flow for any variant:
+
+```
+new_orc_warlord.tres        (EnemyData: copy-paste of enemy_basic, bump HP)
+  + sub_resource EnrageBelowHPAbility (trigger=ON_HIT_TAKEN, threshold=0.3, dmg_mult=1.5)
+  + sub_resource DamageAuraAbility     (trigger=ON_INTERVAL, range=80, interval=0.5)
+```
+
+No new `.gd` required. Reference the data in a wave spawn; done.
+
+### When subclass IS warranted
+Only three categories justify a new script under `base_*.gd`:
+
+| Category | Examples |
+|---|---|
+| Collision / scene-graph structure | `EnemyFlying` (collision layer 3), future `EnemyBoss` multi-phase rig |
+| Fundamentally different control loop | `TowerBarracks` (spawns soldiers, no projectile), future `TowerWallBuilder` |
+| Player-facing novel behavior | New hero that summons pets (extra child node management) |
+
+If the variant is "same loop, different numbers + passives + visuals" → it's data. No subclass.
+
+### Per-subsystem authoring contracts
+
+| Subsystem | Base script (one) | Data Resource | Composition via |
+|---|---|---|---|
+| Enemies | `base_enemy.gd` | `EnemyData` | `abilities: Array[Resource]` |
+| Soldiers | `base_soldier.gd` | `SoldierData` | `abilities: Array[Resource]` |
+| Heroes | `base_hero.gd` | `HeroData` | `skills: Array[Resource]` (active) + `abilities: Array[Resource]` (passive) |
+| Towers | `base_tower.gd` (attack) / `TowerBarracks` (spawner) | `TowerData` | Phase 24 adds `AttackPatternData` + on-hit `Array[AbilityData]` |
+| Skills | `SkillData` subclass with `apply(hero, target)` | `SkillData` (+ subclass) | N/A — skill IS the mechanic |
+| Spells | `SpellData` subclass with `apply(world_pos)` (Phase 22–23) | `SpellData` | Same pattern as SkillData |
+| Items (future) | No script per item. `ItemData` Resource. | `ItemData` | `stat_modifiers` + `abilities: Array[Resource]`; equipping pushes both |
+| Status effects | `StatusEffect` base + subclass | `StatusEffect` subclass | Runtime, not Resource — per-target mutable state |
+
+### Adding a new hero (recipe, after Phase 35 template lands)
+1. Copy `hero_warrior.tres` → `hero_ranger.tres`, edit stats.
+2. Create 3 skill `.tres` files under `heroes/data/skills/`.
+3. Create `HeroVisual_ranger.tres` (Phase 41 polish — till then override `_draw()` via subclass, documented exception).
+4. Assign everything in a `HeroTemplate.tscn` instance.
+5. Ship. No GDScript written.
+
+### Adding a new soldier
+1. Copy `soldier_basic.tres` → `soldier_paladin.tres`.
+2. Attach an existing `HealAuraAbility` sub-resource in `abilities`.
+3. Create a barracks variant `.tres` that references the new soldier data.
+
+### Adding a new enemy
+1. `enemy_warlord.tres` with stats + `abilities: [EnrageBelowHP, DamageAura]`.
+2. Reference in a wave. Done.
+
+### Adding a new ability (when mechanics genuinely new)
+1. `systems/abilities/MyAbility.gd` — `extends "res://systems/AbilityData.gd"`, override `apply(owner, ctx)`.
+2. Add `@export` fields for params.
+3. Reference as sub-resource in any unit's `.tres`.
+
+---
+
+## 🧩 Ability System (composition layer)
+
+**Rule:** Every "mechanic on top of base stats" — enemy traits, hero passives, tower on-hit effects, item-granted effects, talent-tree nodes, endless-mode modifiers — is an `AbilityData` Resource. One unifying primitive.
+
+```gdscript
+# systems/AbilityData.gd (Resource)
+enum Trigger {
+    ON_SPAWN,      # once, when attached
+    ON_INTERVAL,   # every `interval` seconds
+    ON_HIT_DEALT,  # owner damaged someone (ctx: target, amount)
+    ON_HIT_TAKEN,  # owner took damage (ctx: source, amount)
+    ON_KILL,       # owner killed someone (ctx: victim)
+    ON_DEATH,      # owner died
+    WHILE_ALIVE,   # passive (stat-stack use, no per-event dispatch)
+    ON_EQUIP,      # item was equipped
+    ON_UNEQUIP,
+}
+
+@export var ability_id: String
+@export var trigger: int
+@export var interval: float   # ON_INTERVAL only
+
+func apply(owner, ctx) -> void:  # override in subclasses
+    pass
+```
+
+`AbilityHost` (systems/AbilityHost.gd) is a RefCounted helper each unit holds. Populate from `data.abilities` in `_ready()`, call `tick(delta)` each `_physics_process`, call `trigger_event(event, ctx)` at lifecycle points. Same host reused by enemies, heroes, soldiers, towers.
+
+### Authoring a new ability
+1. Create `systems/abilities/MyAbility.gd` — `extends "res://systems/AbilityData.gd"` + override `apply(owner, ctx)`.
+2. Add any per-ability fields (`@export`) — e.g. `heal_range`, `damage_mult`.
+3. Reference it as a `[sub_resource]` inside the enemy/hero/item `.tres`, or save standalone and `ExtResource` it.
+
+### Abilities implemented so far
+- `HealAuraAbility` — ON_INTERVAL, heals other enemies in `heal_range`. Ports the Phase 15 shaman.
+- `OnHitBonusDamageAbility` — ON_HIT_DEALT + duration, flat bonus damage per swing. Used by Rally skill as a temp buff.
+- `LifetimeAbility` — ON_SPAWN + duration, calls `_die()` on owner when expired. Used by Reinforcements spell for timed soldiers.
+
+### Abilities reserved for future phases
+- `RegenAbility`, `ExplodeOnDeathAbility`, `SummonOnDeathAbility`, `EnrageBelowHPAbility`, `StealthBelowHPAbility` (enemies)
+- `OnHitSlowAbility`, `OnHitBurnAbility`, `ChainLightningAbility`, `SplashDamageAbility` (tower projectiles, Phase 24+)
+- `PassiveDamageBoost`, `LifestealAbility`, `BlockChanceAbility` (hero items, future)
+
+### Discipline
+- Abilities are **owner-agnostic**. No `if owner is BaseHero` inside an ability — if you need it, split the ability.
+- Ability dispatch order within one trigger is array order. Document priority in a comment if it matters.
+- `AbilityData` Resources are **shared** across instances. Cooldown / timing state lives on the host (or the unit), never on the data.
+
+---
+
 ## 👾 Enemy System
 
 ### Enemy Data
@@ -384,21 +534,17 @@ TowerBarracks → spawns → Soldier (CharacterBody2D)
 @export var magic_resist: float          # 0.0–1.0 magic reduction
 @export var lives_worth: int
 @export var gold_worth: int
+@export var xp_worth: int                # Phase 19 — hero last-hit XP
+@export var attack_damage: float         # used when blocked in COMBAT
+@export var attack_speed: float
 @export var is_flying: bool              # layer 3, bypasses soldiers
-@export var can_stealth: bool            # invisible at threshold HP
+@export var can_stealth: bool
 @export var stealth_threshold: float = 0.5
-@export var regenerates: bool
-@export var regen_rate: float
-@export var heals_allies: bool
-@export var heal_range: float
-@export var heal_amount: float
-@export var heal_interval: float = 3.0
-@export var explodes_on_death: bool
-@export var explosion_damage: float
-@export var explosion_range: float
-@export var spawns_on_death: bool
-@export var spawn_scene: PackedScene
-@export var spawn_count: int
+# Phase 20.5: per-enemy mechanics (heal-aura, regen, explode-on-death,
+# enrage, summon, stealth, etc.) are composed from AbilityData Resources.
+# Drop a HealAuraAbility in here to make an enemy a healer; stack multiple
+# to build hybrids. See "Ability System" below.
+@export var abilities: Array[Resource] = []
 @export var encyclopedia_entry: String
 ```
 
@@ -411,11 +557,12 @@ STEALTHED → invisible to towers (AoE splash still hits)
 DYING     → death animation, then queue_free()
 ```
 
-### Enemy Health Bar Rules
-- Health bar hidden by default
-- Becomes visible when enemy takes any damage
-- Auto-hides after 3 seconds of no damage via Timer
-- Boss health bar always visible
+### Health Bar Rules (enemies + soldiers)
+- Health bar hidden only while HP is at max (full)
+- Becomes visible the moment HP drops below max — stays visible for the rest of the unit's life
+- Returning to full HP (heal) hides the bar again
+- Boss health bar always visible, regardless of HP
+- Applies to any unit with `current_health` / `max_health` (BaseEnemy, BaseSoldier). Extend the same rule to Hero when Phase 18 adds one.
 
 ---
 
@@ -479,19 +626,65 @@ RESPAWNING  → reappearing at spawn position
 
 ```gdscript
 @export var spell_name: String
-@export var cooldown: float
+@export var spell_id: String
+@export var cast_range: float          # 0 = unlimited (anywhere on map)
+@export var radius: float              # AoE radius at tap point
 @export var damage: float
 @export var damage_type: DamageType
-@export var radius: float
-@export var duration: float
+@export var cooldown: float
+@export var target_type: TargetType    # AREA / GLOBAL
 @export var icon: Texture2D
 @export var vfx_scene: PackedScene
 ```
 
 - Tap spell button → targeting mode → tap map → spell fires
-- Cooldown: radial fill overlay on SpellPanel button
-- Spell logic in individual spell scripts only
+- Cooldown: radial fill overlay on SpellPanel button (same `CooldownButton` as skills)
+- Spell logic in individual spell scripts (`SpellData` subclass with `apply(world_pos, caster)`)
 - Upgradeable via permanent upgrade tree
+- **Source = SpellPanel (not hero)** — spell kills don't grant hero XP, matching Kingdom Rush rules
+- SpellPanel holds `@export spells: Array[Resource]` — Phase 30 LoadoutScreen will populate dynamically
+
+### Spells implemented
+| Spell | Type | Effect |
+|---|---|---|
+| Fireball | AoE | 55 magic dmg in 90 px radius, 25 s cooldown |
+| Recruit (Reinforcements) | Summon | 4 militia with 20 s LifetimeAbility, 40 s cooldown |
+
+---
+
+## 🗡️ Skill System
+
+```gdscript
+# SkillData.gd (Resource, subclassed per skill)
+enum TargetType { SINGLE, AREA, SELF }
+
+@export var skill_name: String
+@export var skill_id: String
+@export var damage: float
+@export var range: float               # 0 = use hero's attack_range
+@export var cooldown: float
+@export var target_type: TargetType
+@export var damage_type: DamageType
+@export var icon: Texture2D
+@export var vfx_scene: PackedScene
+```
+
+- Each skill is a separate script — never inside hero script
+- Cooldown: radial fill overlay — never text
+- Range: visible circle when skill selected (drawn by hero's `_draw()`)
+- **Skill-as-ability-factory pattern:** skills that grant buffs (Rally) construct a temporary `AbilityData` instance with a `duration` and push it into the hero's `_ability_host`. AbilityHost auto-removes on expiry. Zero bookkeeping code in the skill.
+
+### Skills implemented (Knight)
+| Skill | Target | Effect |
+|---|---|---|
+| Slash | SINGLE | 40 physical dmg, 6 s cooldown |
+| Bash | AREA | 22 physical dmg in 70 px radius around tap, 10 s cooldown |
+| Rally | SELF | Pushes OnHitBonusDamageAbility (+8 dmg, 10 s) onto hero, 18 s cooldown |
+
+### SkillBar UI flow
+- SINGLE: button → targeting mode → tap enemy in range → cast
+- AREA: button → targeting mode → tap point in range → cast
+- SELF: button → cast immediately (no targeting step)
 
 ---
 
@@ -680,6 +873,39 @@ Project Settings:
 
 ---
 
+## 🎯 Input Pipeline — Consumption Chain
+
+Touch events flow through Godot in this order. Each layer either **consumes** (calls `set_input_as_handled()`) or lets the event pass to the next. Getting this wrong causes double-fires or stolen taps.
+
+```
+1. _input (all nodes, tree order top-down)
+   ├── TowerBarracks._input   — consumes if rally-placement mode active
+   ├── TowerSpotMenu._input   — swallows the release after menu just opened
+   ├── SkillBar._input        — consumes if skill targeting armed
+   └── SpellPanel._input      — consumes if spell targeting armed
+       (both SkillBar + SpellPanel early-return if is_input_handled())
+
+2. GUI phase (Control._gui_input)
+   ├── TowerSpotMenu Backdrop (mouse_filter=STOP) — consumes when menu visible
+   └── CooldownButton._gui_input — fires triggered(idx), accept_event()
+
+3. Area2D picking → input_event signals
+   └── TowerBarracks FlagArea — consumes on flag drag start
+
+4. _unhandled_input (all nodes, tree order — only if not consumed above)
+   ├── SpotInputManager        — emits tower_spot_tapped + CONSUMES
+   ├── BaseHero._unhandled_input — toggles selection + consumes
+   └── HeroInputManager        — calls hero.move_to + consumes (if hero is selected)
+```
+
+**Rules for adding new input handlers:**
+- Declare which phase (1–4) it runs in.
+- Always `set_input_as_handled()` when claiming an event.
+- Always `if get_viewport().is_input_handled(): return` in `_input` if another handler at the same phase might compete.
+- Test: "what if two modals are open simultaneously?"
+
+---
+
 ## 🔢 Build Phases — NEVER SKIP OR COMBINE
 
 ```
@@ -699,7 +925,7 @@ Phase 13: Status effects — slow, then stun
 Phase 14: Flying enemy — collision layer 3
 Phase 15: Healer enemy — Timer-based ally healing
 Phase 16: Barracks tower + soldier blocking
-Phase 17: Enemy health bar — visible on hit, auto-hide
+Phase 17: Enemy health bar — visible while HP < max
 Phase 18: Hero movement + auto-attack
 Phase 19: Hero XP + leveling
 Phase 20: Hero skill 1 (single target)
@@ -782,22 +1008,36 @@ Examples: `enemy_orc_walk_00.png`, `tower_archer_idle_00.png`, `hero_knight_atta
 
 ```
 Working:
-[ ] Skeleton          [ ] Map+paths+spots    [ ] SpawnMarkers
-[ ] Enemy walking     [ ] Damage system      [ ] Basic tower
-[ ] Economy           [ ] Placement          [ ] Sell
-[ ] Range preview     [ ] Wave system        [ ] Win/lose
-[ ] Status effects    [ ] Flying enemy       [ ] Healer enemy
-[ ] Barracks          [ ] Enemy health bar   [ ] Hero movement
-[ ] Hero XP           [ ] Skill 1            [ ] Skills 2+3
-[ ] Spell 1           [ ] Spell 2            [ ] Tower upgrades
-[ ] Branch choice     [ ] Stars              [ ] SaveManager
-[ ] Upgrade tree      [ ] WorldMap           [ ] HeroRoom
-[ ] Heroic+Iron       [ ] Endless mode       [ ] Leaderboard
-[ ] Encyclopedia      [ ] Hero 2             [ ] UnlockManager
+[x] Skeleton          [x] Map+paths+spots    [x] SpawnMarkers
+[x] Enemy walking     [x] Damage system      [x] Basic tower
+[x] Economy           [x] Placement          [x] Sell
+[x] Range preview     [x] Wave system        [x] Win/lose
+[x] Status effects    [x] Flying enemy       [x] Healer enemy
+[x] Barracks          [x] Enemy health bar   [x] Hero movement
+[x] Hero XP           [x] Skill 1            [x] Skills 2+3
+[x] Spell 1           [x] Spell 2            [x] Tower upgrades
+[x] Branch choice     [x] Stars              [x] SaveManager
+[x] Upgrade tree      [x] WorldMap           [x] HeroRoom
+[x] Heroic+Iron       [x] Endless mode       [x] Leaderboard
+[x] Encyclopedia      [ ] Hero 2             [ ] UnlockManager
 [ ] IAP               [ ] Boss system        [ ] Tower types 2+3
 [ ] Skill tree        [ ] Polish
 
-Known bugs: none yet
-Last committed phase: none
-Next task: Phase 1 — project skeleton
+Extras beyond the phase list:
+- Editor-editable Level1 (detour, before Phase 11)
+- Draggable rally flag on barracks (Phase 16 follow-up)
+- Tap-to-place rally via TowerSpotMenu "Move Rally" + range circle (Phase 17 follow-up 2)
+- Soldier health bar (mirrors enemy bar; same damage/auto-hide rules)
+
+Known bugs: none
+Last committed phase: Phase 16 (commit fde7ee0). Phases 17 + 18 + 19 + 20 + 20.5 + 21 + 22 + 23 + 24 + 25 and follow-ups uncommitted on disk.
+Next task: Phase 35 — Second hero type
+
+Extras beyond the phase list:
+- Editor-editable Level1 (detour, before Phase 11)
+- Draggable rally flag on barracks (Phase 16 follow-up)
+- Tap-to-place rally via TowerSpotMenu "Move Rally" + range circle (Phase 17 follow-up 2)
+- Soldier health bar (mirrors enemy bar; same damage/auto-hide rules)
+- MainMenu + WorldMap + PauseMenu screen flow (pre-Phase 27 foundation)
+- SceneManager autoload for all scene transitions
 ```

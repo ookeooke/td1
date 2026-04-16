@@ -6,3 +6,11 @@
 [node name="TowerBarracks" type="Node2D"]
 script = ExtResource("1_bar")
 data = ExtResource("2_data")
+
+[node name="FlagArea" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 0
+input_pickable = true
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="FlagArea"]

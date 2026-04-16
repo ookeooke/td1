@@ -1,0 +1,18 @@
+[gd_scene format=3 uid="uid://ct8ymjywf8nnl"]
+
+[ext_resource type="Script" path="res://heroes/base_hero.gd" id="1_hero"]
+[ext_resource type="Resource" path="res://heroes/data/hero_warrior.tres" id="2_data"]
+
+[node name="HeroWarrior" type="CharacterBody2D"]
+collision_layer = 8
+collision_mask = 0
+script = ExtResource("1_hero")
+data = ExtResource("2_data")
+
+[node name="AttackRange" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 6
+monitorable = false
+input_pickable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="AttackRange"]

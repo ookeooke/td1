@@ -20,3 +20,4 @@ func _draw() -> void:
 		draw_arc(Vector2.ZERO, 19.0, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
 	if _effects.has("stun"):
 		draw_arc(Vector2.ZERO, 23.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)
+	_draw_health_bar()

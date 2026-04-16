@@ -37,6 +37,8 @@ func _ready() -> void:
 	}
 	EventBus.tower_build_requested.connect(_on_build_requested)
 	EventBus.tower_sell_requested.connect(_on_sell_requested)
+	EventBus.tower_upgrade_requested.connect(_on_upgrade_requested)
+	EventBus.tower_branch_upgrade_requested.connect(_on_branch_upgrade_requested)
 
 
 func _on_build_requested(spot_id: String, tower_id: String) -> void:
@@ -61,6 +63,51 @@ func _on_build_requested(spot_id: String, tower_id: String) -> void:
 	print("[TowerPlacer] built %s on %s for %dg (gold left: %d)" % [tower_id, spot_id, cost, GameState.gold])
 
 
+func _on_upgrade_requested(spot_id: String) -> void:
+	if _grid == null:
+		return
+	var tower: Node = _grid.get_tower_at(spot_id)
+	if tower == null or not tower.has_method("can_upgrade"):
+		return
+	if not tower.can_upgrade():
+		return
+	var cost: int = tower.get_upgrade_cost_to(tower.level + 1)
+	if cost <= 0:
+		return
+	if not GameState.spend_gold(cost):
+		print("[TowerPlacer] upgrade refused — need %dg, have %d" % [cost, GameState.gold])
+		return
+	if not tower.upgrade():
+		# Refund if the tower unexpectedly refused after we already spent.
+		GameState.add_gold(cost)
+		return
+	print("[TowerPlacer] upgraded tower on %s to lvl %d for %dg (gold left: %d)" % [
+		spot_id, tower.level, cost, GameState.gold,
+	])
+
+
+func _on_branch_upgrade_requested(spot_id: String, branch_idx: int) -> void:
+	if _grid == null:
+		return
+	var tower: Node = _grid.get_tower_at(spot_id)
+	if tower == null or not tower.has_method("has_branch_options"):
+		return
+	if not tower.has_branch_options():
+		return
+	var cost: int = tower.get_branch_cost(branch_idx)
+	if cost <= 0:
+		return
+	if not GameState.spend_gold(cost):
+		print("[TowerPlacer] branch upgrade refused — need %dg, have %d" % [cost, GameState.gold])
+		return
+	if not tower.upgrade_to_branch(branch_idx):
+		GameState.add_gold(cost)
+		return
+	print("[TowerPlacer] branched tower on %s → branch %d for %dg (gold left: %d)" % [
+		spot_id, branch_idx, cost, GameState.gold,
+	])
+
+
 func _on_sell_requested(spot_id: String) -> void:
 	if _grid == null:
 		return
@@ -68,7 +115,9 @@ func _on_sell_requested(spot_id: String) -> void:
 	if tower == null:
 		return
 	var refund: int = 0
-	if "data" in tower and tower.data != null and "sell_value" in tower.data:
+	if tower.has_method("get_sell_value"):
+		refund = int(tower.get_sell_value())
+	elif "data" in tower and tower.data != null and "sell_value" in tower.data:
 		refund = int(tower.data.sell_value)
 	_grid.clear_tower_at(spot_id)
 	GameState.add_gold(refund)

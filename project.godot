@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Fantasy Tower Defense"
-run/main_scene="res://main/Main.tscn"
+run/main_scene="res://ui/MainMenu.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
 
@@ -23,6 +23,8 @@ WaveManager="*res://autoloads/WaveManager.gd"
 DamageCalculator="*res://autoloads/DamageCalculator.gd"
 SaveManager="*res://autoloads/SaveManager.gd"
 UnlockManager="*res://autoloads/UnlockManager.gd"
+SceneManager="*res://autoloads/SceneManager.gd"
+ContentRegistry="*res://autoloads/ContentRegistry.gd"
 
 [debug]
 

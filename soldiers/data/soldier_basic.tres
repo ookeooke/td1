@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SoldierData" load_steps=2 format=3 uid="uid://b1td1sold001"]
+[gd_resource type="Resource" script_class="SoldierData" format=3 uid="uid://b1td1sold001"]
 
 [ext_resource type="Script" path="res://soldiers/SoldierData.gd" id="1_data"]
 

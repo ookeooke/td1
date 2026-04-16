@@ -33,9 +33,16 @@ func _on_spot_tapped(spot_id: String) -> void:
 	if _grid == null or not _grid.is_occupied(spot_id):
 		return
 	var tower: Node = _grid.get_tower_at(spot_id)
-	if tower == null or not ("data" in tower) or tower.data == null:
+	if tower == null:
 		return
-	_radius = float(tower.data.attack_range)
+	# Use level-aware effective range when available (Phase 24 upgrades),
+	# fall back to data.attack_range for towers that don't level.
+	if tower.has_method("get_effective_range"):
+		_radius = float(tower.get_effective_range())
+	elif "data" in tower and tower.data != null:
+		_radius = float(tower.data.attack_range)
+	else:
+		return
 	global_position = tower.global_position
 	visible = true
 	queue_redraw()

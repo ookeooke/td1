@@ -1,0 +1,155 @@
+[gd_scene format=3 uid="uid://b1td1loadout"]
+
+[ext_resource type="Script" path="res://ui/LoadoutScreen.gd" id="1_loadout"]
+
+[node name="LoadoutScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_loadout")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.14, 0.16, 0.2, 1.0)
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 80.0
+
+[node name="BackButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 60)
+layout_mode = 2
+text = "Back"
+theme_override_font_sizes/font_size = 20
+
+[node name="LevelLabel" type="Label" parent="TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Level: --"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 24
+
+[node name="ModeRow" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 96.0
+offset_right = -16.0
+offset_bottom = 186.0
+theme_override_constants/separation = 8
+
+[node name="CampaignButton" type="Button" parent="ModeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Campaign"
+theme_override_font_sizes/font_size = 16
+
+[node name="HeroicButton" type="Button" parent="ModeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Heroic"
+theme_override_font_sizes/font_size = 16
+
+[node name="IronButton" type="Button" parent="ModeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Iron"
+theme_override_font_sizes/font_size = 16
+
+[node name="ModeInfoLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 24.0
+offset_top = 196.0
+offset_right = -24.0
+offset_bottom = 240.0
+text = ""
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 14
+autowrap_mode = 2
+
+[node name="Content" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = 260.0
+offset_right = -24.0
+offset_bottom = -120.0
+theme_override_constants/separation = 20
+alignment = 1
+
+[node name="HeroTitle" type="Label" parent="Content"]
+layout_mode = 2
+text = "— Hero —"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 20
+
+[node name="HeroLabel" type="Label" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Hero: --"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 16
+
+[node name="TowersTitle" type="Label" parent="Content"]
+layout_mode = 2
+text = "— Towers —"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 20
+
+[node name="TowersLabel" type="Label" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Towers: --"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 16
+
+[node name="SpellsTitle" type="Label" parent="Content"]
+layout_mode = 2
+text = "— Spells —"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 20
+
+[node name="SpellsLabel" type="Label" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Spells: --"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 16
+
+[node name="StartButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -150.0
+offset_top = -100.0
+offset_right = 150.0
+offset_bottom = -20.0
+text = "Start Battle"
+theme_override_font_sizes/font_size = 26

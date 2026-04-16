@@ -1,21 +1,59 @@
-[gd_resource type="Resource" script_class="TowerData" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="TowerData" format=3 uid="uid://dajag2t22dn7s"]
 
-[ext_resource type="Script" path="res://towers/TowerData.gd" id="1_data"]
-[ext_resource type="PackedScene" path="res://projectiles/Arrow.tscn" id="2_arrow"]
+[ext_resource type="Script" uid="uid://eg36tioogljo" path="res://towers/TowerData.gd" id="1_data"]
+[ext_resource type="PackedScene" uid="uid://ct8yfwywgyvnj" path="res://projectiles/Arrow.tscn" id="2_arrow"]
+[ext_resource type="Script" uid="uid://cbnmfnm6r853q" path="res://towers/TowerUpgradeData.gd" id="3_upg"]
+
+[sub_resource type="Resource" id="ArcherBranch_Ranger"]
+script = ExtResource("3_upg")
+upgrade_name = "Ranger"
+damage = 10.0
+attack_range = 210.0
+attack_speed = 1.4
+cost = 140
+sell_value = 130
+on_hit_slow_factor = 0.45
+on_hit_slow_duration = 1.5
+tint = Color(0.6, 1.15, 0.6, 1)
+
+[sub_resource type="Resource" id="ArcherBranch_Musketeer"]
+script = ExtResource("3_upg")
+upgrade_name = "Musketeer"
+damage = 22.0
+attack_range = 225.0
+attack_speed = 0.75
+cost = 160
+sell_value = 140
+tint = Color(1.2, 0.7, 0.4, 1)
+
+[sub_resource type="Resource" id="ArcherUpg_L2"]
+script = ExtResource("3_upg")
+upgrade_name = "Archer L2"
+damage = 7.0
+attack_range = 175.0
+attack_speed = 1.35
+cost = 75
+sell_value = 60
+tint = Color(1.05, 1, 0.85, 1)
+
+[sub_resource type="Resource" id="ArcherUpg_L3"]
+script = ExtResource("3_upg")
+upgrade_name = "Archer L3"
+damage = 12.0
+attack_range = 195.0
+attack_speed = 1.5
+cost = 120
+sell_value = 120
+tint = Color(1.15, 1, 0.6, 1)
 
 [resource]
 script = ExtResource("1_data")
 tower_name = "Archer Tower"
 tower_id = "archer"
-requires_unlock = false
 damage = 4.0
-damage_type = 0
 attack_range = 160.0
 attack_speed = 1.2
-cost = 50
-sell_value = 30
-targets_flying = false
-upgrade_cost_lvl2 = 75
-upgrade_cost_lvl3 = 120
+level_upgrades = Array[Resource]([SubResource("ArcherUpg_L2"), SubResource("ArcherUpg_L3")])
+level_3_branches = Array[Resource]([SubResource("ArcherBranch_Ranger"), SubResource("ArcherBranch_Musketeer")])
 projectile_scene = ExtResource("2_arrow")
 encyclopedia_entry = "Quick, low-damage volleys. Cheap and reliable."

@@ -56,6 +56,13 @@ text = ""
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 18
 
+[node name="ContinueButton" type="Button" parent="Root/Center/Card/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+text = "Continue"
+theme_override_font_sizes/font_size = 22
+
 [node name="RestartButton" type="Button" parent="Root/Center/Card/Margin/VBox"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(220, 80)

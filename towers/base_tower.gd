@@ -3,49 +3,190 @@ class_name BaseTower
 
 # DEBUG: every 3–6 shots, attach a random SlowEffect/StunEffect to the arrow
 # so Phase 13's status system can be exercised through real gameplay instead
-# of Main.gd's one-shot demo. Flip DEBUG_STATUS_ARROWS = false to disable.
-const DEBUG_STATUS_ARROWS: bool = true
+# of Main.gd's one-shot demo. Flip DEBUG_STATUS_ARROWS = true to re-enable.
+const DEBUG_STATUS_ARROWS: bool = false
 const _SlowEffectScript := preload("res://systems/SlowEffect.gd")
 const _StunEffectScript := preload("res://systems/StunEffect.gd")
 
 @export var data: TowerData
 
 var level: int = 1
+const MAX_LEVEL: int = 3
+# Phase 25 branch choice — -1 means not branched (either at L2 and below,
+# or at L3 on the linear `level_upgrades[1]` path). 0+ is the chosen
+# index into `data.level_3_branches`. Decision is permanent once set.
+var branch_idx: int = -1
+
+const _SlowEffectScriptBranch := preload("res://systems/SlowEffect.gd")
+const _StunEffectScriptBranch := preload("res://systems/StunEffect.gd")
+
+# Phase 19 review fix: attack loop moved off a Timer node and onto a float
+# cooldown ticked in _physics_process. This makes the first shot fire the
+# instant an enemy enters range (cooldown starts at 0) instead of waiting
+# up to 1/attack_speed for a Timer to cycle.
+var _attack_cooldown: float = 0.0
+var _current_target: Node = null
 
 var _shots_since_buff: int = 0
 var _next_buff_threshold: int = 0
 
 @onready var range_area: Area2D = $RangeArea
 @onready var range_shape: CollisionShape2D = $RangeArea/CollisionShape2D
-@onready var attack_timer: Timer = $AttackTimer
 
 
 func _ready() -> void:
 	if data == null:
 		push_warning("[%s] no TowerData assigned" % name)
 		return
-
-	var circle := CircleShape2D.new()
-	circle.radius = data.attack_range
-	range_shape.shape = circle
-
-	attack_timer.wait_time = 1.0 / maxf(0.01, data.attack_speed)
-	attack_timer.one_shot = false
-	attack_timer.timeout.connect(_on_attack_tick)
-	attack_timer.start()
-
+	_refresh_range_shape()
 	_next_buff_threshold = randi_range(3, 6)
 
 
-func _on_attack_tick() -> void:
+func _refresh_range_shape() -> void:
+	var circle := CircleShape2D.new()
+	circle.radius = get_effective_range()
+	range_shape.shape = circle
+
+
+# Per-level effective stats — read through the current level's
+# TowerUpgradeData if set; otherwise fall back to TowerData. At L3, if the
+# tower chose a branch, the branch Resource wins over the linear L3 slot.
+func _level_override() -> Resource:
+	if data == null or level <= 1:
+		return null
+	if level >= 3 and branch_idx >= 0 and branch_idx < data.level_3_branches.size():
+		return data.level_3_branches[branch_idx]
+	if data.level_upgrades.is_empty():
+		return null
+	var idx: int = mini(level - 2, data.level_upgrades.size() - 1)
+	return data.level_upgrades[idx]
+
+
+func has_branch_options() -> bool:
+	# True when stepping INTO L3 would require picking a branch (i.e. we're
+	# at L2 and the data file defines at least one branch option).
+	return data != null \
+			and level == 2 \
+			and not data.level_3_branches.is_empty() \
+			and branch_idx < 0
+
+
+func get_branch_options() -> Array[Resource]:
+	if data == null:
+		return []
+	return data.level_3_branches
+
+
+func get_branch_cost(idx: int) -> int:
+	if data == null or idx < 0 or idx >= data.level_3_branches.size():
+		return 0
+	var branch: Resource = data.level_3_branches[idx]
+	return int(branch.cost)
+
+
+func upgrade_to_branch(idx: int) -> bool:
+	if data == null or level != 2 or idx < 0 or idx >= data.level_3_branches.size():
+		return false
+	branch_idx = idx
+	level = 3
+	_refresh_range_shape()
+	_attack_cooldown = 0.0
+	queue_redraw()
+	EventBus.tower_upgraded.emit(self, level)
+	EventBus.tower_branch_chosen.emit(self, idx)
+	return true
+
+
+func get_effective_damage() -> float:
+	var base: float = _level_override().damage if _level_override() != null else data.damage
+	# Phase 28: apply permanent upgrade multiplier (Sharp Arrows = type 0).
+	base *= GameState.get_upgrade_multiplier(0)
+	return base
+
+
+func get_effective_range() -> float:
+	var base: float = _level_override().attack_range if _level_override() != null else data.attack_range
+	# Phase 28: apply permanent upgrade multiplier (Extended Range = type 1).
+	base *= GameState.get_upgrade_multiplier(1)
+	return base
+
+
+func get_effective_attack_speed() -> float:
+	var ov: Resource = _level_override()
+	return ov.attack_speed if ov != null else data.attack_speed
+
+
+func get_sell_value() -> int:
+	var ov: Resource = _level_override()
+	if ov != null and ov.sell_value > 0:
+		return ov.sell_value
+	return data.sell_value
+
+
+func get_upgrade_cost_to(next_level: int) -> int:
+	# Cost to advance FROM current `level` TO `next_level`. next_level must
+	# be current + 1 in Phase 24; branching in Phase 25 may extend this.
+	if data == null or next_level <= 1 or next_level > MAX_LEVEL:
+		return 0
+	if next_level - 2 < data.level_upgrades.size():
+		var ov: Resource = data.level_upgrades[next_level - 2]
+		if ov.cost > 0:
+			return ov.cost
+	# Legacy fallback for .tres authored before TowerUpgradeData.
+	if next_level == 2:
+		return data.upgrade_cost_lvl2
+	if next_level == 3:
+		return data.upgrade_cost_lvl3
+	return 0
+
+
+func can_upgrade() -> bool:
+	if level >= MAX_LEVEL:
+		return false
+	# If the next level requires a branch choice, linear upgrade is off —
+	# the UI must show the branch picker instead. Caller checks
+	# `has_branch_options()` for that case.
+	if has_branch_options():
+		return false
+	return get_upgrade_cost_to(level + 1) > 0
+
+
+func upgrade() -> bool:
+	if not can_upgrade():
+		return false
+	level += 1
+	_refresh_range_shape()
+	# Reset attack cooldown so the faster-speed upgrade feels immediate
+	# instead of waiting out the previous (slower) tick.
+	_attack_cooldown = 0.0
+	queue_redraw()
+	EventBus.tower_upgraded.emit(self, level)
+	return true
+
+
+func _physics_process(delta: float) -> void:
+	if data == null:
+		return
+	if _attack_cooldown > 0.0:
+		_attack_cooldown -= delta
+	if _attack_cooldown > 0.0:
+		return
 	var target: Node = _pick_target()
 	if target == null:
+		_current_target = null
 		return
+	_current_target = target
 	_fire_projectile(target)
+	_attack_cooldown = 1.0 / maxf(0.01, get_effective_attack_speed())
 
 
 func _pick_target() -> Node:
-	# First-target: enemy furthest along its PathFollow2D.
+	# First-target strategy: enemy furthest along its PathFollow2D. With a
+	# sticky preference for the currently-engaged target when the progress
+	# is tied — prevents flip-flop when two enemies travel in lockstep and
+	# Area2D's non-deterministic iteration order shuffles between frames.
+	# On true progress ties, tiebreaker picks the lower-HP target for
+	# guaranteed execution (finish one before spreading DPS).
 	var best: Node = null
 	var best_progress: float = -1.0
 	for area in range_area.get_overlapping_areas():
@@ -59,9 +200,18 @@ func _pick_target() -> Node:
 		var progress: float = 0.0
 		if enemy.get_parent() is PathFollow2D:
 			progress = enemy.get_parent().progress_ratio
-		if progress > best_progress:
-			best_progress = progress
+		if best == null or progress > best_progress:
 			best = enemy
+			best_progress = progress
+			continue
+		if is_equal_approx(progress, best_progress):
+			# Keep current engaged target on a tie.
+			if enemy == _current_target:
+				best = enemy
+				continue
+			# Otherwise, prefer the lower-HP target.
+			if best != _current_target and enemy.current_health < best.current_health:
+				best = enemy
 	return best
 
 
@@ -72,9 +222,25 @@ func _fire_projectile(target: Node) -> void:
 	get_parent().add_child(proj)
 	proj.global_position = global_position
 
-	var effect = _maybe_roll_debug_effect()
+	# Phase 25: branches can attach an on-hit status effect (Ranger's slow).
+	# Construct a fresh instance per shot so per-target duration state isn't
+	# shared between arrows.
+	var effect = _build_on_hit_effect()
+	if effect == null:
+		effect = _maybe_roll_debug_effect()
 	if proj.has_method("setup"):
-		proj.setup(target, data.damage, data.damage_type, self, effect)
+		proj.setup(target, get_effective_damage(), data.damage_type, self, effect)
+
+
+func _build_on_hit_effect():
+	var ov: Resource = _level_override()
+	if ov == null:
+		return null
+	if ov.on_hit_slow_factor > 0.0 and ov.on_hit_slow_duration > 0.0:
+		return _SlowEffectScriptBranch.new(ov.on_hit_slow_factor, ov.on_hit_slow_duration)
+	if ov.on_hit_stun_duration > 0.0:
+		return _StunEffectScriptBranch.new(ov.on_hit_stun_duration)
+	return null
 
 
 func _maybe_roll_debug_effect():
@@ -93,5 +259,13 @@ func _maybe_roll_debug_effect():
 
 
 func _draw() -> void:
-	draw_circle(Vector2.ZERO, 22.0, Color(0.35, 0.45, 0.75))
+	var base_body: Color = Color(0.35, 0.45, 0.75)
+	var ov: Resource = _level_override()
+	if ov != null:
+		base_body = base_body * ov.tint
+	draw_circle(Vector2.ZERO, 22.0, base_body)
 	draw_arc(Vector2.ZERO, 22.0, 0, TAU, 28, Color(0.08, 0.1, 0.25), 2.5)
+	# Level pips — small dots at the top of the tower so the player can
+	# see the upgrade level at a glance.
+	for i in level:
+		draw_circle(Vector2(-6.0 + i * 6.0, -28.0), 2.2, Color(1.0, 0.85, 0.2))

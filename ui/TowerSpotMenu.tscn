@@ -29,7 +29,7 @@ anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_top = -320.0
+offset_top = -380.0
 grow_horizontal = 2
 grow_vertical = 0
 
@@ -67,6 +67,34 @@ theme_override_font_sizes/font_size = 22
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 8
+
+[node name="UpgradeButton" type="Button" parent="Root/Panel/VBox/SellRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+text = "Upgrade"
+theme_override_font_sizes/font_size = 22
+
+[node name="BranchARow" type="Button" parent="Root/Panel/VBox/SellRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+text = "Branch A"
+theme_override_font_sizes/font_size = 20
+
+[node name="BranchBRow" type="Button" parent="Root/Panel/VBox/SellRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+text = "Branch B"
+theme_override_font_sizes/font_size = 20
+
+[node name="MoveRallyButton" type="Button" parent="Root/Panel/VBox/SellRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+text = "Move Rally"
+theme_override_font_sizes/font_size = 22
 
 [node name="SellButton" type="Button" parent="Root/Panel/VBox/SellRow"]
 unique_name_in_owner = true

@@ -20,6 +20,13 @@ var _active_spawners: int = 0
 var _alive_count: int = 0
 var _wave_active: bool = false
 var _running: bool = false
+var _endless: bool = false
+
+# Enemy scenes for procedural endless wave generation.
+const _EnemyBasicScene: PackedScene = preload("res://enemies/EnemyBasic.tscn")
+const _EnemyFlyingScene: PackedScene = preload("res://enemies/EnemyFlying.tscn")
+const _EnemyHealerScene: PackedScene = preload("res://enemies/EnemyHealer.tscn")
+const _PATH_IDS: Array[String] = ["left", "right", "top"]
 
 
 func _ready() -> void:
@@ -45,18 +52,37 @@ func start(wave_list: Resource, level: Node) -> void:
 	_begin_next_wave()
 
 
+func start_endless(level: Node) -> void:
+	_level = level
+	_wave_index = -1
+	_alive_count = 0
+	_active_spawners = 0
+	_wave_active = false
+	_endless = true
+	_running = true
+	GameState.wave_number = 0
+	_begin_next_wave()
+
+
 func wave_count() -> int:
+	if _endless:
+		return 0  # infinite — HUD shows "Wave: N" without a total
 	return _wave_list.waves.size() if _wave_list != null else 0
 
 
 func _begin_next_wave() -> void:
 	_wave_index += 1
-	if _wave_index >= _wave_list.waves.size():
+	var wave: Resource = null
+	if _endless:
+		wave = _generate_endless_wave(_wave_index + 1)
+		EventBus.endless_wave_started.emit(_wave_index + 1)
+	elif _wave_list != null and _wave_index < _wave_list.waves.size():
+		wave = _wave_list.waves[_wave_index]
+	else:
 		_running = false
 		EventBus.all_waves_completed.emit()
 		print("[WaveManager] all waves complete")
 		return
-	var wave: Resource = _wave_list.waves[_wave_index]
 	var path_ids := _unique_path_ids(wave)
 	GameState.wave_number = _wave_index + 1
 	for pid in path_ids:
@@ -87,12 +113,18 @@ func _run_spawner(spawn: Resource) -> void:
 		_active_spawners -= 1
 		_maybe_wave_complete()
 		return
-	for i in spawn.count:
+	# Phase 31: Heroic + Iron scale enemy count up and interval down.
+	var count: int = spawn.count
+	var interval: float = spawn.interval
+	if GameState.current_mode == "heroic" or GameState.current_mode == "iron":
+		count = int(ceil(count * 1.5))
+		interval *= 0.85
+	for i in count:
 		if not _running:
 			return
 		spawn_enemy(path, spawn.path_id, spawn.enemy_scene)
-		if i < spawn.count - 1:
-			await get_tree().create_timer(spawn.interval).timeout
+		if i < count - 1:
+			await get_tree().create_timer(interval).timeout
 	_active_spawners -= 1
 	_maybe_wave_complete()
 
@@ -159,11 +191,69 @@ func stop() -> void:
 	# check _running on resume and bail, so they exit cleanly without spawning.
 	_running = false
 	_wave_active = false
+	_endless = false
 	_wave_list = null
 	_level = null
 	_wave_index = -1
 	_active_spawners = 0
 	_alive_count = 0
+
+
+# Phase 32: procedural wave generation for endless mode.
+# Difficulty ramps: more enemies, faster spawns, more paths, mixed types.
+func _generate_endless_wave(wave_num: int) -> Resource:
+	var wave_data := preload("res://waves/WaveData.gd").new()
+	var spawn_script := preload("res://waves/WaveSpawn.gd")
+	wave_data.countdown = maxf(1.5, 3.0 - wave_num * 0.1)
+	wave_data.bounty = 10 + wave_num * 5
+
+	# Base enemy count scales with wave number.
+	var base_count: int = 4 + wave_num * 2
+	# Pick paths — early waves use 1-2 paths, later use all 3.
+	var num_paths: int = mini(1 + wave_num / 3, _PATH_IDS.size())
+	var active_paths: Array[String] = []
+	for i in num_paths:
+		active_paths.append(_PATH_IDS[i % _PATH_IDS.size()])
+
+	# Distribute enemies across paths with type mixing.
+	var enemies_per_path: int = maxi(1, base_count / num_paths)
+	var spawns: Array = []
+	for pid in active_paths:
+		var spawn := spawn_script.new()
+		spawn.path_id = pid
+		spawn.enemy_scene = _pick_enemy_for_wave(wave_num)
+		spawn.count = enemies_per_path
+		spawn.interval = maxf(0.4, 1.2 - wave_num * 0.03)
+		spawn.start_delay = 0.0
+		spawns.append(spawn)
+
+	# Add a healer from wave 5+, flying from wave 3+.
+	if wave_num >= 3:
+		var fly_spawn := spawn_script.new()
+		fly_spawn.path_id = active_paths[randi() % active_paths.size()]
+		fly_spawn.enemy_scene = _EnemyFlyingScene
+		fly_spawn.count = maxi(1, wave_num / 3)
+		fly_spawn.interval = 1.5
+		fly_spawn.start_delay = 2.0
+		spawns.append(fly_spawn)
+	if wave_num >= 5:
+		var heal_spawn := spawn_script.new()
+		heal_spawn.path_id = active_paths[randi() % active_paths.size()]
+		heal_spawn.enemy_scene = _EnemyHealerScene
+		heal_spawn.count = maxi(1, wave_num / 5)
+		heal_spawn.interval = 3.0
+		heal_spawn.start_delay = 3.0
+		spawns.append(heal_spawn)
+
+	wave_data.spawns = spawns
+	return wave_data
+
+
+func _pick_enemy_for_wave(wave_num: int) -> PackedScene:
+	# Weighted random: basics dominate early, harpies mix in later.
+	if wave_num < 3 or randi() % 3 > 0:
+		return _EnemyBasicScene
+	return _EnemyFlyingScene
 
 
 # Public helper (kept from Phase 4) for manual spawning + used internally above.

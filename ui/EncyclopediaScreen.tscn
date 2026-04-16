@@ -1,0 +1,90 @@
+[gd_scene format=3 uid="uid://2d8cbqwo223q"]
+
+[ext_resource type="Script" path="res://ui/EncyclopediaScreen.gd" id="1_enc"]
+
+[node name="EncyclopediaScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_enc")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.12, 0.1, 0.15, 1.0)
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 80.0
+
+[node name="BackButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 60)
+layout_mode = 2
+text = "Back"
+theme_override_font_sizes/font_size = 20
+
+[node name="Title" type="Label" parent="TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Encyclopedia"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 26
+
+[node name="TabRow" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 88.0
+offset_right = -16.0
+offset_bottom = 148.0
+theme_override_constants/separation = 8
+
+[node name="EnemiesTab" type="Button" parent="TabRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Enemies"
+theme_override_font_sizes/font_size = 18
+
+[node name="TowersTab" type="Button" parent="TabRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Towers"
+theme_override_font_sizes/font_size = 18
+
+[node name="HeroesTab" type="Button" parent="TabRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Heroes"
+theme_override_font_sizes/font_size = 18
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 160.0
+offset_right = -16.0
+offset_bottom = -16.0
+
+[node name="EntryList" type="VBoxContainer" parent="ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10

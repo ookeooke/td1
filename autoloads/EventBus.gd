@@ -9,6 +9,8 @@ signal enemy_reached_end(enemy, lives_lost)
 signal tower_built(tower, spot_id)
 signal tower_sold(tower, refund)
 signal tower_upgraded(tower, new_level)
+signal tower_upgrade_requested(spot_id)
+signal tower_branch_upgrade_requested(spot_id, branch_idx)
 signal tower_branch_chosen(tower, branch)
 signal tower_spot_tapped(spot_id)
 signal tower_range_preview_requested(tower)
@@ -20,6 +22,7 @@ signal tower_menu_dismissed()
 signal soldier_spawned(soldier, tower)
 signal soldier_died(soldier)
 signal soldier_blocking(soldier, enemy)
+signal barracks_rally_move_requested(barracks)
 
 # Wave
 signal wave_started(wave_number, path_ids)
@@ -65,6 +68,8 @@ signal leaderboard_score_submitted(score)
 # Game flow
 signal game_over()
 signal game_won()
+signal pause_requested()
+signal encyclopedia_entry_unlocked(content_id)
 
 
 func _ready() -> void:

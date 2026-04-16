@@ -44,3 +44,7 @@ func _handle_tap(screen_pos: Vector2) -> void:
 	if spot_id == "":
 		return
 	EventBus.tower_spot_tapped.emit(spot_id)
+	# Claim the tap for the tower flow — prevents later _unhandled_input
+	# handlers (hero selection, hero move command) from also reacting to a
+	# press that the player intended for the spot.
+	get_viewport().set_input_as_handled()

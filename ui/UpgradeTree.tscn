@@ -1,0 +1,115 @@
+[gd_scene format=3 uid="uid://i883bdc4xuui"]
+
+[ext_resource type="Script" path="res://ui/UpgradeTree.gd" id="1_tree"]
+[ext_resource type="Script" path="res://progression/UpgradeData.gd" id="2_upg"]
+
+[sub_resource type="Resource" id="Upg_WarChest"]
+script = ExtResource("2_upg")
+upgrade_id = "war_chest"
+upgrade_name = "War Chest"
+description = "+25 starting gold each level."
+star_cost = 1
+effect_type = 6
+effect_value = 25.0
+
+[sub_resource type="Resource" id="Upg_SharpArrows"]
+script = ExtResource("2_upg")
+upgrade_id = "sharp_arrows"
+upgrade_name = "Sharp Arrows"
+description = "Archer towers deal +20% damage."
+star_cost = 2
+effect_type = 0
+effect_value = 1.2
+
+[sub_resource type="Resource" id="Upg_ExtendedRange"]
+script = ExtResource("2_upg")
+upgrade_id = "extended_range"
+upgrade_name = "Extended Range"
+description = "All towers gain +10% attack range."
+star_cost = 2
+prerequisite_id = "sharp_arrows"
+effect_type = 1
+effect_value = 1.1
+
+[sub_resource type="Resource" id="Upg_HeroTraining"]
+script = ExtResource("2_upg")
+upgrade_id = "hero_training"
+upgrade_name = "Hero Training"
+description = "Hero deals +15% damage."
+star_cost = 3
+effect_type = 3
+effect_value = 1.15
+
+[sub_resource type="Resource" id="Upg_FastLearner"]
+script = ExtResource("2_upg")
+upgrade_id = "fast_learner"
+upgrade_name = "Fast Learner"
+description = "Hero gains +25% XP per kill."
+star_cost = 2
+prerequisite_id = "hero_training"
+effect_type = 4
+effect_value = 1.25
+
+[sub_resource type="Resource" id="Upg_SpellMastery"]
+script = ExtResource("2_upg")
+upgrade_id = "spell_mastery"
+upgrade_name = "Spell Mastery"
+description = "Spell cooldowns reduced by 15%."
+star_cost = 3
+effect_type = 5
+effect_value = 0.85
+
+[node name="UpgradeTree" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_tree")
+upgrades = Array[Resource]([SubResource("Upg_WarChest"), SubResource("Upg_SharpArrows"), SubResource("Upg_ExtendedRange"), SubResource("Upg_HeroTraining"), SubResource("Upg_FastLearner"), SubResource("Upg_SpellMastery")])
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.14, 0.12, 0.18, 1.0)
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 96.0
+
+[node name="BackButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 80)
+layout_mode = 2
+text = "Back"
+theme_override_font_sizes/font_size = 20
+
+[node name="StarsLabel" type="Label" parent="TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "★ 0 / 0 available"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 22
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 112.0
+offset_right = -16.0
+offset_bottom = -16.0
+
+[node name="UpgradeList" type="VBoxContainer" parent="ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12

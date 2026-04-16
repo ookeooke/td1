@@ -13,8 +13,21 @@ class_name TowerData
 @export var sell_value: int = 30
 @export var targets_flying: bool = false
 
-@export var upgrade_cost_lvl2: int = 75
-@export var upgrade_cost_lvl3: int = 120
+# Phase 24: per-level upgrade stats. Index 0 = L2 data, index 1 = L3 data
+# (ignored when `level_3_branches` is non-empty — branches take over).
+@export var level_upgrades: Array[Resource] = []
+# Phase 25: branch choices at level 3. If non-empty, L2 → L3 presents
+# these as alternatives and `level_upgrades[1]` is bypassed. Conventional
+# layout: index 0 = branch A (e.g. Ranger), index 1 = branch B (Musketeer).
+# Nothing forces two branches — 1 here works fine (linear), 3+ would show
+# more buttons.
+@export var level_3_branches: Array[Resource] = []
+# Legacy cost fields — kept for tower data files authored before Phase 24.
+# New content should put `cost` on TowerUpgradeData instead. If a .tres has
+# both, TowerUpgradeData wins via `_effective_upgrade_cost(level)`.
+@export var upgrade_cost_lvl2: int = 0
+@export var upgrade_cost_lvl3: int = 0
+# Phase 25 branch scene overrides — deferred.
 @export var upgrade_a_scene: PackedScene
 @export var upgrade_b_scene: PackedScene
 @export var upgrade_a_data: Resource
@@ -28,5 +41,6 @@ class_name TowerData
 @export var soldier_data: Resource
 @export var soldier_blocking_offset: Vector2 = Vector2(0, 45)
 @export var soldier_spread: Vector2 = Vector2(16, 10)
+@export var soldier_rally_range: float = 140.0
 
 @export_multiline var encyclopedia_entry: String = ""

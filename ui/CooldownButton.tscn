@@ -1,0 +1,10 @@
+[gd_scene format=3 uid="uid://ip8b4gonrfbr"]
+
+[ext_resource type="Script" path="res://ui/CooldownButton.gd" id="1_btn"]
+
+[node name="CooldownButton" type="Control"]
+custom_minimum_size = Vector2(80, 80)
+layout_mode = 3
+anchors_preset = 0
+mouse_filter = 1
+script = ExtResource("1_btn")

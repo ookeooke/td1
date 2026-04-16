@@ -1,0 +1,14 @@
+[gd_resource type="Resource" load_steps=3 format=3 uid="uid://b1td1levellist"]
+
+[ext_resource type="Script" path="res://ui/world_map/LevelNodeData.gd" id="1_lnd"]
+
+[sub_resource type="Resource" id="Level1"]
+script = ExtResource("1_lnd")
+level_id = "level_1"
+display_name = "Forest Path"
+scene_path = "res://main/Main.tscn"
+unlock_order = 1
+
+[resource]
+script_class = "Resource"
+levels = Array[Resource]([SubResource("Level1")])

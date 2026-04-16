@@ -1,20 +1,21 @@
 [gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://b1td1heal001"]
 
-[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Script" uid="uid://bfgo62wek7fpf" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Script" uid="uid://cp02o50kiybdd" path="res://systems/abilities/HealAuraAbility.gd" id="2_healaura"]
+
+[sub_resource type="Resource" id="HealAura_1"]
+script = ExtResource("2_healaura")
+ability_id = "shaman_heal_aura"
+trigger = 1
+interval = 2.0
 
 [resource]
 script = ExtResource("1_data")
 enemy_name = "Shaman"
 max_health = 18
 move_speed = 55.0
-armor = 0.0
 magic_resist = 0.1
-lives_worth = 1
 gold_worth = 12
-is_flying = false
-can_stealth = false
-heals_allies = true
-heal_range = 130.0
-heal_amount = 3.0
-heal_interval = 2.0
+xp_worth = 16
+abilities = Array[Resource]([SubResource("HealAura_1")])
 encyclopedia_entry = "Slow but sustains nearby allies. Kill it first."

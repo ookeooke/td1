@@ -1,0 +1,60 @@
+[gd_scene format=3 uid="uid://iywvvhq1sd8h"]
+
+[ext_resource type="Script" path="res://ui/LeaderboardScreen.gd" id="1_lb"]
+
+[node name="LeaderboardScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_lb")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.1, 0.12, 0.16, 1.0)
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 96.0
+
+[node name="BackButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 80)
+layout_mode = 2
+text = "Back"
+theme_override_font_sizes/font_size = 20
+
+[node name="Title" type="Label" parent="TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Leaderboard"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+
+[node name="Spacer" type="Control" parent="TopBar"]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 112.0
+offset_right = -16.0
+offset_bottom = -16.0
+
+[node name="ScoresList" type="VBoxContainer" parent="ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8

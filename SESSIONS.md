@@ -228,3 +228,574 @@ One line per session: date, phase, what worked, what broke.
 - Works: F5 → tap empty spot → menu now offers Build Archer + Build Barracks → tap barracks for 70 g → brown square drops 3 yellow militia squares that march to a triangle below the tower. Ground orcs entering that triangle stop (COMBAT state), trade melee with the militia; militia die and respawn after 4 s. Harpies ignore soldiers and fly past. Selling the barracks removes all 3 soldiers.
 - Broke: none.
 - Next: Phase 17 — enemy health bar (visible on hit, auto-hide).
+
+---
+
+## 2026-04-15 — Phase 16 follow-up: draggable rally flag + demo cleanup
+- `towers/TowerBarracks.gd` now owns a FlagArea (Area2D, input_pickable = true) with a CircleShape2D r=22 sized in `_ready()`. Flag visual (pole + red cloth) is drawn in the barracks' `_draw()` at a per-instance `_flag_offset` that starts at `data.soldier_blocking_offset`. Touch on the FlagArea captures drag (`_dragging_flag = true` + `set_input_as_handled()`), subsequent `InputEventScreenDrag` events update `_flag_offset` via `get_global_transform_with_canvas().affine_inverse() * event.position`, and the release (`InputEventScreenTouch !pressed`) recalls soldiers. Consumes the press so SpotInputManager doesn't also see it.
+- `soldiers/base_soldier.gd`: new `set_blocking_position(new_pos)` — breaks the current engagement and transitions to State.MOVING toward the new rally slot.
+- `towers/TowerBarracks.tscn`: added FlagArea (Area2D) + empty CollisionShape2D child. Layer / mask both 0 (input-only area, not detected by anything else).
+- `main/Main.gd`: removed the Phase 13 demo harness + the SlowEffect/StunEffect preloads + the `_phase13_demo_used` flag + the one-shot spawn listener. All status effects now come exclusively from `BaseTower.DEBUG_STATUS_ARROWS` (arrow hit → `apply_status_effect`), so the effects the player sees are from actual gameplay, not a scripted demo.
+- Works: F5 → build a Barracks → 3 soldiers fan around a red flag at (0, 45) below the tower. Touch + drag the flag → flag follows finger → release → all three soldiers walk to the new triangle. Works mid-combat: engaged enemies release and the soldiers rally to the new spot, leaving the orc to resume WALKING. Flags on multiple barracks are independent. No status rings until a debug arrow lands.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 17: Enemy health bar (visible on hit, auto-hide)
+- `enemies/base_enemy.gd`: added `HP_BAR_HIDE_DELAY = 3.0`, `HP_BAR_SIZE = (28, 4)`, `HP_BAR_Y_OFFSET = -26`, and `_hp_bar_countdown: float`. `take_damage()` now sets `_hp_bar_countdown = HP_BAR_HIDE_DELAY` and calls `queue_redraw()` before the death check, so every hit (including the kill shot's pre-death redraw) flashes the bar. `_physics_process` decrements the countdown each frame and issues one `queue_redraw()` on the tick it crosses zero so the bar disappears cleanly.
+- New helper `_draw_health_bar()` drawn at the end of `_draw()`. Subclasses that fully override `_draw()` (`enemy_flying.gd`, `enemy_healer.gd`) each append a call to `_draw_health_bar()` so their custom sprites pick up the bar too. Bar = dark grey background, green fill proportional to `current_health / data.max_health`, 1 px black outline, centered above the unit at y = -26 (clears the r=14 orc body, r=12 harpy body, and r=15 shaman body).
+- No per-enemy HealthBar Node is instantiated — the bar is drawn inside the enemy's own `_draw()`, so the CLAUDE.md "pool / never instantiate per enemy" rule is honoured without adding a pool manager in this phase. Timing runs off the existing `_physics_process` tick rather than a child Timer, so no extra nodes either.
+- Works: F5 → archer starts shooting orcs → green bar appears above hit orc, shrinks with each arrow, hides ~3 s after the last hit (e.g. if the orc walks past into a gap). Harpies and Shamans get the same bar on damage. Kill shot still shows the fully-drained bar for the redraw before queue_free.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 17 follow-up: rally range cap + drag preview
+- `towers/TowerData.gd`: new `soldier_rally_range: float = 140.0` — max distance the flag can be dragged from the barracks. `towers/data/tower_barracks.tres` sets it explicitly (140 px) so the Inspector shows the value.
+- `towers/TowerBarracks.gd`: new `_clamp_to_rally_range(local_pos)` helper — if the touched local position is further than `data.soldier_rally_range`, project it back onto the circle edge. Called from the `InputEventScreenDrag` branch so the flag sticks to the rim of the circle when the finger leaves it instead of teleporting outside.
+- While `_dragging_flag` is true, `_draw()` renders a yellow range circle at radius `soldier_rally_range` (faint fill alpha 0.08, bright arc outline alpha 0.75) centred on the barracks. Drawn before the tower body so the square sits on top. `queue_redraw()` now fires on press and release too so the circle appears the moment you touch the flag and clears immediately on release.
+- Works: F5 → build a Barracks → touch the red flag → yellow leash circle pops up → drag the flag around; moving the finger past the circle edge keeps the flag clamped at the rim; releasing hides the circle and the soldiers rally to the (possibly clamped) point. Range scales if `soldier_rally_range` is edited in the .tres.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 17 follow-up 2: tap-to-place rally via menu button
+- `autoloads/EventBus.gd`: new signal `barracks_rally_move_requested(barracks)` — emitted by TowerSpotMenu when the player picks "Move Rally" on an occupied barracks spot. Loose-coupled per CLAUDE.md rule #2 (cross-system via EventBus only).
+- `ui/TowerSpotMenu.tscn`: added `MoveRallyButton` inside SellRow, above SellButton (80 px tall, font 22 — same touch-target sizing as the rest).
+- `ui/TowerSpotMenu.gd`: wires the button, and in `_refresh_sell_button()` sets `move_rally_button.visible = _current_tower.has_method("begin_rally_placement")`. Duck-typing on a method name rather than `is TowerBarracks` so attack towers don't need to know about the barracks class, and so future barracks variants (e.g. Paladin barracks) automatically opt in by implementing the same method. Press → emits `barracks_rally_move_requested(tower)` + dismisses menu.
+- `towers/TowerBarracks.gd`:
+  - New `_placement_mode: bool`. `begin_rally_placement()` sets it + disables `flag_area.input_pickable` so a placement tap that happens to land on the flag doesn't start a drag. `_end_rally_placement()` restores both.
+  - `_on_rally_move_requested(barracks)` listens to the EventBus signal and filters on `barracks == self`.
+  - New `_input(event)` handler (runs before `_unhandled_input`, so it consumes the tap before SpotInputManager can reopen the menu on the barracks' own spot). While `_placement_mode` is true, the next `InputEventScreenTouch.pressed`:
+    - Converts to barracks-local coords via `_screen_to_local`.
+    - If inside `data.soldier_rally_range` (or range ≤ 0), clamps to the rim, sets `_flag_offset`, calls `_recall_soldiers()`. Outside range = cancel without moving the flag.
+    - Always exits placement mode and marks the input handled.
+  - `_draw()` now shows the yellow range circle while `_dragging_flag OR _placement_mode` — so the leash is visible both when dragging the flag directly and while waiting for a tap-to-place target.
+- Works: F5 → build a Barracks → tap the barracks spot → menu appears with Sell + Move Rally + Close → tap "Move Rally" → menu closes, yellow range circle stays visible → tap anywhere inside the circle → flag hops to that spot and the 3 militia walk there. Tap outside the circle → placement cancels, flag stays put. Direct flag-drag still works unchanged. Attack towers (archers) do not show the Move Rally button.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 17 follow-up 3: soldier health bars + CLAUDE.md status sync
+- `soldiers/base_soldier.gd`: mirrored the enemy bar — `HP_BAR_HIDE_DELAY = 3.0`, `HP_BAR_SIZE = (22, 3)` (smaller than enemy 28×4 so it sits proportional to the 12×12 militia square), `HP_BAR_Y_OFFSET = -16`. `_hp_bar_countdown` decremented in `_physics_process`, set on `take_damage`, drawn at the end of `_draw()` via `_draw_health_bar()`. Same green-fill / dark-bg / black-outline look as enemies for visual consistency.
+- `CLAUDE.md` "📋 Current Status" block: flipped phases 1-17 to `[x]` (Skeleton through Enemy health bar). Added an "Extras beyond the phase list" sub-section noting the editor-editable Level1 detour, draggable rally flag, tap-to-place rally + range circle, and the soldier health bar so they're not lost between SESSIONS.md and the at-a-glance overview. Updated `Last committed phase:` to fde7ee0 (Phase 16) and `Next task:` to Phase 18. Caught only because the user asked why the checklist had been all-empty for 17 phases — fixed across the board now.
+- New memory at `~/.claude/projects/c--td1/memory/feedback_claudemd_status_update.md`: future sessions update both SESSIONS.md AND the CLAUDE.md checklist in the same edit pass.
+- Works: F5 → soldiers engage orcs → green bar appears above the militia square as it takes hits → fades out 3 s after the last hit (or shows the drained bar one frame before queue_free on death). CLAUDE.md status now reflects reality.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 17 follow-up 4: health bar rule change — stays visible while HP < max
+- Rule change: health bar is visible **whenever `current_health < max_health`** and only hidden while the unit is at full HP. The old "3 s after last hit, then auto-hide" timer was dropped — once a unit has been wounded the bar stays on for the rest of its life (or until a heal brings it back to full).
+- `CLAUDE.md`: updated the Game Reference row ("Enemy health bars: Visible whenever HP is not full"), replaced the "Enemy Health Bar Rules" block with a broader "Health Bar Rules (enemies + soldiers)" block, and rewrote the Phase 17 label.
+- `enemies/base_enemy.gd`: deleted `HP_BAR_HIDE_DELAY` + `_hp_bar_countdown` + the per-frame countdown in `_physics_process`. `take_damage` still calls `queue_redraw()` so the bar updates on hit. `heal()` now also calls `queue_redraw()` so the bar shrinks/hides correctly when a Shaman heals an ally back to full. `_draw_health_bar()` guard is now `current_health >= data.max_health` → return.
+- `soldiers/base_soldier.gd`: same simplification — countdown variable and per-frame decrement removed, `_draw_health_bar()` gated by `current_health >= data.max_health`.
+- Works: F5 → any damaged enemy or militia shows the green bar permanently until either it dies or a healer tops it up to max (at which point the bar disappears cleanly). Full-HP units show no bar.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 18: Hero movement + auto-attack
+- `heroes/HeroData.gd` (new Resource): hero_name / hero_id / max_health / attack_damage / attack_range / attack_speed / move_speed / armor / magic_resist / damage_type / targets_flying / xp_per_level / max_level / respawn_time / skills / encyclopedia_entry. XP fields are present so Phase 19 doesn't have to re-touch every .tres, but unused this phase.
+- `heroes/data/hero_warrior.tres`: Knight — 120 hp, 12 dmg, 60 attack_range, 1.0 atk/s, 110 px/s, armor 0.25, targets_flying = true (warrior's sword swings up at low-altitude harpies — keeps the hero useful on top-path waves without needing a separate ranged hero this phase).
+- `heroes/base_hero.gd` (CharacterBody2D, class_name BaseHero): states IDLE / MOVING / COMBAT / DEAD via `change_state()`. `move_to(world_pos)` cancels any active engagement and switches to MOVING — explicit player command beats auto-attack. `_physics_process` per-state:
+  - IDLE: zero velocity, `_seek_target()` polls AttackRange `get_overlapping_areas()` for the nearest non-DYING BaseEnemy that isn't a flying unit when `data.targets_flying = false`.
+  - MOVING: straight-line `(target - global_position).normalized() * move_speed`. Reached when within 4 px → IDLE. Skipped NavigationAgent2D this phase since Level1 has no obstacles; deviation noted, swap in when a level introduces blocked tiles.
+  - COMBAT: zero velocity, `_attack_step(delta)` ticks attack cooldown (1 / attack_speed) and calls `enemy.take_damage(damage, damage_type, self)`. Drops back to IDLE if the target dies, becomes invalid, or walks out of AttackRange.
+  - DEAD: bypasses `_physics_process` entirely; visible = false.
+- `heroes/HeroWarrior.tscn`: CharacterBody2D on `collision_layer = 8` (hero layer 4, new — not used by anything yet but reserved so Phase 38 boss attacks can target the hero) and `collision_mask = 0` so the hero walks through enemies and soldiers without physical collision. Child AttackRange Area2D on `collision_mask = 6` (layers 2 + 3 = ground + flying), `monitorable = false`. Shape sized at runtime from `data.attack_range`.
+- `heroes/HeroInputManager.gd` (new): listens to unhandled `InputEventScreenTouch.pressed`. Converts screen → Level1-local via the same `get_global_transform_with_canvas().affine_inverse()` pattern as SpotInputManager. Skips taps within 36 px of any registered tower spot (so opening the build menu doesn't double as a move command). Otherwise calls `hero.move_to(world_pos)` and marks the input handled. Sits in `_unhandled_input` so TowerSpotMenu's Backdrop and TowerBarracks rally-placement (which uses `_input`) both consume their taps before the hero sees them.
+- `main/Main.tscn`: instanced HeroWarrior at (188, 460) — central, clear of all three paths — and added HeroInputManager wired to the hero, GridManager, and Level1.
+- `main/Main.gd`: connects `hero_spawned` / `hero_died` to printouts.
+- Hero's `_draw()` reuses the standard health-bar helper (36×5 px, y -22) gated by the new "visible while HP < max" rule. Hero is invincible this phase (no enemy can damage it yet) so the bar will not appear in normal play.
+- Works: F5 → gold square with sword tip appears mid-map at (188, 460) → tap anywhere on the map (not on a tower spot) → knight walks straight to that point → if an orc or harpy comes within 60 px, knight stops and chops at 12 dmg / sec until the target dies or wanders out of range, then resumes IDLE. Tapping during combat re-routes the hero. Tapping a tower spot still opens the build/sell menu without moving the hero.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 18 follow-up: tap-to-select + lunge animation
+- Selection (Kingdom-Rush style): hero must be selected before tap-to-move works. Implementation:
+  - `autoloads/EventBus.gd`: new signal `hero_selection_changed(hero, is_selected)` so Phase 20's skill bar can listen in without coupling to BaseHero directly.
+  - `heroes/HeroWarrior.tscn`: added `SelectArea` Area2D (input_pickable, monitoring/monitorable off, layers/mask = 0) with an empty CollisionShape2D.
+  - `heroes/base_hero.gd`: new `is_selected: bool` + `set_selected(value)` (idempotent, queue_redraws + emits the signal). `_ready` sizes the SelectArea shape to a 22 px circle and connects `select_area.input_event` → `_on_select_area_input`. Tap on the area toggles selection and calls `set_input_as_handled()` so the press never reaches HeroInputManager (avoids "tap on hero counts as a tap-to-move on the hero's own tile").
+  - `heroes/HeroInputManager.gd`: early return when `_hero.is_selected == false`. Map taps simply do nothing until the hero is selected.
+  - `_draw()` paints a yellow ring (radius 18, alpha 0.85) under the hero when selected. Drawn before the body so the gold square covers the inside of the ring.
+- Lunge animation (analytic, no Tween allocations):
+  - `heroes/base_hero.gd`: new `_lunge_dir` + `_lunge_t` + `LUNGE_DURATION = 0.12` + `LUNGE_DISTANCE = 7`. `_start_lunge(target_world_pos)` sets the direction and resets the clock. `_physics_process` decrements `_lunge_t` and `queue_redraw()`s while it's active. `_lunge_offset()` returns a triangle-wave offset (0 → 1 → 0 over the duration). `_attack_step` calls `_start_lunge(enemy.global_position)` immediately before `take_damage`, so each swing visibly hops the knight 7 px toward the target and snaps back. `_draw()` wraps the body + sword draws in `draw_set_transform(off)` and resets so the selection ring and health bar don't lunge along with the body.
+  - `soldiers/base_soldier.gd`: same pattern (`LUNGE_DISTANCE = 5` since the militia square is half the hero's size). Lunge fires inside `_attack_cycle` on each melee swing; `_draw()` applies the offset around the body draw only. Health bar stays put.
+- `main/Main.tscn`: updated the HeroWarrior `ext_resource` UID to match the new value Godot assigned (`ct8ymjywf8nnl`) when the linter resaved the scene.
+- Works: F5 → tap the gold square → yellow ring appears under it → tap a destination → knight walks there. Tap during combat → re-routes. Tap the knight again → ring disappears, subsequent map taps are ignored. Each attack tick (hero or soldier) hops the unit ~7 px / 5 px toward the target for 0.12 s and snaps back. Selection ring + health bar stay anchored regardless of lunge.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 18 fix: hero selection wasn't firing
+- Initial selection used a SelectArea Area2D with `input_pickable=true` and a CircleShape2D sized at runtime in `_ready()`. In live play the area never received touches — likely the runtime shape didn't propagate to the picking system in time, and AttackRange (default `input_pickable=true`) was competing for picks at the same node level.
+- Replaced the Area2D approach with a direct `_input(event)` distance check on BaseHero: convert the screen press to local coords via `get_global_transform_with_canvas().affine_inverse()`, hit if `length() <= SELECT_AREA_RADIUS` (22 px), toggle, consume. No physics-picking dependency, deterministic.
+- `heroes/HeroWarrior.tscn`: removed the SelectArea + its CollisionShape2D. Set AttackRange `input_pickable = false` so it doesn't sit in the picking system at all (it's only used for `get_overlapping_areas()` polling — picking is unnecessary).
+- `heroes/base_hero.gd`: dropped the `select_area` / `select_area_shape` @onready vars + the `_on_select_area_input` handler + the runtime `sel_circle` shape assignment. New `_input()` runs in the global input phase (before physics picking and before `_unhandled_input`), so the press is consumed cleanly before HeroInputManager would interpret it as a move command on the hero's own tile.
+- Works: F5 → tap directly on the gold knight square → yellow selection ring appears → tap a destination → walks there → tap the knight again → ring disappears. Verified the press doesn't double-fire as a move-to.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 18 revision: ripped out hero selection (Option C — Kingdom Rush canon)
+- Moved from "tap-to-select + ring + gated move" to "tap anywhere = move". Reasons documented in conversation: matches the Kingdom Rush mental model we already committed to as north star, fewer states = fewer bugs, rapid repositioning is core to TD skill expression, and the modal targeting Phase 20 needs for skills doesn't require a hero-selection layer underneath it.
+- `autoloads/EventBus.gd`: removed `hero_selection_changed` signal (never consumed).
+- `heroes/base_hero.gd`: deleted `is_selected`, `set_selected()`, the `_input()` selection hit-test, `SELECT_AREA_RADIUS`, `SELECTION_RING_RADIUS`, and the selection-ring branch in `_draw()`. Added `SELF_TAP_DEADZONE = 14.0` and a guard at the top of `move_to(world_pos)`: if the tap is within 14 px of the hero's current position, ignore it. Without this, tapping the hero body while it's in COMBAT would cancel the engagement by re-targeting itself.
+- `heroes/HeroInputManager.gd`: removed the `is_selected` gate. Every non-spot tap calls `hero.move_to(world_pos)`. Backdrop/rally-placement still consume their taps first, so modal UI wins over hero commands as before.
+- Works: F5 → tap anywhere on the map → knight walks there. No ring, no toggle step. Tapping directly on the knight's body does nothing (deadzone absorbs it); tapping a tower spot still opens the build/sell menu; rally placement and TowerSpotMenu backdrop still eat their own taps without leaking moves.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 18 revision 2: switched to Option B (one-shot select → command → auto-deselect)
+- Pure Option C felt too reactive — every stray tap moved the hero. User wanted the explicit "arm → command → done" gesture: tap hero shows the ring, next map tap moves AND clears the ring, subsequent stray taps do nothing until the player re-arms. That's Option B.
+- `heroes/base_hero.gd`:
+  - Re-introduced `is_selected: bool` + `set_selected(value)` (queue_redraws, no signal — Phase 20 can wire one back if the skill bar needs it).
+  - Re-added `_input(event)` distance check (radius 22 px, same as before — proven to work after the picking-via-Area2D detour). Toggles selection and consumes the press.
+  - `move_to(world_pos)` now ends with `if is_selected: set_selected(false)` so issuing a move command always clears the armed state in the same call. No risk of forgetting to deselect.
+  - `_die()` also calls `set_selected(false)` so a corpse never carries a stale ring.
+  - `_draw()` paints the yellow ring (radius 18, alpha 0.85) under the body when armed. Drawn first so the body covers the inside of the ring; lunge offset still applied only to body+sword so the ring stays anchored.
+  - Dropped `SELF_TAP_DEADZONE` — no longer needed because tapping the hero body is consumed by `_input` before `move_to` is ever called.
+- `heroes/HeroInputManager.gd`: re-added the `is_selected` early-return. Map taps are inert until armed.
+- Works: F5 → first map taps do nothing → tap the knight → ring appears → tap a destination → knight walks AND ring disappears in the same frame → further random map taps are ignored → tap knight again to re-arm. Tower spots, backdrop, rally placement still consume their own taps so they win over the hero command path.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 19: Hero XP + leveling
+- Last-hit XP semantics — only hero kills award XP, towers don't.
+- `enemies/EnemyData.gd`: added `xp_worth: int` field. Data values: basic orc 6, harpy 8, shaman 16 — tuned so clearing wave 1 on the hero alone gets most of the way to level 2.
+- `enemies/base_enemy.gd`: new `_last_damage_source: Node`, updated in `take_damage(amount, type, source)` (the param was previously `_source` and ignored). `_die()` now checks `is BaseHero` on that source and, if so, calls `source.gain_xp(data.xp_worth)` before emitting `enemy_died`. Towers passing `source = self` don't match the BaseHero check, so no XP leaks to them.
+- `heroes/base_hero.gd`:
+  - New state: `level: int = 1`, `current_xp: int = 0`. Constants `LEVEL_HEALTH_GROWTH = 0.15` and `LEVEL_DAMAGE_GROWTH = 0.10` (per-level multipliers atop base data).
+  - `_effective_max_health()` / `_effective_damage()` helpers return level-scaled values. `_ready` uses `_effective_max_health()` so a hero spawned at a non-1 starting level (future scenario) still starts at full.
+  - `_xp_needed_for_next_level()` returns `data.xp_per_level[level - 1]` or 0 at max level.
+  - `gain_xp(amount)` accumulates, emits `hero_xp_gained`, and runs a `while current_xp >= needed` loop to handle multi-level jumps from a single big bounty. On reaching `data.max_level` it zeroes current_xp (cap, no overflow).
+  - `_level_up()` increments level, heals to the new effective max, `queue_redraw`s, emits `hero_leveled_up(new_level)`, prints a log line.
+  - `_attack_step` now deals `_effective_damage()` instead of `data.attack_damage` flat.
+  - `_draw_health_bar()` compares against `_effective_max_health()` so the bar hides at the *scaled* max (otherwise a just-leveled hero would always show a bar, since `current_health > data.max_health`).
+- `ui/HUD.gd` + `.tscn`: added `HeroLabel` ("Lv 1  XP 0/50"). Listens to `hero_spawned` / `hero_xp_gained` / `hero_leveled_up` / `hero_died`. Caches the hero ref from `hero_spawned` so label refreshes don't have to walk the tree. At level cap the text becomes "Lv N (MAX)". Bumped `TopLeft` bottom offset to 160 to fit the extra row.
+- Works: F5 → HUD shows "Lv 1  XP 0/50" → hero finishes off an orc → HUD ticks to "Lv 1  XP 6/50" → after ~8-9 orc kills the hero hits level 2, health bar briefly flashes green-to-full, damage per swing goes from 12 → 13.2, log prints "[Hero] Knight reached level 2". Towers killing enemies produces no XP tick. At level 10 HUD shows "Lv 10 (MAX)" and further kills are ignored.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 19 fix: HUD stuck at "Hero: --"
+- Screenshot showed the new HeroLabel displaying the fallback text instead of "Lv 1 XP 0/50". Cause: in Main.tscn the HeroWarrior is a sibling above HUD. Godot runs `_ready()` bottom-up/in-order, so the hero's `EventBus.hero_spawned.emit(self)` fired **before** the HUD connected to the signal — initial spawn missed entirely. The label only would've updated once the first kill fired `hero_xp_gained`.
+- Fix: changed the emit to `EventBus.hero_spawned.emit.call_deferred(self)` in `heroes/base_hero.gd`. Defers the signal by one idle frame, by which point every sibling `_ready()` has completed and listeners are connected. Two-char change, no tree re-ordering required.
+- Works: F5 → HUD now shows "Lv 1  XP 0/50" from the first visible frame. Kills tick the XP forward; level-ups update the label to the new level/new threshold.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Code review sweep (tower responsiveness + minor debt)
+External review flagged six items. Applied the genuine fixes; rejected one that was based on outdated plan.
+- **Tower attack loop: Timer → cooldown (valid fix).** `towers/base_tower.gd` no longer uses an AttackTimer node — attack pacing is now a `_attack_cooldown: float` decremented in `_physics_process`. First shot fires the instant an enemy enters range instead of waiting up to `1 / attack_speed` for a Timer cycle. Also removed the now-orphan `AttackTimer` Timer node from `towers/TowerArcher.tscn`.
+- **Target picking: sticky + HP tiebreaker (valid + extra).** Reviewer flagged equal `progress_ratio` as causing chaotic retargeting when `Area2D.get_overlapping_areas()` iteration order shuffles. Real issue is bigger — previous logic re-picked from scratch every tick with no preference for the current engagement. New `_pick_target()` in `towers/base_tower.gd`: keeps the current target on a progress tie, and on true ties without the current target it prefers the lower-HP enemy (finish one before spreading DPS). Uses `is_equal_approx` instead of `==` on the float compare.
+- **Lunge stutter cap (defensive).** `heroes/base_hero.gd` `_start_lunge`: `_lunge_t = min(LUNGE_DURATION, (1 / attack_speed) * 0.9)`. Current attack_speed (1.0) leaves the full 0.12 s duration; any future scaling past ~7.5 attacks/sec will shorten the lunge to fit the cooldown instead of stuttering mid-animation.
+- **DEBUG_STATUS_ARROWS → false.** `towers/base_tower.gd`: archers no longer randomly slow/stun enemies every 3-6 shots. Mechanism preserved as a dev toggle for future status-effect debugging.
+- **Projectile pooling: deferred.** At 4 towers × 1.2 shots/s the GC pressure is nowhere near the pain point. Noted as Phase 41 polish work; will matter once Endless mode (Phase 32) sustains 30+ towers firing.
+- **Hero selection code: rejected as "dead".** Reviewer assumed we shipped Option C. Actual state is Option B (tap hero → ring → tap map → move + auto-deselect) — see the previous session entry. The `is_selected` / `set_selected` / `_input` hit-test is load-bearing, not legacy.
+- Works: F5 → place an archer, spawn an enemy — tower fires the moment the enemy crosses the range line instead of waiting for the previous tick to roll over. Two enemies travelling in lockstep now get focus-fired (lower-HP dies first) instead of alternating shots. No more random crowd-control arrows.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Input-pipeline audit: hero vs. tower-spot overlap
+Trace of the current input flow, written down while auditing the "what if the hero is standing on a tower spot" edge case.
+
+Pipeline (Godot input order):
+1. `_input` — every node, root→children top-down. TowerBarracks rally-placement captures here. No collision with hero.
+2. Area2D picking → `input_event` signals. Barracks FlagArea drag captures here.
+3. GUI → `Control.gui_input`. TowerSpotMenu's Backdrop (`mouse_filter=STOP`) consumes while the menu is visible, modalizing it.
+4. `_unhandled_input` — every node, tree order, only if not consumed upstream.
+
+Tree order in Main.tscn puts `Level1/SpotInputManager` before `HeroWarrior` before `HeroInputManager` for step 4, which is the critical ordering below.
+
+Two real bugs surfaced by the audit:
+- **Hero selection wasn't modal.** `BaseHero._input` ran in step 1, BEFORE the Backdrop could consume in step 3. Tapping on the hero while TowerSpotMenu was open toggled selection anyway.
+- **Hero-on-spot input theft.** If the hero was parked near/on a tower spot, the hero's 22 px select radius swallowed the press before `SpotInputManager` (which doesn't/didn't consume) could open the build/sell menu. The player's tap intended for the spot selected the hero instead.
+
+Fixes:
+- `heroes/base_hero.gd`: renamed `_input` → `_unhandled_input` with no other logic changes. Now hero selection only fires if nothing upstream (rally placement, flag drag, TowerSpotMenu Backdrop, SpotInputManager) claimed the tap.
+- `map/SpotInputManager.gd`: after `EventBus.tower_spot_tapped.emit(spot_id)`, calls `get_viewport().set_input_as_handled()`. Tap on a spot now belongs entirely to the tower flow; hero never sees it even if the hero body overlaps the spot.
+- `heroes/HeroInputManager.gd`: no change — its existing 36 px spot-proximity early-return is now redundant (SIM consumes first) but kept as defense-in-depth.
+
+Consolidated behaviour by case:
+- Empty map tap: hero moves iff selected.
+- Spot tap (no hero body underneath): menu opens.
+- Spot tap with hero body on the spot: menu opens, hero untouched.
+- Tap on hero body (no spot nearby): hero selects / deselects.
+- Tap anywhere while TowerSpotMenu open: Backdrop eats it, nothing else reacts.
+- Tap anywhere while barracks in rally-placement mode: barracks consumes, places flag or cancels.
+- Flag drag on a barracks: captured by Area2D input_event, no leakage.
+
+Works: F5 → park the knight on Spot5 → tap the spot → build menu opens, hero does not select (previously hero stole the tap). Open the menu → tap the knight → menu stays modal, hero does not select (previously hero would toggle through the Backdrop).
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 20: Hero skill 1 (Slash, single-target)
+- Skill data layer:
+  - `heroes/skills/skill_data.gd` (new Resource `SkillData`): base with `TargetType { SINGLE, AREA, SELF }` enum + fields (skill_name, skill_id, skill_range — 0 means use hero's attack_range, damage, damage_type, cooldown, target_type, icon, description) + a `apply(hero, target)` virtual for subclasses. Cooldown state is intentionally NOT on the resource — resources are shared, cooldown is per-hero.
+  - `heroes/skills/slash_skill_data.gd` (extends SkillData): overrides `apply(hero, target)` — validates the target is a non-dying BaseEnemy and routes a hit through `enemy.take_damage(damage, damage_type, hero)`. Because `source = hero`, kills from the skill still grant XP via Phase 19's last-hit semantics.
+  - `heroes/data/skills/skill_slash.tres`: Slash — 40 dmg, physical, range 0 (= hero's 60 px attack range), cooldown 6 s, single target. Wired into `heroes/data/hero_warrior.tres` `skills = Array[Resource]([skill_slash])`.
+- Hero API (`heroes/base_hero.gd`):
+  - New `_skill_cooldowns: Array[float]` — sized in `_ready()` parallel to `data.skills`, ticked in `_tick_skill_cooldowns(delta)` (called from `_physics_process`), emits `EventBus.skill_ready(skill_name)` on the frame a cooldown hits zero.
+  - Public API: `get_skill_data(idx)`, `get_skill_cooldown_fraction(idx)` (0 = ready, 1 = just cast — UI radial maps this to arc coverage), `get_skill_effective_range(idx)`, `can_cast_skill(idx)`, `cast_skill(idx, target)`. `cast_skill` applies the effect, starts the cooldown, emits `hero_skill_used` + `skill_cooldown_started`, and kicks the lunge tween toward the target for a melee-cast feel.
+  - New `set_skill_range_preview(radius)` — SkillBar flips this on/off to overlay a yellow range circle on the hero during targeting. Drawn in `_draw()` before the body + selection ring so the body sits on top of the fill. Handled on the hero itself (rather than a separate Node2D) so the circle stays in world-space even if a Camera2D gets added later.
+  - `SkillData` type references in hero code are written as `Resource` rather than `SkillData` — mirrors the StatusEffect / BaseSoldier pattern where Godot's class_name index hasn't caught up on brand-new scripts. Runtime duck-typing is identical; LSP diagnostics stay clean.
+- Skill bar UI:
+  - `ui/CooldownButton.gd` + `.tscn`: Control with a custom `_draw()` — orange placeholder tile, dark outline, and a dark semi-transparent pie slice that shrinks counter-clockwise over the button as the cooldown drains (per CLAUDE.md: radial fill, never text). `_gui_input` captures the press and emits `pressed_skill(idx)`. Uses `ThemeDB.fallback_font` + `draw_string` for the skill name label.
+  - `ui/SkillBar.gd` + `.tscn`: CanvasLayer (layer 8 — above HUD 1, below TowerSpotMenu 10). Bottom-right VBoxContainer gets one CooldownButton per `hero.data.skills` entry on `hero_spawned`. Tap a button → enter targeting mode (sets the hero's range preview). Next screen tap: SkillBar's `_input` captures it, rejects taps outside the range circle, else finds the closest enemy within 32 px of the tap and within the skill's range of the hero via `get_tree().get_nodes_in_group("enemies")`, and calls `hero.cast_skill`. Either outcome ends targeting so the player isn't stuck armed.
+- `enemies/base_enemy.gd`: `_ready` now `add_to_group("enemies")`. `get_nodes_in_group` is only called on a targeting tap (not per-frame), so the mobile-perf rule ("never get_nodes_in_group in _physics_process") still holds.
+- `main/Main.tscn`: instanced SkillBar below HUD (layer 8) so its CanvasLayer stack sits under the TowerSpotMenu backdrop (layer 10) but above the HUD labels (layer 1).
+- Works: F5 → bottom-right of the screen shows a single orange "Slash" tile. Tap it → yellow range circle appears on the knight. Tap an enemy inside the circle → enemy takes 40 physical damage (orcs die in one hit), the button darkens with a radial pie slice that shrinks over 6 s. Tap outside the circle or with no enemy nearby → targeting cancels, no cooldown spent. Tapping the button again while armed cancels targeting. Slash cast on the killing blow still awards XP to the hero (confirmed via HUD ticking + "[Hero] Knight reached level 2" log).
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 20.5: Composition foundation — AbilityData + AbilityHost
+Architectural scaffold before Phase 21 lands more skill/passive content. Long discussion documented in conversation; short version: the same Resource + dispatcher primitive will eventually power enemy traits, hero passives, tower on-hit effects, item-granted effects, talent-tree nodes, endless modifiers, and status effects. One concept, six future use-cases.
+- `systems/AbilityData.gd` (new Resource): Trigger enum (ON_SPAWN, ON_INTERVAL, ON_HIT_DEALT, ON_HIT_TAKEN, ON_KILL, ON_DEATH, WHILE_ALIVE, ON_EQUIP, ON_UNEQUIP) + `apply(owner, ctx)` virtual. Subclasses add their own `@export` fields. Resources are shared across instances; per-unit state lives on the host.
+- `systems/AbilityHost.gd` (new RefCounted): per-unit dispatcher. Holds `Array[Resource]` of abilities + parallel `_interval_accum`. `add_ability` (auto-fires ON_SPAWN), `remove_ability`, `tick(delta)` (advances ON_INTERVAL clocks and fires when crossed), `trigger_event(event, ctx)` for one-shot dispatches. Owner-agnostic — same host reused by every unit type.
+- `systems/abilities/HealAuraAbility.gd` (first concrete subclass): the Phase 15 shaman aura ported as a Resource. `heal_range` + `heal_amount` fields, ON_INTERVAL trigger, group-iterates the "enemies" group and heals nearby allies via `BaseEnemy.heal()`. No Area2D / no HealTimer — pure data + group iteration. Distance-squared comparison so the per-tick cost is trivial.
+- `enemies/EnemyData.gd`: stripped 10 flat fields (`heals_allies`, `heal_range`, `heal_amount`, `heal_interval`, `regenerates`, `regen_rate`, `explodes_on_death`, `explosion_damage`, `explosion_range`, `spawns_on_death`, `spawn_count`, `spawn_scene`). Replaced with one `abilities: Array[Resource]`. Designers now mix mechanics in the Inspector instead of toggling 12 booleans.
+- `enemies/data/enemy_healer.tres`: rewrote to declare the heal aura as an inline `[sub_resource type="Resource"]` (HealAuraAbility, trigger=1=ON_INTERVAL, interval=2.0, range=130, amount=3) and reference it from `abilities`. Same gameplay numbers as before.
+- `enemies/EnemyHealer.tscn`: removed the HealArea Area2D + HealTimer Timer nodes — both obsolete now that the ability handles range+pulse without scene-side help.
+- `enemies/enemy_healer.gd`: shrunk to 21 lines, only the placeholder `_draw()` remains. Marked for eventual removal once visuals go data-driven (Phase 41 polish).
+- `enemies/base_enemy.gd`: hosts an `AbilityHost` per instance. Built in `_ready` (after `add_to_group("enemies")` so any ON_SPAWN ability that scans the group sees this enemy). `_physics_process` calls `_ability_host.tick(delta)`. `_die()` fires `trigger_event(ON_DEATH, {})` BEFORE despawn so future ExplodeOnDeath / SummonOnDeath abilities can still read our position + iterate the enemies group.
+- `CLAUDE.md`: added a new "🧩 Ability System" section above the Enemy System block — documents the Trigger enum, authoring workflow, list of implemented + reserved abilities, and the discipline rules (owner-agnostic, dispatch order = array order, state on host not data). Updated Enemy Data block to reflect the lean field list.
+
+Foundation explicitly deferred (will land when first consumer needs them):
+- `StatBlock` + `StatModifier` — central stat-stack with sourced modifiers (additive → multiplicative → final-add resolution). Lands when items / buffs need to push removable bonuses.
+- `AttackPatternData` + `OnHitEffectData` — splits "how a tower delivers damage" from "what happens on hit". Lands at Phase 24 (tower upgrades + branching).
+- `WaveModifier` + endless scaling layer — lands at Phase 32.
+- `ItemData` + slot/rarity/loot tables + LoadoutData + LoadoutScreen — lands across Phases 27.5, 30, 36.5.
+
+Roadmap captured in conversation (Diablo-style multi-slot hero items, drops in-level only, shop+crafting in town menu, full progression persistence between levels). All of it composes onto the AbilityData primitive — items are just AbilityData containers with stat modifiers attached.
+
+Works: F5 → wave 2 still spawns the green Shaman → it still pulses heals every 2 s on nearby orcs → console still prints `[Enemy/heal] Orc Grunt N → M`. No visible behaviour change despite the entire Area2D+Timer healing pipeline being gone — the ability resource produces identical output through generic machinery.
+- Broke: none.
+
+---
+
+## 2026-04-15 — TowerSpotMenu bug: build fires through menu on bottom-row spots
+- Reproduced: tapping Spot3/Spot4 (y≈600) or any bottom-row spot caused the menu to "skip" — the tower was built instantly without the player tapping the Build button a second time. Confirmed by user; my earlier "Godot's BaseButton protects against orphan releases" analysis was wrong in practice, at least for InputEventScreenTouch under `emulate_touch_from_mouse`.
+- Root cause (empirical): the tap's RELEASE event lands on a Build button that just became visible under the finger. Something in Godot's event routing (or the interaction between touch emulation + Control GUI phase) causes the button's `pressed` signal to fire even though the button never saw the matching press. The press itself was consumed by SpotInputManager — only the release gets through.
+- Fix in `ui/TowerSpotMenu.gd`: added a `_actions_enabled: bool` gate. In `_on_spot_tapped`, after `visible = true`, flip it to `false` and schedule a re-enable one idle frame later via `await get_tree().process_frame`. All four action handlers (`_on_archer_pressed`, `_on_barracks_pressed`, `_on_sell_pressed`, `_on_move_rally_pressed`) early-return when the gate is closed. So any action signal that fires from the in-flight release event is silently dropped; the menu stays open and waits for the next real tap.
+- One idle frame (~16 ms at 60 fps) is imperceptible to touch input and strictly cheaper than disabling/re-enabling buttons (which would have overridden the gold-cost disabled logic).
+- Works: F5 → tap Spot4 or any bottom-row spot → menu opens, archer/barracks buttons wait for an intentional second tap. Tap Build Archer → archer builds as normal. Previous behaviour (instant skip-to-build) is gone. Top-row spots (Spot1/Spot2) unchanged — they never had the bug because the panel didn't cover them.
+- Broke: none.
+
+---
+
+## 2026-04-15 — TowerSpotMenu bug fix v2: swallow the release explicitly
+- Previous one-frame `_actions_enabled` gate wasn't enough — `await get_tree().process_frame` resumes at end of the CURRENT frame, but a finger held for more than ~16 ms releases in frame N+1, by which time the gate is already re-opened. User confirmed the skip-to-build was still reproducible.
+- Root-cause-level fix: `ui/TowerSpotMenu.gd` now has `_swallow_next_release` + a new `_input(event)` handler. When the menu opens, the flag flips true. `_input` runs before the GUI phase, so consuming the release there means Button.gui_input never sees it → Button.pressed can never fire from the tap that opened the menu. Once the release is eaten the flag clears, and normal input resumes immediately — no timing delay, no timer, no user-facing latency.
+- Kept the `_actions_enabled` one-frame gate as belt-and-suspenders for any release that somehow bypasses `_input` (synthetic events, future dev overrides, etc.).
+- Added `_swallow_next_release = false` to `_dismiss()` so the flag can't linger across sessions and accidentally eat an unrelated release from a later gesture.
+- Works: F5 → tap any spot (including Spot4/Spot6 under the panel), hold the finger for any duration, release → menu stays open waiting for a deliberate second tap. Previous "tap once, tower builds" regression is gone at the root, not masked by timing.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 20.5b: AbilityHost on heroes + soldiers, authoring contract in CLAUDE.md
+- Extended the composition primitive from enemies-only to all three unit bases. Same pattern, same script preloads, same trigger enum.
+- `soldiers/SoldierData.gd`: added `abilities: Array[Resource]`. Paladin-style healer soldiers are now a data edit (drop in a HealAuraAbility).
+- `heroes/HeroData.gd`: added `abilities: Array[Resource]` alongside existing `skills`. Active skills stay in `skills` (player-cast via SkillBar), passives go in `abilities` (auras, on-hit, passive buffs). Equipment later pushes into the same `_ability_host`.
+- `soldiers/base_soldier.gd`: preloads AbilityHost + AbilityData scripts, creates `_ability_host` in `_ready`, populates from `data.abilities`, ticks in `_physics_process`, fires `ON_HIT_DEALT` + conditional `ON_KILL` on damaging an enemy, `ON_HIT_TAKEN` in `take_damage`, `ON_DEATH` in `_die`.
+- `heroes/base_hero.gd`: same wiring. Kill inference uses `BaseEnemy.State.DYING` transition inside `take_damage` — if pre_dying was false and post is DYING, the hit was lethal → fires ON_KILL.
+- `enemies/base_enemy.gd`: added `ON_HIT_TAKEN` trigger in `take_damage` for symmetry (enrage abilities, thorns, etc.).
+- `CLAUDE.md`:
+  - Added Core Rule #11: "New content is authored as data, not code." Only subclass when the variant needs new structural behavior (collision layer, different control loop, novel behavior like pet-summoning). Visual + stat + passive differences never justify a new script.
+  - Added Core Rule #12: "One primitive for mechanics: AbilityData." Every verb on a unit is an AbilityData resource. Owner-agnostic apply() or split the ability.
+  - New "🧱 Modular content pattern" section above the Ability System block. Tables for per-subsystem authoring contract (Enemies / Soldiers / Heroes / Towers / Skills / Spells / Items / Status Effects), the "when subclass is warranted" list, and copy-paste recipes for adding a new hero / soldier / enemy / ability.
+- Works: F5 → shaman still heals allies via HealAuraAbility (unchanged). Soldiers + heroes now ready to receive passive abilities via `.tres` edits only. Zero behavior change for existing content; all new capabilities.
+- Broke: none.
+
+---
+
+## 2026-04-15 — Phase 21: Hero skills 2 + 3 (AoE + self-buff), validating the ability primitive
+Both skills land on top of the Phase 20.5 AbilityData scaffold, exercising two different target_type flows AND the "skill-as-ability-factory" pattern (Rally constructs a temporary AbilityData at cast time and attaches it to the hero — no skill-local timers).
+- Cleanup: deleted `node_2d.tscn` editor artifact from project root. Added stable `enemy_id` to `EnemyData` and `soldier_id` to `SoldierData` so Phase 27 save references are ID-based, not path-based.
+- `systems/AbilityData.gd`: new `duration: float = 0.0` field. 0 = permanent (existing behavior); > 0 = auto-remove after that many seconds.
+- `systems/AbilityHost.gd`: added `_age: Array[float]` parallel array, ticked each frame. Iteration in `tick()` flipped to reverse so duration-triggered removals don't skip entries. Generic mechanism — works for any ability, not just Rally's specific case.
+- `heroes/skills/shield_bash_skill_data.gd` + `heroes/data/skills/skill_shield_bash.tres` (new): **Bash** — 22 physical dmg in a 70 px AoE around a tapped point, 10 s cooldown, `target_type = AREA (1)`, skill_range 120 (how far from hero you can place the blast). Iterates the "enemies" group and damages all within `aoe_radius`.
+- `systems/abilities/OnHitBonusDamageAbility.gd` (new): AbilityData subclass with `trigger = ON_HIT_DEALT` + `duration > 0`. On every hit dealt by the owner, applies `bonus_damage` as a secondary `take_damage` call (source = owner, so XP still attributes correctly). Supports any future on-hit effect that needs "flat extra damage per swing" — Flame Tongue items, Wrath buffs, etc.
+- `heroes/skills/rally_skill_data.gd` + `heroes/data/skills/skill_rally.tres` (new): **Rally** — SELF target_type, 18 s cooldown. On cast, `apply(hero, null)` instantiates an `OnHitBonusDamageAbility(bonus=8, duration=10)` and pushes it into `hero._ability_host`. AbilityHost auto-removes when the buff expires. No skill-local timer; no flag bookkeeping; Rally is stateless after cast. This is the reusable pattern items and future talents will follow.
+- `heroes/data/hero_warrior.tres`: `skills = [slash, shield_bash, rally]`.
+- `ui/SkillBar.gd`: reads `skill.target_type` on button press. SELF → cast immediately with `null` target (skips targeting mode entirely). AREA → targeting mode; cast passes `world_pos: Vector2`. SINGLE → targeting mode; cast passes the nearest enemy Node within `TARGET_TAP_TOLERANCE` of the tap. Preloads `SkillData` script as `_SkillDataScript` to reach the `TargetType` enum.
+- Works: F5 → skill bar shows three tiles (Slash / Bash / Rally). Slash targets single enemy (40 dmg, unchanged). Bash arms → tap within the circle → every enemy within 70 px of the tap takes 22 dmg instantly. Rally casts on button press — no targeting step; for the next 10 s every Slash / auto-attack deals +8 bonus damage (confirmed by enemies dying to fewer swings during the buff, then reverting to normal). Cooldowns count down as expected; tile goes dark with the shrinking pie overlay.
+- Broke: none.
+- Architectural payoff: Rally (skill 3) is ~25 lines of GDScript. It needs no `_process`, no Timer, no flag, no "undo" bookkeeping. The cast just constructs a resource and hands it to the host. This is the blueprint for:
+  - Every future buff skill ("Heal over time", "Speed Aura")
+  - Consumable items ("Potion of Strength: +20% damage for 30 s")
+  - Talent-tree passives ("On-kill: +5% damage for 3 s")
+  - Global spell effects ("Battle Banner: all allies in range get +1 armor for 15 s")
+  - Shrines ("Elemental Blessing: fire damage on hit for this wave")
+All of them = construct an AbilityData + call `add_ability(...)`.
+- Next: Phase 22 — global spell 1 (area damage).
+
+---
+
+## 2026-04-15 — Phase 22: Global spell 1 (Fireball, AoE magic damage)
+Landed on top of the Phase 20.5 ability + Phase 20 skill patterns. The CooldownButton is now provider-agnostic, so hero skills and global spells both drive identical-looking UI tiles from the same component.
+- `ui/CooldownButton.gd`: generalized from hero-specific to provider-agnostic. `setup(provider: Node, idx: int)` — any Node with `cooldown_fraction(idx) -> float` and `display_name(idx) -> String` can drive the button. Signal renamed from `pressed_skill` → `triggered`. Drawing unchanged (radial pie-slice overlay + centered label).
+- `heroes/base_hero.gd`: added `cooldown_fraction(idx)` and `display_name(idx)` as thin aliases to existing `get_skill_cooldown_fraction` / `get_skill_data(idx).skill_name`. Satisfies the provider contract without touching the existing public API.
+- `ui/SkillBar.gd`: updated the signal connection from `pressed_skill` → `triggered`. No behavioral change.
+- `spells/SpellData.gd` (new Resource base): `TargetType { AREA, GLOBAL }`, `spell_id / spell_name / cast_range / radius / damage / damage_type / cooldown / target_type / icon / vfx_scene / description`. Virtual `apply(world_pos, caster)`. Upgrade-tree hooks (Phase 28) will push AbilityData onto the cast context later.
+- `spells/fireball_spell_data.gd` (new SpellData subclass): group-iterates `"enemies"`, filters non-DYING + inside `radius` of `world_pos`, calls `enemy.take_damage(damage, damage_type, caster)`. Source = SpellPanel (the caster Node), so spell kills do NOT award hero XP — matches Kingdom Rush's rule that spells don't level up your hero. Instantiates `vfx_scene` at the impact point if set.
+- `spells/FireballVFX.gd + .tscn` (new): orange expanding disc + bright outline, alpha-fades over 0.4 s via Tween, auto queue_frees. Placeholder visual; Phase 41 polish swaps for real VFX.
+- `spells/data/spell_fireball.tres`: Fireball — 55 magic dmg, 90 px radius, 25 s cooldown, AREA target. Wires `vfx_scene = FireballVFX.tscn`.
+- `ui/SpellPanel.gd + .tscn` (new): CanvasLayer (layer 7) bottom-left column of CooldownButtons, one per spell. Holds `@export spells: Array[Resource]` + parallel `_cooldowns: Array[float]`. Ticks cooldowns in `_physics_process`, emits `spell_ready(name)` on crossings. Exposes `cooldown_fraction(idx)` + `display_name(idx)` for the button provider contract. On button trigger → enters AREA targeting mode. `_input` consumes the next screen touch, resolves to world pos, calls `spell.apply(world_pos, self)`, starts the cooldown, emits `spell_cast` + `spell_cooldown_started`, consumes the input.
+- `main/Main.tscn`: instanced `SpellPanel` at layer 7 (above HUD=1/SkillBar=8? actually SkillBar=8, SpellPanel=7 — SkillBar wins z-order, which is fine because both panels are in distinct screen corners).
+- Wait — check stacking. SkillBar layer=8 (bottom-right), SpellPanel layer=7 (bottom-left). They don't spatially overlap, so layer numbers only matter for modals. TowerSpotMenu layer=10 still dominates both. Fine.
+- Guarded against double-cast: both `SkillBar._input` and `SpellPanel._input` now `return` early if `get_viewport().is_input_handled()`. Without this, arming both a skill AND a spell would fire both on the next tap, because `_input` runs for every listener regardless of consumption. Belt-and-suspenders beyond the in-handler `set_input_as_handled()` call.
+- Works: F5 → bottom-left shows a single orange "Fireball" tile. Tap it → enters targeting mode. Tap anywhere on the map → orange circle bursts at the tap point, fades over ~0.4 s, every enemy in a 90 px radius takes 55 magic damage (orcs die instantly at current stats). Tile darkens with the shrinking 25 s pie overlay. Hero XP unchanged (spell kills credit nobody). Bottom-right Slash / Bash / Rally unaffected.
+- Broke: none.
+- Next: Phase 23 — global spell 2 (reinforcements).
+
+---
+
+## 2026-04-15 — Phase 23: Global spell 2 (Reinforcements / "Recruit")
+Landed as pure data composition — no new death-timer code, no new soldier subclass. A generic `LifetimeAbility` + attaching it to spawned soldiers via the existing AbilityHost + AbilityData.duration auto-removal does all the work. This validates the "summon / decoy / minion" pattern for future items and talents.
+- `systems/AbilityHost.gd`: on auto-removal of a duration-expired ability, now calls `a._on_expired(owner)` if the ability defines it. Enables subclasses to run finalization (e.g. killing the owner) at the moment their duration runs out. Optional method — abilities without `_on_expired` just get silently detached as before.
+- `systems/abilities/LifetimeAbility.gd` (new AbilityData subclass): no-op `apply()`. Override of `_on_expired(owner)` routes through `owner._die()` if present (fires soldier_died / enemy_died + runs ON_DEATH abilities + queue_frees via the unit's normal path) or falls back to `queue_free()`. One script. Handles every "this unit exists for N seconds" mechanic going forward — reinforcement squads now, summon items + decoy spells later.
+- `spells/reinforcements_spell_data.gd` (new SpellData subclass): `soldier_scene` + `squad_size` + `lifetime` + `spread_radius` fields. On cast, instantiates `squad_size` soldiers from `soldier_scene`, parents them to the current scene root, fans them in a ring of `spread_radius` around the tap point, calls `setup(slot)` so they walk to their blocking position, then attaches a `LifetimeAbility(duration=lifetime)` to each via `soldier._ability_host.add_ability(...)`. Zero soldier code touched.
+- `spells/data/spell_reinforcements.tres`: Recruit — summons 4 Militia for 20 s at the tapped point, 40 s cooldown. spell_id = "reinforcements".
+- `ui/SpellPanel.tscn`: added Recruit to the `spells` array. Panel now shows two tiles (Fireball + Recruit) — CooldownButton generalization from Phase 22 means no per-spell UI work was needed.
+- Side-effect test: if a Recruit soldier gets killed by an enemy before its 20 s is up, its `_die()` fires normally, the barracks respawn logic ignores it (soldier not in any barracks' `_active_soldiers` list), and the LifetimeAbility just never gets to fire `_on_expired` because the soldier is already gone. Two independent death paths, both safe.
+- Works: F5 → bottom-left now has Fireball + Recruit tiles. Tap Recruit → targeting mode → tap a lane → 4 yellow militia squares drop there, fan out, engage any orcs that walk into range. After ~20 s they simultaneously `_die()` and vanish (soldier_died fires, no respawn). Barracks-spawned soldiers untouched by the spell. Fireball unchanged.
+- Broke: none.
+- Architectural note: three Phase 21-23 features (Rally buff, Fireball damage, Recruit summon) landed with essentially zero new lifecycle/timer code. All three use AbilityData + AbilityHost.duration as the scaffolding, and they plug into the owner's existing `_die()` / `take_damage()` / `_ability_host` paths. Adding a similar summon-minion item, a smoke-screen decoy spell, or a timed-buff consumable will each be one more AbilityData subclass + one `.tres` in the right folder.
+- Next: Phase 24 — tower upgrade linear (levels 1→2→3).
+
+---
+
+## 2026-04-15 — Phase 24: Tower upgrade linear (L1 → L2 → L3)
+Linear stat upgrades through a new `TowerUpgradeData` Resource — same composition pattern the rest of the game uses. L3 slot already accepts `on_hit_abilities: Array[Resource]`, teed up for Phase 25's Ranger-vs-Musketeer branch differentiation.
+- `towers/TowerUpgradeData.gd` (new Resource): per-level stat override — `upgrade_name`, `damage`, `attack_range`, `attack_speed`, `cost`, `sell_value`, `on_hit_abilities: Array[Resource]` (Phase 25 uses this), `tint: Color` (placeholder visual). Full override of the level's stats, not deltas — easier to balance-tune in the Inspector.
+- `towers/TowerData.gd`: added `level_upgrades: Array[Resource]` (index 0 = L2, index 1 = L3). Kept `upgrade_cost_lvl2` / `upgrade_cost_lvl3` as legacy-fallback fields (default 0 now so they don't interfere).
+- `towers/base_tower.gd`:
+  - `MAX_LEVEL = 3` constant; existing `level: int = 1` now drives effective-stat resolution.
+  - New `_level_override() -> Resource` returns the current level's `TowerUpgradeData` or null for level 1.
+  - New `get_effective_damage()` / `get_effective_range()` / `get_effective_attack_speed()` / `get_sell_value()` — all read through the override if set, else fall back to TowerData.
+  - New `get_upgrade_cost_to(next_level)` reads from `TowerUpgradeData.cost` first, falls back to legacy `upgrade_cost_lvlN` fields.
+  - `can_upgrade()` / `upgrade()` public API: resets attack cooldown on upgrade (so the snappier attack speed is felt immediately), re-sizes RangeArea shape, emits `tower_upgraded(tower, new_level)`, `queue_redraw()`s for the visual tint change.
+  - `_physics_process` + `_fire_projectile` now use `get_effective_*` everywhere. Old `data.damage` / `data.attack_speed` references all routed through the helpers.
+  - `_draw()` tints the body via `Color(base) * override.tint` and paints N gold pips at the top of the tower to show upgrade level at a glance.
+- `towers/data/tower_archer.tres`: authored L2 (7 dmg, 175 range, 1.35 spd, 75g, sell 60) and L3 (12 dmg, 195 range, 1.5 spd, 120g, sell 120) as `[sub_resource]` TowerUpgradeData entries in the `level_upgrades` array.
+- `autoloads/EventBus.gd`: added `tower_upgrade_requested(spot_id)` signal alongside the existing `tower_upgraded`.
+- `ui/TowerPlacer.gd`: listens for `tower_upgrade_requested`, resolves via GridManager, calls `tower.can_upgrade()` + `get_upgrade_cost_to(level + 1)`, spends gold through GameState, calls `tower.upgrade()`, refunds if upgrade refused post-spend. Sell refund also now goes through `tower.get_sell_value()` so an upgraded tower refunds its higher sell value.
+- `ui/TowerSpotMenu.tscn/gd`:
+  - Added `UpgradeButton` to the SellRow (above Move Rally / Sell).
+  - New `_refresh_upgrade_button()` — shows only when the current tower supports upgrading AND is below max level. Label reads "Upgrade → Lv N (Xg)", greyed out when gold is insufficient.
+  - Added listener for `tower_upgraded` that refreshes labels (sell value, upgrade button state) without dismissing the menu — players can chain upgrades without reopening.
+  - `_on_gold_changed` now also re-runs upgrade-button evaluation while sell row is visible.
+- `ui/RangePreview.gd`: reads `tower.get_effective_range()` when available, falling back to `data.attack_range`. Upgraded towers now show the larger preview radius correctly.
+- Barracks unaffected — `level_upgrades` empty on `tower_barracks.tres`, so `can_upgrade()` returns false and the upgrade button doesn't appear. Barracks upgrades are a later task (deferred).
+- Works: F5 → build an archer → tap it → menu shows Upgrade → Lv 2 (75g) + Sell (+30g) + Close. Press Upgrade → gold drops 75, tower body darkens slightly, gains a second gold pip up top, attack speed audibly quickens, range circle expands on next tap. Press Upgrade again (if affordable) → Lv 3 (120g), third pip, brighter yellow tint. Sell after upgrading refunds 120g (L3 sell) instead of the L1 30g. Barracks shows no Upgrade button.
+- Broke: none.
+- Architectural payoff: `on_hit_abilities: Array[Resource]` on TowerUpgradeData is already in place — Phase 25 just needs to attach two different `TowerUpgradeData` resources (Ranger / Musketeer) and route the player's branch choice through the upgrade path. No new systems.
+- Next: Phase 25 — branching upgrade choice at level 3.
+
+---
+
+## 2026-04-15 — Phase 25: Branching upgrade at L3 (Ranger vs. Musketeer)
+Reuses Phase 24's `TowerUpgradeData` — branches are just alternative L3 resources living in a separate array slot. No new Resource types needed.
+- `towers/TowerData.gd`: added `level_3_branches: Array[Resource]` alongside the existing `level_upgrades`. If non-empty, the L2 → L3 transition uses one of the branch entries (chosen by the player) and `level_upgrades[1]` is bypassed.
+- `towers/TowerUpgradeData.gd`: added `on_hit_slow_factor`, `on_hit_slow_duration`, `on_hit_stun_duration` for branch-differentiating on-hit status effects. Kept `on_hit_abilities: Array[Resource]` reserved for a future generalized on-hit composition (Phase 41 polish).
+- `towers/base_tower.gd`:
+  - New `branch_idx: int = -1` — permanent choice once set (-1 means linear or pre-L3).
+  - `_level_override()` prefers `data.level_3_branches[branch_idx]` at L3 when branched.
+  - New `has_branch_options()`, `get_branch_options()`, `get_branch_cost(idx)`, `upgrade_to_branch(idx)` public API. `can_upgrade()` returns false when branches are required so the linear Upgrade button gets out of the way.
+  - `_fire_projectile()` now calls new `_build_on_hit_effect()` — constructs a fresh `SlowEffect`/`StunEffect` per shot from the current level override's fields. Ranger branch gets 45% slow for 1.5 s on every arrow; Musketeer is pure damage. Fresh instance per shot so per-target countdowns don't cross-pollute. Falls back to the debug-arrow roll if no override effect is configured.
+- `autoloads/EventBus.gd`: added `tower_branch_upgrade_requested(spot_id, branch_idx)`.
+- `ui/TowerPlacer.gd`: new `_on_branch_upgrade_requested` — validates via `has_branch_options()` + `get_branch_cost(idx)`, spends gold, calls `upgrade_to_branch(idx)`, refunds on refusal. Mirrors the linear upgrade transaction exactly.
+- `ui/TowerSpotMenu.tscn/gd`:
+  - Added `BranchARow` + `BranchBRow` buttons to SellRow between Upgrade and MoveRally. Panel `offset_top` bumped from -320 → -440 to fit the tall branch-picker layout.
+  - `_refresh_upgrade_button()` now checks `has_branch_options()` first — when true, hides the linear Upgrade and shows the two branch buttons with per-branch upgrade_name + cost. Each button greys out when gold is insufficient.
+  - Button press handlers bound via `.bind(0)` / `.bind(1)` to emit `tower_branch_upgrade_requested(spot_id, idx)`.
+- `towers/data/tower_archer.tres` branches:
+  - **Ranger** — 10 dmg, 210 range, 1.4 atk/s, 140g, sell 130. On-hit: 45% slow for 1.5 s per arrow. Green tint. Glue-the-enemies playstyle.
+  - **Musketeer** — 22 dmg, 225 range, 0.75 atk/s, 160g, sell 140. No status effect. Orange tint. Slow heavy-hitter playstyle.
+- Barracks still unaffected — no `level_3_branches` on `tower_barracks.tres`, so branching never appears there.
+- `tower_branch_chosen(tower, idx)` emitted alongside `tower_upgraded` when a branch is picked — available for Phase 34 encyclopedia unlocks, Phase 27 saves, etc.
+- Works: F5 → build Archer → upgrade to Lv 2 (75g) — single Upgrade button shown. After reaching L2, the button row flips — Upgrade disappears, "Ranger (140g)" and "Musketeer (160g)" appear side-by-side. Pick Ranger → tower turns green, arrows now slow enemies by 45% for 1.5 s (orcs visibly crawl with cyan slow ring). Pick Musketeer instead → orange tower, slower cadence but each arrow hits for 22. Either choice is permanent — no upgrade buttons afterwards, just Sell (refund at the branch's sell_value). Sell an upgraded branch tower → refund reflects the branch's sell_value (130g for Ranger, 140g for Musketeer).
+- Broke: none.
+- Architectural validation: two fundamentally different tower behaviors (DoT-slow vs. flat-damage-pierce-feeling) authored as pure data — no branch-specific GDScript. Musketeer's "pierce" isn't implemented yet (would need arrow pierce-count on TowerUpgradeData + arrow logic) but damage-per-shot carries the role for now; can add pierce as an Arrow + data field when needed.
+- Next: Phase 26 — star rating system (campaign).
+
+---
+
+## 2026-04-16 — Phase 26: Star rating system (campaign)
+- `autoloads/GameState.gd`: added `current_level_id: String`, `stars_earned: int`, and `calculate_stars() -> int` using the CLAUDE.md thresholds (18-20 lives = 3★, 6-17 = 2★, 1-5 = 1★, 0 = defeat). `reset()` zeros `stars_earned`.
+- `ui/GameOverScreen.gd`: on `all_waves_completed`, calls `calculate_stars()`, sets `stars_earned`, shows ★/☆ text in the victory summary, emits `EventBus.level_completed(level_id, stars, mode)` for Phase 27 SaveManager and Phase 29 WorldMap to consume.
+- Works: F5 → clear all 3 waves with 20 lives → Victory shows ★★★. Leak some → ★★ or ★. Defeat shows no stars. `level_completed` signal fires (verified in console).
+- Broke: none.
+- Next: Phase 27 — SaveManager (persist all progress).
+
+---
+
+## 2026-04-16 — CLAUDE.md audit + updates
+Audited CLAUDE.md against the actual codebase. Three stale sections fixed, four new sections added:
+- **Fixed:** EventBus signal table (added 6 missing signals from Phases 8-25). Tower Data section (added TowerUpgradeData + level_upgrades/level_3_branches spec alongside the legacy fields). Ability "implemented" list (added OnHitBonusDamageAbility + LifetimeAbility).
+- **New Core Rule #13:** Stable content IDs. Documents the `*_id: String` convention and the "never rename post-release" save-compat discipline.
+- **New section: 🎯 Input Pipeline — Consumption Chain.** ASCII-art flow diagram of the 4-phase input chain (_input → GUI → picking → _unhandled_input) with every handler's placement and rules for adding new handlers. Battle-tested through 10+ input-related bug fixes this session.
+- **New section: 🗡️ Skill System.** Documents SkillData + TargetType enum + the 3 Knight skills + the skill-as-ability-factory pattern (Rally) + SkillBar UI flow per target type.
+- **Updated section: 🌩️ Global Spell System.** Expanded spec to match actual SpellData fields (spell_id, cast_range, target_type). Added "spells implemented" table (Fireball, Recruit). Documented the SpellPanel provider contract and the "spell kills don't grant hero XP" rule.
+
+---
+
+## 2026-04-16 — Screen flow: MainMenu + WorldMap + PauseMenu + SceneManager
+Full game loop before SaveManager so the save schema has real consumers. Plan designed and approved in plan mode before implementation.
+- `autoloads/SceneManager.gd` (new autoload): CanvasLayer at layer 100 with a full-screen ColorRect. `goto(scene_path, fade=true)` tweens alpha 0→1 over 0.3 s, swaps scene via `change_scene_to_file`, fades back. `_transitioning` flag blocks double-calls. Registered in `project.godot` alongside the existing 6 autoloads.
+- `autoloads/GameState.gd`: added `level_stars: Dictionary` (level_id → best star count), `levels_unlocked: Dictionary` (level_id → true/false), `record_stars()` (persists `max(previous_best, stars_earned)` in memory), `reset_for_level()` (resets gold/lives/score/wave/stars but preserves progression dictionaries + level_id + mode). `reset()` now delegates to `reset_for_level()` and additionally clears progression. SaveManager will read/write these dictionaries — WorldMap already reads them.
+- `autoloads/EventBus.gd`: added `pause_requested()` signal.
+- `ui/MainMenu.tscn + .gd` (new): game entry point. Dark background, centered VBox with title ("Fantasy Tower Defense") + 4 buttons (Play → WorldMap, Heroes/Upgrades/Settings greyed out for future phases). `project.godot` `run/main_scene` changed from `Main.tscn` → `MainMenu.tscn`.
+- `ui/world_map/LevelNodeData.gd` (new Resource): `level_id`, `display_name`, `scene_path`, `unlock_order`. Data-driven — add levels by adding more entries.
+- `ui/WorldMap.tscn + .gd` (new): level select screen. `@export var levels: Array[Resource]` with one LevelNodeData for Level 1 ("Forest Path") as inline sub_resource. Dynamically builds one panel per level with name + ★/☆ from `GameState.level_stars` + Play button (unlocked) or "Locked" label. Tap Play → `GameState.current_level_id = id`, `reset_for_level()`, `SceneManager.goto(scene_path)`. Back button → MainMenu. Dark green background.
+- `ui/PauseMenu.tscn + .gd` (new): CanvasLayer 20, `PROCESS_MODE_WHEN_PAUSED` (same pattern as GameOverScreen). Dim + centered card with Resume / Restart / Quit to Map. Resume unpauses + hides. Restart calls `reset_for_level()` + `SceneManager.goto(Main.tscn)`. Quit → `SceneManager.goto(WorldMap.tscn)`. Connects to `EventBus.pause_requested`.
+- `ui/HUD.tscn + .gd`: added PauseButton (80×60, top-right, "| |"). On press → `EventBus.pause_requested.emit()`.
+- `main/Main.tscn`: added PauseMenu instance after GameOverScreen.
+- `ui/GameOverScreen.tscn + .gd`: added ContinueButton above RestartButton. Victory: shows Continue (→ records stars + SceneManager to WorldMap), hides Restart. Defeat: shows Restart (→ `reset_for_level()` + SceneManager to Main.tscn), hides Continue. Removed the old `reload_current_scene()` call — all transitions go through SceneManager now.
+- `level_list.tres` created in `ui/world_map/` but unused (WorldMap uses inline sub-resource instead). Can be deleted or kept for future inspector-editing workflow.
+- Works: F5 → MainMenu appears (dark background, title, Play glows, 3 buttons greyed). Tap Play → fade to WorldMap showing "Forest Path ☆☆☆ [Play]". Tap Play → fade to gameplay (same Level1 as before). Pause button (top-right) → dim overlay with Resume/Restart/Quit. Resume → back to game. Quit to Map → WorldMap. Win level → Victory ★★★ Continue → WorldMap now shows ★★★ on Forest Path (in-memory, lost on app quit — Phase 27 SaveManager persists). Defeat → Restart → fresh gameplay.
+- Broke: none.
+- Next: Phase 27 — SaveManager (persist all progress). The schema is now trivially derivable: `level_stars`, `levels_unlocked`, plus future hero/item/upgrade data.
+
+---
+
+## 2026-04-16 — Phase 27: SaveManager (persist all progress)
+- `autoloads/SaveManager.gd`: full implementation replacing the Phase 1 stub. JSON save at `user://save.json`, versioned schema (v1).
+  - `load_game()`: called in `_ready()` (runs after GameState._ready due to autoload order). Reads JSON, validates version, populates `GameState.level_stars` + `GameState.levels_unlocked`. Handles missing file (first boot → defaults), corrupt file (warning + skip), wrong version (warning + skip). JSON floats → int conversion for star counts.
+  - `save_game()`: serializes `level_stars` + `levels_unlocked` to disk with `JSON.stringify(data, "  ")` for readability. Schema has commented placeholders for all future save fields (endless_best_score, unlocked_heroes, permanent_upgrades, hero_equipment, inventory, etc.) so the next person to extend it sees the full roadmap.
+  - `_on_level_completed(level_id, stars, mode)`: auto-saves after every level win. Records best stars (belt-and-suspenders alongside GameState.record_stars). Placeholder `_try_unlock_next_level` for sequential level unlock chain (no-op with one level; Phase 29+ implements).
+  - `delete_save()`: debug utility, not player-facing. Wipes file + calls GameState.reset().
+- Per CLAUDE.md Rule #8: SaveManager is the ONLY script that reads/writes the save file. No other script touches `user://save.json`.
+- Works: F5 → MainMenu → WorldMap (☆☆☆) → Play → Win → ★★★ → Continue → WorldMap (★★★). Quit app. Relaunch → WorldMap still shows ★★★ (loaded from save). Play again → win with fewer lives → ★★ → WorldMap still shows ★★★ (best-of preserved). Delete `user://save.json` → back to ☆☆☆.
+- Broke: none.
+- Next: Phase 28 — permanent upgrade tree.
+
+---
+
+## 2026-04-16 — Phase 28: Permanent upgrade tree
+Spend campaign stars on 6 global bonuses. Full data → UI → persistence → gameplay loop.
+- `progression/UpgradeData.gd` (new Resource): `upgrade_id`, `upgrade_name`, `description`, `star_cost`, `prerequisite_id`, `effect_type` (enum with 8 categories: archer damage, tower range, hero HP/damage/XP, spell cooldown, starting gold, soldier HP), `effect_value`. Multiplicative for mult types, additive for bonus types.
+- `autoloads/GameState.gd`: added `purchased_upgrades: Array[String]` + cache system. `rebuild_upgrade_cache(all_upgrades)` iterates purchased upgrades and precomputes multiplicative + additive caches per EffectType. `get_upgrade_multiplier(type)` / `get_upgrade_bonus(type)` — O(1) lookups. `get_total_stars()` / `get_spent_stars()` / `get_available_stars()` for the UI. `reset_for_level()` now adds STARTING_GOLD_BONUS to starting gold. `reset()` clears purchased_upgrades + caches.
+- `autoloads/SaveManager.gd`: persists `purchased_upgrades` array in save JSON alongside level_stars + levels_unlocked. Loads on boot, converts from JSON array of strings.
+- `ui/UpgradeTree.tscn + .gd` (new): accessible from MainMenu → "Upgrades" button (now enabled). Dark purple background, top bar with Back + "★ N / M available" label, scrollable list of upgrade panels. Each panel shows name + description + purchase button. Purchased → "Owned" (greyed). Prereq not met → "Locked". Can't afford → greyed. On purchase: appends to GameState.purchased_upgrades, rebuilds cache, emits permanent_upgrade_purchased, saves via SaveManager, rebuilds full UI so prereq chains update.
+- 6 launch upgrades authored as inline sub_resources in the .tscn:
+  - War Chest (1★): +25 starting gold
+  - Sharp Arrows (2★): archer damage ×1.2
+  - Extended Range (2★, prereq: Sharp Arrows): all tower range ×1.1
+  - Hero Training (3★): hero damage ×1.15
+  - Fast Learner (2★, prereq: Hero Training): hero XP ×1.25
+  - Spell Mastery (3★): spell cooldowns ×0.85
+- Gameplay effects wired — each system reads the appropriate multiplier:
+  - `towers/base_tower.gd`: `get_effective_damage()` ×type0, `get_effective_range()` ×type1
+  - `heroes/base_hero.gd`: `_effective_damage()` ×type3, `gain_xp()` ×type4
+  - `ui/SpellPanel.gd`: cooldown = spell.cooldown × type5
+  - `soldiers/base_soldier.gd`: max_health × type7 at spawn
+  - `autoloads/GameState.gd`: starting_gold + type6 bonus in `reset_for_level()`
+- `ui/MainMenu.gd`: Upgrades button now enabled, routes to UpgradeTree.
+- Works: F5 → MainMenu → Upgrades → shows 6 nodes, all purchasable if stars allow. Purchase "War Chest" (1★) → "Owned". Back → Play → WorldMap → Level 1 → start with 125g instead of 100. Win → earn 3★ → back to Upgrades → buy Sharp Arrows (2★) → replayed level archers hit harder. Reset Progress clears all upgrades. Prereq chain: Extended Range locked until Sharp Arrows owned.
+- Broke: none.
+- Phase 29 (WorldMap) was already shipped earlier. Next: Phase 30 — HeroRoom / loadout.
+
+---
+
+## 2026-04-16 — Menu layout fix + Phase 30: LoadoutScreen
+- **Menu layout feedback**: user wants Heroes/Upgrades/meta buttons on WorldMap (the hub), not MainMenu. Matches Kingdom Rush where world map IS the main hub. MainMenu stripped to title + Play + Reset. WorldMap gained a bottom HBoxContainer with Heroes (greyed, Phase 35) + Upgrades (→ UpgradeTree). UpgradeTree Back button now routes to WorldMap, not MainMenu. Saved to memory for future sessions.
+- **Phase 30 — LoadoutScreen** (`ui/LoadoutScreen.tscn + .gd`): pre-level confirmation screen between WorldMap and gameplay. Shows current level, hero info (Knight stats + skills), tower roster, spell roster, Start + Back buttons. Currently informational only (one hero, fixed roster); becomes a real picker when Phase 35 adds hero 2 and loadout selection. WorldMap level tap now routes to LoadoutScreen instead of directly to Main.tscn. LoadoutScreen.Start calls `reset_for_level()` + `SceneManager.goto(Main.tscn)`.
+- Flow: MainMenu → WorldMap (hub: levels + Upgrades + Heroes buttons) → tap level → LoadoutScreen → Start → gameplay. Back from LoadoutScreen → WorldMap. Back from UpgradeTree → WorldMap.
+- Works: F5 → MainMenu (clean, just Play + Reset) → Play → WorldMap with bottom bar (Heroes greyed, Upgrades active) + Level 1 panel → tap Level 1 → LoadoutScreen shows "Hero: Knight, Towers: Archer/Barracks, Spells: Fireball/Recruit" → Start Battle → gameplay. Back → WorldMap.
+- Broke: none.
+- Next: Phase 31 — Heroic + Iron challenge modes.
+
+---
+
+## 2026-04-16 — Phase 31: Heroic + Iron challenge modes
+Full challenge mode system with unlock chain, wave scaling, mode selector UI, composite star display.
+- `autoloads/GameState.gd`: added `heroic_complete: Dictionary`, `iron_complete: Dictionary`. New helpers: `is_heroic_unlocked(id)` (needs 3★ campaign), `is_iron_unlocked(id)` (needs Heroic clear), `calculate_total_stars_for_level(id)` (0–5 composite: campaign 0–3 + heroic +1 + iron +1). `get_total_stars()` now sums composite across all levels (drives upgrade tree budget). `record_stars()` branches on `current_mode` — campaign records best stars, heroic/iron record completion flags. `reset_for_level()` sets lives=1 when mode is "iron". `reset()` clears heroic_complete + iron_complete.
+- `autoloads/SaveManager.gd`: persists `heroic_complete` + `iron_complete` dictionaries. Load converts JSON booleans.
+- `autoloads/WaveManager.gd`: in `_run_spawner`, when `current_mode` is "heroic" or "iron", scales enemy count ×1.5 (ceiled) and spawn interval ×0.85 (faster). Same wave .tres, harder at runtime. No separate wave files needed.
+- `ui/LoadoutScreen.tscn + .gd`: fully rebuilt. Mode selector row: Campaign (always available, shows ★★☆ campaign stars) / Heroic (locked "Need 3★" or "Available" or "Complete ✓") / Iron (locked "Need Heroic" or "Available" or "Complete ✓"). Selected mode highlighted via modulate; unselected dimmed. Mode info label explains the rules ("1.5x enemies, faster spawns" / "1 life only"). Start → sets `GameState.current_mode` → `reset_for_level()` → gameplay.
+- `ui/GameOverScreen.gd`: victory summary text varies by mode — "Campaign cleared! ★★★" / "Heroic cleared! +1 bonus star" / "Iron cleared! +1 bonus star — flawless!". `level_completed` signal still fires with mode for SaveManager.
+- `ui/WorldMap.gd`: star display uses `calculate_total_stars_for_level(id)` — shows ★/5 instead of ★/3.
+- Works: F5 → WorldMap (☆☆☆☆☆) → Level 1 → LoadoutScreen shows Campaign available, Heroic "Need 3★", Iron "Need Heroic". Play Campaign → win with 20 lives → ★★★ → Continue → WorldMap (★★★☆☆). Back to Level 1 → Heroic now "Available" → select → Start → 12 orcs wave 1 (was 8), faster spawns. Win → ★★★★☆. Iron unlocked → 1 life → any leak = instant defeat → survive → ★★★★★. All persists across app restart.
+- Broke: none.
+- Next: Phase 32 — Endless mode + score system.
+
+---
+
+## 2026-04-16 — Phase 32: Endless mode + score system
+Infinite procedural waves with difficulty scaling. Score computed at death. Best score persisted.
+- `autoloads/GameState.gd`: added `endless_best_score: int`, `compute_endless_score() -> int` (wave_number × gold × lives per CLAUDE.md spec). Cleared on reset().
+- `autoloads/WaveManager.gd`:
+  - New `_endless: bool` flag + `start_endless(level)` entry point.
+  - `_begin_next_wave()` branches on `_endless` — generates a wave procedurally instead of reading from a WaveList.
+  - `_generate_endless_wave(wave_num)` creates WaveData at runtime:
+    - Base count: 4 + wave_num × 2, distributed across 1–3 paths (more paths as waves increase).
+    - Spawn interval shrinks: `max(0.4, 1.2 - wave_num * 0.03)`.
+    - Countdown shrinks: `max(1.5, 3.0 - wave_num * 0.1)`.
+    - Bounty scales: 10 + wave_num × 5.
+    - Flying enemies from wave 3+, healers from wave 5+.
+    - `_pick_enemy_for_wave()` weighted random — basics dominate, harpies mix in later.
+  - Emits `endless_wave_started(wave_num)` each wave. Heroic/Iron wave scaling (1.5× count) does NOT apply to endless — endless has its own scaling curve.
+  - `stop()` clears `_endless` flag.
+- `autoloads/SaveManager.gd`: persists `endless_best_score` in save JSON.
+- `ui/WorldMap.tscn + .gd`: added Endless button in bottom bar. Tap → sets current_mode="endless", current_level_id="endless" → LoadoutScreen.
+- `ui/LoadoutScreen.gd`: when mode is "endless", hides mode selector row (Campaign/Heroic/Iron), shows "Endless Mode" title + best score in mode_info_label.
+- `main/Main.gd`: `_ready()` branches — if current_mode == "endless", calls `WaveManager.start_endless(level)` instead of `start(LEVEL1_WAVES, level)`.
+- `ui/HUD.gd`: wave label shows "Wave: N" without total in endless (no "/" since total is infinite).
+- `ui/GameOverScreen.gd`: on game_over + endless mode: computes score, checks if new best, updates `endless_best_score`, saves, shows "Score: N NEW BEST!" or "(Best: N)". Shows both Continue (→ WorldMap) and Restart buttons so player can retry immediately or exit.
+- Works: F5 → WorldMap → Endless → LoadoutScreen shows "Endless Mode, Best: 0" → Start → gameplay: waves auto-generate, first wave ~6 enemies on left path, wave 3 adds flying from top, wave 5 adds healer. Wave label shows "Wave: 7" (no total). Die → "Game Over: Wave 7, Score: 52,500 NEW BEST!" → Continue returns to WorldMap. Best score persists across restarts.
+- Broke: none.
+- Next: Phase 33 — Online leaderboard.
+
+---
+
+## 2026-04-16 — Phase 33: Leaderboard (local, online-ready)
+Client-side leaderboard architecture with local storage. Online HTTP plugs in later by swapping the data source in GameState — UI stays unchanged.
+- `autoloads/GameState.gd`: added `endless_leaderboard: Array` (top 20 entries, each `{name, score, wave}`), `LEADERBOARD_MAX_ENTRIES = 20`, `submit_endless_score(name, score)` — appends, sorts descending, trims to max. Emits `leaderboard_score_submitted`. Cleared on reset().
+- `autoloads/SaveManager.gd`: persists `endless_leaderboard` array in save JSON. Loads entries back as dictionaries.
+- `ui/GameOverScreen.gd`: on endless death, calls `GameState.submit_endless_score("Player", score)` before saving — auto-populates the leaderboard. Continue button routes to WorldMap (doesn't call record_stars for endless since there are no campaign stars).
+- `ui/LeaderboardScreen.tscn + .gd` (new): scrollable list of top entries. Header row (#, Name, Score, Wave). Gold-colored top 3. Empty state message if no scores. Back → WorldMap.
+- `ui/WorldMap.tscn + .gd`: added "Scores" button in bottom bar → LeaderboardScreen.
+- WorldMap bottom bar now: Heroes (greyed) | Upgrades | Endless | Scores
+- Works: F5 → WorldMap → Scores → "No scores yet" → Back → Endless → play → die at wave 7 → "Score: 52500 NEW BEST!" → Continue → Scores → shows #1 Player 52500 W7 in gold. Play again → die at wave 3 → lower score appears as #2. Persists across restarts.
+- Online integration notes (for when backend is chosen): swap `GameState.submit_endless_score` to POST to REST API + swap `endless_leaderboard` to GET from API. LeaderboardScreen.gd reads from same array — zero UI changes. LootLocker, PlayFab, or custom Firebase all work with this shape.
+- Broke: none.
+- Next: Phase 34 — Encyclopedia / codex.
+
+---
+
+## 2026-04-16 — Phase 34: Encyclopedia / Codex (B+D architecture)
+Data-driven encyclopedia using ContentRegistry (auto-stat from Resources) + unlock-on-first-encounter.
+- `autoloads/ContentRegistry.gd` (new autoload): central index of all authored content. Preloaded arrays: `enemies` (3), `towers` (2), `heroes` (1), `spells` (2). Lookup helpers: `find_enemy(id)`, `find_tower(id)`, `find_hero(id)`. Adding new content = one `preload()` line. Multiple systems consume it (encyclopedia now, loadout/shop/loot later). Registered in `project.godot`.
+- `autoloads/GameState.gd`: added `encyclopedia_unlocked: Array[String]`. `try_unlock_encyclopedia(content_id)` appends + emits `EventBus.encyclopedia_entry_unlocked`. Auto-unlock wired to `enemy_spawned` / `tower_built` / `hero_spawned` signals — entries unlock on first encounter during gameplay, exactly like Kingdom Rush.
+- `autoloads/EventBus.gd`: added `encyclopedia_entry_unlocked(content_id)` signal.
+- `autoloads/SaveManager.gd`: persists `encyclopedia_unlocked` array. Auto-saves on each new unlock.
+- `ui/EncyclopediaScreen.tscn + .gd` (new): three-tab layout (Enemies / Towers / Heroes). Each tab iterates ContentRegistry, checks unlock state, displays:
+  - **Unlocked**: auto-generated stat table from Resource fields + `encyclopedia_entry` flavor text. Enemy stats: HP/SPD/Armor/M.Resist + [Flying] tag + ability IDs. Tower stats: DMG/RNG/SPD/Cost + [Hits Air] + L3 branch names. Hero stats: HP/DMG/RNG/SPD/Armor + skill names.
+  - **Locked**: "???" name + "Encounter this unit to unlock" text.
+  - Tab buttons highlighted/dimmed for selection state.
+- `ui/WorldMap.tscn + .gd`: added "Codex" button in bottom bar → EncyclopediaScreen.
+- WorldMap bottom bar now: Heroes | Upgrades | Endless | Scores | Codex
+- **B+D validation**: stats auto-populate from .tres fields. Change an enemy's HP in the data file → encyclopedia shows the new value automatically. Buffs/upgrades affect live instances only, not the data Resources — encyclopedia always shows canonical base stats as intended.
+- Works: F5 → WorldMap → Codex → Enemies tab: all entries show "???" (haven't played yet). Play a level → enemies spawn → encyclopedia unlocks Orc Grunt, Harpy, Shaman as they appear. Back to Codex → entries show full stats + description. Towers tab: Archer unlocks on first build. Heroes tab: Knight unlocks on hero_spawned. Persists across restarts via SaveManager.
+- Broke: none.
+- Next: Phase 35 — second hero type.
+
+---
+
+## 2026-04-16 — Fast-forward button + save reset
+Two quality-of-life features before the upgrade tree phase.
+- **Fast-forward** (`ui/HUD.tscn + .gd`): SpeedButton (80×60) in a new TopRight HBoxContainer alongside PauseButton. Cycles 1x → 2x → 3x → 1x via `Engine.time_scale`. Affects everything uniformly (towers, enemies, timers, waves) — exactly what TD fast-forward needs. `SceneManager.goto()` resets time_scale to 1.0 so menus don't run accelerated. `PauseMenu._on_pause_requested()` saves current scale and restores on Resume.
+- **Reset Progress** (`ui/MainMenu.tscn + .gd`): small red-tinted button anchored bottom-center of MainMenu. Two-tap confirm: first tap → "Are you sure?" (auto-reverts after 3 s); second tap → `SaveManager.delete_save()` + "Progress reset!" feedback. Wipes `user://save.json` and calls `GameState.reset()`.
+- Works: F5 → gameplay → tap 1x button → text changes to 2x, everything moves twice as fast. Tap again → 3x. Tap again → back to 1x. Pause while at 2x → pause overlay runs at normal speed; Resume → restores 2x. Quit to WorldMap → speed resets to 1x. MainMenu → tap "Reset Progress" → "Are you sure?" → tap again → save wiped, stars gone.
+- Broke: none.

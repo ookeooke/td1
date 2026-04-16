@@ -21,6 +21,13 @@ var _alive_count: int = 0
 var _wave_active: bool = false
 var _running: bool = false
 var _endless: bool = false
+# Tick-based countdown state (replaces await-based timer for interruptibility).
+var _in_countdown: bool = false
+var _countdown_remaining: float = 0.0
+var _countdown_total: float = 0.0
+var _pending_wave: Resource = null
+var _pending_path_ids: Array = []
+var _pending_wave_for_bounty: Resource = null  # kept for endless bounty lookup
 
 # Enemy scenes for procedural endless wave generation.
 const _EnemyBasicScene: PackedScene = preload("res://enemies/EnemyBasic.tscn")
@@ -88,14 +95,46 @@ func _begin_next_wave() -> void:
 	GameState.wave_number = _wave_index + 1
 	for pid in path_ids:
 		EventBus.spawn_direction_changed.emit(pid, Vector2.ZERO)
+	# Tick-based countdown — interruptible via call_early_wave().
+	_pending_wave = wave
+	_pending_path_ids = path_ids
+	_countdown_total = wave.countdown
+	_countdown_remaining = wave.countdown
+	_in_countdown = true
+	EventBus.wave_countdown_started.emit(_countdown_total)
 	print("[WaveManager] wave %d countdown %.1fs paths=%s" % [_wave_index + 1, wave.countdown, path_ids])
-	await get_tree().create_timer(wave.countdown).timeout
+
+
+func _process(delta: float) -> void:
+	if not _in_countdown:
+		return
+	_countdown_remaining -= delta
+	if _countdown_remaining <= 0.0:
+		_finish_countdown()
+
+
+func _finish_countdown() -> void:
+	_in_countdown = false
 	if not _running:
 		return
-	_launch_wave(wave, path_ids)
+	_launch_wave(_pending_wave, _pending_path_ids)
+	_pending_wave = null
+	_pending_path_ids = []
+
+
+func call_early_wave() -> void:
+	if not _in_countdown or not _running:
+		return
+	var fraction: float = clampf(_countdown_remaining / maxf(0.01, _countdown_total), 0.0, 1.0)
+	var bonus: int = int(ceil(fraction * 10.0))
+	if bonus > 0:
+		GameState.add_gold(bonus)
+	EventBus.early_wave_triggered.emit(bonus)
+	_finish_countdown()
 
 
 func _launch_wave(wave: Resource, path_ids: Array) -> void:
+	_pending_wave_for_bounty = wave
 	_active_spawners = wave.spawns.size()
 	_wave_active = true
 	EventBus.wave_started.emit(_wave_index + 1, path_ids)
@@ -136,11 +175,18 @@ func _maybe_wave_complete() -> void:
 	if _active_spawners > 0 or _alive_count > 0:
 		return
 	_wave_active = false
-	var wave: Resource = _wave_list.waves[_wave_index]
-	if wave.bounty > 0:
-		GameState.add_gold(wave.bounty)
+	# Retrieve wave data for bounty — campaign from list, endless from stored ref.
+	var wave: Resource = null
+	if _wave_list != null and _wave_index >= 0 and _wave_index < _wave_list.waves.size():
+		wave = _wave_list.waves[_wave_index]
+	elif _endless and _pending_wave_for_bounty != null:
+		wave = _pending_wave_for_bounty
+	var bounty: int = wave.bounty if wave != null else 0
+	if bounty > 0:
+		GameState.add_gold(bounty)
 	EventBus.wave_completed.emit(_wave_index + 1)
-	print("[WaveManager] wave %d complete (+%dg)" % [_wave_index + 1, wave.bounty])
+	print("[WaveManager] wave %d complete (+%dg)" % [_wave_index + 1, bounty])
+	_pending_wave_for_bounty = null
 	if _running:
 		_begin_next_wave()
 
@@ -185,6 +231,7 @@ func _log_alive(tag: String, enemy: Node, path_id: String) -> void:
 func _on_game_over() -> void:
 	_running = false
 	_wave_active = false
+	_in_countdown = false
 
 
 func stop() -> void:
@@ -193,6 +240,10 @@ func stop() -> void:
 	_running = false
 	_wave_active = false
 	_endless = false
+	_in_countdown = false
+	_pending_wave = null
+	_pending_path_ids = []
+	_pending_wave_for_bounty = null
 	_wave_list = null
 	_level = null
 	_wave_index = -1
@@ -211,12 +262,14 @@ func _generate_endless_wave(wave_num: int) -> Resource:
 	# Base enemy count scales with wave number.
 	var base_count: int = 4 + wave_num * 2
 	# Pick paths — early waves use 1-2 paths, later use all 3.
+	@warning_ignore("integer_division")
 	var num_paths: int = mini(1 + wave_num / 3, _PATH_IDS.size())
 	var active_paths: Array[String] = []
 	for i in num_paths:
 		active_paths.append(_PATH_IDS[i % _PATH_IDS.size()])
 
 	# Distribute enemies across paths with type mixing.
+	@warning_ignore("integer_division")
 	var enemies_per_path: int = maxi(1, base_count / num_paths)
 	var spawns: Array = []
 	for pid in active_paths:
@@ -233,6 +286,7 @@ func _generate_endless_wave(wave_num: int) -> Resource:
 		var fly_spawn := spawn_script.new()
 		fly_spawn.path_id = active_paths[randi() % active_paths.size()]
 		fly_spawn.enemy_scene = _EnemyFlyingScene
+		@warning_ignore("integer_division")
 		fly_spawn.count = maxi(1, wave_num / 3)
 		fly_spawn.interval = 1.5
 		fly_spawn.start_delay = 2.0
@@ -241,6 +295,7 @@ func _generate_endless_wave(wave_num: int) -> Resource:
 		var heal_spawn := spawn_script.new()
 		heal_spawn.path_id = active_paths[randi() % active_paths.size()]
 		heal_spawn.enemy_scene = _EnemyHealerScene
+		@warning_ignore("integer_division")
 		heal_spawn.count = maxi(1, wave_num / 5)
 		heal_spawn.interval = 3.0
 		heal_spawn.start_delay = 3.0

@@ -35,6 +35,7 @@ var _lunge_t: float = 0.0
 # soldiers attach DamageBlockAbility; etc. — all variants author as data.
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
+const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
 var _ability_host: RefCounted = null
 
 @onready var melee_range: Area2D = $MeleeRange
@@ -154,16 +155,21 @@ func _lunge_offset() -> Vector2:
 	return _lunge_dir * (LUNGE_DISTANCE * phase)
 
 
-func take_damage(amount: float, type: int, source: Node = null) -> void:
+func take_damage(amount: float, type: int, source: Node = null) -> float:
 	if state == State.DEAD or data == null:
-		return
+		return 0.0
 	var final: float = DamageCalculator.calculate_damage(amount, type, self)
 	current_health -= int(ceil(final))
+	if final > 0.0:
+		var parent: Node = get_tree().current_scene
+		if parent != null:
+			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.85, 0.2), global_position + Vector2(0, -16), 13)
 	queue_redraw()
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_TAKEN, {"source": source, "amount": final})
 	if current_health <= 0:
 		_die()
+	return final
 
 
 func _die() -> void:

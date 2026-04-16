@@ -6,6 +6,9 @@ extends CanvasLayer
 @onready var hero_label: Label = %HeroLabel
 @onready var pause_button: Button = %PauseButton
 @onready var speed_button: Button = %SpeedButton
+@onready var countdown_label: Label = %CountdownLabel
+@onready var send_wave_button: Button = %SendWaveButton
+@onready var clean_button: Button = %CleanButton
 
 var _hero: Node = null
 
@@ -18,6 +21,7 @@ var _speed_idx: int = 0
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	pause_button.pressed.connect(func(): EventBus.pause_requested.emit())
 	speed_button.pressed.connect(_on_speed_pressed)
 	_refresh_speed_label()
@@ -33,6 +37,14 @@ func _ready() -> void:
 	EventBus.hero_xp_gained.connect(_on_hero_xp_gained)
 	EventBus.hero_leveled_up.connect(_on_hero_leveled_up)
 	EventBus.hero_died.connect(_on_hero_died)
+	# Early wave call.
+	send_wave_button.pressed.connect(_on_send_wave_pressed)
+	countdown_label.visible = false
+	send_wave_button.visible = false
+	EventBus.wave_countdown_started.connect(_on_countdown_started)
+	EventBus.wave_started.connect(_on_wave_launched)
+	EventBus.early_wave_triggered.connect(_on_early_wave)
+	clean_button.pressed.connect(_on_clean_pressed)
 
 
 func _on_gold_changed(amount: int) -> void:
@@ -102,3 +114,41 @@ func _refresh_hero() -> void:
 		hero_label.text = "Lv %d (MAX)" % lvl
 	else:
 		hero_label.text = "Lv %d  XP %d/%d" % [lvl, xp, need]
+
+
+# --- Early wave call ---
+
+func _on_countdown_started(duration: float) -> void:
+	countdown_label.text = "Next wave: %.1fs" % duration
+	countdown_label.visible = true
+	send_wave_button.visible = true
+
+
+func _process(_delta: float) -> void:
+	# Tick the countdown label from WaveManager state.
+	if countdown_label.visible and WaveManager._in_countdown:
+		countdown_label.text = "Next wave: %.1fs" % maxf(0.0, WaveManager._countdown_remaining)
+
+
+func _on_wave_launched(_wave_number: int, _path_ids: Array) -> void:
+	_hide_countdown()
+
+
+func _on_send_wave_pressed() -> void:
+	WaveManager.call_early_wave()
+	_hide_countdown()
+
+
+func _on_early_wave(_bonus_gold: int) -> void:
+	_hide_countdown()
+
+
+func _hide_countdown() -> void:
+	countdown_label.visible = false
+	send_wave_button.visible = false
+
+
+func _on_clean_pressed() -> void:
+	var enabled: bool = not VFXSpawner.clean_view
+	EventBus.clean_view_toggled.emit(enabled)
+	clean_button.text = "VFX" if not enabled else "Clean"

@@ -15,6 +15,7 @@ var _map: Node2D
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	if grid_manager_path.is_empty():
 		_grid = get_parent().get_node_or_null("GridManager")
 	else:

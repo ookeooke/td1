@@ -41,9 +41,10 @@ func _process(delta: float) -> void:
 
 func _on_hit() -> void:
 	var impact_pos: Vector2 = _target.global_position if is_instance_valid(_target) else global_position
+	var total_dealt: float = 0.0
 	# Primary target damage.
 	if is_instance_valid(_target) and _target.has_method("take_damage"):
-		_target.take_damage(_damage, _damage_type, _source)
+		total_dealt += _target.take_damage(_damage, _damage_type, _source)
 	if _status_effect != null and is_instance_valid(_target) and _target.has_method("apply_status_effect"):
 		_target.apply_status_effect(_status_effect)
 	# AoE splash — damage all enemies in radius (excluding already-hit primary).
@@ -57,7 +58,10 @@ func _on_hit() -> void:
 			if enemy.state == BaseEnemy.State.DYING:
 				continue
 			if impact_pos.distance_squared_to(enemy.global_position) <= r2:
-				enemy.take_damage(_damage * 0.5, _damage_type, _source)  # splash = 50% damage
+				total_dealt += enemy.take_damage(_damage * 0.5, _damage_type, _source)
+	# Report damage to source tower for stat tracking.
+	if total_dealt > 0.0 and _source != null and is_instance_valid(_source) and _source.has_method("record_damage"):
+		_source.record_damage(total_dealt)
 
 
 func _draw() -> void:

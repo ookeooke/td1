@@ -84,6 +84,20 @@ layout_mode = 2
 text = "Move Rally"
 theme_override_font_sizes/font_size = 22
 
+[node name="TargetingButton" type="Button" parent="Root/Panel/VBox/SellRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+text = "Target: First"
+theme_override_font_sizes/font_size = 20
+
+[node name="DamageLabel" type="Label" parent="Root/Panel/VBox/SellRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Damage: 0"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 18
+
 [node name="SellButton" type="Button" parent="Root/Panel/VBox/SellRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 80)

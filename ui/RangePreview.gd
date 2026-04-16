@@ -16,6 +16,7 @@ var _grid: Node
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
 	z_index = 5
 	_timer = Timer.new()

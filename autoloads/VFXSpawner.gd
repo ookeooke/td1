@@ -8,6 +8,7 @@ const _DeathVFXScript := preload("res://vfx/DeathVFX.gd")
 
 # Cached hero reference for XP text positioning.
 var _hero: Node2D = null
+var clean_view: bool = false
 
 
 func _ready() -> void:
@@ -17,6 +18,7 @@ func _ready() -> void:
 	EventBus.hero_died.connect(func(): _hero = null)
 	EventBus.game_over.connect(_on_game_over)
 	EventBus.game_won.connect(_on_game_won)
+	EventBus.clean_view_toggled.connect(func(v): clean_view = v)
 
 
 func _on_enemy_died(enemy: Node, gold_value: int) -> void:
@@ -32,8 +34,9 @@ func _on_enemy_died(enemy: Node, gold_value: int) -> void:
 	if enemy.data != null and enemy.data.visual != null:
 		color = enemy.data.visual.body_color
 		radius = enemy.data.visual.radius
-	_DeathVFXScript.spawn(parent, color, radius, pos)
-	# Gold text.
+	if not clean_view:
+		_DeathVFXScript.spawn(parent, color, radius, pos)
+	# Gold text — always shown (informational, not clutter).
 	if gold_value > 0:
 		_FloatingTextScript.spawn(parent, "+%dg" % gold_value, Color(0.83, 0.66, 0.20), pos)
 

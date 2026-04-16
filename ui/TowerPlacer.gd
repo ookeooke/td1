@@ -24,6 +24,7 @@ var _registry: Dictionary = {}
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_towers_parent = get_node_or_null(towers_parent_path)
 	if _towers_parent == null:
 		_towers_parent = self

@@ -35,10 +35,11 @@ func _ready() -> void:
 	_check_phase_transition()
 
 
-func take_damage(amount: float, type: int, source: Node = null) -> void:
-	super.take_damage(amount, type, source)
+func take_damage(amount: float, type: int, source: Node = null) -> float:
+	var final: float = super.take_damage(amount, type, source)
 	if state != State.DYING:
 		_check_phase_transition()
+	return final
 
 
 func _check_phase_transition() -> void:

@@ -8,6 +8,8 @@ const DEBUG_STATUS_ARROWS: bool = false
 const _SlowEffectScript := preload("res://systems/SlowEffect.gd")
 const _StunEffectScript := preload("res://systems/StunEffect.gd")
 
+enum TargetingMode { FIRST, STRONG, WEAK }
+
 @export var data: TowerData
 
 var level: int = 1
@@ -24,6 +26,8 @@ var branch_idx: int = -1
 # up to 1/attack_speed for a Timer to cycle.
 var _attack_cooldown: float = 0.0
 var _current_target: Node = null
+var total_damage_dealt: float = 0.0
+var targeting_mode: int = TargetingMode.FIRST
 
 var _shots_since_buff: int = 0
 var _next_buff_threshold: int = 0
@@ -119,6 +123,22 @@ func get_sell_value() -> int:
 	return data.sell_value
 
 
+func record_damage(amount: float) -> void:
+	total_damage_dealt += amount
+
+
+func cycle_targeting_mode() -> void:
+	targeting_mode = (targeting_mode + 1) % 3
+
+
+func get_targeting_mode_name() -> String:
+	match targeting_mode:
+		TargetingMode.FIRST: return "First"
+		TargetingMode.STRONG: return "Strong"
+		TargetingMode.WEAK: return "Weak"
+	return "First"
+
+
 func get_upgrade_cost_to(next_level: int) -> int:
 	# Cost to advance FROM current `level` TO `next_level`. next_level must
 	# be current + 1 in Phase 24; branching in Phase 25 may extend this.
@@ -182,14 +202,13 @@ func _physics_process(delta: float) -> void:
 
 
 func _pick_target() -> Node:
-	# First-target strategy: enemy furthest along its PathFollow2D. With a
-	# sticky preference for the currently-engaged target when the progress
-	# is tied — prevents flip-flop when two enemies travel in lockstep and
-	# Area2D's non-deterministic iteration order shuffles between frames.
-	# On true progress ties, tiebreaker picks the lower-HP target for
-	# guaranteed execution (finish one before spreading DPS).
+	# Targeting mode selects which enemy to prioritize:
+	#   FIRST  — furthest along path (default, classic TD behavior)
+	#   STRONG — highest current HP (focus fire on tanky enemies)
+	#   WEAK   — lowest current HP (finish off wounded enemies)
+	# Sticky preference for the current target on ties prevents jitter.
 	var best: Node = null
-	var best_progress: float = -1.0
+	var best_score: float = -INF if targeting_mode != TargetingMode.WEAK else INF
 	for area in range_area.get_overlapping_areas():
 		if not (area is BaseEnemy):
 			continue
@@ -198,22 +217,34 @@ func _pick_target() -> Node:
 			continue
 		if enemy.data != null and enemy.data.is_flying and not data.targets_flying:
 			continue
-		var progress: float = 0.0
-		if enemy.get_parent() is PathFollow2D:
-			progress = enemy.get_parent().progress_ratio
-		if best == null or progress > best_progress:
+		var score: float = _targeting_score(enemy)
+		var dominated: bool = false
+		if targeting_mode == TargetingMode.WEAK:
+			dominated = score < best_score
+		else:
+			dominated = score > best_score
+		if best == null or dominated:
 			best = enemy
-			best_progress = progress
+			best_score = score
 			continue
-		if is_equal_approx(progress, best_progress):
-			# Keep current engaged target on a tie.
+		if is_equal_approx(score, best_score):
 			if enemy == _current_target:
 				best = enemy
 				continue
-			# Otherwise, prefer the lower-HP target.
 			if best != _current_target and enemy.current_health < best.current_health:
 				best = enemy
 	return best
+
+
+func _targeting_score(enemy: BaseEnemy) -> float:
+	match targeting_mode:
+		TargetingMode.FIRST:
+			if enemy.get_parent() is PathFollow2D:
+				return enemy.get_parent().progress_ratio
+			return 0.0
+		TargetingMode.STRONG, TargetingMode.WEAK:
+			return float(enemy.current_health)
+	return 0.0
 
 
 func _fire_projectile(target: Node) -> void:

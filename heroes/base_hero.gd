@@ -69,6 +69,7 @@ var _skill_range_preview: float = 0.0
 # death so passives like "on-kill: +5% damage for 3 s" can hook in later.
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
+const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
 var _ability_host: RefCounted = null
 
 @onready var attack_range_area: Area2D = $AttackRange
@@ -406,6 +407,10 @@ func take_damage(amount: float, type: int, source: Node = null) -> void:
 		return
 	var final: float = DamageCalculator.calculate_damage(amount, type, self)
 	current_health -= int(ceil(final))
+	if final > 0.0:
+		var parent: Node = get_tree().current_scene
+		if parent != null:
+			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.2, 0.2), global_position + Vector2(0, -24), 15)
 	queue_redraw()
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_TAKEN, {"source": source, "amount": final})

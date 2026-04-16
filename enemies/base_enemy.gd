@@ -32,6 +32,7 @@ var _last_damage_source: Node = null
 # abilities like ExplodeOnDeath or SummonOnDeath can hook in.
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
+const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
 var _ability_host: RefCounted = null
 
 
@@ -150,18 +151,24 @@ func _effective_speed() -> float:
 	return s
 
 
-func take_damage(amount: float, type: int, source: Node = null) -> void:
+func take_damage(amount: float, type: int, source: Node = null) -> float:
 	if state == State.DYING or data == null:
-		return
+		return 0.0
 	var final: float = DamageCalculator.calculate_damage(amount, type, self)
 	current_health -= int(ceil(final))
 	if source != null:
 		_last_damage_source = source
+	# Floating damage number.
+	if final > 0.0:
+		var parent: Node = get_tree().current_scene
+		if parent != null:
+			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.3, 0.2), global_position + Vector2(0, -20), 14)
 	queue_redraw()
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_TAKEN, {"source": source, "amount": final})
 	if current_health <= 0:
 		_die()
+	return final
 
 
 func heal(amount: float) -> void:

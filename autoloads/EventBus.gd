@@ -28,7 +28,9 @@ signal barracks_rally_move_requested(barracks)
 signal wave_started(wave_number, path_ids)
 signal wave_completed(wave_number)
 signal early_wave_triggered(bonus_gold)
+signal wave_countdown_started(duration)
 signal all_waves_completed()
+signal clean_view_toggled(enabled)
 signal spawn_direction_changed(path_id, screen_edge_position)
 
 # Economy

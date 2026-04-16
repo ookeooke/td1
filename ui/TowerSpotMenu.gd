@@ -15,6 +15,8 @@ extends CanvasLayer
 @onready var branch_a_button: Button = %BranchARow
 @onready var branch_b_button: Button = %BranchBRow
 @onready var move_rally_button: Button = %MoveRallyButton
+@onready var targeting_button: Button = %TargetingButton
+@onready var damage_label: Label = %DamageLabel
 @onready var close_button: Button = %CloseButton
 
 var _current_spot_id: String = ""
@@ -35,6 +37,7 @@ var _actions_enabled: bool = true
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	# Toggle the CanvasLayer itself — the Main.tscn instance may be saved with
 	# visible=false, which would block input regardless of inner Control state.
 	visible = false
@@ -44,6 +47,7 @@ func _ready() -> void:
 	branch_a_button.pressed.connect(_on_branch_pressed.bind(0))
 	branch_b_button.pressed.connect(_on_branch_pressed.bind(1))
 	move_rally_button.pressed.connect(_on_move_rally_pressed)
+	targeting_button.pressed.connect(_on_targeting_pressed)
 	close_button.pressed.connect(_dismiss)
 	backdrop.gui_input.connect(_on_backdrop_input)
 	EventBus.tower_spot_tapped.connect(_on_spot_tapped)
@@ -127,6 +131,18 @@ func _refresh_sell_button() -> void:
 	sell_button.text = "Sell (+%dg)" % refund
 	# "Move Rally" only makes sense for barracks — hide for attack towers.
 	move_rally_button.visible = _current_tower != null and _current_tower.has_method("begin_rally_placement")
+	# Damage tracking display.
+	if _current_tower != null and "total_damage_dealt" in _current_tower:
+		damage_label.text = "Damage: %s" % _format_number(_current_tower.total_damage_dealt)
+		damage_label.visible = true
+	else:
+		damage_label.visible = false
+	# Targeting mode cycle button — only for attack towers (not barracks).
+	if _current_tower != null and "targeting_mode" in _current_tower:
+		targeting_button.text = "Target: %s" % _current_tower.get_targeting_mode_name()
+		targeting_button.visible = true
+	else:
+		targeting_button.visible = false
 	# Upgrade button only when the tower supports it AND isn't at max level.
 	_refresh_upgrade_button()
 
@@ -149,7 +165,8 @@ func _refresh_upgrade_button() -> void:
 		return
 	var cost: int = _current_tower.get_upgrade_cost_to(_current_tower.level + 1)
 	var next_level: int = _current_tower.level + 1
-	upgrade_button.text = "Upgrade → Lv %d (%dg)" % [next_level, cost]
+	var delta: String = _build_delta_text(_current_tower, next_level)
+	upgrade_button.text = "Upgrade → Lv %d %s(%dg)" % [next_level, delta, cost]
 	upgrade_button.disabled = GameState.gold < cost
 	upgrade_button.visible = true
 
@@ -161,7 +178,28 @@ func _refresh_branch_button(button: Button, branches: Array, idx: int) -> void:
 	var branch: Resource = branches[idx]
 	var label: String = branch.upgrade_name if branch.upgrade_name != "" else "Branch %d" % (idx + 1)
 	var cost: int = int(branch.cost)
-	button.text = "%s (%dg)" % [label, cost]
+	# Show stat deltas vs current level.
+	var delta: String = ""
+	if _current_tower != null and _current_tower.data != null:
+		var cur_dmg: float = _current_tower.data.damage
+		var cur_range: float = _current_tower.data.attack_range
+		var cur_speed: float = _current_tower.data.attack_speed
+		if _current_tower.has_method("_level_override"):
+			var ov: Resource = _current_tower._level_override()
+			if ov != null:
+				cur_dmg = ov.damage
+				cur_range = ov.attack_range
+				cur_speed = ov.attack_speed
+		var parts: PackedStringArray = PackedStringArray()
+		var dd: float = branch.damage - cur_dmg
+		if not is_zero_approx(dd):
+			parts.append("+%d Dmg" % int(dd) if dd > 0 else "%d Dmg" % int(dd))
+		var dr: float = branch.attack_range - cur_range
+		if not is_zero_approx(dr):
+			parts.append("+%d Rng" % int(dr) if dr > 0 else "%d Rng" % int(dr))
+		if not parts.is_empty():
+			delta = " (" + ", ".join(parts) + ")"
+	button.text = "%s%s (%dg)" % [label, delta, cost]
 	button.disabled = GameState.gold < cost
 	button.visible = true
 
@@ -234,6 +272,56 @@ func _dismiss() -> void:
 	_swallow_next_release = false
 	visible = false
 	EventBus.tower_menu_dismissed.emit()
+
+
+func _on_targeting_pressed() -> void:
+	if not _actions_enabled or _current_tower == null:
+		return
+	if _current_tower.has_method("cycle_targeting_mode"):
+		_current_tower.cycle_targeting_mode()
+		targeting_button.text = "Target: %s" % _current_tower.get_targeting_mode_name()
+
+
+func _format_number(value: float) -> String:
+	var n: int = int(value)
+	if n >= 1000:
+		@warning_ignore("integer_division")
+		return "%d,%03d" % [n / 1000, n % 1000]
+	return str(n)
+
+
+func _build_delta_text(tower: Node, next_level: int) -> String:
+	if tower == null or tower.data == null:
+		return ""
+	var cur_dmg: float = tower.data.damage
+	var cur_range: float = tower.data.attack_range
+	var cur_spd: float = tower.data.attack_speed
+	# If tower has a current level override, use those as baseline.
+	if tower.has_method("_level_override"):
+		var ov: Resource = tower._level_override()
+		if ov != null:
+			cur_dmg = ov.damage
+			cur_range = ov.attack_range
+			cur_spd = ov.attack_speed
+	var upgrade_idx: int = next_level - 2
+	if upgrade_idx < 0 or upgrade_idx >= tower.data.level_upgrades.size():
+		return ""
+	var nxt: Resource = tower.data.level_upgrades[upgrade_idx]
+	if nxt == null:
+		return ""
+	var parts: PackedStringArray = PackedStringArray()
+	var dd: float = nxt.damage - cur_dmg
+	if not is_zero_approx(dd):
+		parts.append("+%d Dmg" % int(dd) if dd > 0 else "%d Dmg" % int(dd))
+	var dr: float = nxt.attack_range - cur_range
+	if not is_zero_approx(dr):
+		parts.append("+%d Rng" % int(dr) if dr > 0 else "%d Rng" % int(dr))
+	var ds: float = nxt.attack_speed - cur_spd
+	if not is_zero_approx(ds):
+		parts.append("+%.1f Spd" % ds if ds > 0 else "%.1f Spd" % ds)
+	if parts.is_empty():
+		return ""
+	return "(" + ", ".join(parts) + ") "
 
 
 func _find_grid() -> Node:

@@ -302,11 +302,11 @@ func _draw() -> void:
 	var ov: Resource = _level_override()
 	if ov != null:
 		base_body = base_body * ov.tint
-	draw_circle(Vector2.ZERO, 22.0, base_body)
-	draw_arc(Vector2.ZERO, 22.0, 0, TAU, 28, Color(0.08, 0.1, 0.25), 2.5)
+	draw_circle(Vector2.ZERO, 55.0, base_body)
+	draw_arc(Vector2.ZERO, 55.0, 0, TAU, 28, Color(0.08, 0.1, 0.25), 6.25)
 	# Level pips — small dots at the top of the tower so the player can
 	# see the upgrade level at a glance.
 	for i in level:
-		draw_circle(Vector2(-6.0 + i * 6.0, -28.0), 2.2, Color(1.0, 0.85, 0.2))
+		draw_circle(Vector2(-15.0 + i * 15.0, -70.0), 5.5, Color(1.0, 0.85, 0.2))
 	if recoil_scale < 1.0:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

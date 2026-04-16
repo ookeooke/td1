@@ -3,8 +3,8 @@ class_name BaseEnemy
 
 enum State { WALKING, STUNNED, COMBAT, STEALTHED, DYING }
 
-const HP_BAR_SIZE: Vector2 = Vector2(28.0, 4.0)
-const HP_BAR_Y_OFFSET: float = -26.0
+const HP_BAR_SIZE: Vector2 = Vector2(70.0, 10.0)
+const HP_BAR_Y_OFFSET: float = -65.0
 
 @export var data: EnemyData
 
@@ -155,20 +155,23 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 	if state == State.DYING or data == null:
 		return 0.0
 	var final: float = DamageCalculator.calculate_damage(amount, type, self)
+	# Cap to remaining HP so stat tracking isn't inflated by overkill.
+	var actual: float = minf(final, float(current_health))
 	current_health -= int(ceil(final))
 	if source != null:
 		_last_damage_source = source
-	# Floating damage number.
+	# Floating damage number — shows raw hit, not capped, so players see
+	# the full impact of their tower's power.
 	if final > 0.0:
 		var parent: Node = get_tree().current_scene
 		if parent != null:
-			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.3, 0.2), global_position + Vector2(0, -20), 14)
+			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.3, 0.2), global_position + Vector2(0, -50), 28)
 	queue_redraw()
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_TAKEN, {"source": source, "amount": final})
 	if current_health <= 0:
 		_die()
-	return final
+	return actual
 
 
 func heal(amount: float) -> void:
@@ -214,15 +217,15 @@ func _draw() -> void:
 	if data != null and data.visual != null:
 		UnitVisualDrawer.draw_unit(self, data.visual)
 	else:
-		draw_circle(Vector2.ZERO, 14.0, Color(0.75, 0.2, 0.2))
-		draw_arc(Vector2.ZERO, 14.0, 0, TAU, 24, Color(0.15, 0.05, 0.05), 2.0)
+		draw_circle(Vector2.ZERO, 35.0, Color(0.75, 0.2, 0.2))
+		draw_arc(Vector2.ZERO, 35.0, 0, TAU, 24, Color(0.15, 0.05, 0.05), 2.0)
 	# Status-effect overlay rings. Stun drawn outermost so it's visible even
 	# if a slow is also active.
-	var ring_r: float = (data.visual.radius if data != null and data.visual != null else 14.0) + 5.0
+	var ring_r: float = (data.visual.radius if data != null and data.visual != null else 35.0) + 12.0
 	if _effects.has("slow"):
-		draw_arc(Vector2.ZERO, ring_r, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
+		draw_arc(Vector2.ZERO, ring_r, 0, TAU, 28, Color(0.2, 0.7, 1.0), 5.0)
 	if _effects.has("stun"):
-		draw_arc(Vector2.ZERO, ring_r + 4.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)
+		draw_arc(Vector2.ZERO, ring_r + 10.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 5.0)
 	_draw_health_bar()
 
 
@@ -235,9 +238,19 @@ func _draw_health_bar() -> void:
 		return
 	if current_health >= data.max_health:
 		return
+	var zs: float = _get_zoom_scale()
+	var bar_size: Vector2 = HP_BAR_SIZE * zs
+	var bar_y: float = HP_BAR_Y_OFFSET * zs
 	var pct: float = clampf(float(current_health) / float(data.max_health), 0.0, 1.0)
-	var origin: Vector2 = Vector2(-HP_BAR_SIZE.x * 0.5, HP_BAR_Y_OFFSET)
-	draw_rect(Rect2(origin, HP_BAR_SIZE), Color(0.12, 0.12, 0.12))
+	var origin: Vector2 = Vector2(-bar_size.x * 0.5, bar_y)
+	draw_rect(Rect2(origin, bar_size), Color(0.12, 0.12, 0.12))
 	if pct > 0.0:
-		draw_rect(Rect2(origin, Vector2(HP_BAR_SIZE.x * pct, HP_BAR_SIZE.y)), Color(0.3, 0.9, 0.3))
-	draw_rect(Rect2(origin, HP_BAR_SIZE), Color(0, 0, 0), false, 1.0)
+		draw_rect(Rect2(origin, Vector2(bar_size.x * pct, bar_size.y)), Color(0.3, 0.9, 0.3))
+	draw_rect(Rect2(origin, bar_size), Color(0, 0, 0), false, 1.0)
+
+
+func _get_zoom_scale() -> float:
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam == null:
+		return 1.0
+	return 1.0 / cam.zoom.x

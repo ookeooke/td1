@@ -11,7 +11,7 @@ extends CanvasLayer
 
 const CooldownButtonScene: PackedScene = preload("res://ui/CooldownButton.tscn")
 const _SkillDataScript: Script = preload("res://heroes/skills/skill_data.gd")
-const TARGET_TAP_TOLERANCE: float = 32.0
+const TARGET_TAP_TOLERANCE: float = 80.0
 
 @onready var button_column: VBoxContainer = %ButtonColumn
 
@@ -131,11 +131,22 @@ func _screen_to_world(screen_pos: Vector2) -> Vector2:
 	return map.get_global_transform_with_canvas().affine_inverse() * screen_pos
 
 
+
+
+func _get_zoom_scale() -> float:
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam == null:
+		return 1.0
+	return 1.0 / cam.zoom.x
+
+
 func _find_enemy_near(world_pos: Vector2, max_hero_dist: float, hero_pos: Vector2) -> Node:
 	# Pick the enemy closest to the tap that is ALSO within the skill's
 	# range of the hero. TARGET_TAP_TOLERANCE gives finger-friendly slack.
 	var best: Node = null
-	var best_d2: float = TARGET_TAP_TOLERANCE * TARGET_TAP_TOLERANCE
+	var zoom_scale: float = _get_zoom_scale()
+	var scaled_tolerance: float = TARGET_TAP_TOLERANCE * zoom_scale
+	var best_d2: float = scaled_tolerance * scaled_tolerance
 	for enemy in get_tree().get_nodes_in_group("enemies"):
 		if not (enemy is BaseEnemy):
 			continue

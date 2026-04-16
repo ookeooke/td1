@@ -7,21 +7,21 @@
 
 [sub_resource type="Curve2D" id="Curve_Left"]
 _data = {
-"points": PackedVector2Array(0, 0, 0, 0, 0, 420, 0, 0, 0, 0, 91, 386, 0, 0, 0, 0, 180, 420, 0, 0, 0, 0, 140, 560, 0, 0, 0, 0, 152, 618, 0, 0, 0, 0, 180, 680, 0, 0, 0, 0, 375, 680)
+"points": PackedVector2Array(0, 0, 0, 0, 0, 540, 0, 0, 0, 0, 300, 540, 0, 0, 0, 0, 500, 400, 0, 0, 0, 0, 800, 400, 0, 0, 0, 0, 1000, 540, 0, 0, 0, 0, 1400, 540, 0, 0, 0, 0, 1920, 540)
 }
 point_count = 7
 
 [sub_resource type="Curve2D" id="Curve_Right"]
 _data = {
-"points": PackedVector2Array(0, 0, 0, 0, 375, 220, 0, 0, 0, 0, 220, 220, 0, 0, 0, 0, 220, 520, 0, 0, 0, 0, 0, 520)
+"points": PackedVector2Array(0, 0, 0, 0, 500, 0, 0, 0, 0, 0, 500, 200, 0, 0, 0, 0, 700, 350, 0, 0, 0, 0, 1000, 350, 0, 0, 0, 0, 1200, 500, 0, 0, 0, 0, 1600, 500, 0, 0, 0, 0, 1920, 500)
 }
-point_count = 4
+point_count = 7
 
 [sub_resource type="Curve2D" id="Curve_Top"]
 _data = {
-"points": PackedVector2Array(0, 0, 0, 0, 280, 0, 0, 0, 0, 0, 280, 140, 0, 0, 0, 0, 80, 140, 0, 0, 0, 0, 80, 300)
+"points": PackedVector2Array(0, 0, 0, 0, 0, 900, 0, 0, 0, 0, 400, 900, 0, 0, 0, 0, 600, 700, 0, 0, 0, 0, 900, 700, 0, 0, 0, 0, 1100, 600, 0, 0, 0, 0, 1500, 600, 0, 0, 0, 0, 1920, 600)
 }
-point_count = 4
+point_count = 7
 
 [node name="Level1" type="Node2D" unique_id=2145161280]
 script = ExtResource("1_lvl")
@@ -34,58 +34,61 @@ script = ExtResource("1_lvl")
 curve = SubResource("Curve_Left")
 
 [node name="PathFollow2D" type="PathFollow2D" parent="Paths/left" unique_id=1885134568]
-position = Vector2(0, 420)
-rotation = -0.35756588
+position = Vector2(0, 540)
 
 [node name="right" type="Path2D" parent="Paths" unique_id=2017371806]
 curve = SubResource("Curve_Right")
 
 [node name="PathFollow2D" type="PathFollow2D" parent="Paths/right" unique_id=35684064]
-position = Vector2(375, 220)
-rotation = 3.1415927
+position = Vector2(500, 0)
+rotation = 1.5707964
 
 [node name="top" type="Path2D" parent="Paths" unique_id=1393201053]
 curve = SubResource("Curve_Top")
 
 [node name="PathFollow2D" type="PathFollow2D" parent="Paths/top" unique_id=1381327975]
-position = Vector2(280, 0)
-rotation = 1.5707964
+position = Vector2(0, 900)
 
 [node name="TowerSpots" type="Node2D" parent="." unique_id=648341223]
 
 [node name="Spot1" type="Marker2D" parent="TowerSpots" unique_id=661654873]
-position = Vector2(110, 340)
+position = Vector2(350, 300)
 
 [node name="Spot2" type="Marker2D" parent="TowerSpots" unique_id=677798106]
-position = Vector2(280, 340)
+position = Vector2(500, 500)
 
 [node name="Spot3" type="Marker2D" parent="TowerSpots" unique_id=1250679985]
-position = Vector2(110, 600)
+position = Vector2(900, 450)
 
 [node name="Spot4" type="Marker2D" parent="TowerSpots" unique_id=894908184]
-position = Vector2(280, 600)
+position = Vector2(250, 700)
 
 [node name="Spot5" type="Marker2D" parent="TowerSpots" unique_id=1029897238]
-position = Vector2(96, 468)
+position = Vector2(1300, 400)
 
 [node name="Spot6" type="Marker2D" parent="TowerSpots" unique_id=203523561]
-position = Vector2(280, 740)
+position = Vector2(1100, 700)
+
+[node name="Spot7" type="Marker2D" parent="TowerSpots"]
+position = Vector2(500, 800)
+
+[node name="Spot8" type="Marker2D" parent="TowerSpots"]
+position = Vector2(1500, 650)
 
 [node name="SpawnMarkers" type="Node2D" parent="." unique_id=1913527537]
 
 [node name="SpawnMarkerLeft" parent="SpawnMarkers" unique_id=2120535699 instance=ExtResource("3_sm")]
-position = Vector2(26, 420)
+position = Vector2(40, 540)
 path_id = "left"
 
-[node name="SpawnMarkerRight" parent="SpawnMarkers" unique_id=1229605125 instance=ExtResource("3_sm")]
-position = Vector2(349, 220)
+[node name="SpawnMarkerTop" parent="SpawnMarkers" unique_id=1229605125 instance=ExtResource("3_sm")]
+position = Vector2(500, 40)
 path_id = "right"
-direction_degrees = 180.0
-
-[node name="SpawnMarkerTop" parent="SpawnMarkers" unique_id=100274747 instance=ExtResource("3_sm")]
-position = Vector2(280, 26)
-path_id = "top"
 direction_degrees = 90.0
+
+[node name="SpawnMarkerBottom" parent="SpawnMarkers" unique_id=100274747 instance=ExtResource("3_sm")]
+position = Vector2(40, 900)
+path_id = "top"
 
 [node name="GridManager" type="Node" parent="." unique_id=1706413596]
 script = ExtResource("2_grid")

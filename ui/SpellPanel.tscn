@@ -4,29 +4,26 @@
 [ext_resource type="Resource" path="res://spells/data/spell_fireball.tres" id="2_fireball"]
 [ext_resource type="Resource" path="res://spells/data/spell_reinforcements.tres" id="3_recruit"]
 [ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="4_theme"]
+[ext_resource type="Script" path="res://ui/SafeAreaMargin.gd" id="5_safe"]
 
 [node name="SpellPanel" type="CanvasLayer"]
 layer = 7
+follow_viewport_enabled = false
 script = ExtResource("1_panel")
 spells = Array[Resource]([ExtResource("2_fireball"), ExtResource("3_recruit")])
 
-[node name="Root" type="Control" parent="."]
+[node name="SafeArea" type="MarginContainer" parent="."]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 theme = ExtResource("4_theme")
 mouse_filter = 2
+script = ExtResource("5_safe")
 
-[node name="ButtonColumn" type="VBoxContainer" parent="Root"]
+[node name="ButtonColumn" type="VBoxContainer" parent="SafeArea"]
 unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
-offset_left = 16.0
-offset_top = -240.0
-offset_right = 104.0
-offset_bottom = -16.0
-grow_vertical = 0
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 8
 theme_override_constants/separation = 12

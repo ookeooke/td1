@@ -1,8 +1,8 @@
 extends Node2D
 class_name Arrow
 
-@export var speed: float = 500.0
-@export var hit_radius: float = 10.0
+@export var speed: float = 1250.0
+@export var hit_radius: float = 62.5
 # Projectile body color — overridden per tower via setup. Default = arrow tan.
 @export var proj_color: Color = Color(0.95, 0.85, 0.55)
 
@@ -65,8 +65,8 @@ func _on_hit() -> void:
 
 
 func _draw() -> void:
-	draw_line(Vector2(-10, 0), Vector2(8, 0), proj_color.darkened(0.2), 2.0)
+	draw_line(Vector2(-62.5, 0), Vector2(50, 0), proj_color.darkened(0.2), 12.5)
 	draw_colored_polygon(
-		PackedVector2Array([Vector2(12, 0), Vector2(4, -4), Vector2(4, 4)]),
+		PackedVector2Array([Vector2(75, 0), Vector2(25, -25), Vector2(25, 25)]),
 		proj_color
 	)

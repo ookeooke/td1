@@ -62,5 +62,13 @@ func _hide() -> void:
 func _draw() -> void:
 	if _radius <= 0.0:
 		return
+	var zs: float = _get_zoom_scale()
 	draw_circle(Vector2.ZERO, _radius, FILL_COLOR)
-	draw_arc(Vector2.ZERO, _radius, 0.0, TAU, 48, RING_COLOR, RING_WIDTH)
+	draw_arc(Vector2.ZERO, _radius, 0.0, TAU, 48, RING_COLOR, RING_WIDTH * zs)
+
+
+func _get_zoom_scale() -> float:
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam == null:
+		return 1.0
+	return 1.0 / cam.zoom.x

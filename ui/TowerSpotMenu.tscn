@@ -5,6 +5,7 @@
 
 [node name="TowerSpotMenu" type="CanvasLayer"]
 layer = 10
+follow_viewport_enabled = false
 script = ExtResource("1_tsm")
 
 [node name="Root" type="Control" parent="."]

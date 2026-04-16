@@ -1,11 +1,14 @@
 extends Node
 
-# Captures screen touches and emits EventBus.tower_spot_tapped(spot_id)
-# when the tap falls inside the tap-radius of a registered GridManager spot.
-# Touch-only per CLAUDE.md: emulate_touch_from_mouse maps mouse clicks to
-# InputEventScreenTouch, so we only handle the touch variant.
+# Listens to EventBus.map_tap_confirmed (dispatched by GameCamera after
+# classifying a touch as a tap) and emits tower_spot_tapped when the tap
+# falls inside the tap-radius of a registered GridManager spot.
+#
+# Previously used _unhandled_input directly; now receives confirmed taps
+# from the camera's gesture classifier so pan/zoom gestures aren't
+# misinterpreted as tower-spot taps.
 
-const TAP_RADIUS: float = 36.0
+const TAP_RADIUS: float = 90.0
 
 @export var grid_manager_path: NodePath
 @export var map_path: NodePath  # Node2D whose transform maps screen -> world
@@ -28,24 +31,26 @@ func _ready() -> void:
 		push_error("[SpotInputManager] GridManager not found")
 	if _map == null:
 		push_error("[SpotInputManager] Map node not found")
+	# Connect first so SpotInputManager has highest priority in the tap chain.
+	EventBus.map_tap_confirmed.connect(_on_map_tap)
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch:
-		if not event.pressed:
-			return
-		_handle_tap(event.position)
-
-
-func _handle_tap(screen_pos: Vector2) -> void:
+func _on_map_tap(screen_pos: Vector2, claim: RefCounted) -> void:
+	if claim.claimed:
+		return
 	if _grid == null or _map == null:
 		return
 	var world_pos: Vector2 = _map.get_global_transform_with_canvas().affine_inverse() * screen_pos
-	var spot_id: String = _grid.find_nearest_spot(world_pos, TAP_RADIUS)
+	var zoom_scale: float = _get_zoom_scale()
+	var spot_id: String = _grid.find_nearest_spot(world_pos, TAP_RADIUS * zoom_scale)
 	if spot_id == "":
 		return
 	EventBus.tower_spot_tapped.emit(spot_id)
-	# Claim the tap for the tower flow — prevents later _unhandled_input
-	# handlers (hero selection, hero move command) from also reacting to a
-	# press that the player intended for the spot.
-	get_viewport().set_input_as_handled()
+	claim.claimed = true
+
+
+func _get_zoom_scale() -> float:
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam == null:
+		return 1.0
+	return 1.0 / cam.zoom.x

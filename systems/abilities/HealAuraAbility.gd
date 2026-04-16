@@ -8,7 +8,7 @@ class_name HealAuraAbility
 #
 # Set trigger = ON_INTERVAL and interval = 2.0 in the .tres.
 
-@export var heal_range: float = 130.0
+@export var heal_range: float = 325.0
 @export var heal_amount: float = 3.0
 
 

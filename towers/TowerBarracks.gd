@@ -31,7 +31,7 @@ func _ready() -> void:
 		return
 	_flag_offset = data.soldier_blocking_offset
 	var circle := CircleShape2D.new()
-	circle.radius = 22.0
+	circle.radius = 55.0
 	flag_shape.shape = circle
 	flag_area.position = _flag_offset
 	flag_area.input_event.connect(_on_flag_input)
@@ -176,19 +176,19 @@ func _draw() -> void:
 	# top of the fill.
 	if (_dragging_flag or _placement_mode) and data != null and data.soldier_rally_range > 0.0:
 		draw_circle(Vector2.ZERO, data.soldier_rally_range, Color(1.0, 0.9, 0.3, 0.08))
-		draw_arc(Vector2.ZERO, data.soldier_rally_range, 0, TAU, 48, Color(1.0, 0.9, 0.3, 0.75), 2.0)
+		draw_arc(Vector2.ZERO, data.soldier_rally_range, 0, TAU, 48, Color(1.0, 0.9, 0.3, 0.75), 5.0)
 	# Tower body
-	draw_rect(Rect2(-20, -20, 40, 40), Color(0.55, 0.35, 0.2))
-	draw_rect(Rect2(-20, -20, 40, 40), Color(0.2, 0.1, 0.05), false, 2.5)
-	draw_line(Vector2(-20, -8), Vector2(20, -8), Color(0.2, 0.1, 0.05), 1.5)
+	draw_rect(Rect2(-50, -50, 100, 100), Color(0.55, 0.35, 0.2))
+	draw_rect(Rect2(-50, -50, 100, 100), Color(0.2, 0.1, 0.05), false, 6.25)
+	draw_line(Vector2(-50, -20), Vector2(50, -20), Color(0.2, 0.1, 0.05), 3.75)
 	# Rally flag at _flag_offset (pole + cloth)
-	var pole_top: Vector2 = _flag_offset + Vector2(0, -22)
-	draw_line(_flag_offset, pole_top, Color(0.25, 0.18, 0.08), 2.0)
+	var pole_top: Vector2 = _flag_offset + Vector2(0, -55)
+	draw_line(_flag_offset, pole_top, Color(0.25, 0.18, 0.08), 5.0)
 	draw_colored_polygon(
 		PackedVector2Array([
 			pole_top,
-			pole_top + Vector2(14, 4),
-			pole_top + Vector2(0, 10),
+			pole_top + Vector2(35, 10),
+			pole_top + Vector2(0, 25),
 		]),
 		Color(0.85, 0.2, 0.2)
 	)

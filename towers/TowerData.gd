@@ -7,7 +7,7 @@ class_name TowerData
 
 @export var damage: float = 5.0
 @export var damage_type: int = 0  # DamageCalculator.DamageType
-@export var attack_range: float = 150.0
+@export var attack_range: float = 375.0
 @export var attack_speed: float = 1.0
 @export var cost: int = 50
 @export var sell_value: int = 30
@@ -45,8 +45,8 @@ class_name TowerData
 # Barracks fields (unused on attack towers). Phase 16.
 @export var soldier_scene: PackedScene
 @export var soldier_data: Resource
-@export var soldier_blocking_offset: Vector2 = Vector2(0, 45)
-@export var soldier_spread: Vector2 = Vector2(16, 10)
-@export var soldier_rally_range: float = 140.0
+@export var soldier_blocking_offset: Vector2 = Vector2(0, 112.5)
+@export var soldier_spread: Vector2 = Vector2(40, 25)
+@export var soldier_rally_range: float = 350.0
 
 @export_multiline var encyclopedia_entry: String = ""

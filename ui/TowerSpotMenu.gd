@@ -21,18 +21,11 @@ extends CanvasLayer
 
 var _current_spot_id: String = ""
 var _current_tower: Node = null
-# Defensive gates: when the menu opens under a finger that's still down,
-# the release of that same press can land on a button that just appeared
-# at the tap coordinates and fire its action (observed for bottom-row
-# spots where the Panel overlaps the spot position).
-#   (1) _swallow_next_release  — primary guard. _input consumes the first
-#       release that arrives after the menu opens, BEFORE the GUI phase
-#       routes it to a button. Handles gestures that span multiple frames
-#       (finger held beyond a single tick).
-#   (2) _actions_enabled       — belt-and-suspenders. Rejects any button
-#       action for one idle frame after open, in case a release slips
-#       past _input (synthetic events, dev overrides, etc.).
-var _swallow_next_release: bool = false
+# Defensive gate: rejects any button action for one idle frame after open,
+# in case a stale event reaches a button before the UI is fully settled.
+# The old _swallow_next_release hack is no longer needed — GameCamera's
+# gesture classifier now waits for finger-up before dispatching taps, so
+# the menu never opens while a finger is still down.
 var _actions_enabled: bool = true
 
 
@@ -66,7 +59,6 @@ func _on_spot_tapped(spot_id: String) -> void:
 		_current_tower = null
 		_show_build_mode()
 	visible = true
-	_swallow_next_release = true
 	_actions_enabled = false
 	_enable_actions_next_frame()
 
@@ -75,17 +67,6 @@ func _enable_actions_next_frame() -> void:
 	await get_tree().process_frame
 	_actions_enabled = true
 
-
-func _input(event: InputEvent) -> void:
-	# Eats the release tail of the press that opened this menu so the
-	# Button that just appeared under the finger doesn't fire. _input runs
-	# before the GUI phase, so consuming here prevents Button.gui_input
-	# from ever seeing this event.
-	if not _swallow_next_release:
-		return
-	if event is InputEventScreenTouch and not event.pressed:
-		_swallow_next_release = false
-		get_viewport().set_input_as_handled()
 
 
 func _show_build_mode() -> void:
@@ -269,7 +250,6 @@ func _on_backdrop_input(event: InputEvent) -> void:
 func _dismiss() -> void:
 	_current_spot_id = ""
 	_current_tower = null
-	_swallow_next_release = false
 	visible = false
 	EventBus.tower_menu_dismissed.emit()
 

@@ -18,7 +18,7 @@ enum TargetType { AREA, GLOBAL }
 # 0 = unlimited cast distance (GLOBAL-style reach, still AoE at target point).
 @export var cast_range: float = 0.0
 # Radius of effect around the tapped point.
-@export var radius: float = 80.0
+@export var radius: float = 200.0
 @export var damage: float = 0.0
 @export var damage_type: int = 1  # DamageCalculator.DamageType.MAGIC by default
 @export var cooldown: float = 30.0

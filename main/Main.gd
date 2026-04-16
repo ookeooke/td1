@@ -46,7 +46,7 @@ func _spawn_hero() -> void:
 	# AttackRange) is hero-agnostic — only the data differs.
 	var hero: Node = HERO_TEMPLATE.instantiate()
 	hero.data = hero_data
-	hero.position = Vector2(188, 460)
+	hero.position = Vector2(960, 540)
 	# Insert before HeroInputManager so tree-order for _unhandled_input
 	# is correct (hero selection before move commands).
 	add_child(hero)

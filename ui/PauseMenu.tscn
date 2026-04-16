@@ -5,6 +5,7 @@
 
 [node name="PauseMenu" type="CanvasLayer"]
 layer = 20
+follow_viewport_enabled = false
 script = ExtResource("1_pause")
 
 [node name="Root" type="Control" parent="."]

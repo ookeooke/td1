@@ -16,5 +16,5 @@ target_type = 0
 soldier_scene = ExtResource("2_soldier")
 squad_size = 4
 lifetime = 20.0
-spread_radius = 18.0
+spread_radius = 45.0
 description = "Drop a squad of 4 militia anywhere on the map. They engage enemies for 20 seconds, then vanish."

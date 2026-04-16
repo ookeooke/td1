@@ -21,8 +21,8 @@ var _phase_tint: Color = Color.WHITE
 # on phase transition.
 var _phase_abilities: Array[Resource] = []
 
-const BOSS_HP_BAR_SIZE: Vector2 = Vector2(50.0, 6.0)
-const BOSS_HP_BAR_Y: float = -36.0
+const BOSS_HP_BAR_SIZE: Vector2 = Vector2(125.0, 15.0)
+const BOSS_HP_BAR_Y: float = -90.0
 const BOSS_BODY_RADIUS: float = 22.0
 
 
@@ -135,18 +135,28 @@ func _draw() -> void:
 func _draw_boss_health_bar() -> void:
 	if data == null or data.max_health <= 0:
 		return
+	var zs: float = _get_zoom_scale()
+	var bar_size: Vector2 = BOSS_HP_BAR_SIZE * zs
+	var bar_y: float = BOSS_HP_BAR_Y * zs
 	var pct: float = clampf(float(current_health) / float(data.max_health), 0.0, 1.0)
-	var origin: Vector2 = Vector2(-BOSS_HP_BAR_SIZE.x * 0.5, BOSS_HP_BAR_Y)
-	draw_rect(Rect2(origin, BOSS_HP_BAR_SIZE), Color(0.12, 0.12, 0.12))
+	var origin: Vector2 = Vector2(-bar_size.x * 0.5, bar_y)
+	draw_rect(Rect2(origin, bar_size), Color(0.12, 0.12, 0.12))
 	if pct > 0.0:
 		var fill_color: Color = Color(0.9, 0.2, 0.2) if pct < 0.25 else Color(0.3, 0.9, 0.3)
-		draw_rect(Rect2(origin, Vector2(BOSS_HP_BAR_SIZE.x * pct, BOSS_HP_BAR_SIZE.y)), fill_color)
-	draw_rect(Rect2(origin, BOSS_HP_BAR_SIZE), Color(0, 0, 0), false, 1.0)
+		draw_rect(Rect2(origin, Vector2(bar_size.x * pct, bar_size.y)), fill_color)
+	draw_rect(Rect2(origin, bar_size), Color(0, 0, 0), false, 1.0)
 	# Phase markers on the health bar.
 	for phase in boss_phases:
-		var marker_x: float = origin.x + BOSS_HP_BAR_SIZE.x * phase.hp_threshold
+		var marker_x: float = origin.x + bar_size.x * phase.hp_threshold
 		draw_line(
-			Vector2(marker_x, BOSS_HP_BAR_Y - 1),
-			Vector2(marker_x, BOSS_HP_BAR_Y + BOSS_HP_BAR_SIZE.y + 1),
+			Vector2(marker_x, bar_y - 1),
+			Vector2(marker_x, bar_y + bar_size.y + 1),
 			Color(1, 1, 1, 0.6), 1.0
 		)
+
+
+func _get_zoom_scale() -> float:
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam == null:
+		return 1.0
+	return 1.0 / cam.zoom.x

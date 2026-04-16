@@ -8,7 +8,7 @@ const _Scene: PackedScene = preload("res://vfx/DeathVFX.tscn")
 var _color: Color = Color.RED
 var _ring_radius: float = 0.0
 var _ring_max: float = 30.0
-var _flash_radius: float = 14.0
+var _flash_radius: float = 35.0
 var _alpha: float = 1.0
 
 
@@ -17,7 +17,7 @@ static func spawn(parent: Node, color: Color, base_radius: float, pos: Vector2) 
 	inst.global_position = pos
 	inst._color = color
 	inst._flash_radius = base_radius
-	inst._ring_max = base_radius + 16.0
+	inst._ring_max = base_radius + 100.0
 	parent.add_child(inst)
 	inst._start()
 
@@ -37,7 +37,7 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	# Expanding ring.
 	if _ring_radius > 0.0:
-		draw_arc(Vector2.ZERO, _ring_radius, 0, TAU, 24, Color(_color.r, _color.g, _color.b, _alpha * 0.7), 2.5)
+		draw_arc(Vector2.ZERO, _ring_radius, 0, TAU, 24, Color(_color.r, _color.g, _color.b, _alpha * 0.7), 15.0)
 	# Shrinking flash.
 	if _flash_radius > 0.0:
 		draw_circle(Vector2.ZERO, _flash_radius, Color(1.0, 1.0, 1.0, _alpha * 0.5))

@@ -14,7 +14,7 @@ extends CanvasLayer
 
 const CooldownButtonScene: PackedScene = preload("res://ui/CooldownButton.tscn")
 const _SpellDataScript: Script = preload("res://spells/SpellData.gd")
-const TARGET_TAP_TOLERANCE: float = 32.0
+const TARGET_TAP_TOLERANCE: float = 80.0
 
 @export var spells: Array[Resource] = []
 
@@ -128,3 +128,5 @@ func _screen_to_world(screen_pos: Vector2) -> Vector2:
 	if map == null:
 		return screen_pos
 	return map.get_global_transform_with_canvas().affine_inverse() * screen_pos
+
+

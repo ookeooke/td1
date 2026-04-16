@@ -9,5 +9,5 @@ body_color = Color(0.75, 0.2, 0.2, 1.0)
 outline_color = Color(0.15, 0.05, 0.05, 1.0)
 accent_color = Color(1, 1, 1, 1)
 accent_type = 0
-radius = 14.0
-outline_width = 2.0
+radius = 35.0
+outline_width = 5.0

@@ -33,23 +33,23 @@ static func _draw_accent(ci: CanvasItem, v: UnitVisualData) -> void:
 		UnitVisualData.Accent.WEAPON_LINE:
 			# Vertical line above body (sword / staff)
 			var top: float = -v.body_size.y * 0.5 if v.shape == UnitVisualData.Shape.SQUARE else -v.radius
-			ci.draw_line(Vector2(0, top), Vector2(0, top - 6.0), v.accent_color, 2.5)
+			ci.draw_line(Vector2(0, top), Vector2(0, top - 15.0), v.accent_color, 6.25)
 		UnitVisualData.Accent.CROSSHAIR:
 			# Horizontal + vertical cross (healer)
 			var r: float = v.radius * 0.45
-			ci.draw_line(Vector2(-r, 0), Vector2(r, 0), v.accent_color, 2.0)
-			ci.draw_line(Vector2(0, -r), Vector2(0, r), v.accent_color, 2.0)
+			ci.draw_line(Vector2(-r, 0), Vector2(r, 0), v.accent_color, 5.0)
+			ci.draw_line(Vector2(0, -r), Vector2(0, r), v.accent_color, 5.0)
 		UnitVisualData.Accent.WINGS:
 			# Horizontal bars extending from sides (flying)
 			var r: float = v.radius
-			ci.draw_line(Vector2(-r - 6, -2), Vector2(-r, -2), v.accent_color, 2.0)
-			ci.draw_line(Vector2(-r - 4, 2), Vector2(-r, 2), v.accent_color, 2.0)
-			ci.draw_line(Vector2(r, -2), Vector2(r + 6, -2), v.accent_color, 2.0)
-			ci.draw_line(Vector2(r, 2), Vector2(r + 4, 2), v.accent_color, 2.0)
+			ci.draw_line(Vector2(-r - 15, -5), Vector2(-r, -5), v.accent_color, 5.0)
+			ci.draw_line(Vector2(-r - 10, 5), Vector2(-r, 5), v.accent_color, 5.0)
+			ci.draw_line(Vector2(r, -5), Vector2(r + 15, -5), v.accent_color, 5.0)
+			ci.draw_line(Vector2(r, 5), Vector2(r + 10, 5), v.accent_color, 5.0)
 		UnitVisualData.Accent.CROWN:
 			# Two angled lines above body (boss crown)
 			var top: float = -v.radius
-			ci.draw_line(Vector2(-6, top - 2), Vector2(-3, top - 8), v.accent_color, 2.0)
-			ci.draw_line(Vector2(6, top - 2), Vector2(3, top - 8), v.accent_color, 2.0)
-			ci.draw_line(Vector2(-3, top - 8), Vector2(0, top - 4), v.accent_color, 2.0)
-			ci.draw_line(Vector2(3, top - 8), Vector2(0, top - 4), v.accent_color, 2.0)
+			ci.draw_line(Vector2(-15, top - 5), Vector2(-7.5, top - 20), v.accent_color, 5.0)
+			ci.draw_line(Vector2(15, top - 5), Vector2(7.5, top - 20), v.accent_color, 5.0)
+			ci.draw_line(Vector2(-7.5, top - 20), Vector2(0, top - 10), v.accent_color, 5.0)
+			ci.draw_line(Vector2(7.5, top - 20), Vector2(0, top - 10), v.accent_color, 5.0)

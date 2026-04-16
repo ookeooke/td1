@@ -1,15 +1,13 @@
 extends Node
 
-# Phase 18: routes tap-to-move commands to the active hero. Sits in
-# _unhandled_input so:
-#   - A press inside a UI Backdrop (TowerSpotMenu open) is consumed first
-#     and never reaches us — menu interactions don't move the hero.
-#   - A press intercepted by TowerBarracks rally-placement (_input) is
-#     consumed first as well.
-# We then explicitly skip taps that fall inside any tower spot's tap
-# radius, so opening the build menu doesn't double as a move command.
+# Phase 18: routes tap-to-move commands to the active hero. Listens to
+# EventBus.map_tap_confirmed (dispatched by GameCamera) instead of
+# _unhandled_input, so pan/zoom gestures are never misread as move commands.
+#
+# Connected after SpotInputManager and BaseHero so tower spots and hero
+# selection claim the tap first.
 
-const SPOT_TAP_RADIUS: float = 36.0
+const SPOT_TAP_RADIUS: float = 90.0
 
 @export var hero_path: NodePath
 @export var grid_manager_path: NodePath
@@ -30,27 +28,32 @@ func _ready() -> void:
 		push_error("[HeroInputManager] GridManager not found at %s" % grid_manager_path)
 	if _map == null:
 		push_error("[HeroInputManager] map node not found at %s" % map_path)
+	# Connect last so SpotInputManager and BaseHero get first chance.
+	EventBus.map_tap_confirmed.connect(_on_map_tap)
 
 
-func _unhandled_input(event: InputEvent) -> void:
+func _on_map_tap(screen_pos: Vector2, claim: RefCounted) -> void:
+	if claim.claimed:
+		return
 	if _hero == null or _map == null:
 		return
-	if not (event is InputEventScreenTouch):
-		return
-	if not event.pressed:
-		return
-	# Option B: map taps only move when the hero is armed. Tap on the hero
-	# body is consumed by BaseHero._input before reaching here, so we never
-	# see (de)select presses — only true map taps.
 	if "is_selected" in _hero and not _hero.is_selected:
 		return
-	var world_pos: Vector2 = _map.get_global_transform_with_canvas().affine_inverse() * event.position
+	var world_pos: Vector2 = _map.get_global_transform_with_canvas().affine_inverse() * screen_pos
 	# Skip taps that fall inside a tower spot — those are handled by
 	# SpotInputManager / TowerSpotMenu, not as a move command.
 	if _grid != null:
-		var spot_id: String = _grid.find_nearest_spot(world_pos, SPOT_TAP_RADIUS)
+		var zoom_scale: float = _get_zoom_scale()
+		var spot_id: String = _grid.find_nearest_spot(world_pos, SPOT_TAP_RADIUS * zoom_scale)
 		if spot_id != "":
 			return
 	if _hero.has_method("move_to"):
 		_hero.move_to(world_pos)
-		get_viewport().set_input_as_handled()
+		claim.claimed = true
+
+
+func _get_zoom_scale() -> float:
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam == null:
+		return 1.0
+	return 1.0 / cam.zoom.x

@@ -14,7 +14,7 @@ godot --path . --editor          # Open in editor
 godot --path .                   # Run the game directly
 ```
 
-Entry point: `res://ui/MainMenu.tscn`. Viewport: 375x812 (portrait). Renderer: GL Compatibility (mobile-first). No build system, linter, or test suite — validate by running in the Godot editor.
+Entry point: `res://ui/MainMenu.tscn`. Design viewport: 1920x1080 (landscape). Stretch: `canvas_items` + `keep_height`. Renderer: GL Compatibility (mobile-first). No build system, linter, or test suite — validate by running in the Godot editor.
 
 ---
 
@@ -116,14 +116,30 @@ Every mechanic on top of base stats is an `AbilityData` Resource. Triggers: `ON_
 
 ---
 
+## Camera System
+
+`GameCamera.gd` (Camera2D) sits in Main.tscn with a gesture state machine:
+- **Tap** (< 12px movement, < 300ms) → dispatched via `EventBus.map_tap_confirmed(screen_pos, claim)`
+- **Pan** (single-finger drag > 12px) → camera moves, clamped to `map_bounds`
+- **Pinch zoom** (two fingers) → zoom 0.5x–2.0x, centered on pinch midpoint
+- **Mouse wheel zoom** (PC) → zoom centered on cursor
+- **Double-tap** (two taps within 300ms) → reset zoom to fit full map
+
+Each level sets `map_bounds: Rect2` (exported on Level1.gd). Maps smaller than viewport are centered at 1:1 zoom with no panning. Maps larger than viewport start at 1:1 zoom with panning enabled — player drags to scroll.
+
+**Zoom-scale rule:** All `_draw()` sizes that should stay constant on screen (health bars, floating text, line widths, tap radii) must multiply by `1.0 / camera.zoom.x`. See `_get_zoom_scale()` helper on base_enemy, base_soldier, base_hero, FloatingText, RangePreview.
+
+**Map borders:** Level1._draw() renders mountains (top), cliffs (sides), water (bottom) beyond map_bounds. Background bleeds 3000px in all directions.
+
+---
+
 ## Input Pipeline — Consumption Chain
 
-Touch events flow in this order. Each layer either consumes (`set_input_as_handled()`) or passes through. Getting this wrong causes double-fires or stolen taps.
+Touch events flow through the camera's gesture classifier. Phases 1–3 fire BEFORE the camera sees the event. Phase 4 is replaced by EventBus dispatch.
 
 ```
-1. _input (top-down)
+1. _input (top-down) — claims event before camera
    ├── TowerBarracks._input   — consumes if rally-placement active
-   ├── TowerSpotMenu._input   — swallows release after menu opened
    ├── SkillBar._input        — consumes if skill targeting armed
    └── SpellPanel._input      — consumes if spell targeting armed
 
@@ -134,16 +150,99 @@ Touch events flow in this order. Each layer either consumes (`set_input_as_handl
 3. Area2D picking
    └── TowerBarracks FlagArea — consumes on flag drag
 
-4. _unhandled_input
-   ├── SpotInputManager        — tower_spot_tapped + CONSUMES
-   ├── BaseHero._unhandled_input — toggles selection
-   └── HeroInputManager        — hero.move_to (if selected)
+4. _unhandled_input — GameCamera gesture classifier
+   ├── Pan gesture  → camera pans, event consumed
+   ├── Pinch gesture → camera zooms, event consumed
+   └── Tap confirmed → EventBus.map_tap_confirmed(screen_pos, claim)
+       ├── SpotInputManager — checks tower spots, claims if hit
+       ├── BaseHero         — checks selection radius, claims if hit
+       └── HeroInputManager — hero.move_to (if selected), claims if hit
 ```
 
+**Tap claim pattern:** `map_tap_confirmed` passes a `TapClaim` RefCounted. Handlers check `claim.claimed` and set it to `true` when claiming. Connection order = priority (SpotInputManager first).
+
 **Rules for new input handlers:**
-- Declare which phase (1-4) it runs in.
-- Always `set_input_as_handled()` when claiming an event.
-- Always check `is_input_handled()` in `_input` if competing with same-phase handlers.
+- Phases 1–3: same as before — `set_input_as_handled()` to claim.
+- Phase 4 (map taps): connect to `EventBus.map_tap_confirmed`, check `claim.claimed`.
+- Never add new `_unhandled_input` handlers for touch — they conflict with the camera.
+
+---
+
+## UI on CanvasLayers
+
+All UI is on CanvasLayers, independent of Camera2D. **Must set `follow_viewport_enabled = false`** on every UI CanvasLayer to prevent camera zoom from distorting Control layout.
+
+| Layer | UI |
+|---|---|
+| 0 | HUD (gold, lives, wave, speed, pause) |
+| 6 | SpawnIndicator (screen-edge spawn arrows) |
+| 7 | SpellPanel (bottom-left) |
+| 8 | SkillBar (bottom-right) |
+| 10 | TowerSpotMenu (bottom slide-up) |
+| 20 | PauseMenu, GameOverScreen |
+
+**Safe area:** `SafeAreaMargin.gd` (extends MarginContainer) sits at the root of HUD, SkillBar, and SpellPanel CanvasLayers. Sets `theme_override_constants/margin_*` from `GameState.get_safe_insets()` — Godot's layout engine pushes all children inward. Recalculates on window resize. Safe area math uses `DisplayServer.screen_get_size()` (NOT `window_get_size()`) because `get_display_safe_area()` returns screen-space coordinates.
+
+**SpawnIndicator:** Replaces world-space SpawnMarkers. Projects spawn world positions to screen coordinates via `get_canvas_transform()`, draws arrows at screen edges when off-screen.
+
+---
+
+## Scene Navigation Graph
+
+All transitions use `SceneManager.goto(path)` with fade. WorldMap is the central hub.
+
+```
+MainMenu → WorldMap (hub)
+               ├── LoadoutScreen → Main.tscn (gameplay)
+               │                      ├── PauseMenu → restart (Main.tscn) or quit (WorldMap)
+               │                      └── GameOverScreen → retry (Main.tscn) or continue (WorldMap)
+               ├── UpgradeTree
+               ├── TalentScreen
+               ├── EncyclopediaScreen
+               ├── LeaderboardScreen
+               ├── ShopScreen
+               └── ← back to MainMenu
+```
+
+---
+
+## Status Effects on Enemies
+
+Applied via `BaseEnemy.apply_effect(effect)`. Stored in `_effects: Dictionary` keyed by `effect.id`. Reapplying the same ID refreshes duration. Ticked in `_tick_effects(delta)` — auto-removed when `remaining_time <= 0`.
+
+- **SlowEffect** — multiplies `move_speed` by `(1.0 - slow_factor)`. Stacks by replacement (strongest wins via reapply).
+- **StunEffect** — blocks state changes (enemy stuck in current state). Walking and attacking halt.
+
+Effects modify behavior in `_get_effective_speed()` and state gate checks. Tower upgrades can add on-hit effects via `TowerUpgradeData.on_hit_slow_factor/on_hit_slow_duration`.
+
+---
+
+## Adding New Content — Checklist
+
+**New enemy:**
+1. Create `enemies/data/enemy_foo.tres` (EnemyData) + `visual_foo.tres` (UnitVisualData)
+2. Set `enemy_id = "enemy_foo"` (stable, never rename)
+3. Add abilities as sub-resources if needed (e.g. RegenAbility, explode-on-death)
+4. For flying: set `is_flying = true` (uses EnemyFlying scene). For boss: use BaseBoss + BossPhaseData
+5. Register in `ContentRegistry.gd` → `enemies` array
+6. Reference `enemy_id` in wave `.tres` files
+
+**New tower:**
+1. Create `towers/data/tower_foo.tres` (TowerData)
+2. Set `tower_id = "tower_foo"`, stats, `body_color`, projectile_scene
+3. Add `level_upgrades` (L2, L3) and optionally `level_3_branches` (A, B)
+4. For barracks: set `soldier_scene` + `soldier_data` (uses TowerBarracks scene)
+5. Register in `ContentRegistry.gd` → `towers` array
+
+**New ability:**
+1. Create `systems/abilities/MyAbility.gd` extending `AbilityData`
+2. Override `apply(owner, ctx)`
+3. Add as sub-resource in any unit's `.tres` → `abilities` array
+
+**New hero skill:**
+1. Create `heroes/skills/my_skill_data.gd` extending `SkillData`
+2. Override `apply(hero, target)`
+3. Create `heroes/data/skills/skill_foo.tres` and reference in hero `.tres` → `skills` array
 
 ---
 
@@ -160,6 +259,6 @@ Procedural `_draw()` shapes for all visuals. Data-driven via `UnitVisualData` re
 
 ## Current Status
 
-All 41 build phases complete. QoL features added: tactical pause (build while paused), tower damage tracking, upgrade stat deltas, targeting modes (FIRST/STRONG/WEAK), early wave call with bonus gold, clean view toggle, floating damage numbers.
+All 41 build phases complete. Resolution: 1920x1080 landscape, `keep_height`. Camera system (pan, zoom, gesture classifier, map borders, zoom-scaled drawing). Safe area via MarginContainer + `GameState.get_safe_insets()`. QoL features: tactical pause, tower damage tracking, upgrade stat deltas, targeting modes, early wave call, clean view toggle, floating damage numbers.
 
 Known bugs: none

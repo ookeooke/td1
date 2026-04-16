@@ -152,3 +152,5 @@ func _on_clean_pressed() -> void:
 	var enabled: bool = not VFXSpawner.clean_view
 	EventBus.clean_view_toggled.emit(enabled)
 	clean_button.text = "VFX" if not enabled else "Clean"
+
+

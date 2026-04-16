@@ -7,6 +7,6 @@
 script = ExtResource("1_data")
 enemy_name = "Orc Grunt"
 visual = ExtResource("2_vis")
-move_speed = 70.0
+move_speed = 175.0
 xp_worth = 6
 encyclopedia_entry = "A basic orc. Slow, weak, but comes in numbers."

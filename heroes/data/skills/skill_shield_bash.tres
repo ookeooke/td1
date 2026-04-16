@@ -6,10 +6,10 @@
 script = ExtResource("1_bash")
 skill_name = "Bash"
 skill_id = "shield_bash"
-skill_range = 120.0
+skill_range = 300.0
 damage = 22.0
 damage_type = 0
 cooldown = 10.0
 target_type = 1
-aoe_radius = 70.0
+aoe_radius = 175.0
 description = "Slam the ground: all enemies within a small radius of the target point take physical damage."

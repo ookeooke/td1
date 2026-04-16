@@ -13,12 +13,12 @@ func _draw() -> void:
 		super._draw()
 		return
 	# Legacy fallback: purple body + gray wing bars.
-	draw_circle(Vector2.ZERO, 12.0, Color(0.55, 0.3, 0.75))
-	draw_arc(Vector2.ZERO, 12.0, 0, TAU, 24, Color(0.15, 0.05, 0.2), 2.0)
-	draw_line(Vector2(-22, -2), Vector2(-12, -2), Color(0.8, 0.8, 0.85), 3.0)
-	draw_line(Vector2(12, -2), Vector2(22, -2), Color(0.8, 0.8, 0.85), 3.0)
+	draw_circle(Vector2.ZERO, 30.0, Color(0.55, 0.3, 0.75))
+	draw_arc(Vector2.ZERO, 30.0, 0, TAU, 24, Color(0.15, 0.05, 0.2), 5.0)
+	draw_line(Vector2(-55, -5), Vector2(-30, -5), Color(0.8, 0.8, 0.85), 7.5)
+	draw_line(Vector2(30, -5), Vector2(55, -5), Color(0.8, 0.8, 0.85), 7.5)
 	if _effects.has("slow"):
-		draw_arc(Vector2.ZERO, 19.0, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
+		draw_arc(Vector2.ZERO, 47.5, 0, TAU, 28, Color(0.2, 0.7, 1.0), 7.5)
 	if _effects.has("stun"):
-		draw_arc(Vector2.ZERO, 23.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)
+		draw_arc(Vector2.ZERO, 57.5, 0, TAU, 28, Color(1.0, 0.95, 0.2), 7.5)
 	_draw_health_bar()

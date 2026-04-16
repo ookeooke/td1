@@ -1,91 +1,87 @@
-[gd_scene load_steps=3 format=3 uid="uid://b1td1hud00000"]
+[gd_scene load_steps=4 format=3 uid="uid://b1td1hud00000"]
 
 [ext_resource type="Script" path="res://ui/HUD.gd" id="1_hud"]
 [ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
+[ext_resource type="Script" path="res://ui/SafeAreaMargin.gd" id="3_safe"]
 
 [node name="HUD" type="CanvasLayer"]
+follow_viewport_enabled = false
 script = ExtResource("1_hud")
 
-[node name="Root" type="Control" parent="."]
+[node name="SafeArea" type="MarginContainer" parent="."]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 theme = ExtResource("2_theme")
 mouse_filter = 2
+script = ExtResource("3_safe")
 
-[node name="TopLeft" type="VBoxContainer" parent="Root"]
-layout_mode = 0
-offset_left = 16.0
-offset_top = 12.0
-offset_right = 240.0
-offset_bottom = 160.0
+[node name="TopLeft" type="VBoxContainer" parent="SafeArea"]
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
 theme_override_constants/separation = 4
 
-[node name="GoldLabel" type="Label" parent="Root/TopLeft"]
+[node name="GoldLabel" type="Label" parent="SafeArea/TopLeft"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Gold: --"
 theme_override_font_sizes/font_size = 22
 
-[node name="LivesLabel" type="Label" parent="Root/TopLeft"]
+[node name="LivesLabel" type="Label" parent="SafeArea/TopLeft"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Lives: --"
 theme_override_font_sizes/font_size = 22
 
-[node name="WaveLabel" type="Label" parent="Root/TopLeft"]
+[node name="WaveLabel" type="Label" parent="SafeArea/TopLeft"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Wave: --"
 theme_override_font_sizes/font_size = 22
 
-[node name="HeroLabel" type="Label" parent="Root/TopLeft"]
+[node name="HeroLabel" type="Label" parent="SafeArea/TopLeft"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Hero: --"
 theme_override_font_sizes/font_size = 20
 
-[node name="CountdownLabel" type="Label" parent="Root/TopLeft"]
+[node name="CountdownLabel" type="Label" parent="SafeArea/TopLeft"]
 unique_name_in_owner = true
 layout_mode = 2
 text = ""
 theme_override_font_sizes/font_size = 18
 
-[node name="SendWaveButton" type="Button" parent="Root/TopLeft"]
+[node name="SendWaveButton" type="Button" parent="SafeArea/TopLeft"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 50)
 layout_mode = 2
 text = "Send Wave!"
 theme_override_font_sizes/font_size = 18
 
-[node name="TopRight" type="HBoxContainer" parent="Root"]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -250.0
-offset_top = 12.0
-offset_right = -16.0
-offset_bottom = 72.0
+[node name="TopRight" type="HBoxContainer" parent="SafeArea"]
+layout_mode = 2
+size_flags_horizontal = 10
+size_flags_vertical = 0
 theme_override_constants/separation = 8
 alignment = 2
 
-[node name="CleanButton" type="Button" parent="Root/TopRight"]
+[node name="CleanButton" type="Button" parent="SafeArea/TopRight"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(60, 60)
 layout_mode = 2
 text = "VFX"
 theme_override_font_sizes/font_size = 16
 
-[node name="SpeedButton" type="Button" parent="Root/TopRight"]
+[node name="SpeedButton" type="Button" parent="SafeArea/TopRight"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(80, 60)
 layout_mode = 2
 text = "1x"
 theme_override_font_sizes/font_size = 22
 
-[node name="PauseButton" type="Button" parent="Root/TopRight"]
+[node name="PauseButton" type="Button" parent="SafeArea/TopRight"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(80, 60)
 layout_mode = 2

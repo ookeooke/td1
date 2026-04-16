@@ -67,6 +67,10 @@ signal permanent_upgrade_purchased(upgrade_id)
 signal skill_point_spent(skill_id)
 signal leaderboard_score_submitted(score)
 
+# Camera
+signal map_tap_confirmed(screen_pos, claim)
+signal camera_focus_requested(world_pos, duration)
+
 # Game flow
 signal game_over()
 signal game_won()

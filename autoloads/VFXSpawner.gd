@@ -47,7 +47,7 @@ func _on_hero_xp_gained(amount: int) -> void:
 	var parent: Node = _get_world_parent()
 	if parent == null:
 		return
-	_FloatingTextScript.spawn(parent, "+%d XP" % amount, Color(0.2, 0.7, 1.0), _hero.global_position + Vector2(0, -20))
+	_FloatingTextScript.spawn(parent, "+%d XP" % amount, Color(0.2, 0.7, 1.0), _hero.global_position + Vector2(0, -50))
 
 
 func _on_game_over() -> void:

@@ -10,9 +10,9 @@ class_name HeroData
 
 @export var max_health: int = 100
 @export var attack_damage: float = 10.0
-@export var attack_range: float = 60.0
+@export var attack_range: float = 150.0
 @export var attack_speed: float = 1.0
-@export var move_speed: float = 110.0
+@export var move_speed: float = 275.0
 @export var armor: float = 0.2
 @export var magic_resist: float = 0.0
 @export var damage_type: int = 0  # DamageCalculator.DamageType.PHYSICAL

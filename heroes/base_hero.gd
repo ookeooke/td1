@@ -17,18 +17,18 @@ class_name BaseHero
 
 enum State { IDLE, MOVING, COMBAT, DEAD }
 
-const HP_BAR_SIZE: Vector2 = Vector2(36.0, 5.0)
-const HP_BAR_Y_OFFSET: float = -22.0
-const MOVE_REACHED_TOLERANCE: float = 4.0
+const HP_BAR_SIZE: Vector2 = Vector2(90.0, 13.0)
+const HP_BAR_Y_OFFSET: float = -55.0
+const MOVE_REACHED_TOLERANCE: float = 10.0
 # Tap-to-select hit radius around the hero body (slightly larger than the
-# 20×20 visual square so it's finger-friendly).
-const SELECT_TAP_RADIUS: float = 22.0
-const SELECTION_RING_RADIUS: float = 18.0
+# 50×50 visual square so it's finger-friendly).
+const SELECT_TAP_RADIUS: float = 55.0
+const SELECTION_RING_RADIUS: float = 45.0
 # Lunge animation — hero hops a few px toward its target on every attack
 # tick and snaps back. Triangle-wave easing computed analytically; no Tween
 # node allocated (cheaper, and a new attack just resets the clock).
 const LUNGE_DURATION: float = 0.12
-const LUNGE_DISTANCE: float = 7.0
+const LUNGE_DISTANCE: float = 18.0
 
 @export var data: HeroData
 
@@ -96,6 +96,8 @@ func _ready() -> void:
 		for talent in data.talents:
 			if talent != null and talent.talent_id in purchased_ids and talent.ability != null:
 				_ability_host.add_ability(talent.ability.duplicate())
+	# Listen for confirmed taps from GameCamera's gesture classifier.
+	EventBus.map_tap_confirmed.connect(_on_map_tap)
 	# Deferred so sibling nodes (HUD, Main) have finished _ready() and
 	# connected to hero_spawned before we fire it. Without this, Main.tscn
 	# sibling-order has HUD readying AFTER the hero, so the initial Lv/XP
@@ -263,25 +265,26 @@ func set_selected(value: bool) -> void:
 	queue_redraw()
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	# Tap-on-hero distance check (no Area2D picking — flaky with runtime
-	# shape sizing). Uses _unhandled_input rather than _input so that:
-	#  - TowerSpotMenu's Backdrop (GUI phase) can consume taps first while
-	#    it's open, keeping the menu modal,
-	#  - SpotInputManager (earlier in tree order) can consume taps that
-	#    land on a tower spot, so a hero standing on/near a spot doesn't
-	#    steal the tap away from the build/sell menu.
+func _on_map_tap(screen_pos: Vector2, claim: RefCounted) -> void:
+	# Tap-on-hero distance check. Connected after SpotInputManager so tower
+	# spots claim the tap first when the hero stands on/near a spot.
+	if claim.claimed:
+		return
 	if state == State.DEAD:
 		return
-	if not (event is InputEventScreenTouch):
-		return
-	if not event.pressed:
-		return
-	var local: Vector2 = get_global_transform_with_canvas().affine_inverse() * event.position
-	if local.length() > SELECT_TAP_RADIUS:
+	var local: Vector2 = get_global_transform_with_canvas().affine_inverse() * screen_pos
+	var zoom_scale: float = _get_zoom_scale()
+	if local.length() > SELECT_TAP_RADIUS * zoom_scale:
 		return
 	set_selected(not is_selected)
-	get_viewport().set_input_as_handled()
+	claim.claimed = true
+
+
+func _get_zoom_scale() -> float:
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam == null:
+		return 1.0
+	return 1.0 / cam.zoom.x
 
 
 func _physics_process(delta: float) -> void:
@@ -410,7 +413,7 @@ func take_damage(amount: float, type: int, source: Node = null) -> void:
 	if final > 0.0:
 		var parent: Node = get_tree().current_scene
 		if parent != null:
-			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.2, 0.2), global_position + Vector2(0, -24), 15)
+			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.2, 0.2), global_position + Vector2(0, -60), 36)
 	queue_redraw()
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_TAKEN, {"source": source, "amount": final})
@@ -431,14 +434,15 @@ func _die() -> void:
 func _draw() -> void:
 	# Skill targeting range circle (Phase 20) — drawn first so the body
 	# and selection ring sit on top of the faint fill.
+	var zs: float = _get_zoom_scale()
 	if _skill_range_preview > 0.0:
 		draw_circle(Vector2.ZERO, _skill_range_preview, Color(1.0, 0.9, 0.3, 0.08))
-		draw_arc(Vector2.ZERO, _skill_range_preview, 0.0, TAU, 48, Color(1.0, 0.9, 0.3, 0.85), 2.5)
+		draw_arc(Vector2.ZERO, _skill_range_preview, 0.0, TAU, 48, Color(1.0, 0.9, 0.3, 0.85), 2.5 * zs)
 	# Selection ring sits on the ground (no lunge) so it reads as a marker
 	# under the unit, not as part of the body. Drawn first so the body
 	# covers the inside of the ring.
 	if is_selected:
-		draw_arc(Vector2.ZERO, SELECTION_RING_RADIUS, 0, TAU, 32, Color(1.0, 0.95, 0.3, 0.85), 2.5)
+		draw_arc(Vector2.ZERO, SELECTION_RING_RADIUS, 0, TAU, 32, Color(1.0, 0.95, 0.3, 0.85), 2.5 * zs)
 	# Body + accent translated by the lunge offset.
 	var off: Vector2 = _lunge_offset()
 	if data != null and data.visual != null:
@@ -451,9 +455,9 @@ func _draw() -> void:
 		var body_color: Color = Color(0.3, 0.4, 0.85) if is_magic else Color(0.85, 0.7, 0.2)
 		var outline_color: Color = Color(0.1, 0.12, 0.3) if is_magic else Color(0.2, 0.15, 0.05)
 		var accent_color: Color = Color(0.6, 0.7, 1.0) if is_magic else Color(0.9, 0.9, 0.95)
-		draw_rect(Rect2(-10, -10, 20, 20), body_color)
-		draw_rect(Rect2(-10, -10, 20, 20), outline_color, false, 2.0)
-		draw_line(Vector2(0, -10), Vector2(0, -16), accent_color, 2.5)
+		draw_rect(Rect2(-25, -25, 50, 50), body_color)
+		draw_rect(Rect2(-25, -25, 50, 50), outline_color, false, 4.0)
+		draw_line(Vector2(0, -25), Vector2(0, -40), accent_color, 5.0)
 		if off != Vector2.ZERO:
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_health_bar()
@@ -467,9 +471,12 @@ func _draw_health_bar() -> void:
 		return
 	if current_health >= max_hp:
 		return
+	var zs: float = _get_zoom_scale()
+	var bar_size: Vector2 = HP_BAR_SIZE * zs
+	var bar_y: float = HP_BAR_Y_OFFSET * zs
 	var pct: float = clampf(float(current_health) / float(max_hp), 0.0, 1.0)
-	var origin: Vector2 = Vector2(-HP_BAR_SIZE.x * 0.5, HP_BAR_Y_OFFSET)
-	draw_rect(Rect2(origin, HP_BAR_SIZE), Color(0.12, 0.12, 0.12))
+	var origin: Vector2 = Vector2(-bar_size.x * 0.5, bar_y)
+	draw_rect(Rect2(origin, bar_size), Color(0.12, 0.12, 0.12))
 	if pct > 0.0:
-		draw_rect(Rect2(origin, Vector2(HP_BAR_SIZE.x * pct, HP_BAR_SIZE.y)), Color(0.3, 0.9, 0.3))
-	draw_rect(Rect2(origin, HP_BAR_SIZE), Color(0, 0, 0), false, 1.0)
+		draw_rect(Rect2(origin, Vector2(bar_size.x * pct, bar_size.y)), Color(0.3, 0.9, 0.3))
+	draw_rect(Rect2(origin, bar_size), Color(0, 0, 0), false, 1.0)

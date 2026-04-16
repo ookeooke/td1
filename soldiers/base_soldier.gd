@@ -10,12 +10,12 @@ class_name BaseSoldier
 
 enum State { MOVING, BLOCKING, DEAD }
 
-const HP_BAR_SIZE: Vector2 = Vector2(22.0, 3.0)
-const HP_BAR_Y_OFFSET: float = -16.0
+const HP_BAR_SIZE: Vector2 = Vector2(55.0, 8.0)
+const HP_BAR_Y_OFFSET: float = -40.0
 # Lunge animation — same shape as the hero's. Slightly smaller distance
 # since the militia square is half the hero's footprint.
 const LUNGE_DURATION: float = 0.12
-const LUNGE_DISTANCE: float = 5.0
+const LUNGE_DISTANCE: float = 12.0
 
 @export var data: Resource  # SoldierData — typed loosely until Godot indexes the class_name
 
@@ -163,7 +163,7 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 	if final > 0.0:
 		var parent: Node = get_tree().current_scene
 		if parent != null:
-			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.85, 0.2), global_position + Vector2(0, -16), 13)
+			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.85, 0.2), global_position + Vector2(0, -40), 26)
 	queue_redraw()
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_TAKEN, {"source": source, "amount": final})
@@ -191,8 +191,8 @@ func _draw() -> void:
 		# Legacy fallback.
 		if off != Vector2.ZERO:
 			draw_set_transform(off, 0.0, Vector2.ONE)
-		draw_rect(Rect2(-6, -6, 12, 12), Color(0.8, 0.8, 0.2))
-		draw_rect(Rect2(-6, -6, 12, 12), Color(0.3, 0.25, 0.05), false, 1.5)
+		draw_rect(Rect2(-15, -15, 30, 30), Color(0.8, 0.8, 0.2))
+		draw_rect(Rect2(-15, -15, 30, 30), Color(0.3, 0.25, 0.05), false, 3.0)
 		if off != Vector2.ZERO:
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_health_bar()
@@ -204,9 +204,19 @@ func _draw_health_bar() -> void:
 		return
 	if current_health >= max_hp:
 		return
+	var zs: float = _get_zoom_scale()
+	var bar_size: Vector2 = HP_BAR_SIZE * zs
+	var bar_y: float = HP_BAR_Y_OFFSET * zs
 	var pct: float = clampf(float(current_health) / float(max_hp), 0.0, 1.0)
-	var origin: Vector2 = Vector2(-HP_BAR_SIZE.x * 0.5, HP_BAR_Y_OFFSET)
-	draw_rect(Rect2(origin, HP_BAR_SIZE), Color(0.12, 0.12, 0.12))
+	var origin: Vector2 = Vector2(-bar_size.x * 0.5, bar_y)
+	draw_rect(Rect2(origin, bar_size), Color(0.12, 0.12, 0.12))
 	if pct > 0.0:
-		draw_rect(Rect2(origin, Vector2(HP_BAR_SIZE.x * pct, HP_BAR_SIZE.y)), Color(0.3, 0.9, 0.3))
-	draw_rect(Rect2(origin, HP_BAR_SIZE), Color(0, 0, 0), false, 1.0)
+		draw_rect(Rect2(origin, Vector2(bar_size.x * pct, bar_size.y)), Color(0.3, 0.9, 0.3))
+	draw_rect(Rect2(origin, bar_size), Color(0, 0, 0), false, 1.0)
+
+
+func _get_zoom_scale() -> float:
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam == null:
+		return 1.0
+	return 1.0 / cam.zoom.x

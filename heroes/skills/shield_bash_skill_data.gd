@@ -10,7 +10,7 @@ class_name ShieldBashSkillData
 
 const _SlowEffectScript: Script = preload("res://systems/SlowEffect.gd")
 
-@export var aoe_radius: float = 70.0
+@export var aoe_radius: float = 175.0
 # Optional: apply a slow to each enemy hit. Leave at 0 for pure-damage AoE.
 @export_range(0.0, 1.0) var on_hit_slow_factor: float = 0.0
 @export var on_hit_slow_duration: float = 0.0

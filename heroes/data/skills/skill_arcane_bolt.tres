@@ -6,7 +6,7 @@
 script = ExtResource("1_slash")
 skill_name = "Arcane Bolt"
 skill_id = "arcane_bolt"
-skill_range = 140.0
+skill_range = 350.0
 damage = 35.0
 damage_type = 1
 cooldown = 5.0

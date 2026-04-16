@@ -8,12 +8,17 @@
 [ext_resource type="PackedScene" uid="uid://c70rgmgd86rq6" path="res://ui/RangePreview.tscn" id="6_range"]
 [ext_resource type="PackedScene" uid="uid://ct8ylftl7uafj" path="res://ui/GameOverScreen.tscn" id="7_gameover"]
 [ext_resource type="Script" path="res://heroes/HeroInputManager.gd" id="9_heroinput"]
+[ext_resource type="Script" path="res://map/GameCamera.gd" id="13_camera"]
 [ext_resource type="PackedScene" uid="uid://b1td1skillbar" path="res://ui/SkillBar.tscn" id="10_skillbar"]
 [ext_resource type="PackedScene" uid="uid://b1td1spellpanel" path="res://ui/SpellPanel.tscn" id="11_spellpanel"]
 [ext_resource type="PackedScene" uid="uid://ct8yuf20wlabe" path="res://ui/PauseMenu.tscn" id="12_pause"]
+[ext_resource type="Script" path="res://ui/SpawnIndicator.gd" id="14_spawnindicator"]
 
 [node name="Main" type="Node2D" unique_id=2036122815]
 script = ExtResource("1_main")
+
+[node name="GameCamera" type="Camera2D" parent="."]
+script = ExtResource("13_camera")
 
 [node name="Level1" parent="." unique_id=561473782 instance=ExtResource("2_level")]
 
@@ -42,5 +47,16 @@ map_path = NodePath("../Level1")
 visible = false
 
 [node name="GameOverScreen" parent="." instance=ExtResource("7_gameover")]
+
+[node name="SpawnIndicator" type="CanvasLayer" parent="."]
+follow_viewport_enabled = false
+script = ExtResource("14_spawnindicator")
+
+[node name="DrawLayer" type="Control" parent="SpawnIndicator"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
 
 [node name="PauseMenu" parent="." instance=ExtResource("12_pause")]

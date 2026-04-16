@@ -6,12 +6,12 @@
 script = ExtResource("1_bash")
 skill_name = "Frost Nova"
 skill_id = "frost_nova"
-skill_range = 100.0
+skill_range = 250.0
 damage = 18.0
 damage_type = 1
 cooldown = 12.0
 target_type = 1
-aoe_radius = 90.0
+aoe_radius = 225.0
 on_hit_slow_factor = 0.6
 on_hit_slow_duration = 3.0
 description = "Freezing burst. Damages and slows all enemies in a wide radius."

@@ -7,7 +7,7 @@
 script = ExtResource("1_reinforce")
 soldier_scene = ExtResource("2_soldier")
 spread_radius = 45.0
-spell_id = "reinforcements"
+spell_id = "spell_reinforcements"
 spell_name = "Recruit"
 radius = 0.0
 damage_type = 0

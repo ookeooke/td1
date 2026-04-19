@@ -69,7 +69,7 @@ func _add_product_entry(product: Resource) -> void:
 	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD
 	info.add_child(desc_label)
 
-	var is_owned: bool = UnlockManager.is_unlocked(product.unlock_id)
+	var is_owned: bool = _is_product_unlocked(product)
 	var btn := Button.new()
 	btn.custom_minimum_size = Vector2(100, 60)
 	btn.set("theme_override_font_sizes/font_size", 18)
@@ -86,3 +86,16 @@ func _add_product_entry(product: Resource) -> void:
 
 func _on_buy(product: Resource) -> void:
 	PurchaseManager.purchase(product.product_id, product.unlock_id)
+
+
+# Dispatch to UnlockManager's type-specific checker based on the product's
+# declared unlock_type. Prevents the hero/tower id-collision bug class.
+func _is_product_unlocked(product: Resource) -> bool:
+	match product.unlock_type:
+		ProductData.UnlockType.HERO:
+			return UnlockManager.is_hero_unlocked(product.unlock_id)
+		ProductData.UnlockType.TOWER:
+			return UnlockManager.is_tower_unlocked(product.unlock_id)
+		ProductData.UnlockType.SPELL:
+			return UnlockManager.is_spell_unlocked(product.unlock_id)
+	return false

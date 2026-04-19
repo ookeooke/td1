@@ -52,6 +52,13 @@ var _last_tap_pos: Vector2 = Vector2.ZERO
 var _velocity: Vector2 = Vector2.ZERO
 var _momentum_active: bool = false
 
+# Shake — additive offset perturbation that decays to zero. Applied every
+# _process frame. Tactical pause freezes shake because _process respects
+# PROCESS_MODE_INHERIT.
+var _shake_t: float = 0.0
+var _shake_dur0: float = 0.0
+var _shake_amp: float = 0.0
+
 # Map bounds — set by the level (Level1.map_bounds). Defaults to the
 # standard 375x812 design viewport.
 var map_bounds: Rect2 = Rect2(0, 0, 1920, 1080)
@@ -74,6 +81,26 @@ func _ready() -> void:
 func _on_viewport_resized() -> void:
 	_compute_fit_zoom()
 	_clamp_to_bounds()
+
+
+func _process(delta: float) -> void:
+	if _shake_t <= 0.0:
+		if offset != Vector2.ZERO:
+			offset = Vector2.ZERO
+		return
+	_shake_t = maxf(0.0, _shake_t - delta)
+	var decay: float = _shake_t / maxf(0.001, _shake_dur0)
+	offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake_amp * decay
+
+
+func add_shake(amount: float, duration: float) -> void:
+	# Only overwrite the current shake if the new one is stronger, or the
+	# previous is almost done — stacking tiny shakes otherwise turns into a
+	# constant jitter during sustained boss damage.
+	if amount > _shake_amp or _shake_t < 0.05:
+		_shake_amp = amount
+		_shake_t = duration
+		_shake_dur0 = duration
 
 
 func configure_bounds(bounds: Rect2) -> void:

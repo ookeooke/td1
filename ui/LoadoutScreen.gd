@@ -125,12 +125,12 @@ func _refresh_hero_info() -> void:
 	# by a progress reset). Fall back to first unlocked hero.
 	var selected: Resource = null
 	for h in heroes:
-		if h.hero_id == GameState.selected_hero_id and UnlockManager.is_unlocked(h.hero_id):
+		if h.hero_id == GameState.selected_hero_id and UnlockManager.is_hero_unlocked(h.hero_id):
 			selected = h
 			break
 	if selected == null:
 		for h in heroes:
-			if UnlockManager.is_unlocked(h.hero_id):
+			if UnlockManager.is_hero_unlocked(h.hero_id):
 				selected = h
 				break
 	if selected == null:
@@ -165,7 +165,7 @@ func _on_hero_title_tapped() -> void:
 	for offset in range(1, heroes.size()):
 		var try_idx: int = (current_idx + offset) % heroes.size()
 		var candidate: Resource = heroes[try_idx]
-		if UnlockManager.is_unlocked(candidate.hero_id):
+		if UnlockManager.is_hero_unlocked(candidate.hero_id):
 			GameState.selected_hero_id = candidate.hero_id
 			_refresh_hero_info()
 			return

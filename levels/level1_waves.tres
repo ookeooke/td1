@@ -7,6 +7,8 @@
 [ext_resource type="PackedScene" uid="uid://b1td1flysc002" path="res://enemies/EnemyFlying.tscn" id="5_fly"]
 [ext_resource type="PackedScene" uid="uid://b1td1healsc02" path="res://enemies/EnemyHealer.tscn" id="6_heal"]
 [ext_resource type="PackedScene" uid="uid://b1td1boss1scn" path="res://enemies/bosses/Boss1.tscn" id="7_boss"]
+[ext_resource type="PackedScene" uid="uid://b1td1armorsc1" path="res://enemies/EnemyArmored.tscn" id="8_armor"]
+[ext_resource type="PackedScene" uid="uid://b1td1scoutsc1" path="res://enemies/EnemyScout.tscn" id="9_scout"]
 
 [sub_resource type="Resource" id="Spawn_W1_Left"]
 script = ExtResource("3_spawn")
@@ -92,6 +94,60 @@ spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W4_Boss"), SubResourc
 countdown = 5.0
 bounty = 80
 
+[sub_resource type="Resource" id="Spawn_W5_LeftBasic"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("4_basic")
+count = 12
+interval = 0.6
+
+[sub_resource type="Resource" id="Spawn_W5_LeftArmor"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("8_armor")
+count = 4
+interval = 1.4
+start_delay = 3.0
+
+[sub_resource type="Resource" id="Spawn_W5_RightScouts"]
+script = ExtResource("3_spawn")
+path_id = "right"
+enemy_scene = ExtResource("9_scout")
+count = 8
+interval = 0.5
+start_delay = 1.5
+
+[sub_resource type="Resource" id="Spawn_W5_RightArmor"]
+script = ExtResource("3_spawn")
+path_id = "right"
+enemy_scene = ExtResource("8_armor")
+count = 3
+interval = 1.8
+start_delay = 6.0
+
+[sub_resource type="Resource" id="Spawn_W5_TopFly"]
+script = ExtResource("3_spawn")
+path_id = "top"
+enemy_scene = ExtResource("5_fly")
+count = 6
+start_delay = 2.5
+
+[sub_resource type="Resource" id="Spawn_W5_Healer"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("6_heal")
+count = 2
+interval = 4.0
+start_delay = 5.0
+
+[sub_resource type="Resource" id="Spawn_W5_Boss"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("7_boss")
+start_delay = 8.0
+
+[sub_resource type="Resource" id="Wave5"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W5_LeftBasic"), SubResource("Spawn_W5_LeftArmor"), SubResource("Spawn_W5_RightScouts"), SubResource("Spawn_W5_RightArmor"), SubResource("Spawn_W5_TopFly"), SubResource("Spawn_W5_Healer"), SubResource("Spawn_W5_Boss")])
+countdown = 6.0
+bounty = 120
+
 [resource]
 script = ExtResource("1_list")
-waves = Array[ExtResource("2_wave")]([SubResource("Wave1"), SubResource("Wave2"), SubResource("Wave3"), SubResource("Wave4")])
+waves = Array[ExtResource("2_wave")]([SubResource("Wave1"), SubResource("Wave2"), SubResource("Wave3"), SubResource("Wave4"), SubResource("Wave5")])

@@ -350,6 +350,7 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 	current_health -= int(ceil(final))
 	if final > 0.0:
 		_hit_flash_t = HIT_FLASH_DURATION
+		EventBus.hit_landed.emit(self, source, final, type)
 		var parent: Node = get_tree().current_scene
 		if parent != null:
 			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.85, 0.2), global_position + Vector2(0, -40), 26)
@@ -367,7 +368,15 @@ func _die() -> void:
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_DEATH, {})
 	EventBus.soldier_died.emit(self)
-	queue_free()
+	# Fall-over death — tip the body ~90° and fade out over 0.4 s before
+	# freeing. Tween inherits pause mode so tactical pause freezes it.
+	var tilt_dir: float = 1.0 if randf() < 0.5 else -1.0
+	var facing: Vector2 = _lunge_dir if _lunge_dir.length_squared() > 0.0001 else Vector2.RIGHT
+	EventBus.soldier_fell.emit(self, facing)
+	var tw: Tween = create_tween().set_parallel(true)
+	tw.tween_property(self, "rotation", PI * 0.5 * tilt_dir, 0.35)
+	tw.tween_property(self, "modulate:a", 0.0, 0.4).set_delay(0.15)
+	tw.chain().tween_callback(queue_free)
 
 
 func _draw() -> void:
@@ -378,7 +387,7 @@ func _draw() -> void:
 			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, off)
 		if _lunge_t > 0.0:
 			var t01: float = 1.0 - (_lunge_t / LUNGE_DURATION)
-			UnitVisualDrawer.draw_swing_arc(self, data.visual, _lunge_dir, t01)
+			UnitVisualDrawer.draw_swing_arc_trail(self, data.visual, _lunge_dir, t01)
 	else:
 		# Legacy fallback.
 		if off != Vector2.ZERO:

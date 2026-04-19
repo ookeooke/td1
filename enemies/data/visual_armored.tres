@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="UnitVisualData" format=3 uid="uid://b1td1armorvis"]
+
+[ext_resource type="Script" uid="uid://uarc3rqaigxt" path="res://systems/UnitVisualData.gd" id="1_vis"]
+
+[resource]
+script = ExtResource("1_vis")
+body_color = Color(0.45, 0.35, 0.3, 1)
+outline_color = Color(0.12, 0.1, 0.08, 1)
+accent_color = Color(0.75, 0.72, 0.68, 1)
+accent_type = 1
+radius = 40.0
+outline_width = 6.0

@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("1_fireball")
-spell_id = "fireball"
+spell_id = "spell_fireball"
 spell_name = "Fireball"
 radius = 225.0
 damage = 55.0

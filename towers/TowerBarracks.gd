@@ -217,10 +217,14 @@ func _spawn_soldier(slot_index: int) -> void:
 	var soldier: CharacterBody2D = data.soldier_scene.instantiate()
 	# Override scene-default data with the current level's effective data so
 	# upgraded barracks spawn the stronger SoldierData. Set BEFORE add_child
-	# so BaseSoldier._ready sees the right stats.
+	# so BaseSoldier._ready sees the right stats. Duplicate the resource so
+	# we can stamp a per-squad accent band without mutating the shared .tres.
 	var sd: Resource = _effective_soldier_data()
 	if sd != null:
-		soldier.data = sd
+		var personal: Resource = sd.duplicate(true)
+		if personal.visual != null:
+			personal.visual.accent_band_color = _squad_color()
+		soldier.data = personal
 	add_child(soldier)
 	soldier.global_position = global_position
 	if soldier.has_method("setup"):
@@ -234,6 +238,16 @@ func _spawn_soldier(slot_index: int) -> void:
 # soldier so the squad shares one engagement zone center (not per-slot).
 func _flag_world_pos() -> Vector2:
 	return global_position + _flag_offset
+
+
+# Deterministic per-barracks accent color derived from the spot's world
+# position. Stable across save/load because spot positions are fixed by the
+# level. Drawn as a thin ring inside each soldier's body outline so players
+# can tell which barracks owns which soldier in a crowded lane.
+func _squad_color() -> Color:
+	var seed: int = int(roundf(global_position.x)) * 73856093 ^ int(roundf(global_position.y)) * 19349663
+	var hue: float = float(seed & 0xFFFF) / 65535.0
+	return Color.from_hsv(hue, 0.65, 0.95)
 
 
 func _on_soldier_died(soldier: Node) -> void:

@@ -117,7 +117,7 @@ func _open_build_ring(world_pos: Vector2) -> void:
 	for data in ContentRegistry.towers:
 		if data == null:
 			continue
-		if not UnlockManager.is_unlocked(data.tower_id):
+		if not UnlockManager.is_tower_unlocked(data.tower_id):
 			continue
 		buildable.append(data)
 	if buildable.is_empty():

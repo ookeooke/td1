@@ -57,7 +57,7 @@ ability = SubResource("MageBonusDmg")
 [resource]
 script = ExtResource("1_data")
 hero_name = "Mage"
-hero_id = "mage"
+hero_id = "hero_mage"
 requires_unlock = true
 max_health = 40
 attack_damage = 4.0

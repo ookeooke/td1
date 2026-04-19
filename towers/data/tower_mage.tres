@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_data")
 tower_name = "Mage Tower"
-tower_id = "mage"
+tower_id = "tower_mage"
 damage = 8.0
 damage_type = 1
 attack_range = 350.0

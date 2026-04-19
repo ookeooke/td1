@@ -38,6 +38,8 @@ var _combat_cooldown: float = 0.0
 var _last_damage_source: Node = null
 # Seconds remaining on the on-hit white flash (decays in _physics_process).
 var _hit_flash_t: float = 0.0
+# Accumulates while any status effect is active so the dashed rings rotate.
+var _status_ring_t: float = 0.0
 
 # Phase 20.5: per-unit ability dispatcher. Populated from data.abilities
 # in _ready(); ticked each physics frame; triggered on death so
@@ -82,6 +84,9 @@ func _physics_process(delta: float) -> void:
 	_tick_effects(delta)
 	if _hit_flash_t > 0.0:
 		_hit_flash_t = maxf(0.0, _hit_flash_t - delta)
+		queue_redraw()
+	if not _effects.is_empty():
+		_status_ring_t += delta
 		queue_redraw()
 	if _ability_host != null:
 		_ability_host.tick(delta)
@@ -217,9 +222,14 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 	var final: float = DamageCalculator.calculate_damage(amount, type, self)
 	# Cap to remaining HP so stat tracking isn't inflated by overkill.
 	var actual: float = minf(final, float(current_health))
+	# Phase 46: attribute damage to the source for the victory-screen
+	# leaderboard. record_round_damage filters by class (tower/hero/soldier).
+	GameState.record_round_damage(source, actual)
 	current_health -= int(ceil(final))
 	if final > 0.0:
 		_hit_flash_t = HIT_FLASH_DURATION
+		EventBus.hit_landed.emit(self, source, final, type)
+		EventBus.enemy_damaged.emit(self, final, type)
 	if source != null:
 		_last_damage_source = source
 	# Floating damage number — shows raw hit, not capped, so players see
@@ -276,22 +286,41 @@ func _despawn() -> void:
 
 
 func _draw() -> void:
+	var inhale: Vector2 = _inhale_offset()
 	if data != null and data.visual != null:
-		UnitVisualDrawer.draw_unit(self, data.visual)
+		UnitVisualDrawer.draw_unit(self, data.visual, inhale)
 		if _hit_flash_t > 0.0:
-			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION)
+			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, inhale)
 	else:
 		draw_circle(Vector2.ZERO, 35.0, Color(0.75, 0.2, 0.2))
 		draw_arc(Vector2.ZERO, 35.0, 0, TAU, 24, Color(0.15, 0.05, 0.05), 2.0)
-	# Status-effect overlay rings. Stun drawn outermost so it's visible even
-	# if a slow is also active.
+	# Status-effect overlay rings — dashed + rotating so active effects read as
+	# animated rather than static. Stun is outermost and spins opposite to slow.
 	var ring_r: float = (data.visual.radius if data != null and data.visual != null else 35.0) + 12.0
 	if _effects.has("slow"):
-		draw_arc(Vector2.ZERO, ring_r, 0, TAU, 28, Color(0.2, 0.7, 1.0), 5.0)
+		UnitVisualDrawer.draw_status_ring(self, ring_r, Color(0.2, 0.7, 1.0), 8, _status_ring_t * 1.5, 5.0)
 	if _effects.has("stun"):
-		draw_arc(Vector2.ZERO, ring_r + 10.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 5.0)
+		UnitVisualDrawer.draw_status_ring(self, ring_r + 10.0, Color(1.0, 0.95, 0.2), 6, -_status_ring_t * 2.0, 5.0)
 	_draw_attack_telegraph(ring_r)
 	_draw_health_bar()
+
+
+# Body pulls back slightly in the last 150 ms before a counter-attack strike,
+# so the forward lunge reads as release. Returns zero outside the telegraph
+# window or when no valid focus exists.
+func _inhale_offset() -> Vector2:
+	if state != State.COMBAT or _blockers.is_empty():
+		return Vector2.ZERO
+	if _combat_cooldown <= 0.0 or _combat_cooldown > ATTACK_TELEGRAPH_DURATION:
+		return Vector2.ZERO
+	var focus: Node = _blockers[0]
+	if focus == null or not is_instance_valid(focus):
+		return Vector2.ZERO
+	var dir: Vector2 = focus.global_position - global_position
+	if dir.length_squared() < 0.01:
+		return Vector2.ZERO
+	var t: float = smoothstep(ATTACK_TELEGRAPH_DURATION, 0.0, _combat_cooldown)
+	return -dir.normalized() * 4.0 * t
 
 
 # Red warning arc drawn on the side of the enemy facing its blocker during

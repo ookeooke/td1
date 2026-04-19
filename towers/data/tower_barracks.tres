@@ -18,7 +18,7 @@ soldier_rally_range = 450.0
 [resource]
 script = ExtResource("1_data")
 tower_name = "Barracks"
-tower_id = "barracks"
+tower_id = "tower_barracks"
 damage = 0.0
 attack_range = 0.0
 attack_speed = 0.0

@@ -5,6 +5,20 @@ extends Node
 
 const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
 const _DeathVFXScript := preload("res://vfx/DeathVFX.gd")
+const _HitSparkVFXScript := preload("res://vfx/HitSparkVFX.gd")
+const _EnemyDeathDriftScript := preload("res://vfx/EnemyDeathDrift.gd")
+const _SkillCastFlareScript := preload("res://vfx/SkillCastFlare.gd")
+
+# Skill-name → flare color. Unlisted names fall back to yellow (buff).
+const _SKILL_FLARE_COLORS: Dictionary = {
+	"Whirlwind": Color(1.0, 0.5, 0.25),       # warrior AoE strike
+	"Shield Wall": Color(0.9, 0.85, 0.3),     # warrior buff
+	"Rally": Color(1.0, 0.85, 0.3),           # buff-like
+	"Fireball": Color(1.0, 0.45, 0.1),        # fire
+	"Frost Nova": Color(0.4, 0.85, 1.0),      # ice
+	"Arcane Blast": Color(0.6, 0.4, 1.0),     # arcane
+	"Heal": Color(0.4, 0.95, 0.5),            # heal
+}
 
 # Cached hero reference for XP text positioning.
 var _hero: Node2D = null
@@ -19,6 +33,9 @@ func _ready() -> void:
 	EventBus.game_over.connect(_on_game_over)
 	EventBus.game_won.connect(_on_game_won)
 	EventBus.clean_view_toggled.connect(func(v): clean_view = v)
+	EventBus.hit_landed.connect(_on_hit_landed)
+	EventBus.enemy_damaged.connect(_on_enemy_damaged)
+	EventBus.hero_skill_used.connect(_on_hero_skill_used)
 
 
 func _on_enemy_died(enemy: Node, gold_value: int) -> void:
@@ -36,9 +53,61 @@ func _on_enemy_died(enemy: Node, gold_value: int) -> void:
 		radius = enemy.data.visual.radius
 	if not clean_view:
 		_DeathVFXScript.spawn(parent, color, radius, pos)
+		# Death drift — snapshot of the body ragdolling away from its killer.
+		var hit_dir: Vector2 = Vector2.RIGHT
+		var src: Node = enemy._last_damage_source if "_last_damage_source" in enemy else null
+		if src != null and is_instance_valid(src) and src is Node2D:
+			var away: Vector2 = enemy.global_position - (src as Node2D).global_position
+			if away.length_squared() > 0.0001:
+				hit_dir = away.normalized()
+		if enemy.data != null and enemy.data.visual != null:
+			_EnemyDeathDriftScript.spawn(parent, enemy.data.visual, pos, hit_dir)
 	# Gold text — always shown (informational, not clutter).
 	if gold_value > 0:
 		_FloatingTextScript.spawn(parent, "+%dg" % gold_value, Color(0.83, 0.66, 0.20), pos)
+
+
+func _on_hit_landed(target: Node, source: Node, _amount: float, dmg_type: int) -> void:
+	if clean_view:
+		return
+	if not is_instance_valid(target):
+		return
+	var parent: Node = _get_world_parent()
+	if parent == null:
+		return
+	var pos: Vector2 = (target as Node2D).global_position if target is Node2D else Vector2.ZERO
+	# Direction: away from the source (the spark sprays out from impact toward
+	# the back of the target). If source is unknown, default outward-right.
+	var dir: Vector2 = Vector2.RIGHT
+	if source != null and is_instance_valid(source) and source is Node2D:
+		var away: Vector2 = pos - (source as Node2D).global_position
+		if away.length_squared() > 0.0001:
+			dir = away.normalized()
+	_HitSparkVFXScript.spawn_for_damage_type(parent, pos, dir, dmg_type)
+
+
+func _on_enemy_damaged(enemy: Node, _amount: float, _dmg_type: int) -> void:
+	if clean_view:
+		return
+	if not is_instance_valid(enemy) or enemy.data == null:
+		return
+	if not enemy.data.is_boss:
+		return
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam != null and cam.has_method("add_shake"):
+		cam.add_shake(2.0, 0.12)
+
+
+func _on_hero_skill_used(skill_name: String) -> void:
+	if clean_view:
+		return
+	if _hero == null or not is_instance_valid(_hero):
+		return
+	var parent: Node = _get_world_parent()
+	if parent == null:
+		return
+	var color: Color = _SKILL_FLARE_COLORS.get(skill_name, Color(1.0, 0.9, 0.3))
+	_SkillCastFlareScript.spawn(parent, _hero.global_position, color)
 
 
 func _on_hero_xp_gained(amount: int) -> void:

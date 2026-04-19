@@ -20,7 +20,7 @@ var score: int = 0
 var wave_number: int = 0
 var current_mode: String = "campaign"  # "campaign" / "heroic" / "iron" / "endless"
 var current_level_id: String = "level_1"
-var selected_hero_id: String = "warrior"
+var selected_hero_id: String = "hero_warrior"
 var stars_earned: int = 0  # set on victory, 0 otherwise
 
 # Progression state — survives level restarts and scene transitions. Only
@@ -42,6 +42,36 @@ var endless_best_score: int = 0
 # Phase 33 online: replace with HTTP fetch from a leaderboard service.
 var endless_leaderboard: Array = []
 const LEADERBOARD_MAX_ENTRIES: int = 20
+
+# Phase 46: per-run damage attribution for the Victory/GameOver screen.
+# Cleared on reset_for_level() so restarts start fresh. Tower entries are
+# keyed by instance_id so sold towers still contribute to the leaderboard.
+var round_damage_towers: Dictionary = {}  # int(instance_id) → {"name": String, "total": float}
+var round_damage_hero: float = 0.0
+var round_damage_soldiers: float = 0.0
+var round_damage_spells: float = 0.0
+
+
+func record_round_damage(source: Node, amount: float) -> void:
+	# is_instance_valid guards against a freed source — happens when a tower
+	# is sold while one of its projectiles is still mid-flight.
+	if source == null or not is_instance_valid(source) or amount <= 0.0:
+		return
+	if source is BaseTower:
+		var key: int = source.get_instance_id()
+		var entry: Dictionary = round_damage_towers.get(key, {"name": "", "total": 0.0})
+		# Refresh display name each hit — tower can upgrade/branch mid-run.
+		if source.data != null:
+			entry["name"] = "%s L%d" % [source.data.tower_name, source.level]
+		entry["total"] = float(entry.get("total", 0.0)) + amount
+		round_damage_towers[key] = entry
+	elif source is BaseHero:
+		round_damage_hero += amount
+	elif source is BaseSoldier:
+		round_damage_soldiers += amount
+	elif source is SpellPanel:
+		round_damage_spells += amount
+	# Environmental damage (none today) would fall through without tallying.
 
 
 func try_unlock_encyclopedia(content_id: String) -> void:
@@ -190,6 +220,10 @@ func reset_for_level() -> void:
 	score = 0
 	wave_number = 0
 	stars_earned = 0
+	round_damage_towers.clear()
+	round_damage_hero = 0.0
+	round_damage_soldiers = 0.0
+	round_damage_spells = 0.0
 
 
 func _ready() -> void:
@@ -224,7 +258,7 @@ func reset() -> void:
 	# bonus gold from the prior save).
 	current_mode = "campaign"
 	current_level_id = "level_1"
-	selected_hero_id = "warrior"
+	selected_hero_id = "hero_warrior"
 	level_stars = {"level_1": 0}
 	levels_unlocked = {"level_1": true}
 	heroic_complete = {}

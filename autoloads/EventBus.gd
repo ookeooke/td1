@@ -4,6 +4,11 @@ extends Node
 signal enemy_spawned(enemy, path_id)
 signal enemy_died(enemy, gold_value)
 signal enemy_reached_end(enemy, lives_lost)
+signal enemy_damaged(enemy, amount, dmg_type)
+
+# Combat (any unit taking damage; drives hit sparks, boss-shake, etc.)
+signal hit_landed(target, source, amount, dmg_type)
+signal soldier_fell(soldier, facing_dir)
 
 # Tower
 signal tower_built(tower, spot_id)

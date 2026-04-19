@@ -579,6 +579,7 @@ func take_damage(amount: float, type: int, source: Node = null) -> void:
 	current_health -= int(ceil(final))
 	if final > 0.0:
 		_hit_flash_t = HIT_FLASH_DURATION
+		EventBus.hit_landed.emit(self, source, final, type)
 		var parent: Node = get_tree().current_scene
 		if parent != null:
 			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.2, 0.2), global_position + Vector2(0, -60), 36)
@@ -725,7 +726,7 @@ func _draw() -> void:
 			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, off)
 		if _lunge_t > 0.0:
 			var t01: float = 1.0 - (_lunge_t / LUNGE_DURATION)
-			UnitVisualDrawer.draw_swing_arc(self, data.visual, _lunge_dir, t01)
+			UnitVisualDrawer.draw_swing_arc_trail(self, data.visual, _lunge_dir, t01)
 	else:
 		# Legacy fallback: color varies by damage type.
 		if off != Vector2.ZERO:

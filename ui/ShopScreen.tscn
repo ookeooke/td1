@@ -10,7 +10,7 @@ product_id = "hero_mage_unlock"
 display_name = "Mage Hero"
 description = "Ranged magic caster with Arcane Bolt, Frost Nova, and Mana Shield."
 price_text = "$0.99"
-unlock_id = "mage"
+unlock_id = "hero_mage"
 
 [node name="ShopScreen" type="Control"]
 layout_mode = 3

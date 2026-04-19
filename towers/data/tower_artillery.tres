@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_data")
 tower_name = "Artillery"
-tower_id = "artillery"
+tower_id = "tower_artillery"
 damage = 25.0
 attack_range = 500.0
 attack_speed = 0.4

@@ -1,4 +1,5 @@
 extends CanvasLayer
+class_name SpellPanel
 
 # Phase 22 spell panel. Bottom-left column of spell buttons, one per spell
 # in `spells` (set in Main.tscn via Inspector; Phase 30 LoadoutScreen will

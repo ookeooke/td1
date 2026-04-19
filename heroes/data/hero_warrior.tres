@@ -56,7 +56,7 @@ ability = SubResource("BonusDmg_Ability")
 [resource]
 script = ExtResource("1_data")
 hero_name = "Knight"
-hero_id = "warrior"
+hero_id = "hero_warrior"
 max_health = 60
 attack_damage = 6.0
 attack_range = 75.0

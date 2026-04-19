@@ -9,10 +9,10 @@ extends Node
 # because BaseTower vs TowerBarracks have different scene structures.
 # ContentRegistry provides the data; this provides the scene.
 const _SCENE_MAP: Dictionary = {
-	"archer": preload("res://towers/TowerArcher.tscn"),
-	"barracks": preload("res://towers/TowerBarracks.tscn"),
-	"mage": preload("res://towers/TowerMage.tscn"),
-	"artillery": preload("res://towers/TowerArtillery.tscn"),
+	"tower_archer": preload("res://towers/TowerArcher.tscn"),
+	"tower_barracks": preload("res://towers/TowerBarracks.tscn"),
+	"tower_mage": preload("res://towers/TowerMage.tscn"),
+	"tower_artillery": preload("res://towers/TowerArtillery.tscn"),
 }
 
 @export var towers_parent_path: NodePath

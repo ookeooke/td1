@@ -1,0 +1,50 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://ui/TowerStatsCard.gd" id="1_tsc"]
+
+[sub_resource type="StyleBoxFlat" id="sb_card"]
+bg_color = Color(0.08, 0.09, 0.13, 0.88)
+border_color = Color(0.22, 0.24, 0.32, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 14.0
+content_margin_top = 10.0
+content_margin_right = 14.0
+content_margin_bottom = 10.0
+
+[node name="TowerStatsCard" type="Control"]
+script = ExtResource("1_tsc")
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+theme_override_styles/panel = SubResource("sb_card")
+
+[node name="VBox" type="VBoxContainer" parent="Panel"]
+
+[node name="TitleLabel" type="Label" parent="Panel/VBox"]
+unique_name_in_owner = true
+text = "Tower"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.95, 0.6, 1)
+theme_override_font_sizes/font_size = 20
+
+[node name="StatsLabel" type="Label" parent="Panel/VBox"]
+unique_name_in_owner = true
+text = "Dmg 0  Rng 0  Spd 0"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.92, 0.94, 1, 1)
+theme_override_font_sizes/font_size = 15
+
+[node name="MetaLabel" type="Label" parent="Panel/VBox"]
+unique_name_in_owner = true
+text = ""
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.75, 0.82, 0.95, 0.9)
+theme_override_font_sizes/font_size = 13

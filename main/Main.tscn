@@ -4,8 +4,8 @@
 [ext_resource type="PackedScene" uid="uid://ct8yqj3l40vnj" path="res://levels/Level1.tscn" id="2_level"]
 [ext_resource type="PackedScene" uid="uid://b1td1hud00000" path="res://ui/HUD.tscn" id="3_hud"]
 [ext_resource type="Script" uid="uid://cia00jfopb0ri" path="res://ui/TowerPlacer.gd" id="4_placer"]
-[ext_resource type="PackedScene" uid="uid://c70svntlw28u6" path="res://ui/TowerSpotMenu.tscn" id="5_menu"]
 [ext_resource type="PackedScene" uid="uid://c70rgmgd86rq6" path="res://ui/RangePreview.tscn" id="6_range"]
+[ext_resource type="PackedScene" path="res://ui/TowerRadialMenu.tscn" id="15_radial"]
 [ext_resource type="PackedScene" uid="uid://ct8ylftl7uafj" path="res://ui/GameOverScreen.tscn" id="7_gameover"]
 [ext_resource type="Script" path="res://heroes/HeroInputManager.gd" id="9_heroinput"]
 [ext_resource type="Script" path="res://map/GameCamera.gd" id="13_camera"]
@@ -43,7 +43,7 @@ map_path = NodePath("../Level1")
 
 [node name="SpellPanel" parent="." instance=ExtResource("11_spellpanel")]
 
-[node name="TowerSpotMenu" parent="." unique_id=541253450 instance=ExtResource("5_menu")]
+[node name="TowerRadialMenu" parent="." instance=ExtResource("15_radial")]
 visible = false
 
 [node name="GameOverScreen" parent="." instance=ExtResource("7_gameover")]

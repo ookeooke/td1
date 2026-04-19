@@ -21,6 +21,10 @@ class_name HeroData
 @export var xp_per_level: Array[int] = [50, 120, 220, 360, 540, 760, 1040, 1380, 1780, 2240]
 @export var max_level: int = 10
 @export var respawn_time: float = 30.0
+# How many enemies this hero can lock into COMBAT simultaneously. Tanks
+# (warrior) default to 2, fragile casters to 1 via their .tres override.
+# Enemies allow any number of blockers — the cap lives here.
+@export var max_block_targets: int = 2
 
 # Active skills (player-cast via SkillBar buttons) — SkillData subclasses.
 @export var skills: Array[Resource] = []

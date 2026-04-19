@@ -30,3 +30,25 @@ class_name TowerUpgradeData
 # Placeholder tint for the tower body — gives a visual read on upgrade
 # level until Phase 41 polish introduces real per-level sprites.
 @export var tint: Color = Color.WHITE
+
+# Barracks-only overrides. Null / 0 means "inherit from base TowerData".
+@export var soldier_data_override: Resource = null
+@export var soldier_rally_range: float = 0.0
+
+
+# Post-upgrade stats row used by the radial menu's upgrade-preview card.
+# Reads own fields; falls back to the base TowerData when a field is 0 /
+# null (matching _level_override() inheritance in BaseTower/TowerBarracks).
+func get_stats_line(base: TowerData) -> String:
+	if base != null and base.is_barracks():
+		var sd: Resource = soldier_data_override if soldier_data_override != null else base.soldier_data
+		var rally: float = soldier_rally_range if soldier_rally_range > 0.0 else base.soldier_rally_range
+		return "Rally %d   Squad %d   HP %d" % [
+			int(rally),
+			int(sd.max_count),
+			int(sd.max_health),
+		]
+	var dmg: float = damage if damage > 0.0 else (base.damage if base != null else 0.0)
+	var rng: float = attack_range if attack_range > 0.0 else (base.attack_range if base != null else 0.0)
+	var spd: float = attack_speed if attack_speed > 0.0 else (base.attack_speed if base != null else 0.0)
+	return "Dmg %d   Rng %d   Spd %.1f" % [int(dmg), int(rng), spd]

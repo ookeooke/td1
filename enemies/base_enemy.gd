@@ -5,8 +5,12 @@ enum State { WALKING, STUNNED, COMBAT, STEALTHED, DYING }
 
 const HP_BAR_SIZE: Vector2 = Vector2(70.0, 10.0)
 const HP_BAR_Y_OFFSET: float = -65.0
-# Phase 42: swarm effect — speed jitter breaks uniform spacing.
-const SPEED_JITTER_RANGE: float = 0.10  # ±10% speed variation per instance
+# Phase 44: brief white overlay on damage so hits read visually.
+const HIT_FLASH_DURATION: float = 0.08
+# Last 150 ms of the melee cooldown renders a red telegraph arc on the
+# side of the enemy facing its blocker — gives the player a visible "tell"
+# before each counter-attack lands.
+const ATTACK_TELEGRAPH_DURATION: float = 0.15
 
 @export var data: EnemyData
 
@@ -20,16 +24,20 @@ var _path_id: String = ""
 # replaces the prior effect (refreshes duration / takes stronger value).
 var _effects: Dictionary = {}
 
-# Combat engagement — set by soldiers calling engage_combat(self).
-var _blocker: Node = null
+# Combat engagement — populated by soldiers AND heroes calling
+# engage_combat(self). Any number of blockers are allowed; per-blocker
+# capacity lives on the blocker's data (SoldierData/HeroData.max_block_targets).
+# Counter-attacks focus on _blockers[0] — the oldest engager — so the
+# telegraph arc points at one stable target instead of flickering.
+var _blockers: Array[Node] = []
 var _combat_cooldown: float = 0.0
 
 # Last source that dealt damage — used by _die() to award XP to the hero
 # when the hero landed the killing blow (last-hit semantics). Towers get
 # gold, not XP.
 var _last_damage_source: Node = null
-# Swarm: per-instance speed multiplier (set once at spawn).
-var _speed_jitter: float = 1.0
+# Seconds remaining on the on-hit white flash (decays in _physics_process).
+var _hit_flash_t: float = 0.0
 
 # Phase 20.5: per-unit ability dispatcher. Populated from data.abilities
 # in _ready(); ticked each physics frame; triggered on death so
@@ -43,9 +51,6 @@ var _ability_host: RefCounted = null
 func _ready() -> void:
 	if data:
 		current_health = data.max_health
-		# Swarm: speed jitter for non-boss enemies.
-		if not data.is_boss:
-			_speed_jitter = randf_range(1.0 - SPEED_JITTER_RANGE, 1.0 + SPEED_JITTER_RANGE)
 	# Phase 20: group membership so skill targeting can enumerate live
 	# enemies without walking the whole tree. get_tree().get_nodes_in_group
 	# is only called on tap (targeting), not per-frame — perf rule intact.
@@ -75,6 +80,9 @@ func _physics_process(delta: float) -> void:
 	if _path_follow == null or data == null:
 		return
 	_tick_effects(delta)
+	if _hit_flash_t > 0.0:
+		_hit_flash_t = maxf(0.0, _hit_flash_t - delta)
+		queue_redraw()
 	if _ability_host != null:
 		_ability_host.tick(delta)
 	match state:
@@ -88,35 +96,80 @@ func _physics_process(delta: float) -> void:
 			pass
 
 
-func engage_combat(soldier: Node) -> void:
-	if state == State.DYING or soldier == null:
-		return
-	_blocker = soldier
+func engage_combat(blocker: Node) -> bool:
+	# Soldiers AND heroes block ground enemies. Any number of blockers are
+	# allowed; this function appends to _blockers and returns true iff the
+	# blocker was newly registered. Per-blocker capacity is enforced by the
+	# caller against its own data.max_block_targets.
+	if state == State.DYING or blocker == null:
+		return false
+	# Phase 45f: bypass archetypes (Rushing-Monkey equivalent) refuse every
+	# engagement. Blocker still sees false and won't register this enemy,
+	# so the enemy keeps walking past soldier and hero lines alike.
+	if data != null and "bypass_engagement" in data and data.bypass_engagement:
+		return false
+	if _blockers.has(blocker):
+		return false
+	_blockers.append(blocker)
 	_combat_cooldown = 1.0 / maxf(0.01, data.attack_speed) if data != null else 1.0
-	change_state(State.COMBAT)
+	if state != State.COMBAT:
+		change_state(State.COMBAT)
+	return true
 
 
-func release_combat(soldier: Node = null) -> void:
-	# If a specific soldier is provided, only release if it matches the
-	# current blocker (prevents stale release calls).
-	if soldier != null and _blocker != soldier:
-		return
-	_blocker = null
-	_combat_cooldown = 0.0
-	if state == State.COMBAT:
-		change_state(State.WALKING)
+func release_combat(blocker: Node = null) -> void:
+	# Remove a specific blocker or all blockers when called with null.
+	# Drops back to WALKING once the list empties.
+	if blocker == null:
+		_blockers.clear()
+	else:
+		_blockers.erase(blocker)
+	if _blockers.is_empty():
+		_combat_cooldown = 0.0
+		if state == State.COMBAT:
+			change_state(State.WALKING)
 
 
 func _combat_tick(delta: float) -> void:
-	if _blocker == null or not is_instance_valid(_blocker) or data == null:
+	# Prune stale / dead blockers each tick so an engager that was freed
+	# (soldier died, hero respawned elsewhere) doesn't hold the slot.
+	_prune_blockers()
+	if _blockers.is_empty() or data == null:
 		release_combat()
 		return
+	var prev: float = _combat_cooldown
 	_combat_cooldown -= delta
+	# Repaint while the telegraph arc is visible so its thickness animates.
+	if prev > 0.0 and prev <= ATTACK_TELEGRAPH_DURATION:
+		queue_redraw()
 	if _combat_cooldown > 0.0:
 		return
 	_combat_cooldown = 1.0 / maxf(0.01, data.attack_speed)
-	if _blocker.has_method("take_damage"):
-		_blocker.take_damage(data.attack_damage, DamageCalculator.DamageType.PHYSICAL, self)
+	var focus: Node = _blockers[0]
+	if focus == null or not is_instance_valid(focus) or not focus.has_method("take_damage"):
+		return
+	var splash_r: float = data.attack_splash_radius if "attack_splash_radius" in data else 0.0
+	if splash_r <= 0.0:
+		focus.take_damage(data.attack_damage, DamageCalculator.DamageType.PHYSICAL, self)
+		return
+	# AoE swing: every blocker whose body sits inside splash_r of the focus
+	# eats the full counter-attack. Designed counter to rally-stack surrounds.
+	var origin: Vector2 = focus.global_position
+	var r2: float = splash_r * splash_r
+	for b in _blockers:
+		if b == null or not is_instance_valid(b) or not b.has_method("take_damage"):
+			continue
+		if b.global_position.distance_squared_to(origin) <= r2:
+			b.take_damage(data.attack_damage, DamageCalculator.DamageType.PHYSICAL, self)
+
+
+func _prune_blockers() -> void:
+	var keep: Array[Node] = []
+	for b in _blockers:
+		if b != null and is_instance_valid(b):
+			keep.append(b)
+	if keep.size() != _blockers.size():
+		_blockers = keep
 
 
 func apply_status_effect(effect) -> void:
@@ -152,7 +205,7 @@ func _tick_effects(delta: float) -> void:
 
 
 func _effective_speed() -> float:
-	var s: float = data.move_speed * _speed_jitter
+	var s: float = data.move_speed
 	if _effects.has("slow"):
 		s *= (1.0 - _effects["slow"].slow_factor)
 	return s
@@ -165,6 +218,8 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 	# Cap to remaining HP so stat tracking isn't inflated by overkill.
 	var actual: float = minf(final, float(current_health))
 	current_health -= int(ceil(final))
+	if final > 0.0:
+		_hit_flash_t = HIT_FLASH_DURATION
 	if source != null:
 		_last_damage_source = source
 	# Floating damage number — shows raw hit, not capped, so players see
@@ -223,6 +278,8 @@ func _despawn() -> void:
 func _draw() -> void:
 	if data != null and data.visual != null:
 		UnitVisualDrawer.draw_unit(self, data.visual)
+		if _hit_flash_t > 0.0:
+			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION)
 	else:
 		draw_circle(Vector2.ZERO, 35.0, Color(0.75, 0.2, 0.2))
 		draw_arc(Vector2.ZERO, 35.0, 0, TAU, 24, Color(0.15, 0.05, 0.05), 2.0)
@@ -233,7 +290,32 @@ func _draw() -> void:
 		draw_arc(Vector2.ZERO, ring_r, 0, TAU, 28, Color(0.2, 0.7, 1.0), 5.0)
 	if _effects.has("stun"):
 		draw_arc(Vector2.ZERO, ring_r + 10.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 5.0)
+	_draw_attack_telegraph(ring_r)
 	_draw_health_bar()
+
+
+# Red warning arc drawn on the side of the enemy facing its blocker during
+# the last ATTACK_TELEGRAPH_DURATION of the cooldown. Gives the player a
+# visual "tell" before each counter-attack lands. Thickness grows as the
+# strike approaches so the moment of impact is obvious.
+func _draw_attack_telegraph(base_ring_r: float) -> void:
+	if state != State.COMBAT or _blockers.is_empty():
+		return
+	var focus: Node = _blockers[0]
+	if focus == null or not is_instance_valid(focus):
+		return
+	if _combat_cooldown <= 0.0 or _combat_cooldown > ATTACK_TELEGRAPH_DURATION:
+		return
+	var progress: float = 1.0 - (_combat_cooldown / ATTACK_TELEGRAPH_DURATION)
+	var dir: Vector2 = (focus.global_position - global_position)
+	if dir.length_squared() < 0.01:
+		return
+	var angle: float = dir.angle()
+	var span: float = PI / 2.5
+	var r: float = base_ring_r + 4.0
+	var width: float = 3.0 + progress * 6.0
+	var alpha: float = 0.35 + progress * 0.5
+	draw_arc(Vector2.ZERO, r, angle - span * 0.5, angle + span * 0.5, 20, Color(1.0, 0.25, 0.2, alpha), width)
 
 
 # Drawn by every enemy subclass at the end of its _draw() override.

@@ -9,8 +9,17 @@ const DURATION: float = 2.0
 const RING_COLOR := Color(1.0, 0.95, 0.4, 0.9)
 const FILL_COLOR := Color(1.0, 0.95, 0.4, 0.08)
 const RING_WIDTH: float = 3.0
+# Ghost ring (post-upgrade reach) — shown on upgrade-slot hover.
+# Green when upgrade reach is LARGER than current (drawn outside yellow).
+# Red when upgrade reach is SMALLER than current (drawn inside yellow).
+const UPGRADE_RING_COLOR := Color(0.35, 0.95, 0.4, 0.75)
+const UPGRADE_FILL_COLOR := Color(0.35, 0.95, 0.4, 0.10)
+const UPGRADE_SHRINK_RING_COLOR := Color(0.95, 0.35, 0.35, 0.75)
+const UPGRADE_SHRINK_FILL_COLOR := Color(0.95, 0.35, 0.35, 0.12)
+const UPGRADE_RING_WIDTH: float = 2.0
 
 var _radius: float = 0.0
+var _upgrade_radius: float = 0.0
 var _timer: Timer
 var _grid: Node
 
@@ -36,16 +45,12 @@ func _on_spot_tapped(spot_id: String) -> void:
 	var tower: Node = _grid.get_tower_at(spot_id)
 	if tower == null:
 		return
-	# Use level-aware effective range when available (Phase 24 upgrades),
-	# fall back to data.attack_range for towers that don't level.
-	if tower.has_method("get_effective_range"):
-		_radius = float(tower.get_effective_range())
-	elif "data" in tower and tower.data != null:
-		_radius = float(tower.data.attack_range)
-	else:
-		return
+	# CORE RULE 14 — every tower implements get_preview_range() (attack
+	# reach for combat towers; rally reach for barracks).
+	_radius = float(tower.get_preview_range())
 	global_position = tower.global_position
 	visible = true
+	_upgrade_radius = 0.0
 	queue_redraw()
 	_timer.start()
 
@@ -56,7 +61,35 @@ func _on_tower_sold(_tower: Node, _refund: int) -> void:
 
 func _hide() -> void:
 	visible = false
+	_upgrade_radius = 0.0
 	_timer.stop()
+
+
+# Phase 45a: used by TowerRadialMenu to preview a buildable tower's range
+# while the player hovers its radial icon. Caller owns show/hide (no timer).
+func show_preview(world_pos: Vector2, radius: float) -> void:
+	_radius = radius
+	global_position = world_pos
+	visible = true
+	_upgrade_radius = 0.0
+	_timer.stop()
+	queue_redraw()
+
+
+func hide_preview() -> void:
+	_hide()
+
+
+# Green "ghost ring" drawn over the existing yellow ring to show how much
+# extra reach a paid upgrade would grant. Caller owns show/hide.
+func show_upgrade_preview(radius: float) -> void:
+	_upgrade_radius = radius
+	queue_redraw()
+
+
+func hide_upgrade_preview() -> void:
+	_upgrade_radius = 0.0
+	queue_redraw()
 
 
 func _draw() -> void:
@@ -65,6 +98,17 @@ func _draw() -> void:
 	var zs: float = _get_zoom_scale()
 	draw_circle(Vector2.ZERO, _radius, FILL_COLOR)
 	draw_arc(Vector2.ZERO, _radius, 0.0, TAU, 48, RING_COLOR, RING_WIDTH * zs)
+	# Ghost ring — green outside when reach grows, red inside when it shrinks.
+	if _upgrade_radius <= 0.0 or is_equal_approx(_upgrade_radius, _radius):
+		return
+	if _upgrade_radius > _radius:
+		draw_circle(Vector2.ZERO, _upgrade_radius, UPGRADE_FILL_COLOR)
+		draw_arc(Vector2.ZERO, _upgrade_radius, 0.0, TAU, 48,
+				UPGRADE_RING_COLOR, UPGRADE_RING_WIDTH * zs)
+	else:
+		draw_circle(Vector2.ZERO, _upgrade_radius, UPGRADE_SHRINK_FILL_COLOR)
+		draw_arc(Vector2.ZERO, _upgrade_radius, 0.0, TAU, 48,
+				UPGRADE_SHRINK_RING_COLOR, UPGRADE_RING_WIDTH * zs)
 
 
 func _get_zoom_scale() -> float:

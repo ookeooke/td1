@@ -12,12 +12,12 @@ extends Node2D
 const MAP_SIZE := Vector2(1920, 1080)
 const BG_COLOR := Color(0.32, 0.52, 0.28, 1.0)
 const PATH_COLOR := Color(0.55, 0.40, 0.25)
-# Road visual must cover the enemy swarm band — enemies get a PathFollow2D
-# h_offset in ±WaveManager.SWARM_H_OFFSET (35px), and their body draws at
-# roughly ±35px around their center. So the road needs to be at least
-# 2 * (35 + 35) = 140px wide to visually contain every enemy that walks it.
-# Keep in sync with WaveManager.SWARM_H_OFFSET if that constant changes.
-const PATH_WIDTH := 140.0
+# Road visual must cover the 3-lane swarm band — non-boss enemies get a
+# PathFollow2D v_offset picked from {-LANE_SPACING, 0, +LANE_SPACING} (50px),
+# and their body draws at roughly ±35px around their center. So the road
+# needs to be at least 2 * (50 + 35) = 170px wide to visually contain every
+# enemy on the outer lanes. Keep in sync with WaveManager.LANE_SPACING.
+const PATH_WIDTH := 170.0
 const SPOT_FILL := Color(0.85, 0.75, 0.35, 0.85)
 const SPOT_OUTLINE := Color(0.25, 0.18, 0.08)
 const SPOT_RADIUS := 65.0
@@ -94,6 +94,16 @@ func _cache_paths() -> void:
 
 func get_path_by_id(path_id: String) -> Path2D:
 	return _paths_by_id.get(path_id)
+
+
+# Where the hero appears at level start (and after each respawn).
+# Drag the "HeroSpawn" Marker2D in the editor to adjust. Missing marker
+# falls back to the viewport center so old levels still boot.
+func get_hero_spawn_position() -> Vector2:
+	var m: Marker2D = get_node_or_null("HeroSpawn")
+	if m != null:
+		return m.position
+	return Vector2(960, 540)
 
 
 func _register_tower_spots() -> void:

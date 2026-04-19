@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="SoldierData" format=3 uid="uid://b1td1sold002"]
+
+[ext_resource type="Script" uid="uid://dvlbdetyl4lyd" path="res://soldiers/SoldierData.gd" id="1_data"]
+[ext_resource type="Resource" uid="uid://bw1p8lmshuvfh" path="res://soldiers/data/visual_soldier.tres" id="2_vis"]
+
+[resource]
+script = ExtResource("1_data")
+soldier_id = "soldier_elite"
+soldier_name = "Elite Militia"
+max_health = 34
+attack_damage = 6.0
+attack_speed = 1.1
+armor = 0.15
+visual = ExtResource("2_vis")
+encyclopedia_entry = "Veteran blockers in heavier gear. Tougher armor, sharper swings, same tight-formation discipline."

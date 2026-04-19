@@ -1,0 +1,29 @@
+[gd_scene format=3 uid="uid://c70rgch841ri1"]
+
+[ext_resource type="Script" path="res://ui/TowerRadialMenu.gd" id="1_trm"]
+
+[node name="TowerRadialMenu" type="CanvasLayer"]
+layer = 10
+follow_viewport_enabled = false
+script = ExtResource("1_trm")
+
+[node name="Root" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1
+
+[node name="Backdrop" type="Control" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 0
+
+[node name="Anchor" type="Control" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 0
+mouse_filter = 2

@@ -18,8 +18,18 @@ class_name EnemyData
 # state (vs. a blocking soldier). Flying units skip engagement entirely.
 @export var attack_damage: float = 3.0
 @export var attack_speed: float = 1.0
+# Phase 45d: AoE counter-attack radius. 0 = single-target (hit _blockers[0]
+# only — default, matches all existing archetypes). >0 = hit every blocker
+# within this pixel radius of the focus blocker. Designed as the balance
+# counter to stacked-rally boss gangs (KR's Yeti / Magma Elemental pattern).
+@export var attack_splash_radius: float = 0.0
 
 @export var is_flying: bool = false
+# Phase 45f: dedicated bypass archetype (Rushing-Monkey equivalent). When
+# true, BaseEnemy.engage_combat rejects every blocker, so the enemy walks
+# through soldier lines uninterrupted. Author as opt-in data — default keeps
+# the entire roster's behavior unchanged. Intended counter: AoE towers.
+@export var bypass_engagement: bool = false
 @export var can_stealth: bool = false
 @export_range(0.0, 1.0) var stealth_threshold: float = 0.5
 

@@ -111,9 +111,42 @@ func get_effective_range() -> float:
 	return base
 
 
+# Unified range accessor used by UI (RangePreview, TowerStatsCard,
+# TowerRadialMenu). Attack towers return attack_range; barracks override
+# to return rally range. Keeps the UI duck-typed against a single method.
+func get_preview_range() -> float:
+	return get_effective_range()
+
+
+# Returns the range this tower would have after the next paid upgrade, for
+# the green "ghost ring" hover preview. 0.0 when there is no meaningful
+# preview: maxed, or at L2 with branches (the branch cards preview their
+# own ranges individually).
+func get_upgrade_range() -> float:
+	if data == null or level >= MAX_LEVEL or has_branch_options():
+		return 0.0
+	var next_idx: int = level - 1  # level 1 → data.level_upgrades[0] = L2
+	if next_idx < 0 or next_idx >= data.level_upgrades.size():
+		return 0.0
+	var next: Resource = data.level_upgrades[next_idx]
+	if next == null or next.attack_range <= 0.0:
+		return 0.0
+	return next.attack_range * GameState.get_upgrade_multiplier(GameState.MOD_TOWER_RANGE)
+
+
 func get_effective_attack_speed() -> float:
 	var ov: Resource = _level_override()
 	return ov.attack_speed if ov != null else data.attack_speed
+
+
+# Tower Indicator Interface: each tower formats its own stats row so the
+# stats card stays tower-agnostic. Combat towers show Dmg / Rng / Spd.
+func get_stats_line() -> String:
+	return "Dmg %d   Rng %d   Spd %.1f" % [
+		int(get_effective_damage()),
+		int(get_preview_range()),
+		get_effective_attack_speed(),
+	]
 
 
 func get_sell_value() -> int:

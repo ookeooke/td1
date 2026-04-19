@@ -89,15 +89,17 @@ func _effective_speed() -> float:
 
 
 func _combat_tick(delta: float) -> void:
-	if _blocker == null or not is_instance_valid(_blocker) or data == null:
+	_prune_blockers()
+	if _blockers.is_empty() or data == null:
 		release_combat()
 		return
 	_combat_cooldown -= delta
 	if _combat_cooldown > 0.0:
 		return
 	_combat_cooldown = 1.0 / maxf(0.01, data.attack_speed)
-	if _blocker.has_method("take_damage"):
-		_blocker.take_damage(
+	var focus: Node = _blockers[0]
+	if focus != null and is_instance_valid(focus) and focus.has_method("take_damage"):
+		focus.take_damage(
 			data.attack_damage * _phase_damage_mult,
 			DamageCalculator.DamageType.PHYSICAL, self
 		)

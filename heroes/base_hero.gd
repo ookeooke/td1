@@ -25,6 +25,7 @@ const MOVE_REACHED_TOLERANCE: float = 10.0
 # 50×50 visual square so it's finger-friendly).
 const SELECT_TAP_RADIUS: float = 55.0
 const SELECTION_RING_RADIUS: float = 45.0
+const HIT_FLASH_DURATION: float = 0.08
 # Lunge animation — hero hops a few px toward its target on every attack
 # tick and snaps back. Triangle-wave easing computed analytically; no Tween
 # node allocated (cheaper, and a new attack just resets the clock).
@@ -36,6 +37,20 @@ const SEEK_RANGE_MULTIPLIER: float = 2.5
 const NAV_REPATH_INTERVAL: float = 0.5
 # Melee heroes walk up this close before entering COMBAT face-to-face.
 const MELEE_ENGAGE_DISTANCE: float = 30.0
+# Side-by-side combat spacing. Melee heroes navigate to a slot offset
+# horizontally by this much from the enemy, sharing the enemy's Y — so the
+# two units end up lined up instead of overlapping bodies.
+const MELEE_ENGAGE_GAP_X: float = 55.0
+# Attack_range threshold that separates melee from ranged behavior. Melee
+# uses MELEE_ENGAGE_GAP_X side-by-side; ranged stops at 80 % of attack_range
+# along the approach vector.
+const RANGED_ATTACK_RANGE_THRESHOLD: float = 150.0
+# Hero will not chase enemies that are farther than this from its current
+# rally point. The rally point is the HeroSpawn marker at start and updates
+# to the tap position on every player-issued move command.
+const LEASH_RADIUS: float = 400.0
+# Stop returning to the rally point once within this distance of it.
+const LEASH_RETURN_TOLERANCE: float = 20.0
 
 @export var data: HeroData
 
@@ -55,12 +70,22 @@ const LEVEL_DAMAGE_GROWTH: float = 0.10
 
 var _target_enemy: Node = null
 var _attack_cooldown: float = 0.0
+# Enemies this hero currently blocks. Capped at data.max_block_targets.
+# Tracked so we release cleanly on state changes / death / retarget.
+# Mirrors the multi-blocker array on BaseEnemy.
+var _blocked_enemies: Array[Node] = []
 # Auto-seek: enemy the hero is walking toward (not yet in attack range).
 var _seek_target_enemy: Node = null
 var _nav_repath_timer: float = 0.0
 
 var _lunge_dir: Vector2 = Vector2.ZERO
 var _lunge_t: float = 0.0
+var _hit_flash_t: float = 0.0
+# Rally point — world position the hero leashes to. Seeded from the spawn
+# marker in _ready() and reseeded on each player-commanded move. Enemies
+# outside LEASH_RADIUS of this point are ignored; when idle, the hero
+# walks back to the rally.
+var _rally_position: Vector2 = Vector2.ZERO
 
 # Phase 20: parallel to data.skills — seconds of cooldown remaining per
 # slot. Sized in _ready(). The skill resource is shared; only the cooldown
@@ -111,6 +136,10 @@ func _ready() -> void:
 		for talent in data.talents:
 			if talent != null and talent.talent_id in purchased_ids and talent.ability != null:
 				_ability_host.add_ability(talent.ability.duplicate())
+	# Seed the rally point from the spawn position; the player can reseat it
+	# by tapping to move. Position is already set by Main._spawn_hero before
+	# add_child, so global_position here is the HeroSpawn marker.
+	_rally_position = global_position
 	# Listen for confirmed taps from GameCamera's gesture classifier.
 	EventBus.map_tap_confirmed.connect(_on_map_tap)
 	# Deferred so sibling nodes (HUD, Main) have finished _ready() and
@@ -261,10 +290,15 @@ func change_state(new_state: int) -> void:
 func move_to(world_pos: Vector2) -> void:
 	if state == State.DEAD or data == null:
 		return
-	# Explicit move overrides any active engagement or auto-seek.
+	# Explicit move overrides any active engagement or auto-seek. Free any
+	# enemy we were blocking so it resumes walking.
+	_release_block()
 	_seek_target_enemy = null
 	_target_enemy = null
 	_attack_cooldown = 0.0
+	# Player tap reseats the rally point — the hero will leash to wherever
+	# the player sent it, not back to the original spawn.
+	_rally_position = world_pos
 	nav_agent.target_position = world_pos
 	# Auto-deselect on move command — Option B. Next stray tap won't re-move
 	# the hero until the player taps the body to re-arm.
@@ -308,6 +342,9 @@ func _physics_process(delta: float) -> void:
 	if _lunge_t > 0.0:
 		_lunge_t = maxf(0.0, _lunge_t - delta)
 		queue_redraw()
+	if _hit_flash_t > 0.0:
+		_hit_flash_t = maxf(0.0, _hit_flash_t - delta)
+		queue_redraw()
 	_tick_skill_cooldowns(delta)
 	if _ability_host != null:
 		_ability_host.tick(delta)
@@ -339,33 +376,47 @@ func _start_lunge(target_world_pos: Vector2) -> void:
 func _lunge_offset() -> Vector2:
 	if _lunge_t <= 0.0:
 		return Vector2.ZERO
-	# Triangle wave 0 → 1 → 0 over LUNGE_DURATION (peak at the midpoint).
+	# Wind-up curve: rear back, commit forward, ease back.
+	#   [0.00, 0.25]:  0   → -0.3 LUNGE_DISTANCE  (anticipation)
+	#   [0.25, 0.75]: -0.3 → +1.0                 (strike commits)
+	#   [0.75, 1.00]: +1.0 → 0                    (recovery)
+	# Adds perceived weight to every swing without changing attack cadence.
 	var t: float = 1.0 - (_lunge_t / LUNGE_DURATION)
-	var phase: float = 1.0 - absf(t * 2.0 - 1.0)
-	return _lunge_dir * (LUNGE_DISTANCE * phase)
+	var offset_scale: float = 0.0
+	if t < 0.25:
+		offset_scale = -0.3 * (t / 0.25)
+	elif t < 0.75:
+		offset_scale = -0.3 + 1.3 * ((t - 0.25) / 0.5)
+	else:
+		offset_scale = 1.0 - ((t - 0.75) / 0.25)
+	return _lunge_dir * (LUNGE_DISTANCE * offset_scale)
 
 
 func _move_step(delta: float) -> void:
-	# While auto-seeking, repath toward the moving enemy periodically.
+	# While auto-seeking, repath toward the moving enemy's engage slot.
+	# Abort chases that exit the leash — the hero is not a lawnmower.
 	if _seek_target_enemy != null:
-		_nav_repath_timer -= delta
-		if _nav_repath_timer <= 0.0:
-			_nav_repath_timer = NAV_REPATH_INTERVAL
-			if is_instance_valid(_seek_target_enemy) and _seek_target_enemy.state != BaseEnemy.State.DYING:
-				nav_agent.target_position = _seek_target_enemy.global_position
-			else:
-				_seek_target_enemy = null
-		# Check if enemy entered attack range while we walk toward it.
-		var atk_target: Node = _find_nearest_enemy_in_area(attack_range_area)
-		if atk_target != null:
-			# Melee: walk right up close before entering combat.
-			var dist: float = global_position.distance_to(atk_target.global_position)
-			if dist <= MELEE_ENGAGE_DISTANCE or atk_target in attack_range_area.get_overlapping_areas():
-				_target_enemy = atk_target
-				_seek_target_enemy = null
-				_attack_cooldown = 0.0
-				change_state(State.COMBAT)
-				return
+		if not _within_leash(_seek_target_enemy) \
+				or not is_instance_valid(_seek_target_enemy) \
+				or _seek_target_enemy.state == BaseEnemy.State.DYING:
+			_seek_target_enemy = null
+			nav_agent.target_position = _rally_position
+		else:
+			_nav_repath_timer -= delta
+			if _nav_repath_timer <= 0.0:
+				_nav_repath_timer = NAV_REPATH_INTERVAL
+				nav_agent.target_position = _engage_position_for(_seek_target_enemy)
+			# Check if enemy entered attack range while we walk toward it.
+			var atk_target: Node = _find_nearest_enemy_in_area(attack_range_area)
+			if atk_target != null and _within_leash(atk_target):
+				var dist: float = global_position.distance_to(atk_target.global_position)
+				if dist <= MELEE_ENGAGE_DISTANCE or atk_target in attack_range_area.get_overlapping_areas():
+					_target_enemy = atk_target
+					_seek_target_enemy = null
+					_attack_cooldown = 0.0
+					_start_block(atk_target)
+					change_state(State.COMBAT)
+					return
 	# Follow nav agent path.
 	if nav_agent.is_navigation_finished():
 		velocity = Vector2.ZERO
@@ -377,8 +428,17 @@ func _move_step(delta: float) -> void:
 
 
 func _find_nearest_enemy_in_area(area: Area2D) -> Node:
-	var nearest: Node = null
-	var nearest_d2: float = INF
+	return _pick_split_target_in_area(area)
+
+
+# Split-rule picker: prefers the enemy with the FEWEST current blockers so
+# friendlies spread across incoming threats instead of piling on one. Ties
+# resolved by distance. Enforces the standard filters (DYING, flying when
+# data.targets_flying is false, within-leash).
+func _pick_split_target_in_area(area: Area2D) -> Node:
+	var best: Node = null
+	var best_block: int = 1 << 30
+	var best_d2: float = INF
 	for a in area.get_overlapping_areas():
 		if not (a is BaseEnemy):
 			continue
@@ -389,49 +449,103 @@ func _find_nearest_enemy_in_area(area: Area2D) -> Node:
 			continue
 		if enemy.data.is_flying and not data.targets_flying:
 			continue
+		var bc: int = enemy._blockers.size()
 		var d2: float = global_position.distance_squared_to(enemy.global_position)
-		if d2 < nearest_d2:
-			nearest_d2 = d2
-			nearest = enemy
-	return nearest
+		if bc < best_block or (bc == best_block and d2 < best_d2):
+			best_block = bc
+			best_d2 = d2
+			best = enemy
+	return best
 
 
 func _seek_target() -> void:
-	# Phase 1: check attack range — immediate combat.
+	# Phase 1: check attack range — immediate combat. Leash-gated so the
+	# hero never engages enemies that would pull it far from the rally.
 	var nearest_attack: Node = _find_nearest_enemy_in_area(attack_range_area)
-	if nearest_attack != null:
+	if nearest_attack != null and _within_leash(nearest_attack):
 		_target_enemy = nearest_attack
 		_seek_target_enemy = null
 		_attack_cooldown = 0.0
+		_start_block(nearest_attack)
 		change_state(State.COMBAT)
 		return
 	# Phase 2: check seek range — auto-walk toward enemy via nav agent.
 	var nearest_seek: Node = _find_nearest_enemy_in_area(seek_range_area)
-	if nearest_seek != null and nearest_seek != _seek_target_enemy:
+	if nearest_seek != null and _within_leash(nearest_seek) and nearest_seek != _seek_target_enemy:
 		_seek_target_enemy = nearest_seek
-		nav_agent.target_position = nearest_seek.global_position
+		nav_agent.target_position = _engage_position_for(nearest_seek)
 		_nav_repath_timer = 0.0
 		change_state(State.MOVING)
+		return
+	# Phase 3: no valid enemy + drifted from rally → walk back.
+	if global_position.distance_to(_rally_position) > LEASH_RETURN_TOLERANCE:
+		_seek_target_enemy = null
+		nav_agent.target_position = _rally_position
+		change_state(State.MOVING)
+
+
+# True if the target sits within LEASH_RADIUS of the current rally point.
+func _within_leash(target: Node) -> bool:
+	if target == null or not is_instance_valid(target):
+		return false
+	return target.global_position.distance_to(_rally_position) <= LEASH_RADIUS
+
+
+# Where the hero should stand to attack the given enemy.
+#   Melee (attack_range < threshold): side-by-side — same Y as the enemy,
+#     offset horizontally by MELEE_ENGAGE_GAP_X on whichever side the hero
+#     is currently on. Produces the "line up next to each other" look.
+#   Ranged: keep 80 % of attack_range between hero and enemy, along the
+#     hero's current approach vector, so casters don't walk into melee.
+func _engage_position_for(enemy: Node) -> Vector2:
+	var epos: Vector2 = enemy.global_position
+	if data.attack_range < RANGED_ATTACK_RANGE_THRESHOLD:
+		var dx: float = global_position.x - epos.x
+		var side: float = signf(dx) if absf(dx) > 5.0 else 1.0
+		return Vector2(epos.x + side * MELEE_ENGAGE_GAP_X, epos.y)
+	var to_hero: Vector2 = global_position - epos
+	if to_hero.length_squared() < 1.0:
+		to_hero = Vector2.RIGHT
+	return epos + to_hero.normalized() * (data.attack_range * 0.8)
 
 
 func _attack_step(delta: float) -> void:
 	if _target_enemy == null or not is_instance_valid(_target_enemy):
+		_release_block()
 		_target_enemy = null
 		change_state(State.IDLE)
 		return
 	var enemy: BaseEnemy = _target_enemy
 	if enemy.state == BaseEnemy.State.DYING:
+		_release_block()
 		_target_enemy = null
 		change_state(State.IDLE)
 		return
-	# Enemy walked out of attack range — chase instead of dropping.
+	# Enemy walked out of attack range — chase if still in leash, else drop.
 	if not (enemy in attack_range_area.get_overlapping_areas()):
-		_seek_target_enemy = enemy
+		_release_block_of(enemy)
 		_target_enemy = null
-		nav_agent.target_position = enemy.global_position
-		_nav_repath_timer = 0.0
-		change_state(State.MOVING)
+		if _within_leash(enemy):
+			_seek_target_enemy = enemy
+			nav_agent.target_position = _engage_position_for(enemy)
+			_nav_repath_timer = 0.0
+			change_state(State.MOVING)
+		else:
+			_seek_target_enemy = null
+			nav_agent.target_position = _rally_position
+			change_state(State.MOVING)
 		return
+	# Capacity-aware multi-block: while in combat with _target_enemy, scan
+	# for additional unblocked enemies overlapping attack range and claim
+	# them too, up to data.max_block_targets. Uses the split-rule picker
+	# so we grab the next-neediest target, not just the nearest.
+	_auto_engage_extras()
+	# Prune blocks on enemies that have since died or wandered out of range
+	# so enemies don't stay frozen when the hero no longer "holds" them.
+	_prune_blocks_out_of_range()
+	# Reciprocal damage is driven by enemy._combat_tick while this hero
+	# occupies one of its _blockers slots — see _start_block() below. No
+	# extra timer needed here.
 	_attack_cooldown -= delta
 	if _attack_cooldown > 0.0:
 		return
@@ -464,6 +578,7 @@ func take_damage(amount: float, type: int, source: Node = null) -> void:
 	var final: float = DamageCalculator.calculate_damage(amount, type, self)
 	current_health -= int(ceil(final))
 	if final > 0.0:
+		_hit_flash_t = HIT_FLASH_DURATION
 		var parent: Node = get_tree().current_scene
 		if parent != null:
 			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.2, 0.2), global_position + Vector2(0, -60), 36)
@@ -479,9 +594,115 @@ func _die() -> void:
 	velocity = Vector2.ZERO
 	visible = false
 	set_selected(false)
+	_release_block()
+	_target_enemy = null
+	_seek_target_enemy = null
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_DEATH, {})
 	EventBus.hero_died.emit()
+	# Schedule respawn. HeroData.respawn_time (default 30s). Timer honors
+	# the paused SceneTree (process_always defaults to false), so tactical
+	# pause freezes the countdown — fair to the player.
+	var wait: float = data.respawn_time if data != null and data.respawn_time > 0.0 else 30.0
+	get_tree().create_timer(wait).timeout.connect(_respawn)
+
+
+func _respawn() -> void:
+	# Scene may have been reloaded (restart) while the timer was running.
+	if not is_instance_valid(self) or data == null:
+		return
+	# Teleport back to the level's HeroSpawn marker (falls back if absent).
+	var scene: Node = get_tree().current_scene
+	var spawn_pos: Vector2 = global_position
+	if scene != null:
+		var lvl: Node = scene.get_node_or_null("Level1")
+		if lvl != null and lvl.has_method("get_hero_spawn_position"):
+			spawn_pos = lvl.get_hero_spawn_position()
+	global_position = spawn_pos
+	_rally_position = spawn_pos
+	current_health = _effective_max_health()
+	visible = true
+	_attack_cooldown = 0.0
+	change_state(State.IDLE)
+	queue_redraw()
+	EventBus.hero_respawned.emit()
+
+
+# Claim one more enemy's blocker slot, up to data.max_block_targets. Flying
+# enemies skip engagement entirely. Unlike the old single-slot version,
+# this does NOT release an existing block — both can coexist so the hero
+# can tank multiple enemies side-by-side.
+func _start_block(enemy: Node) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	if enemy.data == null or enemy.data.is_flying:
+		return
+	if _blocked_enemies.has(enemy):
+		return
+	var cap: int = data.max_block_targets if data != null else 1
+	if _blocked_enemies.size() >= cap:
+		return
+	if enemy.engage_combat(self):
+		_blocked_enemies.append(enemy)
+
+
+# Drop every blocker claim we hold. Called on state exits from COMBAT,
+# player-commanded move, death, and respawn.
+func _release_block() -> void:
+	for e in _blocked_enemies:
+		if e != null and is_instance_valid(e):
+			e.release_combat(self)
+	_blocked_enemies.clear()
+
+
+# Drop a single blocker claim (used when one specific target dies / leaves
+# range while the hero keeps blocking the rest).
+func _release_block_of(enemy: Node) -> void:
+	if enemy == null:
+		return
+	if is_instance_valid(enemy):
+		enemy.release_combat(self)
+	_blocked_enemies.erase(enemy)
+
+
+# While engaged, sweep attack_range for extra enemies we could also be
+# blocking — up to the hero's capacity. Runs every frame in _attack_step,
+# which is cheap because Area2D overlap is O(n) in overlap size.
+func _auto_engage_extras() -> void:
+	var cap: int = data.max_block_targets if data != null else 1
+	if _blocked_enemies.size() >= cap:
+		return
+	for a in attack_range_area.get_overlapping_areas():
+		if not (a is BaseEnemy):
+			continue
+		var enemy: BaseEnemy = a
+		if enemy.state == BaseEnemy.State.DYING or enemy.data == null or enemy.data.is_flying:
+			continue
+		if _blocked_enemies.has(enemy):
+			continue
+		_start_block(enemy)
+		if _blocked_enemies.size() >= cap:
+			return
+
+
+# Release blocker slots on enemies that have died or walked outside the
+# attack range. Keeps `_blocked_enemies` honest so enemies never stay
+# frozen after the hero has drifted off them.
+func _prune_blocks_out_of_range() -> void:
+	if _blocked_enemies.is_empty():
+		return
+	var in_range: Array = attack_range_area.get_overlapping_areas()
+	# Reverse iteration so in-place removal stays valid. Freed references
+	# are stripped directly (can't round-trip through a typed Array[Node]);
+	# valid-but-disengaging ones go through _release_block_of to notify the
+	# enemy that it's no longer being blocked.
+	for i in range(_blocked_enemies.size() - 1, -1, -1):
+		var e: Node = _blocked_enemies[i]
+		if e == null or not is_instance_valid(e):
+			_blocked_enemies.remove_at(i)
+			continue
+		if e.state == BaseEnemy.State.DYING or not in_range.has(e):
+			_release_block_of(e)
 
 
 func _draw() -> void:
@@ -500,6 +721,11 @@ func _draw() -> void:
 	var off: Vector2 = _lunge_offset()
 	if data != null and data.visual != null:
 		UnitVisualDrawer.draw_unit(self, data.visual, off)
+		if _hit_flash_t > 0.0:
+			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, off)
+		if _lunge_t > 0.0:
+			var t01: float = 1.0 - (_lunge_t / LUNGE_DURATION)
+			UnitVisualDrawer.draw_swing_arc(self, data.visual, _lunge_dir, t01)
 	else:
 		# Legacy fallback: color varies by damage type.
 		if off != Vector2.ZERO:

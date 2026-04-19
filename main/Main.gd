@@ -46,7 +46,12 @@ func _spawn_hero() -> void:
 	# AttackRange) is hero-agnostic — only the data differs.
 	var hero: Node = HERO_TEMPLATE.instantiate()
 	hero.data = hero_data
-	hero.position = Vector2(960, 540)
+	# Level may expose an editor-placed HeroSpawn marker; fall back to
+	# viewport center so levels that haven't added the marker still work.
+	if level != null and level.has_method("get_hero_spawn_position"):
+		hero.position = level.get_hero_spawn_position()
+	else:
+		hero.position = Vector2(960, 540)
 	# Insert before HeroInputManager so tree-order for _unhandled_input
 	# is correct (hero selection before move commands).
 	add_child(hero)

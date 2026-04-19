@@ -34,16 +34,16 @@ const _EnemyBasicScene: PackedScene = preload("res://enemies/EnemyBasic.tscn")
 const _EnemyFlyingScene: PackedScene = preload("res://enemies/EnemyFlying.tscn")
 const _EnemyHealerScene: PackedScene = preload("res://enemies/EnemyHealer.tscn")
 const _Boss1Scene: PackedScene = preload("res://enemies/bosses/Boss1.tscn")
-# Boss scenes ride the centerline (h_offset = 0) and skip speed jitter. Add
-# new boss PackedScenes here — single source of truth for "is this a boss".
+# Boss scenes ride the centerline (v_offset = 0). Add new boss PackedScenes
+# here — single source of truth for "is this a boss".
 const _BOSS_SCENES: Array[PackedScene] = [
 	preload("res://enemies/bosses/Boss1.tscn"),
 ]
-# Phase 43: one Path2D per spawn direction. Each enemy rides the same curve
-# but gets a random perpendicular offset (PathFollow2D.h_offset) so the
-# swarm spreads into a lateral band. Bosses stay centered.
+# Phase 43: one Path2D per spawn direction. Non-boss enemies are assigned one
+# of 3 discrete lanes via PathFollow2D.v_offset so the swarm occupies three
+# visible tracks across horizontal paths. Bosses stay centered.
 const _BASE_PATH_IDS: Array[String] = ["left", "right", "top"]
-const SWARM_H_OFFSET: float = 35.0  # ± pixels perpendicular to the curve
+const LANE_SPACING: float = 50.0  # ± pixels between adjacent lanes (v_offset on horizontal paths)
 
 
 func _ready() -> void:
@@ -332,9 +332,9 @@ func _pick_enemy_for_wave(wave_num: int) -> PackedScene:
 
 
 # Public helper (kept from Phase 4) for manual spawning + used internally above.
-# Phase 43: enemies ride one Path2D per direction. Each non-boss gets a
-# random perpendicular offset (h_offset) so the swarm spreads into a
-# lateral band without authoring multiple rails. Boss scenes ride centered.
+# Phase 43: enemies ride one Path2D per direction. Each non-boss picks one of
+# 3 discrete lanes via v_offset so the swarm occupies above/main/below tracks.
+# Boss scenes ride centered.
 func spawn_enemy(path: Path2D, path_id: String, scene: PackedScene) -> Node:
 	if path == null or scene == null:
 		push_warning("[WaveManager] spawn_enemy: missing path or scene")
@@ -343,9 +343,12 @@ func spawn_enemy(path: Path2D, path_id: String, scene: PackedScene) -> Node:
 	follow.loop = false
 	follow.rotates = false
 	if scene in _BOSS_SCENES:
-		follow.h_offset = 0.0
+		follow.v_offset = 0.0
 	else:
-		follow.h_offset = randf_range(-SWARM_H_OFFSET, SWARM_H_OFFSET)
+		# 3 discrete lanes: above / main / below the curve.
+		# rotates=false + horizontal paths ⇒ v_offset shifts along world Y = perpendicular to travel.
+		var lane_idx: int = randi() % 3
+		follow.v_offset = float(lane_idx - 1) * LANE_SPACING
 	path.add_child(follow)
 	var enemy: Node = scene.instantiate()
 	follow.add_child(enemy)

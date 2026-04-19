@@ -7,6 +7,50 @@ class_name UnitVisualDrawer
 # those remain the responsibility of each unit script.
 
 
+static func draw_swing_arc(ci: CanvasItem, v: UnitVisualData, lunge_dir: Vector2, t01: float) -> void:
+	# Short curved weapon-trail rendered in front of the unit during the
+	# forward half of a lunge. t01 is [0, 1] over the lunge duration; lunge_dir
+	# is the facing unit-vector passed from the unit's _lunge_dir. Drawn in
+	# world-rotated space so the arc reads correctly in any direction, which
+	# keeps the effect isometric-ready for future perspective changes.
+	if lunge_dir.length_squared() < 0.01:
+		return
+	if t01 < 0.3 or t01 > 0.85:
+		return
+	var progress: float = (t01 - 0.3) / 0.55
+	var body_r: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
+	var reach: float = body_r + 14.0
+	var half_span: float = PI / 3.0
+	var center_angle: float = lunge_dir.angle()
+	var pts: PackedVector2Array = PackedVector2Array()
+	for i in 7:
+		var frac: float = float(i) / 6.0
+		var ang: float = center_angle + lerp(-half_span, half_span, frac)
+		pts.append(Vector2(cos(ang), sin(ang)) * reach)
+	var col: Color = v.accent_color
+	col.a = (1.0 - progress) * 0.8
+	ci.draw_polyline(pts, col, 3.5, true)
+
+
+static func draw_hit_flash(ci: CanvasItem, v: UnitVisualData, amount: float, offset: Vector2 = Vector2.ZERO) -> void:
+	# Additive white overlay in the body's silhouette, fading with amount
+	# in [0, 1]. Intended to be called immediately after draw_unit() while
+	# a hit flash is active. Brief (~80 ms) flashes read as "got hit."
+	if amount <= 0.0:
+		return
+	var a: float = clampf(amount, 0.0, 1.0) * 0.65
+	var col: Color = Color(1.0, 1.0, 1.0, a)
+	if offset != Vector2.ZERO:
+		ci.draw_set_transform(offset, 0.0, Vector2.ONE)
+	if v.shape == UnitVisualData.Shape.CIRCLE:
+		ci.draw_circle(Vector2.ZERO, v.radius, col)
+	else:
+		var half: Vector2 = v.body_size * 0.5
+		ci.draw_rect(Rect2(-half, v.body_size), col)
+	if offset != Vector2.ZERO:
+		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
 static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vector2.ZERO) -> void:
 	if offset != Vector2.ZERO:
 		ci.draw_set_transform(offset, 0.0, Vector2.ONE)

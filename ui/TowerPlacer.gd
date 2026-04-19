@@ -123,11 +123,8 @@ func _on_sell_requested(spot_id: String) -> void:
 	var tower: Node = _grid.get_tower_at(spot_id)
 	if tower == null:
 		return
-	var refund: int = 0
-	if tower.has_method("get_sell_value"):
-		refund = int(tower.get_sell_value())
-	elif "data" in tower and tower.data != null and "sell_value" in tower.data:
-		refund = int(tower.data.sell_value)
+	# CORE RULE 14 — every tower implements get_sell_value().
+	var refund: int = int(tower.get_sell_value())
 	_grid.clear_tower_at(spot_id)
 	GameState.add_gold(refund)
 	EventBus.tower_sold.emit(tower, refund)

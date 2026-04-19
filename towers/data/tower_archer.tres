@@ -53,6 +53,7 @@ tower_id = "archer"
 damage = 4.0
 attack_range = 400.0
 attack_speed = 1.2
+targets_flying = true
 level_upgrades = Array[Resource]([SubResource("ArcherUpg_L2"), SubResource("ArcherUpg_L3")])
 level_3_branches = Array[Resource]([SubResource("ArcherBranch_Ranger"), SubResource("ArcherBranch_Musketeer")])
 projectile_scene = ExtResource("2_arrow")

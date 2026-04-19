@@ -50,3 +50,36 @@ class_name TowerData
 @export var soldier_rally_range: float = 350.0
 
 @export_multiline var encyclopedia_entry: String = ""
+
+
+# Tower Indicator Interface (CORE RULE 14) — Resource-level accessors used by
+# the build ring to preview a tower BEFORE it has been instantiated.
+
+func is_barracks() -> bool:
+	return soldier_data != null and soldier_scene != null
+
+
+# Ring radius shown on the build-ring armed slot. Combat towers use
+# attack_range; barracks fall back to rally range (their attack_range is 0).
+func get_preview_range() -> float:
+	if attack_range > 0.0:
+		return attack_range
+	return soldier_rally_range
+
+
+# Stats-card row for a buildable (not-yet-built) tower. Format mirrors the
+# live-tower get_stats_line() so the player sees the same numbers pre-build
+# and post-build.
+func get_stats_line() -> String:
+	if is_barracks():
+		var sd: Resource = soldier_data
+		return "Rally %d   Squad %d   HP %d" % [
+			int(soldier_rally_range),
+			int(sd.max_count),
+			int(sd.max_health),
+		]
+	return "Dmg %d   Rng %d   Spd %.1f" % [
+		int(damage),
+		int(attack_range),
+		attack_speed,
+	]

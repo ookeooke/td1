@@ -15,6 +15,8 @@ class_name ItemIcon
 # was tapped (useful for "tap to unequip" UX).
 
 signal pressed(instance)
+signal hovered(instance)
+signal unhovered
 
 const SIZE_PX: float = 92.0
 const BORDER_THICKNESS_PX: float = 3.0
@@ -33,9 +35,13 @@ const _RARITY_COLORS: Array[Color] = [
 
 const _ARMED_COLOR: Color = Color(1.0, 0.95, 0.4)      # yellow (matches tower menu)
 const _LOCKED_COLOR: Color = Color(0.25, 0.25, 0.25)
-const _EMPTY_BG: Color = Color(0.15, 0.15, 0.18)
-const _EMPTY_BORDER: Color = Color(0.3, 0.3, 0.32)
-const _FILLED_BG: Color = Color(0.1, 0.1, 0.14)
+# Empty tiles need enough contrast to be visible against the screen
+# background (which is ~0.1,0.14,0.18 in EquipmentScreen). Lifted bg + hot
+# border so the cell reads clearly as "slot, no item".
+const _EMPTY_BG: Color = Color(0.19, 0.22, 0.28)
+const _EMPTY_BORDER: Color = Color(0.45, 0.48, 0.55)
+const _EMPTY_PLUS_COLOR: Color = Color(0.38, 0.42, 0.5)
+const _FILLED_BG: Color = Color(0.08, 0.08, 0.12)
 
 var _instance = null
 var _base: Resource = null
@@ -49,6 +55,17 @@ func _ready() -> void:
 	size = Vector2(SIZE_PX, SIZE_PX)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	gui_input.connect(_on_gui_input)
+	mouse_entered.connect(_on_mouse_entered)
+	mouse_exited.connect(_on_mouse_exited)
+
+
+func _on_mouse_entered() -> void:
+	if not _is_empty and not _locked:
+		hovered.emit(_instance)
+
+
+func _on_mouse_exited() -> void:
+	unhovered.emit()
 
 
 func setup_instance(inst) -> void:
@@ -116,6 +133,15 @@ func _draw() -> void:
 		draw_line(Vector2(rect.position.x + rect.size.x, rect.position.y),
 				  Vector2(rect.position.x, rect.position.y + rect.size.y),
 				  cross_color, 2.0)
+		return
+	# Empty-slot "+" mark — makes it obvious this is a placeholder rather
+	# than an item rendering as nothing.
+	if _is_empty:
+		var center: Vector2 = rect.position + rect.size * 0.5
+		var arm: float = rect.size.x * 0.18
+		var thick: float = 3.0
+		draw_line(center + Vector2(-arm, 0), center + Vector2(arm, 0), _EMPTY_PLUS_COLOR, thick)
+		draw_line(center + Vector2(0, -arm), center + Vector2(0, arm), _EMPTY_PLUS_COLOR, thick)
 		return
 	# Glyph — procedural shape keyed by base.icon_glyph (sword/shield/star/
 	# generic). Shared helper with ItemPickup so ground drop and UI tile

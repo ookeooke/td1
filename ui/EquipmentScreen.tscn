@@ -89,13 +89,25 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 15
 theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
 
+[node name="DetailsTitle" type="Label" parent="Body/LeftPanel"]
+layout_mode = 2
+text = "Details"
+theme_override_font_sizes/font_size = 20
+
+[node name="DetailsLabel" type="Label" parent="Body/LeftPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.88, 0.92, 1, 1)
+
 [node name="HintLabel" type="Label" parent="Body/LeftPanel"]
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 2
 theme_override_font_sizes/font_size = 13
 theme_override_colors/font_color = Color(0.55, 0.6, 0.7, 1)
-text = "Tap inventory item to equip. Tap equipped slot to unequip (item stays in inventory)."
+text = "Tap inventory item to equip. Tap equipped slot to unequip (item stays in inventory). Hover for details."
 
 [node name="RightPanel" type="VBoxContainer" parent="Body"]
 layout_mode = 2

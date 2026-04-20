@@ -71,6 +71,10 @@ func add_to_round(instance) -> void:
 	if instance == null:
 		return
 	round_pickups.append(instance)
+	# Phase E4 — first-time encounter unlocks the encyclopedia entry.
+	# GameState.try_unlock_encyclopedia is idempotent (skips if already in).
+	if instance.base_id != "":
+		GameState.try_unlock_encyclopedia(instance.base_id)
 	EventBus.item_picked_up.emit(instance)
 	EventBus.inventory_changed.emit()
 

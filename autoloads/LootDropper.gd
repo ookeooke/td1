@@ -34,19 +34,25 @@ func _ready() -> void:
 func _on_enemy_died(enemy: Node, _gold: int) -> void:
 	if not is_instance_valid(enemy):
 		return
-	var table: Resource = _default_table   # Phase E: read enemy.data.loot_table if set
+	# Phase E3: per-enemy loot_table override. Bosses / elites can author
+	# their own .tres (guaranteed drop, weighted to higher rarities).
+	# Regular mobs leave data.loot_table = null → fall back to the default.
+	var table: Resource = _default_table
+	if enemy != null and "data" in enemy and enemy.data != null \
+			and "loot_table" in enemy.data and enemy.data.loot_table != null:
+		table = enemy.data.loot_table
 	if table == null:
 		return
 	if randf() > table.drop_chance:
 		return
-	var base_id: String = table.pick_base_id()
+	var wave: int = GameState.wave_number
+	var base_id: String = table.pick_base_id(wave)
 	if base_id == "":
 		return
 	var base: Resource = ContentRegistry.find_item_base(base_id)
 	if base == null:
 		push_warning("[LootDropper] unknown base_id '%s' in loot table" % base_id)
 		return
-	var wave: int = GameState.wave_number
 	var inst = LootRoller.roll_item_instance(base, wave)
 	if inst == null:
 		return

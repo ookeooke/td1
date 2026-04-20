@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+
+[sub_resource type="Resource" id="Impl_LeatherCap"]
+script = ExtResource("2_mod")
+ability_id = "impl_leather_cap"
+trigger = 7
+max_health_flat = 5.0
+armor_flat = 0.02
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_leather_cap"
+base_name = "Leather Cap"
+slot = 1
+rarity = 1
+icon_glyph = "shield"
+icon_color = Color(0.55, 0.4, 0.25, 1)
+hero_restriction = Array[String]([])
+level_requirement = 1
+implicit_abilities = Array[Resource]([SubResource("Impl_LeatherCap")])
+affix_slots = 1
+allowed_affix_pools = Array[String](["pool_armor_defensive"])
+drop_weight = 1.0
+min_wave = 1
+description = "Worn leather. One rolled defensive affix."

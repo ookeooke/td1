@@ -12,6 +12,12 @@ class_name AffixData
 @export var value_min: float = 1.0
 @export var value_max: float = 5.0
 @export var value_is_int: bool = true
+# Phase E1 — display-only scaling / precision, decoupled from roll storage.
+# A pct-style affix stores the raw multiplier (e.g. 0.15) but wants to show
+# "+15% Damage": set display_scale=100.0 and display_decimals=0. Default
+# keeps legacy behavior (flat values show as-is).
+@export var display_scale: float = 1.0
+@export_range(0, 3) var display_decimals: int = 0
 @export var ability_template: Resource                   # an AbilityData subclass (e.g. StatModifierAbility)
 @export var ability_value_property: String = ""         # name of the numeric field on the template to inject into
 @export var allowed_slots: Array[int] = []              # empty = any slot
@@ -42,9 +48,17 @@ func make_rolled_ability(rolled_value: float) -> Resource:
 
 
 func format_display(rolled_value: float) -> String:
+	var scaled: float = rolled_value * display_scale
 	var s: String
-	if value_is_int:
-		s = str(int(rolled_value))
-	else:
-		s = "%.1f" % rolled_value
+	match display_decimals:
+		0:
+			s = "%d" % int(round(scaled))
+		1:
+			s = "%.1f" % scaled
+		2:
+			s = "%.2f" % scaled
+		3:
+			s = "%.3f" % scaled
+		_:
+			s = str(scaled)
 	return display_template.replace("{value}", s)

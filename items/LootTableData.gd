@@ -13,18 +13,31 @@ class_name LootTableData
 @export var entries: Dictionary = {}    # base_id -> weight (float)
 
 
-func pick_base_id() -> String:
+func pick_base_id(wave: int = 999) -> String:
+	# Honors each base's min_wave gate (Phase E2): entries whose referenced
+	# base requires a later wave are excluded from the pick. Prevents early
+	# waves from dropping Legendaries.
 	if entries.is_empty():
 		return ""
+	var eligible_ids: Array[String] = []
+	var eligible_weights: Array[float] = []
 	var total: float = 0.0
-	for w in entries.values():
-		total += float(w)
-	if total <= 0.0:
+	for base_id in entries.keys():
+		var w: float = float(entries[base_id])
+		if w <= 0.0:
+			continue
+		var base: Resource = ContentRegistry.find_item_base(String(base_id))
+		if base != null and "min_wave" in base and base.min_wave > wave:
+			continue
+		eligible_ids.append(String(base_id))
+		eligible_weights.append(w)
+		total += w
+	if eligible_ids.is_empty() or total <= 0.0:
 		return ""
 	var r: float = randf() * total
 	var acc: float = 0.0
-	for base_id in entries.keys():
-		acc += float(entries[base_id])
+	for i in eligible_ids.size():
+		acc += eligible_weights[i]
 		if r <= acc:
-			return String(base_id)
-	return String(entries.keys()[-1])
+			return eligible_ids[i]
+	return eligible_ids[-1]

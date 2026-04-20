@@ -75,6 +75,14 @@ size_flags_horizontal = 3
 text = "Heroes"
 theme_override_font_sizes/font_size = 18
 
+[node name="ItemsTab" type="Button" parent="TabRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Items"
+theme_override_font_sizes/font_size = 18
+
 [node name="ScrollContainer" type="ScrollContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15

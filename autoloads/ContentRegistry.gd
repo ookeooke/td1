@@ -45,10 +45,17 @@ const _ITEM_BASE_PATHS: Array[String] = [
 	"res://items/bases/base_starter_sword.tres",
 	"res://items/bases/base_starter_tunic.tres",
 	"res://items/bases/base_starter_charm.tres",
-	# Phase B rollable bases
+	# Phase B rollable bases — MAGIC (iron_sword, chain_mail) + RARE (amulet)
 	"res://items/bases/base_iron_sword.tres",
 	"res://items/bases/base_chain_mail.tres",
 	"res://items/bases/base_amulet_wisdom.tres",
+	# Phase E2 — rarity spread across all 5 tiers
+	"res://items/bases/base_wooden_sword.tres",    # 0 COMMON
+	"res://items/bases/base_leather_cap.tres",     # 1 MAGIC
+	"res://items/bases/base_steel_sword.tres",     # 2 RARE
+	"res://items/bases/base_plate_armor.tres",     # 2 RARE
+	"res://items/bases/base_elven_blade.tres",     # 3 EPIC
+	"res://items/bases/base_demon_core.tres",      # 4 LEGENDARY
 ]
 
 const _AFFIX_POOL_PATHS: Array[String] = [
@@ -58,12 +65,19 @@ const _AFFIX_POOL_PATHS: Array[String] = [
 ]
 
 const _AFFIX_PATHS: Array[String] = [
+	# Flat-value affixes
 	"res://items/affixes/affix_damage_flat.tres",
 	"res://items/affixes/affix_lifesteal.tres",
 	"res://items/affixes/affix_on_hit_bonus.tres",
 	"res://items/affixes/affix_hp_flat.tres",
 	"res://items/affixes/affix_armor_flat.tres",
 	"res://items/affixes/affix_regen.tres",
+	# Phase E1 — percentage-based affixes (display_scale=100)
+	"res://items/affixes/affix_damage_pct.tres",
+	"res://items/affixes/affix_hp_pct.tres",
+	"res://items/affixes/affix_attack_speed_pct.tres",
+	"res://items/affixes/affix_move_speed_pct.tres",
+	"res://items/affixes/affix_xp_gain_pct.tres",
 ]
 
 var enemies: Array[Resource] = []

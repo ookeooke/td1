@@ -29,6 +29,7 @@ var instance = null   # ItemInstance — set by LootDropper via setup() before a
 var _age: float = 0.0
 var _icon_color: Color = Color.WHITE
 var _rarity_color: Color = Color.WHITE
+var _icon_glyph: String = "generic"
 
 
 func setup(inst) -> void:
@@ -41,6 +42,7 @@ func _ready() -> void:
 		var base: Resource = ContentRegistry.find_item_base(instance.base_id)
 		if base != null:
 			_icon_color = base.icon_color
+			_icon_glyph = base.icon_glyph
 			var r: int = clampi(int(base.rarity), 0, _RARITY_COLORS.size() - 1)
 			_rarity_color = _RARITY_COLORS[r]
 	# Register with central tap router (C3).
@@ -65,10 +67,13 @@ func _draw() -> void:
 	var zs: float = _get_zoom_scale()
 	var bob: float = sin(_age * TAU / BOB_PERIOD_S) * BOB_HEIGHT_PX * zs
 	var center: Vector2 = Vector2(0, -20 + bob)
+	var radius: float = ICON_RADIUS_PX * zs
 	# Rarity halo — slightly larger than the icon
-	draw_arc(center, (ICON_RADIUS_PX + HALO_THICKNESS_PX) * zs, 0.0, TAU, 32, _rarity_color, HALO_THICKNESS_PX * zs, true)
-	# Icon body
-	draw_circle(center, ICON_RADIUS_PX * zs, _icon_color)
+	draw_arc(center, radius + HALO_THICKNESS_PX * zs, 0.0, TAU, 32, _rarity_color, HALO_THICKNESS_PX * zs, true)
+	# Dark backing disc so glyph is always readable over any map terrain
+	draw_circle(center, radius, Color(0.08, 0.08, 0.1, 0.85))
+	# Procedural glyph (same helper as ItemIcon for consistency)
+	ItemGlyph.draw(self, _icon_glyph, center, radius, _icon_color)
 
 
 func _get_zoom_scale() -> float:

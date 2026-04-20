@@ -110,6 +110,26 @@ func get_inventory(hero_id: String) -> Array:
 	return hero_inventories.get(hero_id, [])
 
 
+# Phase polish — returns only items NOT currently equipped in any slot.
+# Used by EquipmentScreen so equipped items render only in their slot on
+# the left, not also in the inventory grid on the right (matches
+# Diablo / WoW / PoE convention).
+func get_unequipped(hero_id: String) -> Array:
+	var equipped_uids: Dictionary = {}
+	for i in SLOT_COUNT:
+		var uid: String = get_equipped_uid(hero_id, i)
+		if uid != "":
+			equipped_uids[uid] = true
+	var out: Array = []
+	for inst in get_inventory(hero_id):
+		if inst == null:
+			continue
+		if equipped_uids.has(inst.uid):
+			continue
+		out.append(inst)
+	return out
+
+
 func find_by_uid(hero_id: String, uid: String):
 	for inst in get_inventory(hero_id):
 		if inst != null and inst.uid == uid:

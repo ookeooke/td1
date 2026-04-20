@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="AffixData" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://dmke300jq3e47" path="res://items/AffixData.gd" id="1_affix"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+
+[sub_resource type="Resource" id="Tpl_DamageFlat"]
+script = ExtResource("2_mod")
+ability_id = "affix_tpl_damage_flat"
+trigger = 7
+damage_flat = 0.0
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = "affix_damage_flat"
+display_template = "+{value} Damage"
+value_min = 1.0
+value_max = 5.0
+value_is_int = true
+ability_template = SubResource("Tpl_DamageFlat")
+ability_value_property = "damage_flat"
+allowed_slots = Array[int]([])
+weight = 1.0

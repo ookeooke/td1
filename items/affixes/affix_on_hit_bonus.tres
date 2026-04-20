@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="AffixData" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://dmke300jq3e47" path="res://items/AffixData.gd" id="1_affix"]
+[ext_resource type="Script" uid="uid://c7gd214j4vheq" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="2_bonus"]
+
+[sub_resource type="Resource" id="Tpl_OnHitBonus"]
+script = ExtResource("2_bonus")
+ability_id = "affix_tpl_on_hit_bonus"
+trigger = 2
+bonus_damage = 0.0
+bonus_damage_type = 0
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = "affix_on_hit_bonus"
+display_template = "+{value} Bonus Damage on Hit"
+value_min = 1.0
+value_max = 4.0
+value_is_int = true
+ability_template = SubResource("Tpl_OnHitBonus")
+ability_value_property = "bonus_damage"
+allowed_slots = Array[int]([])
+weight = 0.6

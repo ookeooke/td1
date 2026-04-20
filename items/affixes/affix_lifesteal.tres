@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="AffixData" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://dmke300jq3e47" path="res://items/AffixData.gd" id="1_affix"]
+[ext_resource type="Script" uid="uid://dlq0ex8y336kj" path="res://systems/abilities/LifestealAbility.gd" id="2_life"]
+
+[sub_resource type="Resource" id="Tpl_Lifesteal"]
+script = ExtResource("2_life")
+ability_id = "affix_tpl_lifesteal"
+trigger = 2
+heal_amount = 0.0
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = "affix_lifesteal"
+display_template = "+{value} Lifesteal"
+value_min = 1.0
+value_max = 3.0
+value_is_int = true
+ability_template = SubResource("Tpl_Lifesteal")
+ability_value_property = "heal_amount"
+allowed_slots = Array[int]([])
+weight = 0.7

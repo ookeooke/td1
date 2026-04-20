@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+
+[sub_resource type="Resource" id="Impl_AmuletWisdom"]
+script = ExtResource("2_mod")
+ability_id = "impl_amulet_wisdom"
+trigger = 7
+xp_gain_mult_pct = 0.10
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_amulet_wisdom"
+base_name = "Amulet of Wisdom"
+slot = 5
+rarity = 2
+icon_glyph = "star"
+icon_color = Color(0.95, 0.85, 0.35, 1)
+hero_restriction = Array[String]([])
+level_requirement = 1
+implicit_abilities = Array[Resource]([SubResource("Impl_AmuletWisdom")])
+affix_slots = 2
+allowed_affix_pools = Array[String](["pool_weapon_offensive", "pool_armor_defensive"])
+drop_weight = 0.5
+min_wave = 1
+description = "A trinket crackling with arcane wisdom. Rolls two mixed affixes."

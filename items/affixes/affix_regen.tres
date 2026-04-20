@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="AffixData" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://dmke300jq3e47" path="res://items/AffixData.gd" id="1_affix"]
+[ext_resource type="Script" uid="uid://dttyqvth8occr" path="res://systems/abilities/RegenAbility.gd" id="2_regen"]
+
+[sub_resource type="Resource" id="Tpl_Regen"]
+script = ExtResource("2_regen")
+ability_id = "affix_tpl_regen"
+trigger = 1
+interval = 2.0
+heal_amount = 0.0
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = "affix_regen"
+display_template = "+{value} HP Regen / 2s"
+value_min = 1.0
+value_max = 3.0
+value_is_int = true
+ability_template = SubResource("Tpl_Regen")
+ability_value_property = "heal_amount"
+allowed_slots = Array[int]([])
+weight = 0.8

@@ -23,6 +23,71 @@ var current_level_id: String = "level_1"
 var selected_hero_id: String = "hero_warrior"
 var stars_earned: int = 0  # set on victory, 0 otherwise
 
+# Phase 47d-2: tower loadout. The build ring always renders TOWER_SLOT_MAX
+# slots; slots beyond `tower_slot_cap` render locked (future progression).
+# `selected_tower_ids` is the ORDERED list of up-to-cap tower_ids; missing
+# entries = empty slots. Defaults to the four launch towers so an
+# uninitialised save still plays correctly.
+const TOWER_SLOT_MAX: int = 6
+var tower_slot_cap: int = 4
+var selected_tower_ids: Array[String] = [
+	"tower_archer", "tower_barracks", "tower_mage", "tower_artillery",
+]
+
+
+# Returns the TowerData resources in loadout order for the unlocked slots.
+# - Elements beyond `tower_slot_cap` are never returned (player can't use them).
+# - Entries referencing a missing/locked tower are skipped (the slot will
+#   render empty in the ring).
+# - If the filtered list is empty (fresh save on a build with no defaults),
+#   falls back to the full set of unlocked towers so the player isn't stuck
+#   with a blank build ring.
+func get_loadout_towers() -> Array:
+	var out: Array = []
+	var limit: int = mini(tower_slot_cap, selected_tower_ids.size())
+	for i in range(limit):
+		var tid: String = selected_tower_ids[i]
+		if tid == "":
+			continue
+		var data: Resource = ContentRegistry.find_tower(tid)
+		if data == null:
+			continue
+		if not UnlockManager.is_tower_unlocked(tid):
+			continue
+		out.append(data)
+	if out.is_empty():
+		for data in ContentRegistry.towers:
+			if data != null and UnlockManager.is_tower_unlocked(data.tower_id):
+				out.append(data)
+	return out
+
+
+# Set a single loadout slot (0 <= slot_idx < tower_slot_cap). If `tower_id`
+# is already in another slot, those two slots SWAP to enforce the
+# no-duplicates rule without making the player lose a pick. Empty tower_id
+# clears the slot. Returns true when state actually changed (so the UI can
+# persist / redraw).
+func set_loadout_slot(slot_idx: int, tower_id: String) -> bool:
+	if slot_idx < 0 or slot_idx >= tower_slot_cap:
+		return false
+	# Grow the array to cover the slot — preserves sparse positions.
+	while selected_tower_ids.size() <= slot_idx:
+		selected_tower_ids.append("")
+	if tower_id != "":
+		var existing: int = selected_tower_ids.find(tower_id)
+		if existing == slot_idx:
+			return false
+		if existing >= 0:
+			selected_tower_ids[existing] = selected_tower_ids[slot_idx]
+	selected_tower_ids[slot_idx] = tower_id
+	return true
+
+
+func reset_loadout_to_default() -> void:
+	selected_tower_ids = [
+		"tower_archer", "tower_barracks", "tower_mage", "tower_artillery",
+	]
+
 # Progression state — survives level restarts and scene transitions. Only
 # cleared by a full `reset()`. SaveManager (Phase 27) will read/write these
 # dictionaries on boot / on level-complete.

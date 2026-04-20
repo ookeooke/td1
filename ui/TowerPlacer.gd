@@ -1,19 +1,9 @@
 extends Node
 
-# Phase 8 + 38 refactor: resolves tower_id → scene/data/cost via
-# ContentRegistry + a scene map. Adding a new tower = one .tres in
-# ContentRegistry + one scene_map entry here (needed because attack
-# towers and barracks use different scene structures).
-
-# Scene map: tower_id → PackedScene. The only hardcoded part — needed
-# because BaseTower vs TowerBarracks have different scene structures.
-# ContentRegistry provides the data; this provides the scene.
-const _SCENE_MAP: Dictionary = {
-	"tower_archer": preload("res://towers/TowerArcher.tscn"),
-	"tower_barracks": preload("res://towers/TowerBarracks.tscn"),
-	"tower_mage": preload("res://towers/TowerMage.tscn"),
-	"tower_artillery": preload("res://towers/TowerArtillery.tscn"),
-}
+# Phase 8 + 38 + 47d-1: resolves tower_id → scene/data/cost entirely from
+# ContentRegistry. Each TowerData now carries its own `tower_scene`
+# PackedScene field, so adding a new tower is ONE file — drop a .tres,
+# register it in ContentRegistry. No scene map to keep in sync.
 
 @export var towers_parent_path: NodePath
 @export var grid_manager_path: NodePath
@@ -31,16 +21,20 @@ func _ready() -> void:
 	_grid = get_node_or_null(grid_manager_path)
 	if _grid == null:
 		_grid = get_tree().root.find_child("GridManager", true, false)
-	# Build the registry from ContentRegistry's tower data + the scene map.
+	# Build the registry straight from ContentRegistry — scene now lives on
+	# TowerData itself (Phase 47d-1).
 	for tower_data in ContentRegistry.towers:
 		if tower_data == null:
 			continue
 		var tid: String = tower_data.tower_id
-		if tid == "" or not _SCENE_MAP.has(tid):
-			push_warning("[TowerPlacer] no scene mapped for tower_id '%s'" % tid)
+		if tid == "":
+			push_warning("[TowerPlacer] tower has empty tower_id")
+			continue
+		if tower_data.tower_scene == null:
+			push_warning("[TowerPlacer] tower '%s' has no tower_scene set on its TowerData" % tid)
 			continue
 		_registry[tid] = {
-			"scene": _SCENE_MAP[tid],
+			"scene": tower_data.tower_scene,
 			"data": tower_data,
 			"cost": int(tower_data.cost),
 		}
@@ -65,6 +59,15 @@ func _on_build_requested(spot_id: String, tower_id: String) -> void:
 		print("[TowerPlacer] build refused — need %dg, have %d" % [cost, GameState.gold])
 		return
 	var tower: Node2D = (entry.scene as PackedScene).instantiate()
+	# Phase 47d-6 fix: override the scene's baked `data` (if any) with the
+	# TowerData we actually want. This turns the scene into a pure chassis
+	# so ONE combat scene (TowerCombat.tscn) can back N data-driven towers,
+	# AND breaks the circular tres↔tscn reference that was leaving
+	# `tower.data = null` for towers whose scene round-trips to their own
+	# TowerData. Must happen BEFORE add_child so base_tower._ready sees the
+	# right data.
+	if "data" in tower:
+		tower.data = entry.data
 	tower.position = _grid.get_spot_position(spot_id)
 	_towers_parent.add_child(tower)
 	_grid.set_tower_at(spot_id, tower)

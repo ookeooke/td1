@@ -83,9 +83,16 @@ func get_preview_stats(base: TowerData) -> Array:
 	]
 	if aoe > 0.0:
 		rows.append({"label": "AoE", "value": aoe, "fmt": "%d"})
-	if on_hit_slow_factor > 0.0:
-		rows.append({"label": "Slow", "value": on_hit_slow_factor * 100.0, "fmt": "%d%%"})
-		rows.append({"label": "SlowT", "value": on_hit_slow_duration, "fmt": "%.1fs"})
-	if on_hit_stun_duration > 0.0:
-		rows.append({"label": "Stun", "value": on_hit_stun_duration, "fmt": "%.1fs"})
+	# Phase 47d-6: post-upgrade slow/stun inherits from base TowerData when
+	# the upgrade doesn't override, matching _build_on_hit_effect's fallback.
+	# Keeps the diff card honest for towers whose slow is a base trait
+	# (Ice Tower) rather than an upgrade trait (Ranger branch).
+	var eff_slow_f: float = on_hit_slow_factor if on_hit_slow_factor > 0.0 else (base.on_hit_slow_factor if base != null else 0.0)
+	var eff_slow_d: float = on_hit_slow_duration if on_hit_slow_duration > 0.0 else (base.on_hit_slow_duration if base != null else 0.0)
+	var eff_stun: float = on_hit_stun_duration if on_hit_stun_duration > 0.0 else (base.on_hit_stun_duration if base != null else 0.0)
+	if eff_slow_f > 0.0:
+		rows.append({"label": "Slow", "value": eff_slow_f * 100.0, "fmt": "%d%%"})
+		rows.append({"label": "SlowT", "value": eff_slow_d, "fmt": "%.1fs"})
+	if eff_stun > 0.0:
+		rows.append({"label": "Stun", "value": eff_stun, "fmt": "%.1fs"})
 	return rows

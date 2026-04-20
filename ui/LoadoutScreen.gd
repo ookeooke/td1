@@ -3,12 +3,17 @@ extends Control
 # Phase 30 + 31: pre-level loadout + mode selection. Shows hero/tower/spell
 # roster and 3 mode buttons (Campaign / Heroic / Iron) with unlock status.
 # Player picks a mode, then Start → gameplay.
+# Phase 47d-5: tower row is now a live icon preview wired to LoadoutPickerScreen.
+
+const TowerIconButton := preload("res://ui/TowerIconButton.gd")
 
 @onready var back_button: Button = %BackButton
 @onready var start_button: Button = %StartButton
 @onready var hero_switch_button: Button = %HeroSwitchButton
 @onready var hero_label: Label = %HeroLabel
 @onready var towers_label: Label = %TowersLabel
+@onready var towers_row: HBoxContainer = %TowersRow
+@onready var change_towers_button: Button = %ChangeTowersButton
 @onready var spells_label: Label = %SpellsLabel
 @onready var level_label: Label = %LevelLabel
 @onready var campaign_button: Button = %CampaignButton
@@ -23,6 +28,7 @@ func _ready() -> void:
 	back_button.pressed.connect(_on_back)
 	start_button.pressed.connect(_on_start)
 	hero_switch_button.pressed.connect(_on_hero_title_tapped)
+	change_towers_button.pressed.connect(_on_change_towers)
 	campaign_button.pressed.connect(_on_mode_selected.bind("campaign"))
 	heroic_button.pressed.connect(_on_mode_selected.bind("heroic"))
 	iron_button.pressed.connect(_on_mode_selected.bind("iron"))
@@ -30,12 +36,27 @@ func _ready() -> void:
 	_refresh()
 
 
+func _on_change_towers() -> void:
+	SceneManager.goto("res://ui/LoadoutPickerScreen.tscn")
+
+
+func _rebuild_towers_row() -> void:
+	for child in towers_row.get_children():
+		child.queue_free()
+	var loadout: Array = GameState.get_loadout_towers()
+	for data in loadout:
+		# TowerIconButton locks its own 90x90 in _ready; no size override here.
+		var icon: Control = TowerIconButton.new()
+		towers_row.add_child(icon)
+		icon.setup_display(data)
+
+
 func _refresh() -> void:
 	var lid: String = GameState.current_level_id
 	var is_endless: bool = GameState.current_mode == "endless"
 	level_label.text = "Endless Mode" if is_endless else lid.replace("_", " ").capitalize()
 	_refresh_hero_info()
-	towers_label.text = "Towers: Archer, Barracks"
+	_rebuild_towers_row()
 	spells_label.text = "Spells: Fireball, Recruit"
 	# Endless skips the mode selector — it IS the mode.
 	campaign_button.visible = not is_endless

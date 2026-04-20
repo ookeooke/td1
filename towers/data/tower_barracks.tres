@@ -5,6 +5,7 @@
 [ext_resource type="Resource" uid="uid://b1td1sold001" path="res://soldiers/data/soldier_basic.tres" id="3_soldata"]
 [ext_resource type="Script" uid="uid://cbnmfnm6r853q" path="res://towers/TowerUpgradeData.gd" id="4_upg"]
 [ext_resource type="Resource" uid="uid://b1td1sold002" path="res://soldiers/data/soldier_elite.tres" id="5_elite"]
+[ext_resource type="PackedScene" uid="uid://b1td1towbar02" path="res://towers/TowerBarracks.tscn" id="6_scene"]
 
 [sub_resource type="Resource" id="BarracksUpg_L2"]
 script = ExtResource("4_upg")
@@ -19,6 +20,8 @@ soldier_rally_range = 450.0
 script = ExtResource("1_data")
 tower_name = "Barracks"
 tower_id = "tower_barracks"
+tower_scene = ExtResource("6_scene")
+pictogram = "shield"
 damage = 0.0
 attack_range = 0.0
 attack_speed = 0.0

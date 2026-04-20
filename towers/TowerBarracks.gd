@@ -260,8 +260,10 @@ func _flag_world_pos() -> Vector2:
 # level. Drawn as a thin ring inside each soldier's body outline so players
 # can tell which barracks owns which soldier in a crowded lane.
 func _squad_color() -> Color:
-	var seed: int = int(roundf(global_position.x)) * 73856093 ^ int(roundf(global_position.y)) * 19349663
-	var hue: float = float(seed & 0xFFFF) / 65535.0
+	# `seed` is the name of Godot's built-in RNG-seeding function — renamed
+	# to `h` here to avoid SHADOWED_GLOBAL_IDENTIFIER at parse time.
+	var h: int = int(roundf(global_position.x)) * 73856093 ^ int(roundf(global_position.y)) * 19349663
+	var hue: float = float(h & 0xFFFF) / 65535.0
 	return Color.from_hsv(hue, 0.65, 0.95)
 
 

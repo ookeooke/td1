@@ -2,11 +2,14 @@
 
 [ext_resource type="Script" uid="uid://eg36tioogljo" path="res://towers/TowerData.gd" id="1_data"]
 [ext_resource type="PackedScene" uid="uid://b1td1artshell" path="res://projectiles/ArtilleryShell.tscn" id="2_proj"]
+[ext_resource type="PackedScene" uid="uid://i78jurl1exh5" path="res://towers/TowerCombat.tscn" id="3_scene"]
 
 [resource]
 script = ExtResource("1_data")
 tower_name = "Artillery"
 tower_id = "tower_artillery"
+tower_scene = ExtResource("3_scene")
+pictogram = "cannon"
 damage = 25.0
 attack_range = 500.0
 attack_speed = 0.4

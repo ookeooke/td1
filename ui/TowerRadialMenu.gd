@@ -113,28 +113,54 @@ func _open_build_ring(world_pos: Vector2) -> void:
 	_clear_slots()
 	_hide_stats_card()
 	_hide_range_preview()
-	var buildable: Array = []
-	for data in ContentRegistry.towers:
-		if data == null:
-			continue
-		if not UnlockManager.is_tower_unlocked(data.tower_id):
-			continue
-		buildable.append(data)
-	if buildable.is_empty():
-		return
-	var n: int = buildable.size()
+	# Phase 47d-3: ring always has TOWER_SLOT_MAX slots. Positions [0..cap-1]
+	# pull from the player's loadout; positions [cap..MAX-1] render padlocks.
+	# Keeps the visual footprint constant as the player unlocks more slots
+	# through progression (no layout re-shuffle).
+	#
+	# Iterate `selected_tower_ids` POSITIONALLY (same pattern as
+	# LoadoutPickerScreen._rebuild_ring) — not the compacted
+	# `get_loadout_towers()` — so an empty slot in the picker stays empty
+	# at the same index here instead of being filled by the next tower.
+	# Otherwise slot 1 cleared in the picker would pull Mage forward into
+	# slot 1 in-game and misalign every subsequent slot.
+	var n: int = GameState.TOWER_SLOT_MAX
+	var cap: int = mini(GameState.tower_slot_cap, n)
 	for i in range(n):
-		var data: Resource = buildable[i]
-		var slot: Control = TowerIconButton.new()
 		var angle: float = -PI * 0.5 + (TAU / float(n)) * float(i)
+		var slot: Control = TowerIconButton.new()
 		_place_slot(slot, angle)
 		anchor_node.add_child(slot)
-		slot.setup(data, world_pos)
-		slot.pressed.connect(_on_build_slot_pressed.bind(slot))
+		if i < cap:
+			var tid: String = ""
+			if i < GameState.selected_tower_ids.size():
+				tid = GameState.selected_tower_ids[i]
+			var data: Resource = ContentRegistry.find_tower(tid) if tid != "" else null
+			if data != null and not UnlockManager.is_tower_unlocked(tid):
+				data = null  # respect live unlock state
+			if data == null:
+				# Empty but unlocked slot — show as a locked placeholder with
+				# a distinct hint. Cheapest path: reuse padlock visuals.
+				slot.setup_locked()
+				slot.locked_pressed.connect(_on_empty_slot_pressed)
+			else:
+				slot.setup(data, world_pos)
+				slot.pressed.connect(_on_build_slot_pressed.bind(slot))
+		else:
+			slot.setup_locked()
+			slot.locked_pressed.connect(_on_locked_slot_pressed)
 		_slots.append(slot)
 	visible = true
 	_animate_open()
 	_gate_actions_one_frame()
+
+
+func _on_locked_slot_pressed() -> void:
+	Toast.show_message("Unlock through progression")
+
+
+func _on_empty_slot_pressed() -> void:
+	Toast.show_message("Set this slot in Loadout")
 
 
 func _on_build_slot_pressed(tower_id: String, slot: Control) -> void:

@@ -4,6 +4,12 @@ class_name TowerData
 @export var tower_name: String = "Tower"
 @export var tower_id: String = ""
 @export var requires_unlock: bool = false
+# Phase 47d-1: scene + icon now live on TowerData so a new tower is a
+# single-file add (drop a .tres, register one preload in ContentRegistry).
+# `pictogram` is a string key dispatched by TowerIconButton._draw_pictogram;
+# multiple towers can share a glyph ("bow" for any archer variant, etc.).
+@export var tower_scene: PackedScene
+@export var pictogram: String = "generic"
 
 @export var damage: float = 5.0
 @export var damage_type: int = 0  # DamageCalculator.DamageType
@@ -15,6 +21,12 @@ class_name TowerData
 # AoE splash radius. 0 = single target (arrow). > 0 = projectile splashes
 # on hit, damaging all enemies within this radius of the impact point.
 @export var aoe_radius: float = 0.0
+# Phase 47d-6: base-level on-hit status effects (applied at L1 before any
+# upgrade). Upgrade overrides on TowerUpgradeData still win when set.
+# Matches TowerUpgradeData field shape for symmetry.
+@export_range(0.0, 1.0) var on_hit_slow_factor: float = 0.0
+@export var on_hit_slow_duration: float = 0.0
+@export var on_hit_stun_duration: float = 0.0
 # Placeholder body color for _draw(). Lets each tower type have a distinct
 # visual without per-tower _draw() subclasses.
 @export var body_color: Color = Color(0.35, 0.45, 0.75)

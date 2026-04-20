@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://eg36tioogljo" path="res://towers/TowerData.gd" id="1_data"]
 [ext_resource type="PackedScene" uid="uid://ct8yfwywgyvnj" path="res://projectiles/Arrow.tscn" id="2_arrow"]
 [ext_resource type="Script" uid="uid://cbnmfnm6r853q" path="res://towers/TowerUpgradeData.gd" id="3_upg"]
+[ext_resource type="PackedScene" uid="uid://i78jurl1exh5" path="res://towers/TowerCombat.tscn" id="4_scene"]
 
 [sub_resource type="Resource" id="ArcherBranch_Ranger"]
 script = ExtResource("3_upg")
@@ -50,6 +51,8 @@ tint = Color(1.15, 1, 0.6, 1)
 script = ExtResource("1_data")
 tower_name = "Archer Tower"
 tower_id = "tower_archer"
+tower_scene = ExtResource("4_scene")
+pictogram = "bow"
 damage = 4.0
 attack_range = 400.0
 attack_speed = 1.2

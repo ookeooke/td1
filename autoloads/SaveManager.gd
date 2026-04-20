@@ -62,6 +62,11 @@ func save_game() -> void:
 		"encyclopedia_unlocked": GameState.encyclopedia_unlocked,
 		"unlocked_content": GameState.unlocked_content,
 		"hero_talents": GameState.hero_talents,
+		# Phase 47d-2: persisted loadout. Starts at four defaults on a fresh
+		# save; survives across sessions so the player's picks stick.
+		"selected_hero_id": GameState.selected_hero_id,
+		"selected_tower_ids": GameState.selected_tower_ids,
+		"tower_slot_cap": GameState.tower_slot_cap,
 		# Future phases extend here:
 		# "total_stars": computed from level_stars
 		# "endless_best_score": int
@@ -148,6 +153,16 @@ func load_game() -> void:
 		GameState.purchased_upgrades.clear()
 		for id in data.purchased_upgrades:
 			GameState.purchased_upgrades.append(str(id))
+	# Phase 47d-2: restore loadout state.
+	if data.has("selected_hero_id"):
+		GameState.selected_hero_id = str(data.selected_hero_id)
+	if data.has("tower_slot_cap"):
+		GameState.tower_slot_cap = int(data.tower_slot_cap)
+	if data.has("selected_tower_ids") and data.selected_tower_ids is Array:
+		var restored: Array[String] = []
+		for tid in data.selected_tower_ids:
+			restored.append(str(tid))
+		GameState.selected_tower_ids = restored
 	print("[SaveManager] loaded save v%d — stars=%s upgrades=%d" % [
 		version, str(GameState.level_stars), GameState.purchased_upgrades.size(),
 	])

@@ -21,6 +21,7 @@ var towers: Array[Resource] = [
 	preload("res://towers/data/tower_barracks.tres"),
 	preload("res://towers/data/tower_mage.tres"),
 	preload("res://towers/data/tower_artillery.tres"),
+	preload("res://towers/data/tower_ice.tres"),
 ]
 
 var heroes: Array[Resource] = [

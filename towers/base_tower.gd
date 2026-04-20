@@ -154,11 +154,26 @@ func get_stats_line() -> String:
 # Slow/stun/AoE rows are only emitted when the value is meaningful (> 0),
 # since barely-used columns add noise for towers that never touch them.
 func get_preview_stats() -> Array:
+	# Read upgrade override first, fall back to base TowerData fields so an
+	# Ice-Tower-style L1 that slows shows its slow row in the stats card too.
 	var ov: Resource = _level_override()
 	var aoe: float = data.aoe_radius if data != null else 0.0
-	var slow_f: float = ov.on_hit_slow_factor if ov != null else 0.0
-	var slow_d: float = ov.on_hit_slow_duration if ov != null else 0.0
-	var stun: float = ov.on_hit_stun_duration if ov != null else 0.0
+	var slow_f: float = 0.0
+	var slow_d: float = 0.0
+	var stun: float = 0.0
+	if ov != null:
+		slow_f = ov.on_hit_slow_factor
+		slow_d = ov.on_hit_slow_duration
+		stun = ov.on_hit_stun_duration
+	if slow_f <= 0.0 and data != null:
+		slow_f = data.on_hit_slow_factor
+		slow_d = data.on_hit_slow_duration
+	# Same per-field fallback as _build_on_hit_effect so the card shows the
+	# duration that will actually apply when the upgrade inherits it.
+	if slow_f > 0.0 and slow_d <= 0.0 and data != null:
+		slow_d = data.on_hit_slow_duration
+	if stun <= 0.0 and data != null:
+		stun = data.on_hit_stun_duration
 	var rows: Array = [
 		{"label": "Dmg", "value": get_effective_damage(), "fmt": "%d"},
 		{"label": "Rng", "value": get_preview_range(), "fmt": "%d"},
@@ -326,13 +341,31 @@ func _fire_projectile(target: Node) -> void:
 
 
 func _build_on_hit_effect():
+	# Upgrade override wins when present (branch tint, L2/L3 carry-overs).
+	# Otherwise fall back to the base-level fields on TowerData so L1 towers
+	# authored as "it slows" (e.g. Ice Tower) can apply effects pre-upgrade.
 	var ov: Resource = _level_override()
-	if ov == null:
-		return null
-	if ov.on_hit_slow_factor > 0.0 and ov.on_hit_slow_duration > 0.0:
-		return _SlowEffectScript.new(ov.on_hit_slow_factor, ov.on_hit_slow_duration)
-	if ov.on_hit_stun_duration > 0.0:
-		return _StunEffectScript.new(ov.on_hit_stun_duration)
+	var slow_f: float = 0.0
+	var slow_d: float = 0.0
+	var stun_d: float = 0.0
+	if ov != null:
+		slow_f = ov.on_hit_slow_factor
+		slow_d = ov.on_hit_slow_duration
+		stun_d = ov.on_hit_stun_duration
+	if slow_f <= 0.0 and data != null:
+		slow_f = data.on_hit_slow_factor
+		slow_d = data.on_hit_slow_duration
+	# Per-field fallback: an upgrade that boosts factor but leaves duration
+	# at 0 should inherit the base duration — not silently fail because the
+	# "both > 0" gate rejects it. Same direction the other way round.
+	if slow_f > 0.0 and slow_d <= 0.0 and data != null:
+		slow_d = data.on_hit_slow_duration
+	if stun_d <= 0.0 and data != null:
+		stun_d = data.on_hit_stun_duration
+	if slow_f > 0.0 and slow_d > 0.0:
+		return _SlowEffectScript.new(slow_f, slow_d)
+	if stun_d > 0.0:
+		return _StunEffectScript.new(stun_d)
 	return null
 
 

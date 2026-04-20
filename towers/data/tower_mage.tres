@@ -2,11 +2,14 @@
 
 [ext_resource type="Script" uid="uid://eg36tioogljo" path="res://towers/TowerData.gd" id="1_data"]
 [ext_resource type="PackedScene" uid="uid://b1td1magebolt" path="res://projectiles/MageBolt.tscn" id="2_proj"]
+[ext_resource type="PackedScene" uid="uid://i78jurl1exh5" path="res://towers/TowerCombat.tscn" id="3_scene"]
 
 [resource]
 script = ExtResource("1_data")
 tower_name = "Mage Tower"
 tower_id = "tower_mage"
+tower_scene = ExtResource("3_scene")
+pictogram = "star"
 damage = 8.0
 damage_type = 1
 attack_range = 350.0

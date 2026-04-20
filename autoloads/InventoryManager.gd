@@ -93,6 +93,10 @@ func commit_round() -> void:
 
 
 func _on_level_completed(_level_id, _stars, _mode) -> void:
+	# Sweep any still-on-ground drops before committing so end-of-wave drops
+	# aren't lost when the scene tears down. ItemPickupManager's collect_all
+	# calls _collect on each, which add_to_round's the instance back into us.
+	ItemPickupManager.collect_all_pending()
 	commit_round()
 
 

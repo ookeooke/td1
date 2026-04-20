@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="LootTableData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/LootTableData.gd" id="1_loot"]
+
+[resource]
+script = ExtResource("1_loot")
+drop_chance = 0.2
+entries = {
+"base_iron_sword": 1.0,
+"base_chain_mail": 1.0,
+"base_amulet_wisdom": 0.5,
+}

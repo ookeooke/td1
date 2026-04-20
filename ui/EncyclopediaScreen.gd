@@ -7,12 +7,13 @@ extends Control
 #
 # Data source: ContentRegistry autoload (B+D architecture).
 
-enum Tab { ENEMIES, TOWERS, HEROES }
+enum Tab { ENEMIES, TOWERS, HEROES, ITEMS }
 
 @onready var back_button: Button = %BackButton
 @onready var enemies_tab: Button = %EnemiesTab
 @onready var towers_tab: Button = %TowersTab
 @onready var heroes_tab: Button = %HeroesTab
+@onready var items_tab: Button = %ItemsTab
 @onready var entry_list: VBoxContainer = %EntryList
 
 var _current_tab: int = Tab.ENEMIES
@@ -23,6 +24,7 @@ func _ready() -> void:
 	enemies_tab.pressed.connect(_select_tab.bind(Tab.ENEMIES))
 	towers_tab.pressed.connect(_select_tab.bind(Tab.TOWERS))
 	heroes_tab.pressed.connect(_select_tab.bind(Tab.HEROES))
+	items_tab.pressed.connect(_select_tab.bind(Tab.ITEMS))
 	_select_tab(Tab.ENEMIES)
 
 
@@ -35,6 +37,7 @@ func _select_tab(tab: int) -> void:
 	enemies_tab.modulate = Color.WHITE if tab == Tab.ENEMIES else Color(0.5, 0.5, 0.5)
 	towers_tab.modulate = Color.WHITE if tab == Tab.TOWERS else Color(0.5, 0.5, 0.5)
 	heroes_tab.modulate = Color.WHITE if tab == Tab.HEROES else Color(0.5, 0.5, 0.5)
+	items_tab.modulate = Color.WHITE if tab == Tab.ITEMS else Color(0.5, 0.5, 0.5)
 	_rebuild_entries()
 
 
@@ -51,6 +54,14 @@ func _rebuild_entries() -> void:
 		Tab.HEROES:
 			for data in ContentRegistry.heroes:
 				_add_entry(data.hero_id, _format_hero(data), data)
+		Tab.ITEMS:
+			# Skip the starter bases (never drop). Only show rollable content.
+			for data in ContentRegistry.item_bases:
+				if data == null or not ("base_id" in data):
+					continue
+				if data.drop_weight <= 0.0:
+					continue
+				_add_entry(data.base_id, _format_item(data), data)
 
 
 func _enemy_id(data: Resource) -> String:
@@ -150,6 +161,23 @@ func _format_tower(data: Resource) -> Dictionary:
 		"name": data.tower_name,
 		"stats": stats,
 		"description": data.encyclopedia_entry if "encyclopedia_entry" in data else "",
+	}
+
+
+func _format_item(data: Resource) -> Dictionary:
+	const _SLOT_NAMES: Array[String] = ["Weapon", "Armor", "Helm", "Gloves", "Boots", "Trinket"]
+	const _RARITY_NAMES: Array[String] = ["Common", "Magic", "Rare", "Epic", "Legendary"]
+	var slot_name: String = _SLOT_NAMES[clampi(int(data.slot), 0, _SLOT_NAMES.size() - 1)]
+	var rarity_name: String = _RARITY_NAMES[clampi(int(data.rarity), 0, _RARITY_NAMES.size() - 1)]
+	var stats: String = "%s — %s, %d rolled affix slots" % [rarity_name, slot_name, int(data.affix_slots)]
+	if data.min_wave > 1:
+		stats += "  [Wave %d+]" % int(data.min_wave)
+	if data.allowed_affix_pools.size() > 0:
+		stats += "\nAffix pools: " + ", ".join(data.allowed_affix_pools)
+	return {
+		"name": data.base_name,
+		"stats": stats,
+		"description": data.description if "description" in data else "",
 	}
 
 

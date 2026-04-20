@@ -35,6 +35,10 @@ func _spawn_hero() -> void:
 	if hero_data == null:
 		push_warning("[Main] no hero data found for '%s'" % GameState.selected_hero_id)
 		return
+	# Phase 48 — first-boot: grant + auto-equip starter gear before the hero
+	# node reads InventoryManager.get_all_equipped in _ready. No-op if this
+	# hero was already granted in a prior run.
+	InventoryManager.ensure_starter_gear(hero_data.hero_id)
 	# Instantiate the template scene and override its data with the
 	# selected hero's resource. The scene structure (CharacterBody2D +
 	# AttackRange) is hero-agnostic — only the data differs.

@@ -38,11 +38,29 @@ const _SPELL_PATHS: Array[String] = [
 	"res://spells/data/spell_reinforcements.tres",
 ]
 
+# Phase 48 — loot system content. ItemBase templates back all dropped
+# ItemInstance runtime objects; AffixData templates are rolled into
+# instances at drop time; AffixPool groups affixes into pool_id buckets.
+const _ITEM_BASE_PATHS: Array[String] = [
+	"res://items/bases/base_starter_sword.tres",
+	"res://items/bases/base_starter_tunic.tres",
+	"res://items/bases/base_starter_charm.tres",
+]
+
+const _AFFIX_POOL_PATHS: Array[String] = [
+	"res://items/pools/pool_universal.tres",
+]
+
+const _AFFIX_PATHS: Array[String] = []  # populated in Phase B
+
 var enemies: Array[Resource] = []
 var towers: Array[Resource] = []
 var heroes: Array[Resource] = []
 var spells: Array[Resource] = []
 var upgrades: Array[Resource] = []  # populated by UpgradeTree scene (inline sub_resources)
+var item_bases: Array[Resource] = []
+var affixes: Array[Resource] = []
+var affix_pools: Array[Resource] = []
 
 
 func _ready() -> void:
@@ -50,8 +68,12 @@ func _ready() -> void:
 	towers = _load_catalog(_TOWER_PATHS, "towers")
 	heroes = _load_catalog(_HERO_PATHS, "heroes")
 	spells = _load_catalog(_SPELL_PATHS, "spells")
-	print("[ContentRegistry] loaded — %d enemies, %d towers, %d heroes, %d spells" % [
+	item_bases = _load_catalog(_ITEM_BASE_PATHS, "item_bases")
+	affixes = _load_catalog(_AFFIX_PATHS, "affixes")
+	affix_pools = _load_catalog(_AFFIX_POOL_PATHS, "affix_pools")
+	print("[ContentRegistry] loaded — %d enemies, %d towers, %d heroes, %d spells, %d item_bases, %d affixes, %d pools" % [
 		enemies.size(), towers.size(), heroes.size(), spells.size(),
+		item_bases.size(), affixes.size(), affix_pools.size(),
 	])
 	_validate_ids()
 
@@ -80,6 +102,9 @@ func _validate_ids() -> void:
 	_assert_ids(towers, "tower_id")
 	_assert_ids(heroes, "hero_id")
 	_assert_ids(spells, "spell_id")
+	_assert_ids(item_bases, "base_id")
+	_assert_ids(affixes, "affix_id")
+	_assert_ids(affix_pools, "pool_id")
 
 
 func _assert_ids(arr: Array, field: String) -> void:
@@ -117,4 +142,25 @@ func find_hero(id: String) -> Resource:
 	for h in heroes:
 		if h != null and "hero_id" in h and h.hero_id == id:
 			return h
+	return null
+
+
+func find_item_base(id: String) -> Resource:
+	for b in item_bases:
+		if b != null and "base_id" in b and b.base_id == id:
+			return b
+	return null
+
+
+func find_affix(id: String) -> Resource:
+	for a in affixes:
+		if a != null and "affix_id" in a and a.affix_id == id:
+			return a
+	return null
+
+
+func find_affix_pool(id: String) -> Resource:
+	for p in affix_pools:
+		if p != null and "pool_id" in p and p.pool_id == id:
+			return p
 	return null

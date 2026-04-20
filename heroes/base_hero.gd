@@ -128,6 +128,11 @@ func _ready() -> void:
 	if data == null:
 		push_warning("[BaseHero] missing HeroData")
 		return
+	# Phase 48 — persistent hero level/XP. GameState owns the dictionary;
+	# BaseHero reads it on spawn and delegates gain_xp back. Level is read
+	# BEFORE _seed_base_stats so the level-growth multiplier is correct.
+	level = GameState.get_hero_level(data.hero_id)
+	current_xp = GameState.get_hero_xp(data.hero_id)
 	_seed_base_stats()
 	recompute_stats()
 	current_health = _effective_max_health()
@@ -150,6 +155,16 @@ func _ready() -> void:
 		for talent in data.talents:
 			if talent != null and talent.talent_id in purchased_ids and talent.ability != null:
 				_ability_host.add_ability(talent.ability.duplicate())
+	# Phase 48: push equipped items' abilities through AbilityHost.equip_ability
+	# so ON_EQUIP fires, StatModifierAbility joins the modifier stack, and
+	# recompute_stats rebuilds current_stats with item contributions.
+	for inst in InventoryManager.get_all_equipped(data.hero_id):
+		if inst == null:
+			continue
+		for ab in inst.build_runtime_abilities(ContentRegistry):
+			_ability_host.equip_ability(ab)
+	# Re-seed current_health AFTER items so spawns start at full (item-boosted) HP.
+	current_health = _effective_max_health()
 	# Seed the rally point from the spawn position; the player can reseat it
 	# by tapping to move. Position is already set by Main._spawn_hero before
 	# add_child, so global_position here is the HeroSpawn marker.
@@ -333,28 +348,28 @@ func gain_xp(amount: int) -> void:
 		return
 	if level >= data.max_level:
 		return
-	var scaled: int = int(ceil(float(amount) * GameState.get_upgrade_multiplier(GameState.MOD_HERO_XP)))
-	current_xp += scaled
-	EventBus.hero_xp_gained.emit(amount)
-	var needed: int = _xp_needed_for_next_level()
-	while needed > 0 and current_xp >= needed and level < data.max_level:
-		current_xp -= needed
-		_level_up()
-		needed = _xp_needed_for_next_level()
-	if level >= data.max_level:
-		current_xp = 0
+	# Phase 48: delegate to GameState which owns the persistent dict + the
+	# level-up math (+ xp multiplier + hero_leveled_up signal). Then mirror
+	# the results back so combat code doesn't re-read GameState each frame.
+	# GameState.add_hero_xp already emits hero_xp_gained and hero_leveled_up
+	# signals itself — don't re-emit them here.
+	var old_level: int = level
+	var new_level: int = GameState.add_hero_xp(data.hero_id, amount)
+	level = new_level
+	current_xp = GameState.get_hero_xp(data.hero_id)
+	while old_level < new_level:
+		old_level += 1
+		_level_up_apply()
 
 
-func _level_up() -> void:
-	level += 1
-	# Phase 48: re-seed base_stats to bake in the new level's HP/damage
-	# multipliers, then recompute so any live modifiers (items, buffs) re-apply.
+func _level_up_apply() -> void:
+	# Runtime side of a level-up. GameState already emitted hero_leveled_up
+	# and bumped the persistent entry; this method updates the live hero:
+	# re-seed base, recompute modifiers, heal to full.
 	_seed_base_stats()
 	recompute_stats()
-	# Heal to the new max. Kingdom Rush convention.
 	current_health = _effective_max_health()
 	queue_redraw()
-	EventBus.hero_leveled_up.emit(level)
 	print("[Hero] %s reached level %d" % [data.hero_name, level])
 
 

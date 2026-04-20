@@ -36,4 +36,9 @@ class_name HeroData
 # hero's AbilityHost at gameplay start.
 @export var talents: Array[Resource] = []
 @export var visual: Resource  # UnitVisualData — drives _draw() when set
+# Phase 48 — starter gear granted + auto-equipped the first time this hero
+# is played. Each entry is an ItemBase; InventoryManager.ensure_starter_gear
+# creates a zero-affix ItemInstance and slots it into the matching slot.
+# Only applied once per hero_id (tracked via starter_gear_granted).
+@export var starter_items: Array[Resource] = []
 @export_multiline var encyclopedia_entry: String = ""

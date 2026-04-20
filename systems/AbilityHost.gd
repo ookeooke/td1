@@ -46,6 +46,34 @@ func remove_ability(ability: Resource) -> void:
 	_age.remove_at(idx)
 
 
+# Equip/unequip helpers for item-granted abilities. These dispatch the ability
+# with a ctx.phase of ON_EQUIP / ON_UNEQUIP regardless of the ability's own
+# `trigger` field, so a single AbilityData subclass can handle both lifecycle
+# events (StatModifierAbility branches on ctx.phase). On equip the ability is
+# added to the list so it can still receive ON_HIT / ON_KILL etc. triggers
+# while worn; on unequip the ability is removed after its unequip phase runs.
+func equip_ability(ability: Resource) -> void:
+	if ability == null:
+		return
+	_abilities.append(ability)
+	_interval_accum.append(0.0)
+	_age.append(0.0)
+	_safe_apply_phased(ability, _AbilityDataScript.Trigger.ON_EQUIP)
+
+
+func unequip_ability(ability: Resource) -> void:
+	if ability == null:
+		return
+	_safe_apply_phased(ability, _AbilityDataScript.Trigger.ON_UNEQUIP)
+	remove_ability(ability)
+
+
+func _safe_apply_phased(ability: Resource, phase: int) -> void:
+	if owner == null or not is_instance_valid(owner):
+		return
+	ability.apply(owner, {"phase": phase})
+
+
 func tick(delta: float) -> void:
 	# Iterate backwards so duration-triggered removals don't skip entries.
 	for i in range(_abilities.size() - 1, -1, -1):

@@ -102,6 +102,10 @@ var unlocked_content: Array[String] = []       # explicitly unlocked (IAP, star-
 # Per-hero purchased talents: hero_id → Array[String] of talent_ids.
 var hero_talents: Dictionary = {}
 var endless_best_score: int = 0
+# Phase 48 — persistent hero XP/level. Keyed by hero_id. Each entry:
+# { "level": int, "xp": int }. Previously per-run on BaseHero — migrated here
+# so progression survives runs. SaveManager persists the whole dict.
+var hero_progress: Dictionary = {}
 # Local leaderboard — top 20 entries, sorted descending. Each entry:
 # { "name": String, "score": int, "wave": int }
 # Phase 33 online: replace with HTTP fetch from a leaderboard service.
@@ -373,6 +377,59 @@ func _on_enemy_reached_end(_enemy: Node, lives_lost: int) -> void:
 
 
 # ── Safe area insets (shared by HUD, SkillBar, SpellPanel) ───────────────
+
+# Phase 48 — persistent hero progression helpers. Level-up math lives here
+# (not on BaseHero) so XP survives runs. BaseHero reads level/XP on spawn
+# and delegates gain_xp back into GameState.add_hero_xp.
+func get_hero_level(hero_id: String) -> int:
+	if not hero_progress.has(hero_id):
+		return 1
+	return int(hero_progress[hero_id].get("level", 1))
+
+
+func get_hero_xp(hero_id: String) -> int:
+	if not hero_progress.has(hero_id):
+		return 0
+	return int(hero_progress[hero_id].get("xp", 0))
+
+
+func _ensure_hero_progress_entry(hero_id: String) -> void:
+	if not hero_progress.has(hero_id):
+		hero_progress[hero_id] = {"level": 1, "xp": 0}
+
+
+func add_hero_xp(hero_id: String, amount: int) -> int:
+	# Returns the new level (possibly unchanged). Caller reads hero_progress
+	# afterward for the new xp value. Handles multi-level catch-up if amount
+	# is huge.
+	if hero_id == "" or amount <= 0:
+		return get_hero_level(hero_id)
+	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
+	if hero_data == null:
+		return 1
+	_ensure_hero_progress_entry(hero_id)
+	var entry: Dictionary = hero_progress[hero_id]
+	var lvl: int = int(entry.get("level", 1))
+	var xp: int = int(entry.get("xp", 0))
+	var scaled: int = int(ceil(float(amount) * get_upgrade_multiplier(MOD_HERO_XP)))
+	xp += scaled
+	EventBus.hero_xp_gained.emit(amount)
+	while lvl < hero_data.max_level:
+		var idx: int = lvl - 1
+		if idx < 0 or idx >= hero_data.xp_per_level.size():
+			break
+		var needed: int = hero_data.xp_per_level[idx]
+		if needed <= 0 or xp < needed:
+			break
+		xp -= needed
+		lvl += 1
+		EventBus.hero_leveled_up.emit(lvl)
+	if lvl >= hero_data.max_level:
+		xp = 0
+	entry["level"] = lvl
+	entry["xp"] = xp
+	return lvl
+
 
 func get_safe_insets() -> Vector4:
 	## Returns Vector4(top, bottom, left, right) in logical viewport pixels.

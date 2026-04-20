@@ -1,6 +1,9 @@
-[gd_resource type="Resource" script_class="HeroData" format=3 uid="uid://ct8ymjywf8nnk"]
+[gd_resource type="Resource" script_class="HeroData" load_steps=14 format=3 uid="uid://ct8ymjywf8nnk"]
 
 [ext_resource type="Script" uid="uid://dhkkla25ah1bs" path="res://heroes/HeroData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_sword.tres" id="10_s_sword"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_tunic.tres" id="11_s_tunic"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="12_s_charm"]
 [ext_resource type="Resource" uid="uid://c70sqhllc0nnn" path="res://heroes/data/skills/skill_slash.tres" id="2_slash"]
 [ext_resource type="Resource" uid="uid://ct8yxpps385f0" path="res://heroes/data/skills/skill_shield_bash.tres" id="3_bash"]
 [ext_resource type="Resource" uid="uid://c70sqhllboyg5" path="res://heroes/data/skills/skill_rally.tres" id="4_rally"]
@@ -65,4 +68,5 @@ armor = 0.25
 skills = Array[Resource]([ExtResource("2_slash"), ExtResource("3_bash"), ExtResource("4_rally")])
 talents = Array[Resource]([SubResource("Talent_Endurance"), SubResource("Talent_Vampiric"), SubResource("Talent_HeavyBlows")])
 visual = ExtResource("9_vis")
+starter_items = Array[Resource]([ExtResource("10_s_sword"), ExtResource("11_s_tunic"), ExtResource("12_s_charm")])
 encyclopedia_entry = "Sword-and-board melee hero. Strong armor, tanks ground enemies. Hits flying foes when in range."

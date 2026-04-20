@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="AffixPool" load_steps=2 format=3]
+
+[ext_resource type="Script" uid="uid://uhxr1fgwae2g" path="res://items/AffixPool.gd" id="1_pool"]
+
+[resource]
+script = ExtResource("1_pool")
+pool_id = "pool_universal"
+affixes = Array[Resource]([])

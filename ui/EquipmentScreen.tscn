@@ -78,13 +78,24 @@ columns = 3
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 12
 
+[node name="StatsTitle" type="Label" parent="Body/LeftPanel"]
+layout_mode = 2
+text = "Stats"
+theme_override_font_sizes/font_size = 20
+
+[node name="StatsLabel" type="Label" parent="Body/LeftPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+
 [node name="HintLabel" type="Label" parent="Body/LeftPanel"]
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 2
-theme_override_font_sizes/font_size = 14
-theme_override_colors/font_color = Color(0.6, 0.65, 0.75, 1)
-text = "Tap items in the inventory to see them here. Equip/unequip arrives in the next update."
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.55, 0.6, 0.7, 1)
+text = "Tap inventory item to equip. Tap equipped slot to unequip (item stays in inventory)."
 
 [node name="RightPanel" type="VBoxContainer" parent="Body"]
 layout_mode = 2

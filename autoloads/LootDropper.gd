@@ -14,14 +14,19 @@ extends Node
 #   instance with UID and affixes.
 
 const _DEFAULT_TABLE_PATH := "res://items/data/loot_table_default.tres"
+const _PICKUP_SCENE_PATH := "res://items/ItemPickup.tscn"
 
 var _default_table: Resource = null
+var _pickup_scene: PackedScene = null
 
 
 func _ready() -> void:
 	_default_table = load(_DEFAULT_TABLE_PATH)
 	if _default_table == null:
 		push_warning("[LootDropper] default table not found at %s" % _DEFAULT_TABLE_PATH)
+	_pickup_scene = load(_PICKUP_SCENE_PATH)
+	if _pickup_scene == null:
+		push_warning("[LootDropper] pickup scene not found at %s" % _PICKUP_SCENE_PATH)
 	EventBus.enemy_died.connect(_on_enemy_died)
 	print("[LootDropper] loaded")
 
@@ -46,6 +51,21 @@ func _on_enemy_died(enemy: Node, _gold: int) -> void:
 	if inst == null:
 		return
 	var world_pos: Vector2 = enemy.global_position
-	# C2+ will spawn an ItemPickup here. For now emit the signal + log.
+	_spawn_pickup(inst, world_pos)
 	EventBus.item_dropped.emit(inst, world_pos)
-	print("[LootDropper] dropped %s uid=%s @ %s" % [base_id, inst.uid, world_pos])
+
+
+func _spawn_pickup(inst, world_pos: Vector2) -> void:
+	if _pickup_scene == null:
+		return
+	var pickup: Node2D = _pickup_scene.instantiate()
+	pickup.setup(inst)
+	pickup.global_position = world_pos
+	# Parent to the current scene (Main) so world-space positions align with
+	# enemies/towers/hero. Main is a Node2D, matching the coordinate system.
+	var host: Node = get_tree().current_scene
+	if host == null:
+		push_warning("[LootDropper] no current_scene to parent pickup to")
+		pickup.queue_free()
+		return
+	host.add_child(pickup)

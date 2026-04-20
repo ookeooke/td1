@@ -13,6 +13,8 @@ const BOB_PERIOD_S: float = 1.6
 const ICON_RADIUS_PX: float = 18.0
 const HALO_THICKNESS_PX: float = 3.0
 
+const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
+
 # Rarity tint halos — drawn as an outer ring to hint at value without
 # needing UI text.
 const _RARITY_COLORS: Array[Color] = [
@@ -90,4 +92,16 @@ func _collect() -> void:
 	_collected = true
 	if instance != null:
 		InventoryManager.add_to_round(instance)
+		_spawn_pickup_feedback()
 	queue_free()
+
+
+# Phase C4: floating text + SFX on collect. SoundManager logs harmlessly
+# if the sfx file is missing (same pattern as tower_build, enemy_die, etc).
+func _spawn_pickup_feedback() -> void:
+	var base: Resource = ContentRegistry.find_item_base(instance.base_id)
+	var label: String = base.base_name if base != null else instance.base_id
+	var host: Node = get_tree().current_scene
+	if host != null:
+		_FloatingTextScript.spawn(host, "+" + label, _rarity_color, global_position, 28)
+	SoundManager.play_sfx("item_pickup")

@@ -97,6 +97,18 @@ var _skill_cooldowns: Array[float] = []
 # player can see the cast reach. Reset to 0 on cancel / cast.
 var _skill_range_preview: float = 0.0
 
+# Phase 48 — Base + Modifier Stack stat pipeline (Unreal GAS-style).
+# `base_stats` holds permanent values (seeded from HeroData + level growth +
+# account-wide upgrade multipliers). `_modifier_sources` is the live stack of
+# contributing sources — equipped items, temporary buffs, talent-granted
+# auras. `current_stats` is the cached derived value, rebuilt by
+# `recompute_stats()` on any stack change or base mutation. Never mutate
+# current_stats directly; never diff-revert. Concurrent buffs survive equip
+# swaps, and float drift is impossible.
+var base_stats: Dictionary = {}
+var current_stats: Dictionary = {}
+var _modifier_sources: Array = []
+
 # Phase 20.5: passive-ability dispatcher. Populated from data.abilities in
 # _ready; ticked each _physics_process; triggered on hit-dealt/taken/kill/
 # death so passives like "on-kill: +5% damage for 3 s" can hook in later.
@@ -116,6 +128,8 @@ func _ready() -> void:
 	if data == null:
 		push_warning("[BaseHero] missing HeroData")
 		return
+	_seed_base_stats()
+	recompute_stats()
 	current_health = _effective_max_health()
 	var atk_circle := CircleShape2D.new()
 	atk_circle.radius = data.attack_range
@@ -149,18 +163,77 @@ func _ready() -> void:
 	EventBus.hero_spawned.emit.call_deferred(self)
 
 
+func _seed_base_stats() -> void:
+	# Called on ready and whenever a permanent base value changes (level-up,
+	# permanent upgrade purchase). Seeds base_stats from HeroData with the
+	# per-level growth curves and account-wide upgrade multipliers already
+	# baked in — those are "permanent" sources and don't belong in the
+	# modifier stack.
+	if data == null:
+		base_stats.clear()
+		return
+	var hp_mult: float = 1.0 + float(level - 1) * LEVEL_HEALTH_GROWTH
+	var dmg_mult: float = 1.0 + float(level - 1) * LEVEL_DAMAGE_GROWTH
+	base_stats["max_health"] = float(data.max_health) * hp_mult
+	base_stats["damage"] = data.attack_damage * dmg_mult * GameState.get_upgrade_multiplier(GameState.MOD_HERO_DAMAGE)
+	base_stats["armor"] = data.armor
+	base_stats["attack_speed"] = data.attack_speed
+	base_stats["move_speed"] = data.move_speed
+	base_stats["xp_gain_mult"] = 1.0
+
+
+func register_modifier_source(m) -> void:
+	if m == null or _modifier_sources.has(m):
+		return
+	_modifier_sources.append(m)
+
+
+func unregister_modifier_source(m) -> void:
+	_modifier_sources.erase(m)
+
+
+func _refresh_health_after_modifier_change() -> void:
+	# Max HP went up or down — clamp current_health so equipping a +HP item
+	# doesn't auto-heal and unequipping one doesn't leave health above max.
+	if data == null:
+		return
+	var max_hp: int = _effective_max_health()
+	if current_health > max_hp:
+		current_health = max_hp
+
+
+func recompute_stats() -> void:
+	# Rebuild current_stats from base + modifier stack. Additive flats apply
+	# first, then multiplicative pcts (product of (1 + pct)). Order is fixed
+	# so the same modifier set always yields the same current value.
+	current_stats.clear()
+	for key in base_stats.keys():
+		var flat_field: String = "%s_flat" % key
+		var pct_field: String = "%s_pct" % key
+		var v: float = float(base_stats[key])
+		var pct_product: float = 1.0
+		for m in _modifier_sources:
+			if m == null:
+				continue
+			if flat_field in m:
+				v += float(m.get(flat_field))
+			if pct_field in m:
+				pct_product *= 1.0 + float(m.get(pct_field))
+		v *= pct_product
+		current_stats[key] = v
+
+
 func _effective_max_health() -> int:
 	if data == null:
 		return 0
-	return int(ceil(float(data.max_health) * (1.0 + (level - 1) * LEVEL_HEALTH_GROWTH)))
+	var v: float = float(current_stats.get("max_health", float(data.max_health)))
+	return int(ceil(v))
 
 
 func _effective_damage() -> float:
 	if data == null:
 		return 0.0
-	var base: float = data.attack_damage * (1.0 + (level - 1) * LEVEL_DAMAGE_GROWTH)
-	base *= GameState.get_upgrade_multiplier(GameState.MOD_HERO_DAMAGE)
-	return base
+	return float(current_stats.get("damage", data.attack_damage))
 
 
 func _tick_skill_cooldowns(delta: float) -> void:
@@ -274,6 +347,10 @@ func gain_xp(amount: int) -> void:
 
 func _level_up() -> void:
 	level += 1
+	# Phase 48: re-seed base_stats to bake in the new level's HP/damage
+	# multipliers, then recompute so any live modifiers (items, buffs) re-apply.
+	_seed_base_stats()
+	recompute_stats()
 	# Heal to the new max. Kingdom Rush convention.
 	current_health = _effective_max_health()
 	queue_redraw()

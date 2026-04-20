@@ -58,12 +58,19 @@ const _AFFIX_POOL_PATHS: Array[String] = [
 ]
 
 const _AFFIX_PATHS: Array[String] = [
+	# Flat-value affixes
 	"res://items/affixes/affix_damage_flat.tres",
 	"res://items/affixes/affix_lifesteal.tres",
 	"res://items/affixes/affix_on_hit_bonus.tres",
 	"res://items/affixes/affix_hp_flat.tres",
 	"res://items/affixes/affix_armor_flat.tres",
 	"res://items/affixes/affix_regen.tres",
+	# Phase E1 — percentage-based affixes (display_scale=100)
+	"res://items/affixes/affix_damage_pct.tres",
+	"res://items/affixes/affix_hp_pct.tres",
+	"res://items/affixes/affix_attack_speed_pct.tres",
+	"res://items/affixes/affix_move_speed_pct.tres",
+	"res://items/affixes/affix_xp_gain_pct.tres",
 ]
 
 var enemies: Array[Resource] = []

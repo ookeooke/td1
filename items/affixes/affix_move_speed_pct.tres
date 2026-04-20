@@ -3,22 +3,22 @@
 [ext_resource type="Script" uid="uid://dmke300jq3e47" path="res://items/AffixData.gd" id="1_affix"]
 [ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
 
-[sub_resource type="Resource" id="Tpl_ArmorFlat"]
+[sub_resource type="Resource" id="Tpl_MoveSpeedPct"]
 script = ExtResource("2_mod")
-ability_id = "affix_tpl_armor_flat"
+ability_id = "affix_tpl_move_speed_pct"
 trigger = 7
-armor_flat = 0.0
+move_speed_pct = 0.0
 
 [resource]
 script = ExtResource("1_affix")
-affix_id = "affix_armor_flat"
-display_template = "+{value}% Armor"
-value_min = 0.02
-value_max = 0.08
+affix_id = "affix_move_speed_pct"
+display_template = "+{value}% Move Speed"
+value_min = 0.05
+value_max = 0.10
 value_is_int = false
 display_scale = 100.0
 display_decimals = 0
-ability_template = SubResource("Tpl_ArmorFlat")
-ability_value_property = "armor_flat"
+ability_template = SubResource("Tpl_MoveSpeedPct")
+ability_value_property = "move_speed_pct"
 allowed_slots = Array[int]([])
-weight = 0.9
+weight = 0.6

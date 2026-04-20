@@ -11,6 +11,7 @@ extends Control
 @onready var level_list_container: VBoxContainer = %LevelList
 @onready var heroes_button: Button = %HeroesButton
 @onready var loadout_button: Button = %LoadoutButton
+@onready var equipment_button: Button = %EquipmentButton
 @onready var upgrades_button: Button = %UpgradesButton
 @onready var endless_button: Button = %EndlessButton
 @onready var leaderboard_button: Button = %LeaderboardButton
@@ -27,11 +28,16 @@ func _ready() -> void:
 	shop_button.pressed.connect(_on_shop)
 	heroes_button.pressed.connect(_on_heroes)
 	loadout_button.pressed.connect(_on_loadout)
+	equipment_button.pressed.connect(_on_equipment)
 	_build_level_entries()
 
 
 func _on_loadout() -> void:
 	SceneManager.goto("res://ui/LoadoutPickerScreen.tscn")
+
+
+func _on_equipment() -> void:
+	SceneManager.goto("res://ui/EquipmentScreen.tscn")
 
 
 func _on_back() -> void:

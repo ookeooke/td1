@@ -105,12 +105,13 @@ func _refresh() -> void:
 		icon.setup_instance(inst)
 		icon.pressed.connect(_on_inventory_item_pressed)
 		inventory_grid.add_child(icon)
-	# Phase polish — pad with empty tiles so the grid communicates capacity.
-	# Count scales up a row at a time once MIN is exceeded, so it never feels
-	# "exactly full" until the player really hoards hundreds of items.
+	# Phase polish — always pad beyond current inventory so the grid shows
+	# headroom. At minimum MIN_INVENTORY_CELLS; if the player has more than
+	# that, grow in row steps AND always leave at least one empty row so it
+	# never looks "exactly full".
 	var target_cells: int = MIN_INVENTORY_CELLS
-	while target_cells < inv.size():
-		target_cells += INVENTORY_ROW_STEP
+	if inv.size() >= target_cells:
+		target_cells = inv.size() + INVENTORY_ROW_STEP
 	for _i in (target_cells - inv.size()):
 		var empty_icon: Control = _ItemIconScript.new()
 		empty_icon.setup_empty()

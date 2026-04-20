@@ -99,6 +99,14 @@ size_flags_horizontal = 3
 text = "Loadout"
 theme_override_font_sizes/font_size = 18
 
+[node name="EquipmentButton" type="Button" parent="BottomBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Equipment"
+theme_override_font_sizes/font_size = 18
+
 [node name="UpgradesButton" type="Button" parent="BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 80)

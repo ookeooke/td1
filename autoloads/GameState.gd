@@ -102,6 +102,13 @@ var unlocked_content: Array[String] = []       # explicitly unlocked (IAP, star-
 # Per-hero purchased talents: hero_id → Array[String] of talent_ids.
 var hero_talents: Dictionary = {}
 var endless_best_score: int = 0
+# Per-level fastest completion time (campaign mode only). Seconds as float.
+# Only wall-time spent in the level is counted; pause doesn't add (Main.gd
+# accumulates process_delta which stops during PAUSE_MODE_STOP).
+var level_best_times: Dictionary = {}    # level_id -> seconds (float)
+# Per-level endless high score. Extension of the single endless_best_score
+# so each map's endless mode can be compared independently.
+var level_endless_best_scores: Dictionary = {}   # level_id -> int
 # Phase 48 — persistent hero XP/level. Keyed by hero_id. Each entry:
 # { "level": int, "xp": int }. Previously per-run on BaseHero — migrated here
 # so progression survives runs. SaveManager persists the whole dict.
@@ -166,6 +173,39 @@ func submit_endless_score(player_name: String, final_score: int) -> void:
 	if endless_leaderboard.size() > LEADERBOARD_MAX_ENTRIES:
 		endless_leaderboard.resize(LEADERBOARD_MAX_ENTRIES)
 	EventBus.leaderboard_score_submitted.emit(final_score)
+
+
+# Phase 48 — best-time tracking. Returns true iff this was a new best
+# (either the level had no prior time or the new time is faster).
+func try_record_best_time(level_id: String, seconds: float) -> bool:
+	if level_id == "" or seconds <= 0.0:
+		return false
+	var prev: float = float(level_best_times.get(level_id, -1.0))
+	if prev < 0.0 or seconds < prev:
+		level_best_times[level_id] = seconds
+		return true
+	return false
+
+
+func get_best_time(level_id: String) -> float:
+	return float(level_best_times.get(level_id, -1.0))
+
+
+# Per-level endless high score. Returns true iff new best.
+func try_record_endless_score(level_id: String, score: int) -> bool:
+	if level_id == "" or score <= 0:
+		return false
+	var prev: int = int(level_endless_best_scores.get(level_id, 0))
+	if score > prev:
+		level_endless_best_scores[level_id] = score
+		return true
+	return false
+
+
+func get_endless_best_score(level_id: String) -> int:
+	return int(level_endless_best_scores.get(level_id, 0))
+
+
 # Precomputed modifier cache — rebuilt by rebuild_upgrade_cache() after any
 # purchase. Game systems call get_upgrade_multiplier() / get_upgrade_bonus().
 var _upgrade_mult_cache: Dictionary = {}   # EffectType (int) → float product

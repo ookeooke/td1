@@ -38,6 +38,16 @@ var _damage_key: int = -1
 var _shots_since_buff: int = 0
 var _next_buff_threshold: int = 0
 
+# Construction + upgrade + aim animation state. _construct_t starts at
+# TowerAnim.CONSTRUCTION_DURATION on build and ticks down; _upgrade_t is
+# set to TowerAnim.UPGRADE_DURATION on every upgrade / branch choice.
+# _aim_angle lerps toward the current target so the barrel tracks smoothly.
+const _TowerAnimScript := preload("res://systems/TowerAnim.gd")
+const AIM_LERP_SPEED: float = 12.0
+var _construct_t: float = 0.0
+var _upgrade_t: float = 0.0
+var _aim_angle: float = -PI / 2.0
+
 @onready var range_area: Area2D = $RangeArea
 @onready var range_shape: CollisionShape2D = $RangeArea/CollisionShape2D
 
@@ -48,6 +58,11 @@ func _ready() -> void:
 		return
 	_refresh_range_shape()
 	_next_buff_threshold = randi_range(3, 6)
+	# Kick off the build-in animation. Block firing until it completes so the
+	# first shot doesn't leave a half-constructed tower.
+	_construct_t = _TowerAnimScript.CONSTRUCTION_DURATION
+	_attack_cooldown = _TowerAnimScript.CONSTRUCTION_DURATION
+	modulate.a = 0.0
 
 
 func _refresh_range_shape() -> void:
@@ -99,6 +114,7 @@ func upgrade_to_branch(idx: int) -> bool:
 	level = 3
 	_refresh_range_shape()
 	_attack_cooldown = 0.0
+	_upgrade_t = _TowerAnimScript.UPGRADE_DURATION
 	queue_redraw()
 	EventBus.tower_upgraded.emit(self, level)
 	EventBus.tower_branch_chosen.emit(self, idx)
@@ -254,6 +270,7 @@ func upgrade() -> bool:
 	# Reset attack cooldown so the faster-speed upgrade feels immediate
 	# instead of waiting out the previous (slower) tick.
 	_attack_cooldown = 0.0
+	_upgrade_t = _TowerAnimScript.UPGRADE_DURATION
 	queue_redraw()
 	EventBus.tower_upgraded.emit(self, level)
 	return true
@@ -262,6 +279,19 @@ func upgrade() -> bool:
 var _recoil_t: float = 0.0
 
 func _physics_process(delta: float) -> void:
+	# Construction tick drives alpha fade + scale grow via TowerAnim. While
+	# in construction we early-return so _pick_target doesn't fire and the
+	# barrel stays at its idle angle.
+	if _construct_t > 0.0:
+		_construct_t = maxf(0.0, _construct_t - delta)
+		modulate.a = _TowerAnimScript.construct_alpha(_construct_t)
+		queue_redraw()
+		if _construct_t > 0.0:
+			return
+		modulate.a = 1.0
+	if _upgrade_t > 0.0:
+		_upgrade_t = maxf(0.0, _upgrade_t - delta)
+		queue_redraw()
 	if _recoil_t > 0.0:
 		_recoil_t -= delta
 		queue_redraw()
@@ -269,15 +299,31 @@ func _physics_process(delta: float) -> void:
 		return
 	if _attack_cooldown > 0.0:
 		_attack_cooldown -= delta
+	# Pick + aim every frame so the barrel tracks between shots, not only
+	# on the firing frame. _pick_target is cheap (Area2D overlap iteration).
+	var target: Node = _pick_target()
+	_tick_aim(delta, target)
 	if _attack_cooldown > 0.0:
 		return
-	var target: Node = _pick_target()
 	if target == null:
 		_current_target = null
 		return
 	_current_target = target
 	_fire_projectile(target)
 	_attack_cooldown = 1.0 / maxf(0.01, get_effective_attack_speed())
+
+
+func _tick_aim(delta: float, target: Node) -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	var dir: Vector2 = target.global_position - global_position
+	if dir.length_squared() < 1.0:
+		return
+	var target_angle: float = dir.angle()
+	var next: float = lerp_angle(_aim_angle, target_angle, clampf(AIM_LERP_SPEED * delta, 0.0, 1.0))
+	if not is_equal_approx(next, _aim_angle):
+		_aim_angle = next
+		queue_redraw()
 
 
 func _pick_target() -> Node:
@@ -391,19 +437,45 @@ func _maybe_roll_debug_effect():
 
 
 func _draw() -> void:
-	# Recoil: brief scale-down pulse on shoot.
-	var recoil_scale: float = 1.0 - (0.12 * clampf(_recoil_t / 0.08, 0.0, 1.0))
-	if recoil_scale < 1.0:
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2(recoil_scale, recoil_scale))
+	# Construction ring sits UNDER the body so the tower rises out of a dust
+	# puff. Drawn at identity transform (ground-level VFX).
+	_TowerAnimScript.draw_construct_ring(self, _construct_t)
+
+	# Combined uniform scale — construction grow × upgrade pulse × recoil.
+	var s_construct: float = _TowerAnimScript.construct_scale(_construct_t)
+	var s_upgrade: float = _TowerAnimScript.upgrade_scale(_upgrade_t)
+	var s_recoil: float = 1.0 - (0.12 * clampf(_recoil_t / 0.08, 0.0, 1.0))
+	var s: float = s_construct * s_upgrade * s_recoil
+
+	# Body — scale-only transform.
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
 	var base_body: Color = data.body_color if data != null else Color(0.35, 0.45, 0.75)
 	var ov: Resource = _level_override()
 	if ov != null:
 		base_body = base_body * ov.tint
 	draw_circle(Vector2.ZERO, 55.0, base_body)
 	draw_arc(Vector2.ZERO, 55.0, 0, TAU, 28, Color(0.08, 0.1, 0.25), 6.25)
-	# Level pips — small dots at the top of the tower so the player can
-	# see the upgrade level at a glance.
+
+	# Barrel — drawn in a rotated + scaled coordinate frame so it sticks out
+	# toward the target. barrel_length == 0 disables (e.g. support towers).
+	if data != null and data.barrel_length > 0.0:
+		draw_set_transform(Vector2.ZERO, _aim_angle, Vector2(s, s))
+		var half_w: float = data.barrel_width * 0.5
+		var inset: float = data.barrel_inset
+		var barrel_rect: Rect2 = Rect2(inset, -half_w, data.barrel_length, data.barrel_width)
+		var barrel_col: Color = Color(base_body.r * 0.6, base_body.g * 0.6, base_body.b * 0.6, 1.0)
+		draw_rect(barrel_rect, barrel_col)
+		draw_rect(barrel_rect, Color(0.08, 0.1, 0.25), false, 4.0)
+		# Muzzle cap — small dark disc at the tip so the barrel reads as a
+		# proper opening rather than a floating bar.
+		var tip_local: Vector2 = Vector2(inset + data.barrel_length, 0.0)
+		draw_circle(tip_local, half_w * 0.7, Color(0.08, 0.1, 0.25))
+
+	# Level pips — back in scale-only space so they ride the body, not the barrel.
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
 	for i in level:
 		draw_circle(Vector2(-15.0 + i * 15.0, -70.0), 5.5, Color(1.0, 0.85, 0.2))
-	if recoil_scale < 1.0:
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+	# Reset to identity for post-body VFX.
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_TowerAnimScript.draw_upgrade_ring(self, _upgrade_t)

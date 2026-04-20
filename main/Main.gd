@@ -10,6 +10,11 @@ const HERO_TEMPLATE: PackedScene = preload("res://heroes/HeroWarrior.tscn")
 @onready var towers: Node2D = $Towers
 @onready var hero_input: Node = $HeroInputManager
 
+# Wall-clock timer for best-completion tracking. Uses accumulated process
+# delta so PAUSE_MODE_STOP (tactical pause) doesn't inflate the time.
+var _level_elapsed: float = 0.0
+var _level_done: bool = false
+
 
 func _ready() -> void:
 	EventBus.wave_started.connect(_on_wave_started)
@@ -24,6 +29,14 @@ func _ready() -> void:
 		WaveManager.start_endless(level)
 	else:
 		WaveManager.start(LEVEL1_WAVES, level)
+
+
+func _process(delta: float) -> void:
+	if _level_done:
+		return
+	# Ticks only while unpaused (PROCESS_MODE_INHERIT default means we stop
+	# during tactical pause — matches what the player "feels" as level time).
+	_level_elapsed += delta
 
 
 func _spawn_hero() -> void:
@@ -75,4 +88,18 @@ func _on_wave_completed(wave_number: int) -> void:
 
 
 func _on_all_waves_completed() -> void:
+	_level_done = true
+	# Campaign only — endless doesn't end this way, so best-time is
+	# meaningless there (score/wave is tracked instead).
+	if GameState.current_mode == "campaign":
+		var is_new_best: bool = GameState.try_record_best_time(
+			GameState.current_level_id, _level_elapsed
+		)
+		if is_new_best:
+			print("[Main] new best time on %s: %.2fs" % [GameState.current_level_id, _level_elapsed])
+		else:
+			print("[Main] completed %s in %.2fs (prev best: %.2fs)" % [
+				GameState.current_level_id, _level_elapsed,
+				GameState.get_best_time(GameState.current_level_id),
+			])
 	print("[Main] VICTORY — all waves cleared")

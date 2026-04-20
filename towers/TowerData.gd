@@ -31,6 +31,17 @@ class_name TowerData
 # visual without per-tower _draw() subclasses.
 @export var body_color: Color = Color(0.35, 0.45, 0.75)
 
+# Turret barrel, drawn as a rotated rectangle extending from the body toward
+# the current target. Length 0 disables the barrel entirely (use for towers
+# that don't aim — none right now, but keeps the door open). Defaults produce
+# a visible stub on top of the existing 55px-radius body.
+@export_group("Barrel")
+@export_range(0.0, 120.0, 1.0) var barrel_length: float = 42.0
+@export_range(0.0, 40.0, 1.0) var barrel_width: float = 14.0
+# Inset from body center at which the barrel base starts. Keeps the inner
+# end hidden under the body outline instead of floating detached.
+@export_range(0.0, 60.0, 1.0) var barrel_inset: float = 18.0
+
 # Phase 24: per-level upgrade stats. Index 0 = L2 data, index 1 = L3 data
 # (ignored when `level_3_branches` is non-empty — branches take over).
 @export var level_upgrades: Array[Resource] = []

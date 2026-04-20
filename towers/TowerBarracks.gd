@@ -17,6 +17,13 @@ var _active_soldiers: Array[Node] = []
 var _slot_positions: Array[Vector2] = []
 var _flag_offset: Vector2 = Vector2.ZERO
 var _dragging_flag: bool = false
+
+# Build-in + upgrade animation state. Mirrors BaseTower so both tower types
+# share the same feel on placement / upgrade. Decremented in _process (no
+# _physics_process on barracks — _process is fine for visual-only ticks).
+const _TowerAnimScript := preload("res://systems/TowerAnim.gd")
+var _construct_t: float = 0.0
+var _upgrade_t: float = 0.0
 # Tap-to-place mode entered from the TowerSpotMenu's "Move Rally" button.
 # While true the range circle is shown and the next InputEventScreenTouch
 # either places the rally point (if inside the circle) or cancels.
@@ -41,6 +48,21 @@ func _ready() -> void:
 	EventBus.barracks_rally_move_requested.connect(_on_rally_move_requested)
 	for i in _effective_soldier_data().max_count:
 		_spawn_soldier(i)
+	_construct_t = _TowerAnimScript.CONSTRUCTION_DURATION
+	modulate.a = 0.0
+
+
+func _process(delta: float) -> void:
+	# Tick build + upgrade timers; drive alpha fade-in during construction.
+	if _construct_t > 0.0:
+		_construct_t = maxf(0.0, _construct_t - delta)
+		modulate.a = _TowerAnimScript.construct_alpha(_construct_t)
+		queue_redraw()
+		if _construct_t <= 0.0:
+			modulate.a = 1.0
+	if _upgrade_t > 0.0:
+		_upgrade_t = maxf(0.0, _upgrade_t - delta)
+		queue_redraw()
 
 
 # ── Upgrade plumbing (mirrors BaseTower) ────────────────────────────────
@@ -112,6 +134,7 @@ func upgrade() -> bool:
 	if sd != null:
 		for i in sd.max_count:
 			_spawn_soldier(i)
+	_upgrade_t = _TowerAnimScript.UPGRADE_DURATION
 	queue_redraw()
 	EventBus.tower_upgraded.emit(self, level)
 	return true
@@ -376,6 +399,14 @@ func _draw() -> void:
 	if (_dragging_flag or _placement_mode) and rally_r > 0.0:
 		draw_circle(Vector2.ZERO, rally_r, Color(1.0, 0.9, 0.3, 0.08))
 		draw_arc(Vector2.ZERO, rally_r, 0, TAU, 48, Color(1.0, 0.9, 0.3, 0.75), 5.0)
+	# Construction dust ring under the body (identity transform — ground VFX).
+	_TowerAnimScript.draw_construct_ring(self, _construct_t, 40.0)
+	# Build + upgrade scale stack. Applied to the body only — flag sits at its
+	# own world offset so scaling it would drift it outward from the barracks.
+	var s_construct: float = _TowerAnimScript.construct_scale(_construct_t)
+	var s_upgrade: float = _TowerAnimScript.upgrade_scale(_upgrade_t)
+	var s: float = s_construct * s_upgrade
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
 	# Tower body — tint per upgrade level for visual read.
 	var body_color: Color = Color(0.55, 0.35, 0.2)
 	var ov: Resource = _level_override()
@@ -387,6 +418,8 @@ func _draw() -> void:
 	for i in level:
 		draw_circle(Vector2(-15.0 + i * 15.0, -60.0), 5.0, Color(1.0, 0.85, 0.2))
 	draw_line(Vector2(-50, -20), Vector2(50, -20), Color(0.2, 0.1, 0.05), 3.75)
+	# Back to identity so the flag + upgrade ring aren't dragged by the scale.
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	# Rally flag at _flag_offset (pole + cloth)
 	var pole_top: Vector2 = _flag_offset + Vector2(0, -55)
 	draw_line(_flag_offset, pole_top, Color(0.25, 0.18, 0.08), 5.0)
@@ -398,3 +431,5 @@ func _draw() -> void:
 		]),
 		Color(0.85, 0.2, 0.2)
 	)
+	# Upgrade burst ring at the base.
+	_TowerAnimScript.draw_upgrade_ring(self, _upgrade_t, 70.0)

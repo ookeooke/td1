@@ -34,7 +34,13 @@ func _ready() -> void:
 func _on_enemy_died(enemy: Node, _gold: int) -> void:
 	if not is_instance_valid(enemy):
 		return
-	var table: Resource = _default_table   # Phase E: read enemy.data.loot_table if set
+	# Phase E3: per-enemy loot_table override. Bosses / elites can author
+	# their own .tres (guaranteed drop, weighted to higher rarities).
+	# Regular mobs leave data.loot_table = null → fall back to the default.
+	var table: Resource = _default_table
+	if enemy != null and "data" in enemy and enemy.data != null \
+			and "loot_table" in enemy.data and enemy.data.loot_table != null:
+		table = enemy.data.loot_table
 	if table == null:
 		return
 	if randf() > table.drop_chance:

@@ -44,4 +44,8 @@ class_name EnemyData
 @export var is_boss: bool = false
 
 @export var visual: Resource  # UnitVisualData — drives _draw() when set
+# Phase 48 E3 — optional per-enemy loot table override. Null = use the
+# default table held by LootDropper. Bosses typically set this to their own
+# guaranteed-drop table; regular mobs leave it null.
+@export var loot_table: Resource
 @export_multiline var encyclopedia_entry: String = ""

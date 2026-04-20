@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://c4vidh3phudj5" path="res://enemies/bosses/BossPhaseData.gd" id="2_phase"]
 [ext_resource type="Script" uid="uid://cp02o50kiybdd" path="res://systems/abilities/HealAuraAbility.gd" id="3_heal"]
 [ext_resource type="Resource" uid="uid://dut2ilo1gvq3b" path="res://enemies/data/visual_boss.tres" id="4_vis"]
+[ext_resource type="Resource" path="res://items/data/loot_table_boss_orc.tres" id="5_loot"]
 
 [sub_resource type="Resource" id="Phase1"]
 script = ExtResource("2_phase")
@@ -50,4 +51,5 @@ attack_speed = 0.8
 boss_phases = Array[Resource]([SubResource("Phase1"), SubResource("Phase2"), SubResource("Phase3")])
 is_boss = true
 visual = ExtResource("4_vis")
+loot_table = ExtResource("5_loot")
 encyclopedia_entry = "Massive orc chieftain. Three combat phases — gets faster and hits harder as HP drops. Heals nearby allies when enraged."

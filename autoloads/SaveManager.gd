@@ -14,7 +14,14 @@ extends Node
 # Never auto-saves mid-wave.
 
 const SAVE_PATH: String = "user://save.json"
-const SAVE_VERSION: int = 1
+const SAVE_VERSION: int = 2
+
+# Phase 48 — monotonic UID counter for ItemInstance. Issued only by
+# issue_uid(); persisted in the save file so it survives restarts. Never
+# decrement on delete — a sold/salvaged item's UID is retired forever so
+# equipped-slot references can't alias to a re-issued id. Cheap either way
+# (save size impact is one int).
+var next_uid: int = 1
 
 
 func _ready() -> void:
@@ -67,18 +74,15 @@ func save_game() -> void:
 		"selected_hero_id": GameState.selected_hero_id,
 		"selected_tower_ids": GameState.selected_tower_ids,
 		"tower_slot_cap": GameState.tower_slot_cap,
-		# Future phases extend here:
-		# "total_stars": computed from level_stars
-		# "endless_best_score": int
-		# "unlocked_heroes": Array[String]
-		# "unlocked_towers": Array[String]
-		# "permanent_upgrades": Array[String]
-		# "skill_points_spent": Dictionary
-		# "encyclopedia_unlocked": Array[String]
-		# "iap_purchases": Array[String]
-		# "hero_equipment": Dictionary
-		# "inventory": Array
+		# Phase 48 — persistent hero progression + loot.
+		"hero_progress": GameState.hero_progress,
+		"next_uid": next_uid,
 	}
+	# Merge InventoryManager's own slice — keeps the save dict flat while
+	# letting the manager own its shape (to_save_dict / from_save_dict).
+	var inv_slice: Dictionary = InventoryManager.to_save_dict()
+	for k in inv_slice.keys():
+		data[k] = inv_slice[k]
 	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
 		push_error("[SaveManager] cannot open save file for writing: %s" % FileAccess.get_open_error())
@@ -108,10 +112,14 @@ func load_game() -> void:
 		push_warning("[SaveManager] save file root is not a Dictionary")
 		return
 	# Version check — future phases can branch on version for migration.
+	# v1 → v2 is purely additive (hero_progress, next_uid, inventory dicts
+	# default to empty/1). No destructive migration.
 	var version: int = int(data.get("version", 0))
 	if version < 1:
 		push_warning("[SaveManager] unknown save version %d — ignoring" % version)
 		return
+	if version > SAVE_VERSION:
+		push_warning("[SaveManager] save version %d newer than code %d — continuing" % [version, SAVE_VERSION])
 	# Populate GameState from save data.
 	if data.has("level_stars") and data.level_stars is Dictionary:
 		# JSON stores keys as strings, values as floats. Convert to int.
@@ -163,9 +171,32 @@ func load_game() -> void:
 		for tid in data.selected_tower_ids:
 			restored.append(str(tid))
 		GameState.selected_tower_ids = restored
+	# Phase 48 — hero_progress + inventory + UID counter.
+	if data.has("hero_progress") and data.hero_progress is Dictionary:
+		GameState.hero_progress = {}
+		for hero_id in data.hero_progress:
+			var entry_in: Variant = data.hero_progress[hero_id]
+			if entry_in is Dictionary:
+				GameState.hero_progress[hero_id] = {
+					"level": int(entry_in.get("level", 1)),
+					"xp": int(entry_in.get("xp", 0)),
+				}
+	if data.has("next_uid"):
+		next_uid = int(data.next_uid)
+	# InventoryManager owns the shape of its fields.
+	InventoryManager.from_save_dict(data)
 	print("[SaveManager] loaded save v%d — stars=%s upgrades=%d" % [
 		version, str(GameState.level_stars), GameState.purchased_upgrades.size(),
 	])
+
+
+# Phase 48 — monotonic UID issuer. Called by LootRoller and
+# InventoryManager.ensure_starter_gear. Never decrements; retired UIDs are
+# retired forever so equipment-slot strings can't alias.
+func issue_uid() -> String:
+	var v: int = next_uid
+	next_uid += 1
+	return "itm_%d" % v
 
 
 func delete_save() -> void:

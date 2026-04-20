@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+
+[sub_resource type="Resource" id="Impl_WoodenSword"]
+script = ExtResource("2_mod")
+ability_id = "impl_wooden_sword"
+trigger = 7
+damage_flat = 1.0
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_wooden_sword"
+base_name = "Wooden Sword"
+slot = 0
+rarity = 0
+icon_glyph = "sword"
+icon_color = Color(0.65, 0.48, 0.3, 1)
+hero_restriction = Array[String]([])
+level_requirement = 1
+implicit_abilities = Array[Resource]([SubResource("Impl_WoodenSword")])
+affix_slots = 0
+allowed_affix_pools = Array[String]([])
+drop_weight = 2.0
+min_wave = 1
+description = "A splintered practice blade. The weakest thing that still counts."

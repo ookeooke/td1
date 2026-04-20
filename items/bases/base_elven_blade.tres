@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+
+[sub_resource type="Resource" id="Impl_ElvenBlade_Dmg"]
+script = ExtResource("2_mod")
+ability_id = "impl_elven_blade_dmg"
+trigger = 7
+damage_flat = 8.0
+
+[sub_resource type="Resource" id="Impl_ElvenBlade_Spd"]
+script = ExtResource("2_mod")
+ability_id = "impl_elven_blade_spd"
+trigger = 7
+attack_speed_pct = 0.05
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_elven_blade"
+base_name = "Elven Blade"
+slot = 0
+rarity = 3
+icon_glyph = "sword"
+icon_color = Color(0.6, 0.95, 0.65, 1)
+hero_restriction = Array[String]([])
+level_requirement = 1
+implicit_abilities = Array[Resource]([SubResource("Impl_ElvenBlade_Dmg"), SubResource("Impl_ElvenBlade_Spd")])
+affix_slots = 3
+allowed_affix_pools = Array[String](["pool_weapon_offensive", "pool_universal"])
+drop_weight = 0.15
+min_wave = 4
+description = "Wrought with forest song. Three rolled affixes."

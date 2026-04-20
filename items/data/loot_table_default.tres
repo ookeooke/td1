@@ -6,7 +6,13 @@
 script = ExtResource("1_loot")
 drop_chance = 0.2
 entries = {
+"base_wooden_sword": 2.0,
+"base_leather_cap": 1.0,
 "base_iron_sword": 1.0,
 "base_chain_mail": 1.0,
+"base_steel_sword": 0.5,
+"base_plate_armor": 0.5,
 "base_amulet_wisdom": 0.5,
+"base_elven_blade": 0.15,
+"base_demon_core": 0.05,
 }

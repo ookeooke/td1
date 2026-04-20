@@ -45,6 +45,10 @@ const _ITEM_BASE_PATHS: Array[String] = [
 	"res://items/bases/base_starter_sword.tres",
 	"res://items/bases/base_starter_tunic.tres",
 	"res://items/bases/base_starter_charm.tres",
+	# Phase B rollable bases
+	"res://items/bases/base_iron_sword.tres",
+	"res://items/bases/base_chain_mail.tres",
+	"res://items/bases/base_amulet_wisdom.tres",
 ]
 
 const _AFFIX_POOL_PATHS: Array[String] = [

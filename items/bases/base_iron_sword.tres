@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+
+[sub_resource type="Resource" id="Impl_IronSword"]
+script = ExtResource("2_mod")
+ability_id = "impl_iron_sword"
+trigger = 7
+damage_flat = 3.0
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_iron_sword"
+base_name = "Iron Sword"
+slot = 0
+rarity = 1
+icon_glyph = "sword"
+icon_color = Color(0.75, 0.75, 0.8, 1)
+hero_restriction = Array[String]([])
+level_requirement = 1
+implicit_abilities = Array[Resource]([SubResource("Impl_IronSword")])
+affix_slots = 1
+allowed_affix_pools = Array[String](["pool_weapon_offensive"])
+drop_weight = 1.0
+min_wave = 1
+description = "A forged iron blade. One rolled offensive affix."

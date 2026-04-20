@@ -82,3 +82,27 @@ func _pick_affix_across_pools(pool_ids: Array, used_ids: Dictionary):
 
 func _ready() -> void:
 	print("[LootRoller] loaded")
+	# Phase B3 smoketest — print one rolled example of each rollable base so
+	# we can eyeball that the pipeline works end-to-end without waiting for
+	# Phase C's LootDropper. Remove when drops arrive in gameplay. Deferred
+	# one frame so all autoloads have finished _ready first.
+	call_deferred("_debug_smoketest")
+
+
+func _debug_smoketest() -> void:
+	var sample_ids: Array = ["base_iron_sword", "base_chain_mail", "base_amulet_wisdom"]
+	for id in sample_ids:
+		var base = ContentRegistry.find_item_base(id)
+		if base == null:
+			continue
+		var inst = roll_item_instance(base, 0)
+		if inst == null:
+			continue
+		var affix_lines: PackedStringArray = []
+		for roll in inst.rolled_affixes:
+			var a = ContentRegistry.find_affix(String(roll.get("affix_id", "")))
+			if a == null:
+				affix_lines.append("?")
+			else:
+				affix_lines.append(a.format_display(float(roll.get("value", 0.0))))
+		print("[LootRoller/DEBUG] %s uid=%s affixes=[%s]" % [id, inst.uid, ", ".join(affix_lines)])

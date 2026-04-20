@@ -113,8 +113,16 @@ func _input(event: InputEvent) -> void:
 		return
 	var world_pos: Vector2 = _screen_to_world(event.position)
 	var spell: Resource = spells[_targeting_idx]
-	# cast_range = 0 means unlimited — spells can hit anywhere on the map.
-	# Otherwise we enforce the range. Current Fireball uses 0.
+	# cast_range = 0 means unlimited. Every shipping spell is 0 today, so any
+	# future spell with a positive range needs a designer-defined anchor
+	# (hero position? last-selected tower? map center?). Block the cast with
+	# a toast until that decision is made so we never silently accept an
+	# out-of-range tap.
+	if spell.cast_range > 0.0:
+		Toast.show_message("%s: cast range not wired up" % spell.spell_name)
+		_cancel_targeting()
+		get_viewport().set_input_as_handled()
+		return
 	spell.apply(world_pos, self)
 	# Phase 28: permanent upgrade (Spell Mastery = type 5).
 	_cooldowns[_targeting_idx] = spell.cooldown * GameState.get_upgrade_multiplier(GameState.MOD_SPELL_COOLDOWN)

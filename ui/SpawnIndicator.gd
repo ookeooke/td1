@@ -23,6 +23,9 @@ const EDGE_MARGIN: float = 75.0   # px from screen edge
 var _spawn_points: Array = []
 var _visible_path_ids: Array = []
 var _showing: bool = false
+# Tracks the hide-after-2s tween so back-to-back waves don't leak an old
+# tween that hides the newly-started wave's arrows early.
+var _hide_tween: Tween = null
 
 
 func _ready() -> void:
@@ -69,9 +72,12 @@ func _on_wave_started(_wave_number: int, path_ids: Array) -> void:
 	_visible_path_ids = path_ids
 	_showing = true
 	_draw_node.queue_redraw()
-	# Hide after 2 seconds.
-	var tween: Tween = create_tween()
-	tween.tween_callback(_hide_arrows).set_delay(2.0)
+	# Kill any prior hide-tween so back-to-back waves don't let a stale
+	# callback hide the new wave's arrows early.
+	if _hide_tween != null and _hide_tween.is_valid():
+		_hide_tween.kill()
+	_hide_tween = create_tween()
+	_hide_tween.tween_callback(_hide_arrows).set_delay(2.0)
 
 
 func _on_all_waves_completed() -> void:

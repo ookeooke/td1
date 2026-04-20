@@ -5,6 +5,7 @@
 
 [resource]
 script = ExtResource("1_data")
+soldier_id = "soldier_basic"
 soldier_name = "Militia"
 max_health = 22
 move_speed = 140.0

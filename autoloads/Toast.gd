@@ -45,6 +45,10 @@ func show_message(text: String) -> void:
 		_tween.kill()
 	_label.modulate.a = 0.0
 	_tween = create_tween()
+	# Toasts can fire while the tree is paused (e.g. tapping locked slot
+	# on the pause menu); advance the tween through pause so they don't
+	# freeze mid-fade.
+	_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	_tween.tween_property(_label, "modulate:a", 1.0, FADE_IN)
 	_tween.tween_interval(DURATION - FADE_IN - FADE_OUT)
 	_tween.tween_property(_label, "modulate:a", 0.0, FADE_OUT)

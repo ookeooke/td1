@@ -348,6 +348,7 @@ func _rebuild_action_slots() -> void:
 	_clear_slots()
 	_armed_slot = null
 	if _current_tower == null or not is_instance_valid(_current_tower):
+		_dismiss()
 		return
 	_populate_action_slots()
 

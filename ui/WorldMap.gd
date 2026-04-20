@@ -109,11 +109,15 @@ func _make_level_panel(data: Resource) -> PanelContainer:
 		play_btn.pressed.connect(_on_level_selected.bind(data))
 		hbox.add_child(play_btn)
 	else:
-		var lock_label := Label.new()
-		lock_label.text = "Locked"
-		lock_label.set("theme_override_font_sizes/font_size", 20)
-		lock_label.modulate = Color(0.5, 0.5, 0.5)
-		hbox.add_child(lock_label)
+		# A button (not a bare Label) so taps register and the player gets
+		# feedback — otherwise a locked row looks like a dead click.
+		var lock_btn := Button.new()
+		lock_btn.text = "Locked"
+		lock_btn.custom_minimum_size = Vector2(100, 80)
+		lock_btn.set("theme_override_font_sizes/font_size", 20)
+		lock_btn.modulate = Color(0.7, 0.7, 0.7)
+		lock_btn.pressed.connect(func(): Toast.show_message("Clear prior levels to unlock"))
+		hbox.add_child(lock_btn)
 
 	return panel
 

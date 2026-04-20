@@ -965,3 +965,167 @@ Per-hero talents purchased with stars (same pool as permanent upgrades). Talents
 - Works: all gameplay should render identically + floating text on kills + death VFX + tower recoil + themed UI buttons
 - Broke: none expected (all visual changes have legacy fallbacks)
 - **All 41 phases complete.** Game ready for content expansion and playtesting.
+
+---
+
+## 2026-04-17 — Phase 45: Camera, radial menu, combat visuals
+Migrated from the former "Current Status" section of CLAUDE.md so CLAUDE.md can stay invariants-only. Chronological sequence of 45a → 47 and the 47d mini-arc.
+
+### Phase 45b — Camera system + safe area + swarm v_offset
+- Resolution 1920x1080 landscape, `keep_height`. Camera (pan, zoom, gesture classifier, map borders, zoom-scaled drawing).
+- Safe area via MarginContainer + `GameState.get_safe_insets()`. NavigationAgent2D for hero/soldiers.
+- Enemies ride a single Path2D per direction with a discrete 3-lane v_offset for lateral swarm spread, plus spawn-timing jitter.
+- Boss detection unified on `EnemyData.is_boss` and `WaveManager._BOSS_SCENES`.
+- Hero spawn via editor-adjustable `HeroSpawn` Marker2D; hero takes reciprocal damage from engaged enemies and respawns on a timer at the marker.
+- Combat visuals: per-hit white flash (all units), 150ms red attack-telegraph arc on enemies, weapon swing arc on lunges, rear-back wind-up curve.
+- QoL: tactical pause, tower damage tracking, upgrade stat deltas, targeting modes, early wave call, clean view toggle, floating damage numbers.
+- Radial tower menu introduced (Phase 45a + 45b): build ring of procedural `_draw()` icons with cost badges; action ring (upgrade / sell / target / rally / branch cards) + floating stats card. Old bottom-sheet TowerSpotMenu retired.
+
+### Phase 45c — Barracks upgrades + ghost range ring
+- Barracks upgrade L1→L2 via same pipeline as attack towers.
+- `TowerUpgradeData` gained `soldier_data_override` + `soldier_rally_range`. Elite Barracks (L2) spawns tougher soldiers within 450px rally.
+- On upgrade active squad despawned + respawned with new SoldierData.
+- Unified range-preview API: `get_preview_range()` + `get_upgrade_range()`; RangePreview draws yellow (current) + green ghost (upgrade reach).
+
+### Phase 45d — Two-step commit radial menu
+- First tap on build/upgrade/branch/sell arms (yellow glow + preview); second tap commits. Target + rally stay single-tap.
+- Hover previews removed entirely — same flow on touch and mouse.
+- `TowerStatsCard` now has 4 modes: built tower, buildable preview, upgrade-diff, sell confirmation.
+- Red ghost ring for decrease-range upgrades (drawn inside yellow).
+- Fixed double-event bug: `_gui_input` on radial buttons now handles `InputEventScreenTouch` only (emulate_touch_from_mouse would otherwise double-fire per PC click).
+
+### Phase 45e — Kingdom-Rush soldier charge fidelity
+- Soldiers charge enemies entering aggro sensor instead of standing idle. `SoldierData.aggro_range` (130px default) drives a second Area2D.
+- State machine extended with CHARGING (chase) + RETURNING (walk back after kill/disengage).
+- Engagement pauses motion; losing target mid-charge triggers return. `max_block_targets` cap still enforced.
+- Enables "stack two barracks on a boss" surround tactic.
+- Seeded `EnemyData.attack_splash_radius` (default 0) for future Yeti/Magma-Elemental-style AoE punishers.
+
+### Phase 45f — Charge leash + bypass archetype
+- `SoldierData.leash_range` (200px default) caps charge drift — cross it and soldier drops target, returns home.
+- Seeded `EnemyData.bypass_engagement: bool = false`. When true, `BaseEnemy.engage_combat` rejects every blocker (for future Rushing-Monkey archetype).
+- Defaults preserve every existing unit's behavior.
+- Rejected Gemini's NavigationAgent2D "fix" for soldier charge (violates CORE RULE 13 — soldier movement stays direct straight-line).
+
+### Phase 45h — Engagement zone anchored to the flag
+- Fixes charge-bug where soldiers finishing a kill would pick up enemy past the barracks and chase down the lane.
+- Root cause: aggro Area2D rides the soldier, so geometric scan centers on soldier's current position instead of static anchor.
+- Fix: reuse `SoldierData.leash_range` as static engagement zone centered on barracks flag (shared across whole squad, not per-slot).
+- `BaseSoldier` gained `_flag_position`; `TowerBarracks._spawn_soldier` / `_recall_soldiers` pass flag world pos through `setup(slot, flag)` / `set_blocking_position(slot, flag)`.
+- `_scan_aggro_and_maybe_charge` rejects candidates outside leash of flag; `_tick_charge` drops target + returns when exits zone.
+- **Zone viz**: TowerBarracks._draw renders subtle red ring around flag at leash_range.
+- First attempt also added proactive-engage at 90px + distant-strike safeguard — ripped out after user reported soldiers standing next to frozen enemies dealing no damage (proactive added soldier to enemy's _blockers but `_try_engage`'s later `engage_combat` returned false, leaving `_engaged_enemies` empty so `_attack_cycle` never swung). Simpler design preserved.
+
+## 2026-04-18 — Phase 46: Content + attribution + ID hardening
+
+### Phase 46 — New enemies + Wave 5 + damage attribution
+- Armored Orc (`enemy_armored`: HP 20 / 0.3 armor / speed 140 / dmg 4) and Goblin Scout (`enemy_scout`: HP 6 / speed 280 / dmg 2).
+- Both data-only: `.tres` + UnitVisualData + trivial scene binding. Registered in ContentRegistry.enemies.
+- **Level 1 Wave 5** (`level1_waves.tres`): 12 basics + 4 armored left, 8 scouts + 3 armored right, 6 harpies top, 2 shamans, 1 boss at +8s. Countdown 6s, bounty 120.
+- **Damage attribution** for the end screen:
+  - `GameState.round_damage_towers` (dict keyed by instance_id so sold towers still count), `round_damage_hero`, `round_damage_soldiers`.
+  - `BaseEnemy.take_damage` routes each hit's overkill-capped `actual` to `GameState.record_round_damage(source, amount)`, dispatched by `source is BaseTower / BaseHero / BaseSoldier`.
+  - `GameOverScreen` renders top-5 towers + Hero + Soldiers on both victory + defeat. Cleared by `reset_for_level()`.
+
+### Phase 46b — Review hardening on damage pipeline
+- Guard `GameState.record_round_damage` with `is_instance_valid(source)` — handles sell-tower-while-projectile-in-flight.
+- `GameOverScreen._build_damage_breakdown` falls back to literal "Tower" when entry name is empty.
+- Endless-mode branch of `_on_game_over` also appends the damage breakdown.
+- Spell damage tracked: added `GameState.round_damage_spells`, SpellPanel got `class_name SpellPanel` so `source is SpellPanel` tags correctly. "Spells" row rendered when > 0. All clear in reset_for_level().
+
+### Phase 46c — Boot-time ID validation + type-aware UnlockManager
+- `ContentRegistry._ready()` calls `_validate_ids()` — asserts every loaded `.tres` has `*_id` matching its filename basename. Drift prints `[ContentRegistry/DRIFT]` at project open.
+- Old global-namespace `is_unlocked(id)` replaced by `is_hero_unlocked`, `is_tower_unlocked`, `is_spell_unlocked`. Each routes through `ContentRegistry.find_<type>` only — eliminates the class of bug where hero/tower id collision hid content (the Mage tower invisible bug).
+- `ProductData.unlock_type: enum {HERO, TOWER, SPELL}` so ShopScreen dispatches correctly.
+- All four callers migrated (LoadoutScreen, TowerRadialMenu, ShopScreen + shop's new wrapper).
+- Deferred: save-file migration framework + single-source tower registry.
+
+### Phase 46d — Non-scoped ID cleanup
+- All 7 drifted IDs renamed to match filenames: `archer` → `tower_archer`, `barracks` → `tower_barracks`, `artillery` → `tower_artillery`, `warrior` → `hero_warrior`, `mage` (hero) → `hero_mage`, `fireball` → `spell_fireball`, `reinforcements` → `spell_reinforcements`.
+- Cascade updates: `TowerPlacer._SCENE_MAP` keys, `TowerIconButton._draw_pictogram` match cases, `GameState.selected_hero_id` default, `ShopScreen.tscn` `unlock_id`.
+- Save migration framework deferred — user's save was deleted so no orphaned keys.
+
+## 2026-04-19 — Phase 47: Polish + radial menu hardening + tower loadout
+
+### Phase 47 — Combat visuals: Polish + Identity
+- New EventBus signals: `hit_landed`, `enemy_damaged`, `soldier_fell`. Emitted inside take_damage / soldier _die, consumed by VFXSpawner.
+- New VFX scripts (plain Node2D + class_name): `HitSparkVFX` (radial spark burst styled by damage type), `EnemyDeathDrift` (snapshots UnitVisualData, drifts + rotates 0.35s + fades along hit direction), `SkillCastFlare` (expanding ring under hero on skill cast, color keyed by skill_name).
+- **Swing-arc upgrade**: `UnitVisualDrawer.draw_swing_arc_trail` — 4 ghost copies behind primary with descending alpha + radius. `_draw_weapon_shape` branches on `UnitVisualData.weapon_type` enum (SWORD / SPEAR / STAFF / CLAWS).
+- **Status-ring polish**: `draw_status_ring(radius, color, dashes, rotation_t, width)` replaces static arcs — 8-dash cyan spinning CW for slow, 6-dash yellow spinning CCW for stun. `_status_ring_t` accumulator in BaseEnemy._physics_process.
+- **Telegraph inhale**: `_inhale_offset()` pulls body `-dir * 4.0 * smoothstep(0.15, 0.0, _combat_cooldown)` during last 150ms pre-strike.
+- **Soldier fall-over death**: parallel tween (rotation → ±90°, modulate.a → 0 over 0.4s) then free.
+- **Squad-color bands**: `UnitVisualData.accent_band_color`; TowerBarracks._spawn_soldier duplicates per-soldier and stamps deterministic color by global_position hash.
+- **Camera shake**: `GameCamera.add_shake(amount, duration)` — decaying offset perturbation; `VFXSpawner._on_enemy_damaged` triggers on `enemy.data.is_boss`.
+- All O(1) per instance, no `get_nodes_in_group` / distance loops added. Tactical pause freezes every new tween/process path.
+
+### Phase 47b — Upgrade-preview hardening
+- **Click-latency "three taps to commit"**: `TowerRadialMenu._on_gold_changed` was calling `_rebuild_action_slots()` which wiped `_armed_slot = null`. Enemy drops between arm + commit reset armed state. Fix: `_capture_armed_key()` / `_rearm_by_key()` pair remembers `(action_id, payload)` across rebuild. Added `RadialActionButton.is_enabled()`.
+- **Upgrade-preview stat coverage + color**: new `get_preview_stats() -> Array[Dictionary]` on BaseTower / TowerBarracks / TowerUpgradeData. TowerStatsCard.StatsLabel → RichTextLabel with BBCode (green on improvements, red on regressions, default on unchanged, green label-only for newly gained abilities). SlowT shows as "Dur" to keep column compact.
+
+### Phase 47c — Three-click root cause (real fix)
+- 47b's capture/rearm helpers were treating a symptom. Real bug: `_rebuild_action_slots` calls `_clear_slots` which `queue_free`s slots, but Godot defers to end-of-frame. Old Controls stay alive one more frame and still receive `_gui_input`. Commit tap could route to the queued-for-free old slot → re-arms instead of commits.
+- **Proper fix**: in-place affordability refresh via `_refresh_action_affordability()` — iterates existing slots, computes cost from tower (`get_upgrade_cost_to`, `get_branch_cost`), calls `set_enabled()` + `set_badge_color()` in place. No queue_free, no race, `_armed_slot` stays valid.
+- Defense-in-depth: `_clear_slots` now sets `mouse_filter = MOUSE_FILTER_IGNORE` before `queue_free`.
+- 47b's dead helpers removed.
+
+### Phase 47d — Tower loadout system
+Pre-level loadout picker; in-game build ring shows 6 slots (4 from loadout + 2 progression-locked padlocks). Adding a new tower is now a one-file change.
+- **47d-1** — Data consolidation: `TowerData.tower_scene: PackedScene` + `TowerData.pictogram: String`. `TowerPlacer._SCENE_MAP` deleted. `TowerIconButton._draw_pictogram` → `_draw_glyph(glyph, white, dark)` dispatched on pictogram string.
+- **47d-2** — GameState: `TOWER_SLOT_MAX = 6`, `tower_slot_cap = 4`, `selected_tower_ids`. `get_loadout_towers()`, `set_loadout_slot(idx, tid)` (no-duplicates swap), `reset_loadout_to_default()`. SaveManager plumbs all three.
+- **47d-3** — Build ring draws 6 slots always. Slots `[cap..MAX-1]` use `setup_locked()` (padlock + Toast on tap). Empty-but-unlocked slots also show padlock + hint "Set this slot in Loadout".
+- **47d-4** — `LoadoutPickerScreen.tscn/.gd`: ring mirrors in-game radius; pool is HFlowContainer of every unlocked tower with `set_equipped(bool)` state. Arm-then-place interaction. Every change calls `SaveManager.save_game()`. "Reset to Default" restores the 4 launch towers.
+- **47d-5** — WorldMap gains "Loadout" button next to "Talents". LoadoutScreen replaces hardcoded label with live TowersRow via `TowerIconButton.setup_display(data)` (display-only).
+
+### Phase 47d-6 — Ice Tower + base-level status effects
+- First tower added under the 47d-1 one-file contract.
+- `TowerData` gained `on_hit_slow_factor` / `on_hit_slow_duration` / `on_hit_stun_duration` mirroring TowerUpgradeData's, so base-level towers can carry status effects without a dummy L1 upgrade.
+- `BaseTower._build_on_hit_effect()` + `get_preview_stats()` + `TowerUpgradeData.get_preview_stats(base)` all fall back to `data.*` when upgrade override leaves field at 0.
+- `tower_ice.tres` (MAGIC, flying-capable, 30% slow for 1.0s at L1). `projectiles/IceShard.tscn` (Arrow.gd + cyan tint).
+- L2 "Frostbite Tower" doubles damage to 6, range 380→425, adds attack speed, slow 50% for 1.5s.
+- `"snowflake"` glyph added to `TowerIconButton._draw_glyph`.
+
+### Phase 47d-7 — TowerCombat chassis + TowerPlacer data-override
+- Fixes "Ice Tower has data=null, doesn't shoot" bug introduced by 47d-1.
+- Root cause: 47d-1 added `tower_scene: PackedScene` to TowerData, so tower_archer.tres references TowerArcher.tscn — but TowerArcher.tscn still bakes `data = ExtResource(tower_archer.tres)`. Circular reference. Godot's loader leaves one side null; instantiating TowerArcher.tscn for the Ice Tower produced a tower with Archer's data baked in.
+- **Fix (two parts)**:
+  - New `towers/TowerCombat.tscn` — bare combat chassis, zero baked data. All four combat towers (archer/mage/artillery/ice) point `tower_scene` at this one scene, eliminating every circular ref.
+  - `TowerPlacer._on_build_requested` executes `tower.data = entry.data` AFTER `instantiate()` and BEFORE `add_child()`, so `base_tower._ready()` sees the right data regardless of what the scene hardcodes.
+- Barracks exempt: `TowerBarracks.tscn` has its own structure (FlagArea + soldier plumbing).
+- Old per-tower scenes (`TowerArcher.tscn` / `TowerMage.tscn` / `TowerArtillery.tscn`) left as vestiges; deleted in the 2026-04-20 session.
+
+### Phase 47d-8 — GameOverScreen dead-end fix
+- Defeat previously hid the Continue button — only Restart visible. Users wanting to bail to WorldMap had to quit the app.
+- Fix: Campaign/Heroic/Iron defeat path now sets both buttons visible ("World Map" + "Restart"). Endless already showed both; got explicit labels for consistency.
+- Summary line gains "Mode: X" prefix.
+- Card.custom_minimum_size.x 300→480 so summaries don't wrap awkwardly.
+- `_show()` mode-codes title color (green victory, warm red defeat/game-over).
+
+### Phase 47d-9 — Code-review follow-up fixes
+- **In-game build ring collapsed loadout gaps**: `GameState.get_loadout_towers()` compacts empty entries. `TowerRadialMenu._open_build_ring` was indexing compacted array against ring slots — clearing slot 1 in picker pulled every subsequent tower forward. Rewrote to iterate `selected_tower_ids` positionally, same pattern as `LoadoutPickerScreen._rebuild_ring`. Also respects live `is_tower_unlocked`.
+- **On-hit slow gate too strict**: `base_tower._build_on_hit_effect` fell back per-field on way in, but final `if slow_f > 0.0 and slow_d > 0.0` dropped effect when upgrade set factor=0.5 and left duration=0. Added cross-fallback: `if slow_f > 0.0 and slow_d <= 0.0 and data != null: slow_d = data.on_hit_slow_duration`. Mirrored in `get_preview_stats`.
+
+---
+
+## 2026-04-20 — Interaction + game-over audit pass + bug sweep
+Not a numbered phase — an audit + cleanup session between content sprints. Three agents ran in parallel against gameplay / UI / data layers; findings triaged and fixed over two rounds.
+
+### Round 1 — Interaction + defeat-screen bugs
+- **Deleted orphaned tower scenes**: `towers/TowerArcher.tscn` / `TowerMage.tscn` / `TowerArtillery.tscn` (documented as "safe to delete" in 47d-7 but still shipping). Only `TowerCombat.tscn` + `TowerBarracks.tscn` remain.
+- **Radial menu dismiss on invalid tower**: [ui/TowerRadialMenu.gd:346-353](ui/TowerRadialMenu.gd) `_rebuild_action_slots` now calls `_dismiss()` when `_current_tower` goes invalid mid-rebuild instead of leaving an empty ring visible.
+- **Red-screen-of-death bug** on defeat: [autoloads/VFXSpawner.gd:130-148](autoloads/VFXSpawner.gd) `_screen_flash` created a ColorRect on CanvasLayer 50 (above GameOverScreen at 20). ColorRect defaulted to `MOUSE_FILTER_STOP` → swallowed every click. Tween ran on VFXSpawner with default PROCESS_MODE_INHERIT, so `get_tree().paused = true` froze the fade at full alpha forever. Fix: `layer.process_mode = PROCESS_MODE_ALWAYS`, `rect.mouse_filter = IGNORE`, `tween.set_pause_mode(TWEEN_PAUSE_PROCESS)`.
+
+### Round 2 — Broader bug sweep
+- **Enemy double-emit race**: [enemies/base_enemy.gd:261-279](enemies/base_enemy.gd). Lethal hit on the same frame as path-end could emit both `enemy_died` and `enemy_reached_end` → duplicate gold + lives deltas. Guard: `if state == State.DYING: return` at the top of both `_die` and `_reach_end`.
+- **Damage leaderboard stable key**: previously keyed on `get_instance_id()`. Godot reuses freed IDs, so in Endless with frequent selling a new tower could inherit a sold tower's tally. Fix: `BaseTower._damage_key: int = -1`, assigned lazily by `GameState.record_round_damage` from a monotonic `_next_damage_key` counter. Reset in `reset_for_level`.
+- **SpawnIndicator back-to-back tween leak**: [ui/SpawnIndicator.gd](ui/SpawnIndicator.gd) now stores `_hide_tween` and kills it before starting a new one, so rapid waves don't let a stale callback hide fresh arrows early.
+- **WorldMap locked-level tap feedback**: locked levels were bare Labels, silent on tap. Replaced with a Button that emits `Toast.show_message("Clear prior levels to unlock")`.
+- **soldier_basic.tres missing `soldier_id`**: added `soldier_id = "soldier_basic"`. Matches soldier_elite.tres pattern.
+- **Pause-honoring tweens**: same class as VFXSpawner screen_flash. Applied defensive `TWEEN_PAUSE_PROCESS` + `PROCESS_MODE_ALWAYS` to [autoloads/Toast.gd](autoloads/Toast.gd) and [autoloads/SceneManager.gd](autoloads/SceneManager.gd).
+- **SpellPanel cast_range guard**: [ui/SpellPanel.gd](ui/SpellPanel.gd) was casting regardless of range because every shipping spell is `cast_range = 0` (unlimited). Added a toast block — any future spell with positive cast_range surfaces a "cast range not wired up" message instead of silently accepting out-of-range taps, forcing a designer decision.
+
+### Doc hygiene
+- Compacted CLAUDE.md: migrated the "Current Status" phase log (lines 409–457) into this SESSIONS.md entry (the block you're reading); trimmed CORE RULES 7/13/14/15 "Why:" narratives; condensed "Common pitfalls" tower-add block. CLAUDE.md is now invariants-only.
+- New `STATUS.md` at repo root: one-screen "what am I doing right now" tracker. Manually updated between sessions.
+- Added "Working here" section at top of CLAUDE.md pointing at STATUS.md / SESSIONS.md / CLAUDE.md roles.
+
+Next up: playtest the vertical slice, then content sprint (4-8 weeks: 5 levels, 2 more heroes, 2 more towers, 4 more enemies, 1 more spell). No new systems until content fills the ones that exist.

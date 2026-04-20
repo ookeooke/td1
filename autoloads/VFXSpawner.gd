@@ -129,14 +129,21 @@ func _on_game_won() -> void:
 
 func _screen_flash(color: Color) -> void:
 	# Brief colored flash via a temporary ColorRect on a high CanvasLayer.
+	# PROCESS_MODE_ALWAYS + TWEEN_PAUSE_PROCESS so the fade completes even
+	# after game_over pauses the tree — otherwise the flash freezes at full
+	# alpha and covers the GameOverScreen. MOUSE_FILTER_IGNORE so the rect
+	# never swallows clicks to the menu underneath.
 	var layer: CanvasLayer = CanvasLayer.new()
 	layer.layer = 50
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(layer)
 	var rect: ColorRect = ColorRect.new()
 	rect.color = color
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	layer.add_child(rect)
 	var tween: Tween = create_tween()
+	tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	tween.tween_property(rect, "color:a", 0.0, 0.35)
 	tween.tween_callback(layer.queue_free)
 

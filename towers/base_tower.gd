@@ -29,6 +29,12 @@ var _current_target: Node = null
 var total_damage_dealt: float = 0.0
 var targeting_mode: int = TargetingMode.FIRST
 
+# Stable run-scoped key for the end-of-run damage leaderboard. Assigned
+# lazily by GameState.record_round_damage on the tower's first hit.
+# Using get_instance_id() as the key would be unsafe because Godot reuses
+# freed IDs — a new tower could inherit a sold tower's tally.
+var _damage_key: int = -1
+
 var _shots_since_buff: int = 0
 var _next_buff_threshold: int = 0
 

@@ -259,6 +259,11 @@ func heal(amount: float) -> void:
 
 
 func _die() -> void:
+	# Guard: a lethal hit landing on the exact frame an enemy reaches path
+	# end would otherwise double-emit (die + reach_end), duplicating gold and
+	# lives deltas. First transition to DYING wins; any re-entry is a no-op.
+	if state == State.DYING:
+		return
 	change_state(State.DYING)
 	# Last-hit XP: only the hero earns XP, towers don't.
 	if _last_damage_source != null and is_instance_valid(_last_damage_source) \
@@ -274,6 +279,8 @@ func _die() -> void:
 
 
 func _reach_end() -> void:
+	if state == State.DYING:
+		return
 	change_state(State.DYING)
 	EventBus.enemy_reached_end.emit(self, data.lives_worth)
 	_despawn()

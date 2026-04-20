@@ -119,10 +119,11 @@ func _draw() -> void:
 		return
 	# Glyph — procedural shape keyed by base.icon_glyph (sword/shield/star/
 	# generic). Shared helper with ItemPickup so ground drop and UI tile
-	# render the same thing.
+	# render the same thing. Rarity pips drawn on top.
 	if not _is_empty and _base != null:
 		var center: Vector2 = rect.position + rect.size * 0.5
 		ItemGlyph.draw(self, _base.icon_glyph, center, GLYPH_RADIUS_PX, _base.icon_color)
+		ItemGlyph.draw_rarity_pips(self, int(_base.rarity), center, GLYPH_RADIUS_PX)
 	# Armed outline — drawn over everything, pulsing-y color.
 	if _armed:
 		var armed_rect: Rect2 = rect.grow(-1.0)

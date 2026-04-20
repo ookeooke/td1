@@ -24,6 +24,35 @@ static func draw(canvas: CanvasItem, glyph: String, center: Vector2, radius: flo
 			_draw_generic(canvas, center, radius, fill_color)
 
 
+# Phase polish — rarity pips. Drawn above the glyph, one small dot per
+# tier-above-common. MAGIC=1 blue dot, RARE=2 yellow, EPIC=3 purple,
+# LEGENDARY=4 orange. COMMON items render no pips. Called by ItemIcon +
+# ItemPickup after the main glyph so pips sit on top.
+const _PIP_COLORS: Array[Color] = [
+	Color(0.75, 0.75, 0.75),   # 0 COMMON  — unused (no pips)
+	Color(0.4, 0.7, 1.0),      # 1 MAGIC
+	Color(1.0, 0.9, 0.3),      # 2 RARE
+	Color(0.8, 0.4, 1.0),      # 3 EPIC
+	Color(1.0, 0.55, 0.1),     # 4 LEGENDARY
+]
+
+
+static func draw_rarity_pips(canvas: CanvasItem, rarity: int, center: Vector2, radius: float) -> void:
+	if rarity <= 0:
+		return   # COMMON: nothing to draw
+	var pip_radius: float = maxf(1.5, radius * 0.09)
+	var pip_spacing: float = pip_radius * 2.6
+	var pip_y: float = center.y - radius * 1.05
+	var pip_color: Color = _PIP_COLORS[clampi(rarity, 0, _PIP_COLORS.size() - 1)]
+	var count: int = clampi(rarity, 1, 4)   # MAGIC=1, RARE=2, EPIC=3, LEGENDARY=4
+	var total_width: float = pip_spacing * (count - 1)
+	var start_x: float = center.x - total_width * 0.5
+	for i in count:
+		var pip_pos: Vector2 = Vector2(start_x + i * pip_spacing, pip_y)
+		canvas.draw_circle(pip_pos, pip_radius, pip_color)
+		canvas.draw_arc(pip_pos, pip_radius, 0.0, TAU, 10, pip_color.darkened(0.4), 1.0, true)
+
+
 static func _outline_color(fill: Color) -> Color:
 	return fill.darkened(0.55)
 

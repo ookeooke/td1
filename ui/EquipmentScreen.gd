@@ -18,6 +18,12 @@ const SLOT_ORDER: Array[int] = [0, 1, 5, 2, 3, 4]
 # activates them.
 const ACTIVE_SLOTS: Array[int] = [0, 1, 5]
 
+# Inventory is always padded to at least this many cells so the grid feels
+# like a proper inventory with headroom (empty tiles = free space).
+# Auto-grows in steps of one row beyond MIN so 40+ items still look clean.
+const MIN_INVENTORY_CELLS: int = 40
+const INVENTORY_ROW_STEP: int = 8
+
 @onready var back_button: Button = %BackButton
 @onready var title_label: Label = %TitleLabel
 @onready var hero_label: Label = %HeroLabel
@@ -99,12 +105,16 @@ func _refresh() -> void:
 		icon.setup_instance(inst)
 		icon.pressed.connect(_on_inventory_item_pressed)
 		inventory_grid.add_child(icon)
-	if inv.is_empty():
-		var empty: Label = Label.new()
-		empty.text = "No items yet. Kill enemies in levels to collect loot."
-		empty.add_theme_font_size_override("font_size", 14)
-		empty.add_theme_color_override("font_color", Color(0.55, 0.6, 0.7, 1))
-		inventory_grid.add_child(empty)
+	# Phase polish — pad with empty tiles so the grid communicates capacity.
+	# Count scales up a row at a time once MIN is exceeded, so it never feels
+	# "exactly full" until the player really hoards hundreds of items.
+	var target_cells: int = MIN_INVENTORY_CELLS
+	while target_cells < inv.size():
+		target_cells += INVENTORY_ROW_STEP
+	for _i in (target_cells - inv.size()):
+		var empty_icon: Control = _ItemIconScript.new()
+		empty_icon.setup_empty()
+		inventory_grid.add_child(empty_icon)
 
 
 # --- Interaction (D3) -------------------------------------------------------

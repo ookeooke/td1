@@ -6,9 +6,22 @@
 - Doc hygiene — this file + CLAUDE.md compaction (in progress).
 
 **Next up** (in priority order):
-1. **Playtest the vertical slice.** Export Android APK, put Level 1 in front of 3–5 humans. Watch them play silently. Record the first 5 things that confused or bored them.
-2. **Content sprint** (4–8 weeks target): 4 more levels, 2 more heroes (ranger / paladin), 2 more towers (support or AoE-slow variant), 4 more enemies (shielded, fast-swarm, self-heal, boss #2), 1 more spell. Architecture already supports one-file adds.
-3. **Production hardening** (only after content is in): tests for DamageCalculator / SaveManager / UnlockManager, i18n wrap (`tr()`), real IAP SDK, Amplitude/GameAnalytics hooks, accessibility pass (font scaler, color-blind palette, 80px min touch targets).
+
+1. **Engineering hardening week** (~10–12h total — do this BEFORE the content sprint; bugs in untested code compound fast):
+   - **Mon–Tue (~4h)** — Install [GUT](https://github.com/bitwes/Gut) (addon, enable plugin). Write ~30 unit tests:
+     - DamageCalculator (5): PHYSICAL / MAGIC / TRUE, armor clamp, negative amounts, null target
+     - SaveManager (5): round-trip, missing file, corrupted JSON, version rejection, `hero_talents` preserved
+     - UnlockManager (5): type-scoped separation, empty id, star threshold, explicit unlock, `requires_unlock=false`
+     - ContentRegistry (4): `find_tower` / `find_hero` / `find_enemy` found+missing, `_validate_ids` drift
+     - GameState (5): `reset_for_level`, `record_round_damage` routing, `_next_damage_key` monotonic, `set_loadout_slot` swap, `get_loadout_towers` cap+lock
+     - Regression locks (6): enemy double-emit guard (47d-20 fix), overkill cap, status-effect refresh, `TowerUpgradeData` cross-fallback (47d-9 fix), stats-card diff, unlock fallback
+   - **Wed (~3h)** — Save migration scaffold in [autoloads/SaveManager.gd](autoloads/SaveManager.gd): `SAVE_VERSION` constant + `_MIGRATIONS: Array[Callable]` chain that runs per-version mutators forward until current. Add `content_hash` key for orphaned-content tolerance (unknown IDs in loadout → drop instead of crash). 3 migration tests in `tests/unit/test_save_migrations.gd`.
+   - **Thu (~1h)** — `.github/workflows/ci.yml` using `barichello/godot-ci:4.6`. Runs GUT headless + exports Android APK as artifact on every push.
+   - **Fri (~2–4h)** — Playtest the APK CI built. Put it in front of 3–5 humans. Watch silently, don't explain. Write the first 5 things that confused or bored them into this file.
+
+2. **Content sprint** (4–8 weeks, after hardening): 4 more levels, 2 more heroes (ranger / paladin), 2 more towers (support or AoE-slow variant), 4 more enemies (shielded, fast-swarm, self-heal, boss #2), 1 more spell. Architecture already supports one-file adds.
+
+3. **Production hardening round 2** (after content is authored): i18n via `tr()` wraps on every user-facing string, real IAP SDK (RevenueCat or Google Play Billing + receipt validation), analytics event bus (stub → Amplitude / GameAnalytics), crash reporting via [sentry-godot](https://github.com/getsentry/sentry-godot), accessibility (font scaler, color-blind palette, 80px min touch targets).
 
 ## Known issues / rough edges
 - `autoloads/GameState.gd` is ~500 lines and god-object-shaped. Refactor deferred — not painful yet.

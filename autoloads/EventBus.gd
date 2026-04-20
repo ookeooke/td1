@@ -76,6 +76,13 @@ signal leaderboard_score_submitted(score)
 signal map_tap_confirmed(screen_pos, claim)
 signal camera_focus_requested(world_pos, duration)
 
+# Items / Loot (Phase 48)
+signal item_dropped(instance, world_pos)
+signal item_picked_up(instance)
+signal item_equipped(hero_id, slot, instance)
+signal item_unequipped(hero_id, slot, instance)
+signal inventory_changed()
+
 # Game flow
 signal game_over()
 signal game_won()

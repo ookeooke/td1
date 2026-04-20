@@ -35,12 +35,15 @@ horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 0.95, 0.6, 1)
 theme_override_font_sizes/font_size = 20
 
-[node name="StatsLabel" type="Label" parent="Panel/VBox"]
+[node name="StatsLabel" type="RichTextLabel" parent="Panel/VBox"]
 unique_name_in_owner = true
-text = "Dmg 0  Rng 0  Spd 0"
-horizontal_alignment = 1
-theme_override_colors/font_color = Color(0.92, 0.94, 1, 1)
-theme_override_font_sizes/font_size = 15
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+text = "Dmg 0   Rng 0   Spd 0"
+theme_override_colors/default_color = Color(0.92, 0.94, 1, 1)
+theme_override_font_sizes/normal_font_size = 15
 
 [node name="MetaLabel" type="Label" parent="Panel/VBox"]
 unique_name_in_owner = true

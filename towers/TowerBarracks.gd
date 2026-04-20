@@ -150,6 +150,21 @@ func get_stats_line() -> String:
 	]
 
 
+func get_preview_stats() -> Array:
+	var sd: Resource = _effective_soldier_data()
+	var squad: float = float(sd.max_count) if sd != null else 0.0
+	var hp: float = float(sd.max_health) if sd != null else 0.0
+	var dmg: float = float(sd.damage) if sd != null and "damage" in sd else 0.0
+	var rows: Array = [
+		{"label": "Rally", "value": _effective_rally_range(), "fmt": "%d"},
+		{"label": "Squad", "value": squad, "fmt": "%d"},
+		{"label": "HP", "value": hp, "fmt": "%d"},
+	]
+	if dmg > 0.0:
+		rows.append({"label": "Dmg", "value": dmg, "fmt": "%d"})
+	return rows
+
+
 # Barracks have no attack — return 0 so any UI that asks for these fields
 # renders as N/A instead of crashing. Stats card does NOT call these; it
 # uses get_stats_line() which formats rally/squad/HP directly.

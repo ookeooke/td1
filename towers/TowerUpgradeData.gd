@@ -52,3 +52,40 @@ func get_stats_line(base: TowerData) -> String:
 	var rng: float = attack_range if attack_range > 0.0 else (base.attack_range if base != null else 0.0)
 	var spd: float = attack_speed if attack_speed > 0.0 else (base.attack_speed if base != null else 0.0)
 	return "Dmg %d   Rng %d   Spd %.1f" % [int(dmg), int(rng), spd]
+
+
+# Structured post-upgrade stats for the diff-card. Mirrors the shape of
+# BaseTower.get_preview_stats / TowerBarracks.get_preview_stats so the card
+# can zip rows by label and render color-coded gains/losses.
+func get_preview_stats(base: TowerData) -> Array:
+	if base != null and base.is_barracks():
+		var sd: Resource = soldier_data_override if soldier_data_override != null else base.soldier_data
+		var rally: float = soldier_rally_range if soldier_rally_range > 0.0 else base.soldier_rally_range
+		var squad: float = float(sd.max_count) if sd != null else 0.0
+		var hp: float = float(sd.max_health) if sd != null else 0.0
+		var dmg_s: float = float(sd.damage) if sd != null and "damage" in sd else 0.0
+		var rows_b: Array = [
+			{"label": "Rally", "value": rally, "fmt": "%d"},
+			{"label": "Squad", "value": squad, "fmt": "%d"},
+			{"label": "HP", "value": hp, "fmt": "%d"},
+		]
+		if dmg_s > 0.0:
+			rows_b.append({"label": "Dmg", "value": dmg_s, "fmt": "%d"})
+		return rows_b
+	var dmg: float = damage if damage > 0.0 else (base.damage if base != null else 0.0)
+	var rng: float = attack_range if attack_range > 0.0 else (base.attack_range if base != null else 0.0)
+	var spd: float = attack_speed if attack_speed > 0.0 else (base.attack_speed if base != null else 0.0)
+	var aoe: float = base.aoe_radius if base != null else 0.0
+	var rows: Array = [
+		{"label": "Dmg", "value": dmg, "fmt": "%d"},
+		{"label": "Rng", "value": rng, "fmt": "%d"},
+		{"label": "Spd", "value": spd, "fmt": "%.1f"},
+	]
+	if aoe > 0.0:
+		rows.append({"label": "AoE", "value": aoe, "fmt": "%d"})
+	if on_hit_slow_factor > 0.0:
+		rows.append({"label": "Slow", "value": on_hit_slow_factor * 100.0, "fmt": "%d%%"})
+		rows.append({"label": "SlowT", "value": on_hit_slow_duration, "fmt": "%.1fs"})
+	if on_hit_stun_duration > 0.0:
+		rows.append({"label": "Stun", "value": on_hit_stun_duration, "fmt": "%.1fs"})
+	return rows

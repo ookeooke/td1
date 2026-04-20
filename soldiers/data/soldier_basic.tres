@@ -7,5 +7,6 @@
 script = ExtResource("1_data")
 soldier_name = "Militia"
 max_health = 22
+move_speed = 140.0
 visual = ExtResource("2_vis")
 encyclopedia_entry = "Blocks ground enemies. Trades blows until killed, then respawns after a delay."

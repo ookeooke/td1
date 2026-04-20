@@ -149,6 +149,31 @@ func get_stats_line() -> String:
 	]
 
 
+# Structured stats used by the upgrade-preview diff so the card can color each
+# column green/red by improvement. Rows: {label, value, fmt, higher_is_better}.
+# Slow/stun/AoE rows are only emitted when the value is meaningful (> 0),
+# since barely-used columns add noise for towers that never touch them.
+func get_preview_stats() -> Array:
+	var ov: Resource = _level_override()
+	var aoe: float = data.aoe_radius if data != null else 0.0
+	var slow_f: float = ov.on_hit_slow_factor if ov != null else 0.0
+	var slow_d: float = ov.on_hit_slow_duration if ov != null else 0.0
+	var stun: float = ov.on_hit_stun_duration if ov != null else 0.0
+	var rows: Array = [
+		{"label": "Dmg", "value": get_effective_damage(), "fmt": "%d"},
+		{"label": "Rng", "value": get_preview_range(), "fmt": "%d"},
+		{"label": "Spd", "value": get_effective_attack_speed(), "fmt": "%.1f"},
+	]
+	if aoe > 0.0:
+		rows.append({"label": "AoE", "value": aoe, "fmt": "%d"})
+	if slow_f > 0.0:
+		rows.append({"label": "Slow", "value": slow_f * 100.0, "fmt": "%d%%"})
+		rows.append({"label": "SlowT", "value": slow_d, "fmt": "%.1fs"})
+	if stun > 0.0:
+		rows.append({"label": "Stun", "value": stun, "fmt": "%.1fs"})
+	return rows
+
+
 func get_sell_value() -> int:
 	var ov: Resource = _level_override()
 	if ov != null and ov.sell_value > 0:

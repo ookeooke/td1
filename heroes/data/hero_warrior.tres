@@ -60,6 +60,7 @@ hero_id = "hero_warrior"
 max_health = 60
 attack_damage = 6.0
 attack_range = 75.0
+move_speed = 220.0
 armor = 0.25
 skills = Array[Resource]([ExtResource("2_slash"), ExtResource("3_bash"), ExtResource("4_rally")])
 talents = Array[Resource]([SubResource("Talent_Endurance"), SubResource("Talent_Vampiric"), SubResource("Talent_HeavyBlows")])

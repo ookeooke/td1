@@ -10,6 +10,7 @@ soldier_name = "Elite Militia"
 max_health = 34
 attack_damage = 6.0
 attack_speed = 1.1
+move_speed = 140.0
 armor = 0.15
 visual = ExtResource("2_vis")
 encyclopedia_entry = "Veteran blockers in heavier gear. Tougher armor, sharper swings, same tight-formation discipline."

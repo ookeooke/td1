@@ -70,6 +70,17 @@ func set_enabled(on: bool) -> void:
 	queue_redraw()
 
 
+func is_enabled() -> bool:
+	return _enabled
+
+
+func set_badge_color(c: Color) -> void:
+	if _badge_color == c:
+		return
+	_badge_color = c
+	queue_redraw()
+
+
 func _gui_input(event: InputEvent) -> void:
 	# Touch-only per CLAUDE.md. Project has emulate_touch_from_mouse=true, so
 	# mouse clicks arrive here as InputEventScreenTouch. Handling both event

@@ -368,6 +368,11 @@ func _gate_actions_one_frame() -> void:
 func _clear_slots() -> void:
 	for slot in _slots:
 		if slot != null and is_instance_valid(slot):
+			# queue_free is deferred to end-of-frame — until then the Control
+			# stays in the tree and still receives _gui_input, which could
+			# deliver a stale tap to a slot that's about to disappear. Lock
+			# input off synchronously so the freed slot can't fire again.
+			slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			slot.queue_free()
 	_slots.clear()
 	# Freed slots would leave _armed_slot dangling — always drop the ref here.
@@ -465,11 +470,49 @@ func _on_gold_changed(_amount: int) -> void:
 			_hide_range_preview()
 			_hide_stats_card()
 	else:
-		# Action ring — rebuild upgrade/branch slots to reflect new gold.
-		_rebuild_action_slots()
-		# Rebuild cleared the armed state; if the card was in upgrade/sell
-		# preview mode, reset it to the built-tower view so we don't leave a
-		# stale peek displayed.
+		# Action ring — refresh affordability IN-PLACE (no rebuild). Rebuilding
+		# would queue_free every slot; those old Controls stay alive until
+		# end-of-frame and can still receive input, causing a stale-reference
+		# race where the user's commit tap hits a about-to-be-freed slot and
+		# fails to commit (the 3-click bug). Only upgrade/branch slots care
+		# about gold — target/sell/rally are gold-independent.
+		_refresh_action_affordability()
+
+
+# Price-to-enabled map for the two action types that depend on gold. Returns
+# the gold cost or 0 for actions that don't depend on gold (callers skip them).
+func _gold_cost_for_slot(slot: Control) -> int:
+	if _current_tower == null or not is_instance_valid(_current_tower):
+		return 0
+	match slot.action_id:
+		"upgrade":
+			if _current_tower.has_method("can_upgrade") and _current_tower.can_upgrade():
+				return int(_current_tower.get_upgrade_cost_to(_current_tower.level + 1))
+		"branch":
+			if _current_tower.has_method("get_branch_cost"):
+				return int(_current_tower.get_branch_cost(int(slot.payload)))
+	return 0
+
+
+func _refresh_action_affordability() -> void:
+	var armed_lost: bool = false
+	for slot in _slots:
+		if slot == null or not is_instance_valid(slot):
+			continue
+		var cost: int = _gold_cost_for_slot(slot)
+		if cost <= 0:
+			continue  # not a gold-gated action — no refresh needed
+		var enabled: bool = GameState.gold >= cost
+		slot.set_enabled(enabled)
+		if slot.has_method("set_badge_color"):
+			slot.set_badge_color(BADGE_GOLD if enabled else BADGE_DIMMED)
+		if not enabled and slot == _armed_slot:
+			armed_lost = true
+	if armed_lost:
+		# Dropped below cost while armed — disarm and revert card to the
+		# built-tower view so the player isn't stuck with a stale preview.
+		_set_armed(null)
+		_hide_upgrade_ring()
 		_show_stats_card(anchor_node.position)
 
 

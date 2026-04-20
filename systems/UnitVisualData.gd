@@ -24,3 +24,14 @@ enum WeaponType { SWORD, SPEAR, STAFF, CLAWS }
 # Zero alpha = disabled (default) so existing visuals are untouched. Used by
 # TowerBarracks to tint each squad's soldiers by barracks spot_id.
 @export var accent_band_color: Color = Color(0, 0, 0, 0)
+
+# Procedural walk animation — applied by base_enemy in _draw() while WALKING.
+# Amplitude 0 disables bob; squash 0 disables squash/stretch. Defaults are
+# subtle so every existing enemy reads as "alive" without per-tres editing.
+@export_group("Walk Animation")
+# Vertical lift at peak, in pixels. Body hops by |sin| — two plants per cycle.
+@export_range(0.0, 12.0, 0.1) var walk_bob_amplitude: float = 2.5
+# Cycle rate in radians/sec. ~7.0 ≈ ~2.2 plants/sec (one plant per half cycle).
+@export_range(0.0, 20.0, 0.1) var walk_bob_speed: float = 7.0
+# Squash magnitude at each foot-plant (body scales X+ Y-). 0 = off.
+@export_range(0.0, 0.25, 0.01) var walk_squash: float = 0.04

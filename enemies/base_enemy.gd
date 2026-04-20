@@ -40,6 +40,10 @@ var _last_damage_source: Node = null
 var _hit_flash_t: float = 0.0
 # Accumulates while any status effect is active so the dashed rings rotate.
 var _status_ring_t: float = 0.0
+# Accumulates while in WALKING so body bob + squash animate. Randomized phase
+# per-enemy so a swarm doesn't step in sync. Driven by UnitVisualData fields.
+var _walk_t: float = 0.0
+var _walk_phase: float = 0.0
 
 # Phase 20.5: per-unit ability dispatcher. Populated from data.abilities
 # in _ready(); ticked each physics frame; triggered on death so
@@ -64,6 +68,7 @@ func _ready() -> void:
 	if data != null:
 		for ability in data.abilities:
 			_ability_host.add_ability(ability)
+	_walk_phase = randf() * TAU
 	queue_redraw()
 
 
@@ -95,6 +100,13 @@ func _physics_process(delta: float) -> void:
 			_path_follow.progress += _effective_speed() * delta
 			if _path_follow.progress_ratio >= 1.0:
 				_reach_end()
+			# Walk-bob tick. Gated on visual fields so enemies with bob
+			# disabled (amplitude 0 + squash 0) skip the per-frame redraw.
+			if data != null and data.visual != null:
+				var v: UnitVisualData = data.visual
+				if v.walk_bob_amplitude > 0.0 or v.walk_squash > 0.0:
+					_walk_t += delta
+					queue_redraw()
 		State.COMBAT:
 			_combat_tick(delta)
 		State.STUNNED, State.STEALTHED, State.DYING:
@@ -294,10 +306,18 @@ func _despawn() -> void:
 
 func _draw() -> void:
 	var inhale: Vector2 = _inhale_offset()
+	var body_offset: Vector2 = inhale
+	var body_scale: Vector2 = Vector2.ONE
+	# Walk-bob + squash applied only while walking — stationary (COMBAT /
+	# STUNNED / DYING) bodies stay still so the tell reads clearly.
+	if data != null and data.visual != null and state == State.WALKING:
+		var anim: Dictionary = UnitVisualDrawer.compute_walk_anim(data.visual, _walk_t, _walk_phase)
+		body_offset += anim.offset
+		body_scale = anim.scale
 	if data != null and data.visual != null:
-		UnitVisualDrawer.draw_unit(self, data.visual, inhale)
+		UnitVisualDrawer.draw_unit(self, data.visual, body_offset, body_scale)
 		if _hit_flash_t > 0.0:
-			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, inhale)
+			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, body_offset, body_scale)
 	else:
 		draw_circle(Vector2.ZERO, 35.0, Color(0.75, 0.2, 0.2))
 		draw_arc(Vector2.ZERO, 35.0, 0, TAU, 24, Color(0.15, 0.05, 0.05), 2.0)

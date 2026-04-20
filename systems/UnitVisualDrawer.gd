@@ -108,7 +108,7 @@ static func draw_status_ring(ci: CanvasItem, radius: float, color: Color, dashes
 		ci.draw_arc(Vector2.ZERO, radius, start, start + span, 6, color, width)
 
 
-static func draw_hit_flash(ci: CanvasItem, v: UnitVisualData, amount: float, offset: Vector2 = Vector2.ZERO) -> void:
+static func draw_hit_flash(ci: CanvasItem, v: UnitVisualData, amount: float, offset: Vector2 = Vector2.ZERO, scale: Vector2 = Vector2.ONE) -> void:
 	# Additive white overlay in the body's silhouette, fading with amount
 	# in [0, 1]. Intended to be called immediately after draw_unit() while
 	# a hit flash is active. Brief (~80 ms) flashes read as "got hit."
@@ -116,20 +116,43 @@ static func draw_hit_flash(ci: CanvasItem, v: UnitVisualData, amount: float, off
 		return
 	var a: float = clampf(amount, 0.0, 1.0) * 0.65
 	var col: Color = Color(1.0, 1.0, 1.0, a)
-	if offset != Vector2.ZERO:
-		ci.draw_set_transform(offset, 0.0, Vector2.ONE)
+	var has_xform: bool = offset != Vector2.ZERO or scale != Vector2.ONE
+	if has_xform:
+		ci.draw_set_transform(offset, 0.0, scale)
 	if v.shape == UnitVisualData.Shape.CIRCLE:
 		ci.draw_circle(Vector2.ZERO, v.radius, col)
 	else:
 		var half: Vector2 = v.body_size * 0.5
 		ci.draw_rect(Rect2(-half, v.body_size), col)
-	if offset != Vector2.ZERO:
+	if has_xform:
 		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vector2.ZERO) -> void:
-	if offset != Vector2.ZERO:
-		ci.draw_set_transform(offset, 0.0, Vector2.ONE)
+# Returns {"offset": Vector2, "scale": Vector2} for a walking body, driven
+# by v.walk_bob_amplitude / walk_bob_speed / walk_squash. `phase` (radians)
+# offsets the cycle per-unit so a swarm doesn't step in lockstep. When both
+# amplitude and squash are 0, returns identity (caller can skip applying).
+static func compute_walk_anim(v: UnitVisualData, t: float, phase: float) -> Dictionary:
+	var amp: float = v.walk_bob_amplitude
+	var sq: float = clampf(v.walk_squash, 0.0, 0.25)
+	if amp <= 0.0 and sq <= 0.0:
+		return {"offset": Vector2.ZERO, "scale": Vector2.ONE}
+	var theta: float = t * v.walk_bob_speed + phase
+	var s: float = sin(theta)
+	var lift: float = absf(s)  # 0 at plant, 1 at peak — two plants per cycle
+	var bob_y: float = -lift * amp
+	# Squash peaks at foot-plant (lift == 0): body compresses vertically +
+	# spreads horizontally, then recovers at peak.
+	var plant_weight: float = 1.0 - lift
+	var sx: float = 1.0 + sq * plant_weight
+	var sy: float = 1.0 - sq * plant_weight
+	return {"offset": Vector2(0.0, bob_y), "scale": Vector2(sx, sy)}
+
+
+static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vector2.ZERO, scale: Vector2 = Vector2.ONE) -> void:
+	var has_xform: bool = offset != Vector2.ZERO or scale != Vector2.ONE
+	if has_xform:
+		ci.draw_set_transform(offset, 0.0, scale)
 
 	if v.shape == UnitVisualData.Shape.CIRCLE:
 		ci.draw_circle(Vector2.ZERO, v.radius, v.body_color)
@@ -147,7 +170,7 @@ static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vecto
 
 	_draw_accent(ci, v)
 
-	if offset != Vector2.ZERO:
+	if has_xform:
 		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 

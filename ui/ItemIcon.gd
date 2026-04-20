@@ -117,28 +117,15 @@ func _draw() -> void:
 				  Vector2(rect.position.x, rect.position.y + rect.size.y),
 				  cross_color, 2.0)
 		return
-	# Glyph — a simple colored disc + letter-abbreviation as a placeholder
-	# until authored icons land. _base.icon_color provides the tint.
+	# Glyph — procedural shape keyed by base.icon_glyph (sword/shield/star/
+	# generic). Shared helper with ItemPickup so ground drop and UI tile
+	# render the same thing.
 	if not _is_empty and _base != null:
 		var center: Vector2 = rect.position + rect.size * 0.5
-		draw_circle(center, GLYPH_RADIUS_PX, _base.icon_color)
-		_draw_glyph_letter(_base.icon_glyph, center)
+		ItemGlyph.draw(self, _base.icon_glyph, center, GLYPH_RADIUS_PX, _base.icon_color)
 	# Armed outline — drawn over everything, pulsing-y color.
 	if _armed:
 		var armed_rect: Rect2 = rect.grow(-1.0)
 		draw_rect(armed_rect, _ARMED_COLOR, false, ARMED_RING_THICKNESS_PX)
 
 
-# Placeholder "glyph" renderer — draws the first letter of the glyph key.
-# Will be replaced with procedural shapes (sword / shield / star) later.
-func _draw_glyph_letter(glyph: String, center: Vector2) -> void:
-	if glyph == "":
-		return
-	var letter: String = glyph.substr(0, 1).to_upper()
-	var font: Font = ThemeDB.fallback_font
-	if font == null:
-		return
-	var font_size: int = 26
-	var text_size: Vector2 = font.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
-	var pos: Vector2 = center - text_size * 0.5 + Vector2(0, text_size.y * 0.35)
-	draw_string(font, pos, letter, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.1, 0.1, 0.1))

@@ -41,6 +41,14 @@ func _ready() -> void:
 			_icon_color = base.icon_color
 			var r: int = clampi(int(base.rarity), 0, _RARITY_COLORS.size() - 1)
 			_rarity_color = _RARITY_COLORS[r]
+	# Register with central tap router (C3).
+	ItemPickupManager.register(self)
+
+
+func _exit_tree() -> void:
+	# Safe to call even if _collect already ran — ItemPickupManager.unregister
+	# is idempotent (erase is a no-op on missing element).
+	ItemPickupManager.unregister(self)
 
 
 func _physics_process(delta: float) -> void:

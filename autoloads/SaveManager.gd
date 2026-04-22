@@ -77,6 +77,10 @@ func save_game() -> void:
 		# Phase 48 — persistent hero progression + loot.
 		"hero_progress": GameState.hero_progress,
 		"next_uid": next_uid,
+		# Phase 48 level metrics — per-level best time (seconds) + per-level
+		# endless high score. Additive; missing keys default to empty dicts.
+		"level_best_times": GameState.level_best_times,
+		"level_endless_best_scores": GameState.level_endless_best_scores,
 	}
 	# Merge InventoryManager's own slice — keeps the save dict flat while
 	# letting the manager own its shape (to_save_dict / from_save_dict).
@@ -183,6 +187,15 @@ func load_game() -> void:
 				}
 	if data.has("next_uid"):
 		next_uid = int(data.next_uid)
+	# Phase 48 — level metrics.
+	if data.has("level_best_times") and data.level_best_times is Dictionary:
+		GameState.level_best_times = {}
+		for key in data.level_best_times:
+			GameState.level_best_times[key] = float(data.level_best_times[key])
+	if data.has("level_endless_best_scores") and data.level_endless_best_scores is Dictionary:
+		GameState.level_endless_best_scores = {}
+		for key in data.level_endless_best_scores:
+			GameState.level_endless_best_scores[key] = int(data.level_endless_best_scores[key])
 	# InventoryManager owns the shape of its fields.
 	InventoryManager.from_save_dict(data)
 	print("[SaveManager] loaded save v%d — stars=%s upgrades=%d" % [

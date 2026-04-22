@@ -30,6 +30,9 @@ func _on_game_over() -> void:
 		var is_best: bool = score > GameState.endless_best_score
 		if is_best:
 			GameState.endless_best_score = score
+		# Phase 48 — also track per-level endless score so each map has its
+		# own endless high score on the WorldMap card.
+		GameState.try_record_endless_score(GameState.current_level_id, score)
 		GameState.submit_endless_score("Player", score)
 		EventBus.endless_score_updated.emit(score)
 		SaveManager.save_game()

@@ -33,6 +33,7 @@ var targeting_mode: int = TargetingMode.FIRST
 # lazily by GameState.record_round_damage on the tower's first hit.
 # Using get_instance_id() as the key would be unsafe because Godot reuses
 # freed IDs — a new tower could inherit a sold tower's tally.
+@warning_ignore("unused_private_class_variable")
 var _damage_key: int = -1
 
 var _shots_since_buff: int = 0
@@ -58,10 +59,10 @@ func _ready() -> void:
 		return
 	_refresh_range_shape()
 	_next_buff_threshold = randi_range(3, 6)
-	# Kick off the build-in animation. Block firing until it completes so the
-	# first shot doesn't leave a half-constructed tower.
+	# Kick off the build-in animation. Firing is blocked by the early-return
+	# in _physics_process while _construct_t > 0, so we leave _attack_cooldown
+	# at 0 — the tower fires the frame after construction completes.
 	_construct_t = _TowerAnimScript.CONSTRUCTION_DURATION
-	_attack_cooldown = _TowerAnimScript.CONSTRUCTION_DURATION
 	modulate.a = 0.0
 
 

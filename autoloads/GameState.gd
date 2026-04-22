@@ -192,12 +192,12 @@ func get_best_time(level_id: String) -> float:
 
 
 # Per-level endless high score. Returns true iff new best.
-func try_record_endless_score(level_id: String, score: int) -> bool:
-	if level_id == "" or score <= 0:
+func try_record_endless_score(level_id: String, run_score: int) -> bool:
+	if level_id == "" or run_score <= 0:
 		return false
 	var prev: int = int(level_endless_best_scores.get(level_id, 0))
-	if score > prev:
-		level_endless_best_scores[level_id] = score
+	if run_score > prev:
+		level_endless_best_scores[level_id] = run_score
 		return true
 	return false
 

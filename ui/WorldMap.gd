@@ -82,7 +82,7 @@ func _build_level_entries() -> void:
 
 func _make_level_panel(data: Resource) -> PanelContainer:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(320, 100)
+	panel.custom_minimum_size = Vector2(320, 110)
 	var hbox := HBoxContainer.new()
 	hbox.set("theme_override_constants/separation", 16)
 	panel.add_child(hbox)
@@ -105,21 +105,41 @@ func _make_level_panel(data: Resource) -> PanelContainer:
 	stars_label.set("theme_override_font_sizes/font_size", 20)
 	info_vbox.add_child(stars_label)
 
-	# Right side: play button or lock
+	# Phase 48 — best time + endless high score. Only show if the player
+	# has posted a run (otherwise the row would read "Best: —  Endless: —"
+	# which adds clutter with zero information).
+	var metrics_line: String = _format_level_metrics(data.level_id)
+	if metrics_line != "":
+		var metrics_label := Label.new()
+		metrics_label.text = metrics_line
+		metrics_label.set("theme_override_font_sizes/font_size", 14)
+		metrics_label.modulate = Color(0.7, 0.78, 0.9)
+		info_vbox.add_child(metrics_label)
+
+	# Right side: play buttons (campaign + endless) or lock
 	var is_unlocked: bool = GameState.levels_unlocked.get(data.level_id, false)
 	if is_unlocked:
+		var button_vbox := VBoxContainer.new()
+		button_vbox.set("theme_override_constants/separation", 6)
+		hbox.add_child(button_vbox)
+
 		var play_btn := Button.new()
 		play_btn.text = "Play"
-		play_btn.custom_minimum_size = Vector2(100, 80)
-		play_btn.set("theme_override_font_sizes/font_size", 22)
+		play_btn.custom_minimum_size = Vector2(100, 44)
+		play_btn.set("theme_override_font_sizes/font_size", 18)
 		play_btn.pressed.connect(_on_level_selected.bind(data))
-		hbox.add_child(play_btn)
+		button_vbox.add_child(play_btn)
+
+		var endless_btn := Button.new()
+		endless_btn.text = "Endless"
+		endless_btn.custom_minimum_size = Vector2(100, 44)
+		endless_btn.set("theme_override_font_sizes/font_size", 16)
+		endless_btn.pressed.connect(_on_level_endless.bind(data))
+		button_vbox.add_child(endless_btn)
 	else:
-		# A button (not a bare Label) so taps register and the player gets
-		# feedback — otherwise a locked row looks like a dead click.
 		var lock_btn := Button.new()
 		lock_btn.text = "Locked"
-		lock_btn.custom_minimum_size = Vector2(100, 80)
+		lock_btn.custom_minimum_size = Vector2(100, 94)
 		lock_btn.set("theme_override_font_sizes/font_size", 20)
 		lock_btn.modulate = Color(0.7, 0.7, 0.7)
 		lock_btn.pressed.connect(func(): Toast.show_message("Clear prior levels to unlock"))
@@ -128,8 +148,34 @@ func _make_level_panel(data: Resource) -> PanelContainer:
 	return panel
 
 
+func _format_level_metrics(level_id: String) -> String:
+	var parts: PackedStringArray = []
+	var best: float = GameState.get_best_time(level_id)
+	if best > 0.0:
+		parts.append("Best: %s" % _format_seconds(best))
+	var endless: int = GameState.get_endless_best_score(level_id)
+	if endless > 0:
+		parts.append("Endless: %d" % endless)
+	return "   ".join(parts)
+
+
+func _format_seconds(s: float) -> String:
+	if s < 60.0:
+		return "%.1fs" % s
+	var minutes: int = int(s / 60.0)
+	var rem: float = s - float(minutes * 60)
+	return "%d:%05.2f" % [minutes, rem]
+
+
 func _on_level_selected(data: Resource) -> void:
 	GameState.current_level_id = data.level_id
+	GameState.current_mode = "campaign"
 	# Don't reset_for_level here — LoadoutScreen does it on Start so the
 	# player can browse loadout without committing.
+	SceneManager.goto("res://ui/LoadoutScreen.tscn")
+
+
+func _on_level_endless(data: Resource) -> void:
+	GameState.current_level_id = data.level_id
+	GameState.current_mode = "endless"
 	SceneManager.goto("res://ui/LoadoutScreen.tscn")

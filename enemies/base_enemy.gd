@@ -36,6 +36,11 @@ var _combat_cooldown: float = 0.0
 # when the hero landed the killing blow (last-hit semantics). Towers get
 # gold, not XP.
 var _last_damage_source: Node = null
+# Per-instance HP multiplier — used by endless wave scaling to make later
+# waves tougher without mutating the shared EnemyData resource. Set BEFORE
+# add_child so _ready picks up the scaled current_health. Default 1.0 for
+# campaign / heroic / iron / Test Range — those keep the authored values.
+var _hp_scale: float = 1.0
 # Seconds remaining on the on-hit white flash (decays in _physics_process).
 var _hit_flash_t: float = 0.0
 # Accumulates while any status effect is active so the dashed rings rotate.
@@ -56,7 +61,7 @@ var _ability_host: RefCounted = null
 
 func _ready() -> void:
 	if data:
-		current_health = data.max_health
+		current_health = _effective_max_health()
 	# Phase 20: group membership so skill targeting can enumerate live
 	# enemies without walking the whole tree. get_tree().get_nodes_in_group
 	# is only called on tap (targeting), not per-frame — perf rule intact.
@@ -258,13 +263,22 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 	return actual
 
 
+# Effective max HP for this instance — applies _hp_scale on top of the
+# authored data.max_health. Endless mode sets _hp_scale before _ready so
+# later waves are tougher without mutating the shared EnemyData resource.
+func _effective_max_health() -> int:
+	if data == null:
+		return 0
+	return int(round(float(data.max_health) * _hp_scale))
+
+
 func heal(amount: float) -> void:
 	if state == State.DYING or data == null:
 		return
-	if current_health >= data.max_health:
+	if current_health >= _effective_max_health():
 		return
 	var before: int = current_health
-	current_health = mini(data.max_health, current_health + int(ceil(amount)))
+	current_health = mini(_effective_max_health(), current_health + int(ceil(amount)))
 	if current_health != before:
 		queue_redraw()
 		print("[Enemy/heal] %s %d → %d" % [data.enemy_name, before, current_health])
@@ -381,12 +395,13 @@ func _draw_attack_telegraph(base_ring_r: float) -> void:
 func _draw_health_bar() -> void:
 	if data == null or data.max_health <= 0:
 		return
-	if current_health >= data.max_health:
+	var max_hp: int = _effective_max_health()
+	if max_hp <= 0 or current_health >= max_hp:
 		return
 	var zs: float = _get_zoom_scale()
 	var bar_size: Vector2 = HP_BAR_SIZE * zs
 	var bar_y: float = HP_BAR_Y_OFFSET * zs
-	var pct: float = clampf(float(current_health) / float(data.max_health), 0.0, 1.0)
+	var pct: float = clampf(float(current_health) / float(max_hp), 0.0, 1.0)
 	var origin: Vector2 = Vector2(-bar_size.x * 0.5, bar_y)
 	draw_rect(Rect2(origin, bar_size), Color(0.12, 0.12, 0.12))
 	if pct > 0.0:

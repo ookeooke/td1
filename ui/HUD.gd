@@ -8,7 +8,6 @@ extends CanvasLayer
 @onready var speed_button: Button = %SpeedButton
 @onready var countdown_label: Label = %CountdownLabel
 @onready var send_wave_button: Button = %SendWaveButton
-@onready var clean_button: Button = %CleanButton
 
 var _hero: Node = null
 # Countdown shown in the hero label while the hero is dead. Ticks only while
@@ -49,7 +48,6 @@ func _ready() -> void:
 	EventBus.wave_countdown_started.connect(_on_countdown_started)
 	EventBus.wave_started.connect(_on_wave_launched)
 	EventBus.early_wave_triggered.connect(_on_early_wave)
-	clean_button.pressed.connect(_on_clean_pressed)
 
 
 func _on_gold_changed(amount: int) -> void:
@@ -166,11 +164,5 @@ func _on_early_wave(_bonus_gold: int) -> void:
 func _hide_countdown() -> void:
 	countdown_label.visible = false
 	send_wave_button.visible = false
-
-
-func _on_clean_pressed() -> void:
-	var enabled: bool = not VFXSpawner.clean_view
-	EventBus.clean_view_toggled.emit(enabled)
-	clean_button.text = "VFX" if not enabled else "Clean"
 
 

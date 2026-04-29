@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="SellPriceTable" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://economy/SellPriceTable.gd" id="1_sellprice"]
+
+[resource]
+script = ExtResource("1_sellprice")
+common = 10
+magic = 50
+rare = 200
+epic = 1000
+legendary = 5000

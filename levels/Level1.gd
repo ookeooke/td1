@@ -51,6 +51,7 @@ func _ready() -> void:
 		# Redraw when the scene tree shifts in the editor (spot/path drag).
 		if not child_order_changed.is_connected(_on_editor_tree_changed):
 			child_order_changed.connect(_on_editor_tree_changed)
+		_print_hardness_readout()
 		return
 	_register_tower_spots()
 	_configure_camera()
@@ -58,6 +59,35 @@ func _ready() -> void:
 		_paths_by_id.size(),
 		grid_manager.get_spot_count(),
 		spawn_markers_node.get_child_count()
+	])
+	_print_hardness_readout()
+
+
+# Editor + runtime readout. Prints the level's BalanceCalculator hardness
+# score so authors can compare against the target curve in the balance plan.
+# Uses load() per CORE-RULE-16 to avoid the class_name preload race.
+func _print_hardness_readout() -> void:
+	# Debug-only — BalanceCalculator lives under `balance/` which is excluded
+	# from production exports. Skip in release builds so a stripped folder
+	# doesn't trigger a load() warning at boot.
+	if not OS.is_debug_build():
+		return
+	var wl: WaveList = load("res://levels/level1_waves.tres")
+	if wl == null:
+		return
+	# load() the script rather than referencing class_name so this works even
+	# before Godot's class index has rescanned the new BalanceCalculator file.
+	# Static-method calls on a loaded GDScript are supported in Godot 4.
+	var bc: GDScript = load("res://balance/BalanceCalculator.gd")
+	if bc == null:
+		return
+	var b: Dictionary = bc.score_level_breakdown(wl, GameState.STARTING_GOLD)
+	var per: String = ""
+	var pw: Array = b.per_wave
+	for i in range(pw.size()):
+		per += "  W%d=%d" % [i + 1, int(pw[i])]
+	print("[Level1/Balance] net=%d (waves=%d, gold=%d)%s" % [
+		int(b.net_score), int(b.wave_total), int(b.starting_gold), per
 	])
 
 

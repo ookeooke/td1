@@ -33,12 +33,25 @@ const INVENTORY_ROW_STEP: int = 8
 @onready var right_title: Label = %RightTitle
 @onready var inventory_grid: HFlowContainer = %InventoryGrid
 @onready var hint_label: Label = %HintLabel
+@onready var sell_mode_button: Button = %SellModeButton
+@onready var lock_button: Button = %LockButton
+@onready var sell_all_button: Button = %SellAllButton
+@onready var meta_gold_label: Label = %MetaGoldLabel
 
 # Holds the hero_id at the last _refresh call, used by hover to compute diffs.
 var _cached_hero_id: String = ""
 
 # Slot index (0-5) → ItemIcon instance
 var _slot_icons: Dictionary = {}
+
+# Sell-mode state — when on, tapping an inventory item starts a two-tap
+# confirm to sell it instead of equipping. _pending_sell_uid holds the
+# armed item; second tap on the same uid commits.
+var _sell_mode: bool = false
+var _pending_sell_uid: String = ""
+# IP-4 — two-tap confirm for the batch "Sell all Common" button so an
+# accidental tap can't liquidate every Common in one move.
+var _sell_all_armed: bool = false
 
 
 func _ready() -> void:
@@ -56,6 +69,15 @@ func _ready() -> void:
 	EventBus.item_equipped.connect(_on_inventory_changed)
 	EventBus.item_unequipped.connect(_on_inventory_changed)
 	EventBus.inventory_changed.connect(_on_inventory_changed_simple)
+	# Refresh when the active hero changes (e.g. HeroesHub Loadout-tab switch).
+	EventBus.hero_selected.connect(func(_id): _refresh())
+	# Sell-mode controls + meta-gold counter live-update.
+	sell_mode_button.pressed.connect(_on_sell_mode_toggled)
+	lock_button.pressed.connect(_on_lock_pressed)
+	sell_all_button.pressed.connect(_on_sell_all_pressed)
+	EventBus.meta_gold_changed.connect(_on_meta_gold_changed)
+	_refresh_meta_gold_label()
+	_refresh_sell_mode_visuals()
 	_refresh()
 
 
@@ -65,6 +87,11 @@ func _on_inventory_changed(_hero_id, _slot, _instance) -> void:
 
 func _on_inventory_changed_simple() -> void:
 	_refresh()
+	# IP-3 / IP-4 — keep lock-button label and sell-all count in sync with
+	# the latest inventory state (e.g., after a lock toggle or batch sell).
+	if _sell_mode:
+		_refresh_lock_button()
+		_refresh_sell_all_button()
 
 
 func _on_back() -> void:
@@ -83,6 +110,9 @@ func _build_slots() -> void:
 		icon.pressed.connect(_on_slot_pressed.bind(slot_idx))
 		icon.hovered.connect(_on_item_hovered)
 		icon.unhovered.connect(_on_item_unhovered)
+		# IP-2 — long-press an equipped slot to see its details (mobile-only
+		# path; on PC, hover already works).
+		icon.long_pressed.connect(_on_item_hovered)
 		_slot_icons[slot_idx] = icon
 		container.add_child(label)
 		container.add_child(icon)
@@ -112,12 +142,24 @@ func _refresh() -> void:
 		else:
 			icon.setup_instance(inst)
 	# Right: inventory grid — only UNEQUIPPED items (equipped render on the
-	# left only, matches ARPG convention). Count shown is unequipped count;
-	# the player sees at a glance how much bag-space is used.
+	# left only, matches ARPG convention). Header shows TOTAL pool size vs
+	# cap (equipped count toward the cap), so the player sees at-a-glance
+	# how much room is left before drops start auto-selling.
 	for child in inventory_grid.get_children():
 		child.queue_free()
-	var inv: Array = InventoryManager.get_unequipped(hero_id)
-	right_title.text = "Inventory (%d)" % inv.size()
+	var inv: Array = InventoryManager.get_unequipped()
+	var total: int = InventoryManager.shared_inventory.size()
+	var cap: int = InventoryManager.MAX_INVENTORY_SIZE
+	right_title.text = "Inventory (%d / %d)" % [total, cap]
+	# IA-3 — tint to warn the player as they approach the cap.
+	# Amber at 90%+, red at 100%.
+	var ratio: float = float(total) / float(cap) if cap > 0 else 0.0
+	if ratio >= 1.0:
+		right_title.modulate = Color(1.0, 0.4, 0.4, 1.0)
+	elif ratio >= 0.9:
+		right_title.modulate = Color(1.0, 0.7, 0.3, 1.0)
+	else:
+		right_title.modulate = Color.WHITE
 	for inst in inv:
 		if inst == null:
 			continue
@@ -126,6 +168,18 @@ func _refresh() -> void:
 		icon.pressed.connect(_on_inventory_item_pressed)
 		icon.hovered.connect(_on_item_hovered)
 		icon.unhovered.connect(_on_item_unhovered)
+		# IP-2 — long-press shows details on touch (mobile-equivalent of hover).
+		# Reuses the existing hover handler so the details panel logic isn't
+		# duplicated. Tapped items still equip / sell-arm — long-press is the
+		# read-without-acting path.
+		icon.long_pressed.connect(_on_item_hovered)
+		# Sell-mode visual cue: faint red tint on every inventory item, with a
+		# brighter glow on the armed (pending-confirm) item.
+		if _sell_mode:
+			if _pending_sell_uid == inst.uid:
+				icon.modulate = Color(1.4, 0.7, 0.7, 1.0)
+			else:
+				icon.modulate = Color(1.0, 0.85, 0.85, 1.0)
 		inventory_grid.add_child(icon)
 	# Phase polish — always pad beyond current inventory so the grid shows
 	# headroom. At minimum MIN_INVENTORY_CELLS; if the player has more than
@@ -149,6 +203,10 @@ func _refresh() -> void:
 func _on_inventory_item_pressed(inst) -> void:
 	if inst == null:
 		return
+	# In sell mode, tap-to-arm-or-confirm the sell instead of equipping.
+	if _sell_mode:
+		_handle_sell_tap(inst)
+		return
 	var hero_id: String = GameState.selected_hero_id
 	var base: Resource = ContentRegistry.find_item_base(inst.base_id)
 	if base == null:
@@ -158,6 +216,193 @@ func _on_inventory_item_pressed(inst) -> void:
 		Toast.show_message("%s slot is locked" % SLOT_NAMES[slot])
 		return
 	InventoryManager.equip(hero_id, inst.uid)
+
+
+# --- Sell mode ---------------------------------------------------------------
+# Toggle button on the inventory header flips the panel into a "tap items to
+# sell" state. Two-tap confirm: first tap arms a uid (toast + the icon stays
+# brighter); second tap on the SAME uid commits the sale via
+# InventoryManager.sell, which pays out meta-gold and removes the item.
+# Tapping a different inventory item re-arms with that uid.
+# Equipped slots aren't sellable (unequip first) — the slot tap handler keeps
+# its existing unequip behavior even in sell mode so the player can free a
+# slot without leaving the mode.
+
+func _on_sell_mode_toggled() -> void:
+	_sell_mode = not _sell_mode
+	_pending_sell_uid = ""
+	_refresh_sell_mode_visuals()
+	_refresh()  # rebuilds inventory grid so each icon re-modulates
+
+
+func _refresh_sell_mode_visuals() -> void:
+	if _sell_mode:
+		sell_mode_button.text = "Done"
+		sell_mode_button.modulate = Color(1.0, 0.6, 0.6, 1.0)
+		lock_button.visible = true
+		sell_all_button.visible = true
+		_refresh_lock_button()
+		_refresh_sell_all_button()
+		hint_label.text = "Sell mode: tap to mark for sale (tap again to confirm). Long-press for details. Use 🔒 to pin an armed item against sale."
+	else:
+		sell_mode_button.text = "Sell Mode"
+		sell_mode_button.modulate = Color.WHITE
+		lock_button.visible = false
+		sell_all_button.visible = false
+		_sell_all_armed = false
+		hint_label.text = "Tap inventory item to equip. Tap equipped slot to unequip (item stays in inventory). Long-press for details."
+
+
+# IP-3 — Lock button reflects the armed item's current lock state. Without
+# an armed item, it's a no-op (toast hint). With one, it toggles the pin
+# and updates the button label so the player sees what the next tap does.
+func _refresh_lock_button() -> void:
+	if _pending_sell_uid == "":
+		lock_button.text = "🔒 Lock"
+		lock_button.disabled = true
+		return
+	lock_button.disabled = false
+	var inst = InventoryManager.find_by_uid(_pending_sell_uid)
+	if inst != null and "locked" in inst and inst.locked:
+		lock_button.text = "🔓 Unlock"
+	else:
+		lock_button.text = "🔒 Lock"
+
+
+func _on_lock_pressed() -> void:
+	if _pending_sell_uid == "":
+		Toast.show_message("Tap an item first to choose what to lock")
+		return
+	var now_locked: bool = InventoryManager.toggle_lock(_pending_sell_uid)
+	# Toggling consumes the arm — locking an item should NOT also stay-armed
+	# for sale (that'd be confusing UX). The inventory_changed signal fires
+	# from toggle_lock, so the icon redraw picks up the lock glyph for free.
+	_pending_sell_uid = ""
+	_refresh_lock_button()
+	Toast.show_message("Locked from sale" if now_locked else "Unlocked")
+
+
+# IP-4 — Two-tap-confirm batch sell of every unlocked Common in inventory.
+# First tap arms with a 3-second auto-disarm; second tap commits. Skips
+# locked items entirely (the whole point of the lock). Pricing per item
+# uses the same SellPriceTable as single-item sells.
+func _refresh_sell_all_button() -> void:
+	var count: int = _count_sell_all_eligible()
+	if _sell_all_armed:
+		sell_all_button.text = "Confirm: sell %d" % count
+		sell_all_button.modulate = Color(1.0, 0.7, 0.4, 1.0)
+	else:
+		sell_all_button.text = "Sell all Common (%d)" % count
+		sell_all_button.modulate = Color.WHITE
+	sell_all_button.disabled = count == 0
+
+
+func _count_sell_all_eligible() -> int:
+	# Counts unlocked, unequipped Commons. Mirrors the criteria used by
+	# _on_sell_all_pressed so the displayed count matches what gets sold.
+	var n: int = 0
+	for inst in InventoryManager.get_unequipped():
+		if inst == null or inst.locked:
+			continue
+		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+		if base == null:
+			continue
+		if int(base.rarity) == 0:
+			n += 1
+	return n
+
+
+func _on_sell_all_pressed() -> void:
+	if not _sell_all_armed:
+		var count: int = _count_sell_all_eligible()
+		if count == 0:
+			Toast.show_message("No unlocked Common items to sell")
+			return
+		_sell_all_armed = true
+		_refresh_sell_all_button()
+		# Auto-disarm after 3 seconds matches the single-item sell flow.
+		get_tree().create_timer(3.0).timeout.connect(func():
+			if is_instance_valid(self) and _sell_all_armed:
+				_sell_all_armed = false
+				_refresh_sell_all_button()
+		)
+		return
+	# Confirmed — sweep the inventory once, collect uids first to avoid
+	# mutating the array we're iterating.
+	_sell_all_armed = false
+	var uids_to_sell: Array[String] = []
+	for inst in InventoryManager.get_unequipped():
+		if inst == null or inst.locked:
+			continue
+		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+		if base == null:
+			continue
+		if int(base.rarity) == 0:
+			uids_to_sell.append(inst.uid)
+	var sold: int = 0
+	var total_gold: int = 0
+	for uid in uids_to_sell:
+		var awarded: int = InventoryManager.sell(uid)
+		if awarded > 0:
+			sold += 1
+			total_gold += awarded
+	if sold > 0:
+		Toast.show_message("Sold %d items for %dg" % [sold, total_gold])
+	_refresh_sell_all_button()
+
+
+func _handle_sell_tap(inst) -> void:
+	# IP-3 — locked items refuse sale even at the UI layer, with a clear
+	# toast instead of just silent failure deeper in InventoryManager.sell.
+	if "locked" in inst and inst.locked:
+		_pending_sell_uid = inst.uid  # arm so player can tap Lock to UNLOCK
+		_refresh_lock_button()
+		_refresh()
+		Toast.show_message("Locked — tap 🔓 Unlock to allow sale")
+		return
+	var price: int = InventoryManager.get_sell_price(inst.uid)
+	if price <= 0:
+		Toast.show_message("This item can't be sold")
+		return
+	if _pending_sell_uid != inst.uid:
+		# First tap on this item — arm the sale.
+		_pending_sell_uid = inst.uid
+		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+		var name_str: String = base.base_name if base != null else "item"
+		Toast.show_message("Sell %s for %dg? Tap again to confirm" % [name_str, price])
+		_refresh_lock_button()  # button label may need to flip Lock ↔ Unlock
+		_refresh()  # so the armed icon renders the visual cue
+		# Auto-disarm after 3 seconds if the player walks away.
+		var armed_uid: String = inst.uid
+		get_tree().create_timer(3.0).timeout.connect(func():
+			if is_instance_valid(self) and _pending_sell_uid == armed_uid:
+				_pending_sell_uid = ""
+				_refresh_lock_button()
+				_refresh()
+		)
+		return
+	# Second tap on the same uid — commit.
+	var awarded: int = InventoryManager.sell(inst.uid)
+	_pending_sell_uid = ""
+	_refresh_lock_button()
+	if awarded > 0:
+		Toast.show_message("Sold for %dg" % awarded)
+	# inventory_changed fires via _refresh path; meta_gold_changed updates label.
+
+
+func _on_meta_gold_changed(new_amount: int) -> void:
+	_refresh_meta_gold_label_amount(new_amount)
+
+
+func _refresh_meta_gold_label() -> void:
+	_refresh_meta_gold_label_amount(GameState.meta_gold)
+
+
+func _refresh_meta_gold_label_amount(amount: int) -> void:
+	# Only set if the label is ready — _ready may run before the @onready vars
+	# are assigned in some embed orderings.
+	if meta_gold_label != null:
+		meta_gold_label.text = "💰 %d" % amount
 
 
 func _on_slot_pressed(_signal_arg, slot_idx: int) -> void:

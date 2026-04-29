@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [STATUS.md](STATUS.md) — current focus, in-flight work, next steps. Read first.
 - [SESSIONS.md](SESSIONS.md) — chronological log of what's been done and why. Append a dated entry at the end of every working session.
 - **This file (CLAUDE.md)** — invariants only (rules, interfaces, contracts). Do not log session notes here.
+- [balance/BALANCE.md](balance/BALANCE.md) — design intent for tuning: target g/DPS curves, hardness baselines, the Naked Baseline invariant. Read before any balance change. Folder is dev-only (stripped from production exports).
 - `git log` — diffs and short commit messages.
 
 ---
@@ -46,6 +47,7 @@ Entry point: `res://ui/MainMenu.tscn`. Design viewport: 1920x1080 (landscape). S
 15. **Tower scenes are bare chassis — never bake `data` into a tower `.tscn`.** Combat towers share `res://towers/TowerCombat.tscn`; Barracks use `res://towers/TowerBarracks.tscn`. `TowerData.tower_scene` references the chassis; `TowerPlacer._on_build_requested` assigns `tower.data = entry.data` after `instantiate()` and before `add_child()`. Baking `data = ExtResource(...)` creates a tres↔tscn circular reference that leaves `tower.data = null` at runtime. One chassis backs N towers. (See SESSIONS.md Phase 47d-7.)
 16. **Content catalogs use `load()` at `_ready()`, not `preload()` at class body.** Arrays of cross-file content (`.tres` / `.tscn`) in autoloads like `ContentRegistry` must be populated via `load()` inside `_ready()`, never `preload()` at class scope. Godot 4.4+ has a shared-script race ([issue #105021](https://github.com/godotengine/godot/issues/105021)) that corrupts the first item in any preload array whose resources share a `class_name`-registered script (e.g. `TowerData.gd` shared across all 5 tower .tres files). `load()` runs after every autoload script has compiled, so no race is possible. Boot cost ≈10 ms, imperceptible. Revert this rule only when Godot's release notes mark #105021 fixed. (See SESSIONS.md Phase 48 abandoned attempt for the full diagnostic trail.)
 17. **Never purge `.godot/` while debugging.** The cache holds import metadata that Godot self-heals between boots — closing and reopening the editor a second time is the documented fix for transient loader races ([issue #97684](https://github.com/godotengine/godot/issues/97684)). Purging forces every boot to be a cold start, which re-triggers any races the cache was masking. Only purge when (1) migrating Godot versions, (2) `.godot/` is visibly corrupted (zero-size files, missing `uid_cache.bin`), or (3) working code is already committed so the nuke is reversible. Never purge as a debugging reflex.
+18. **Balance numbers reference [BALANCE.md](balance/BALANCE.md), not intuition.** All tuning targets (g/DPS bands, hardness curves, mode multipliers, the Naked Baseline floor) live in `balance/BALANCE.md`. Read targets before editing `.tres` files; update BALANCE.md after editing so the doc never lags the data. Verify changes via the Test Range (live damage tally) and Balance Report (cross-run aggregates) — both under `balance/`. Never invent a number from intuition — every change must reference a target band. The original audit-by-LLM produced phantom values (Archer L2 damage, Ice L2 damage); always read `.tres` files directly, never paraphrase them.
 
 ---
 
@@ -100,7 +102,7 @@ All ring stroke widths multiply by `1.0 / camera.zoom.x` (zoom-scale rule) so ri
 
 ---
 
-## Autoloads (12)
+## Autoloads (17)
 
 | Name | Purpose |
 |---|---|
@@ -108,14 +110,19 @@ All ring stroke widths multiply by `1.0 / camera.zoom.x` (zoom-scale rule) so ri
 | GameState | Gold, lives, score, wave, progression |
 | WaveManager | Multi-path spawn + endless generation |
 | DamageCalculator | All damage math: PHYSICAL (armor), MAGIC (magic_resist), TRUE |
+| InventoryManager | Equipped + unequipped items per hero, starter-gear bootstrap |
 | SaveManager | All persistence (JSON) |
 | UnlockManager | IAP + unlock state |
 | SceneManager | Scene transitions with fade |
 | ContentRegistry | Master index of all content .tres |
+| LootRoller | Affix rolling + rarity tier resolution for new item drops |
+| LootDropper | Per-enemy + boss drop tables, dispatched on enemy_died |
+| ItemPickupManager | World-space item-on-ground state, magnet pickup |
 | PurchaseManager | IAP client stub (auto-succeeds) |
 | VFXSpawner | FloatingText + DeathVFX on EventBus signals |
 | SoundManager | SFX pool + music player (graceful missing files) |
 | Toast | Transient on-screen messages (`Toast.show_message("…")`) |
+| RunStats | Per-run telemetry → `user://run_stats.json` (last 50 runs, opt-in via Settings later) |
 
 ---
 

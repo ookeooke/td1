@@ -172,6 +172,13 @@ func find_hero(id: String) -> Resource:
 	return null
 
 
+func find_spell(id: String) -> Resource:
+	for s in spells:
+		if s != null and "spell_id" in s and s.spell_id == id:
+			return s
+	return null
+
+
 func find_item_base(id: String) -> Resource:
 	for b in item_bases:
 		if b != null and "base_id" in b and b.base_id == id:

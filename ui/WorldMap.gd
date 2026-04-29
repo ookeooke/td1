@@ -7,67 +7,109 @@ extends Control
 
 @export var levels: Array[Resource] = []
 
+# Debug-only: maps level_id → its WaveList .tres path so the WorldMap card
+# can compute and display the level's hardness score. Hardcoded for now —
+# at ~5 levels we'd promote `waves_path: String` onto LevelNodeData and
+# read it from there.
+const _LEVEL_WAVES: Dictionary = {
+	"level_1": "res://levels/level1_waves.tres",
+}
+
 @onready var back_button: Button = %BackButton
 @onready var level_list_container: VBoxContainer = %LevelList
 @onready var heroes_button: Button = %HeroesButton
-@onready var loadout_button: Button = %LoadoutButton
-@onready var equipment_button: Button = %EquipmentButton
-@onready var upgrades_button: Button = %UpgradesButton
-@onready var endless_button: Button = %EndlessButton
-@onready var leaderboard_button: Button = %LeaderboardButton
-@onready var encyclopedia_button: Button = %EncyclopediaButton
+@onready var towers_button: Button = %TowersButton
+@onready var codex_button: Button = %CodexButton
 @onready var shop_button: Button = %ShopButton
+@onready var stars_button: Button = %StarsButton
+@onready var meta_gold_button: Button = %MetaGoldButton
+@onready var settings_button: Button = %SettingsButton
+@onready var test_range_button: Button = %TestRangeButton
+@onready var balance_report_button: Button = %BalanceReportButton
 
 
 func _ready() -> void:
 	back_button.pressed.connect(_on_back)
-	upgrades_button.pressed.connect(_on_upgrades)
-	endless_button.pressed.connect(_on_endless)
-	leaderboard_button.pressed.connect(_on_leaderboard)
-	encyclopedia_button.pressed.connect(_on_encyclopedia)
-	shop_button.pressed.connect(_on_shop)
 	heroes_button.pressed.connect(_on_heroes)
-	loadout_button.pressed.connect(_on_loadout)
-	equipment_button.pressed.connect(_on_equipment)
+	towers_button.pressed.connect(_on_towers)
+	codex_button.pressed.connect(_on_codex)
+	shop_button.pressed.connect(_on_shop)
+	stars_button.pressed.connect(_on_stars)
+	meta_gold_button.pressed.connect(_on_meta_gold)
+	settings_button.pressed.connect(_on_settings)
+	# Test Range — debug-only sandbox for measuring tower DPS in isolation.
+	# Hidden in shipped builds via OS.is_debug_build(); the scene file itself
+	# is also stripped via export_presets.cfg exclude_filter ("balance/*").
+	if OS.is_debug_build():
+		test_range_button.pressed.connect(_on_test_range)
+		balance_report_button.pressed.connect(_on_balance_report)
+	else:
+		test_range_button.visible = false
+		balance_report_button.visible = false
+	_refresh_stars_label()
+	_refresh_meta_gold_label()
 	_build_level_entries()
 
 
-func _on_loadout() -> void:
-	SceneManager.goto("res://ui/LoadoutPickerScreen.tscn")
+func _refresh_stars_label() -> void:
+	# KR-style top-bar resource counter — shows available (unspent) stars.
+	stars_button.text = "★ %d" % GameState.get_available_stars()
 
 
-func _on_equipment() -> void:
-	SceneManager.goto("res://ui/EquipmentScreen.tscn")
+func _refresh_meta_gold_label() -> void:
+	# Persistent inventory-sell currency (distinct from per-run gold).
+	meta_gold_button.text = "💰 %d" % GameState.meta_gold
 
 
 func _on_back() -> void:
 	SceneManager.goto("res://ui/MainMenu.tscn")
 
 
-func _on_upgrades() -> void:
-	SceneManager.goto("res://ui/UpgradeTree.tscn")
-
-
-func _on_endless() -> void:
-	GameState.current_level_id = "endless"
-	GameState.current_mode = "endless"
-	SceneManager.goto("res://ui/LoadoutScreen.tscn")
-
-
-func _on_leaderboard() -> void:
-	SceneManager.goto("res://ui/LeaderboardScreen.tscn")
-
-
-func _on_encyclopedia() -> void:
-	SceneManager.goto("res://ui/EncyclopediaScreen.tscn")
-
-
 func _on_heroes() -> void:
-	SceneManager.goto("res://ui/TalentScreen.tscn")
+	SceneManager.goto("res://ui/HeroesHub.tscn")
+
+
+func _on_towers() -> void:
+	SceneManager.goto("res://ui/TowersHub.tscn")
+
+
+func _on_codex() -> void:
+	SceneManager.goto("res://ui/CodexHub.tscn")
 
 
 func _on_shop() -> void:
 	SceneManager.goto("res://ui/ShopScreen.tscn")
+
+
+func _on_stars() -> void:
+	# Stars-counter shortcut: jump straight into Towers hub > Upgrades tab.
+	# Hub reads this hint on _ready and clears it.
+	TowersHub.pending_tab = TowersHub.TAB_UPGRADES
+	SceneManager.goto("res://ui/TowersHub.tscn")
+
+
+func _on_meta_gold() -> void:
+	# Meta-gold has no spending destination yet (Town Buy phase will add one).
+	# For now, route to the Equipment tab where the player can sell items —
+	# that's where the counter visibly grows, and it teaches the loop.
+	SceneManager.goto("res://ui/HeroesHub.tscn")
+
+
+func _on_settings() -> void:
+	SceneManager.goto("res://ui/OptionsScreen.tscn")
+
+
+func _on_test_range() -> void:
+	# Debug-only sandbox. SceneManager.goto uses a string path so no static
+	# dependency from this script to balance/ — the folder is stripped
+	# at export time and this code path is gated by OS.is_debug_build() above.
+	SceneManager.goto("res://balance/test_range/TestRange.tscn")
+
+
+func _on_balance_report() -> void:
+	# Debug-only — reads user://run_stats.json and shows aggregates.
+	# Same gating + string-path pattern as the Test Range button.
+	SceneManager.goto("res://balance/report/BalanceReport.tscn")
 
 
 func _build_level_entries() -> void:
@@ -105,6 +147,16 @@ func _make_level_panel(data: Resource) -> PanelContainer:
 	stars_label.set("theme_override_font_sizes/font_size", 20)
 	info_vbox.add_child(stars_label)
 
+	# Debug-only: per-level hardness score from BalanceCalculator. Players
+	# don't see this in shipped builds — it would read as gibberish without
+	# context. The whole balance/ folder is stripped at export anyway.
+	if OS.is_debug_build():
+		var hardness_label := Label.new()
+		hardness_label.text = "Hardness: %s" % _format_hardness(data.level_id)
+		hardness_label.set("theme_override_font_sizes/font_size", 12)
+		hardness_label.modulate = Color(1.0, 0.8, 0.4)
+		info_vbox.add_child(hardness_label)
+
 	# Phase 48 — best time + endless high score. Only show if the player
 	# has posted a run (otherwise the row would read "Best: —  Endless: —"
 	# which adds clutter with zero information).
@@ -116,26 +168,19 @@ func _make_level_panel(data: Resource) -> PanelContainer:
 		metrics_label.modulate = Color(0.7, 0.78, 0.9)
 		info_vbox.add_child(metrics_label)
 
-	# Right side: play buttons (campaign + endless) or lock
+	# Right side: mode pill row (Campaign / Heroic / Iron / Endless) or lock.
+	# Phase F — Endless promoted to a sibling pill alongside the other three
+	# modes, replacing the prior Play + Endless button pair. Mode picker
+	# happens here on the level card; LoadoutScreen no longer needs to ask.
 	var is_unlocked: bool = GameState.levels_unlocked.get(data.level_id, false)
 	if is_unlocked:
-		var button_vbox := VBoxContainer.new()
-		button_vbox.set("theme_override_constants/separation", 6)
-		hbox.add_child(button_vbox)
-
-		var play_btn := Button.new()
-		play_btn.text = "Play"
-		play_btn.custom_minimum_size = Vector2(100, 44)
-		play_btn.set("theme_override_font_sizes/font_size", 18)
-		play_btn.pressed.connect(_on_level_selected.bind(data))
-		button_vbox.add_child(play_btn)
-
-		var endless_btn := Button.new()
-		endless_btn.text = "Endless"
-		endless_btn.custom_minimum_size = Vector2(100, 44)
-		endless_btn.set("theme_override_font_sizes/font_size", 16)
-		endless_btn.pressed.connect(_on_level_endless.bind(data))
-		button_vbox.add_child(endless_btn)
+		var pill_row := HBoxContainer.new()
+		pill_row.set("theme_override_constants/separation", 8)
+		hbox.add_child(pill_row)
+		_add_mode_pill(pill_row, data, "campaign")
+		_add_mode_pill(pill_row, data, "heroic")
+		_add_mode_pill(pill_row, data, "iron")
+		_add_mode_pill(pill_row, data, "endless")
 	else:
 		var lock_btn := Button.new()
 		lock_btn.text = "Locked"
@@ -146,6 +191,68 @@ func _make_level_panel(data: Resource) -> PanelContainer:
 		hbox.add_child(lock_btn)
 
 	return panel
+
+
+func _add_mode_pill(row: HBoxContainer, data: Resource, mode: String) -> void:
+	# Mirrors LoadoutScreen._refresh_mode_buttons logic so the pills here
+	# show the same gating + status text the LoadoutScreen would have. Tap
+	# launches gameplay (via LoadoutScreen) directly.
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(100, 64)
+	btn.set("theme_override_font_sizes/font_size", 14)
+	var lid: String = data.level_id
+	match mode:
+		"campaign":
+			var campaign_stars: int = GameState.level_stars.get(lid, 0)
+			var stars_str: String = "★".repeat(campaign_stars) + "☆".repeat(3 - campaign_stars)
+			btn.text = "Campaign\n%s" % stars_str
+			btn.disabled = false
+		"heroic":
+			var heroic_done: bool = GameState.heroic_complete.get(lid, false)
+			var heroic_unlocked: bool = GameState.is_heroic_unlocked(lid)
+			if heroic_done:
+				btn.text = "Heroic\nDone ✓"
+				btn.disabled = false
+			elif heroic_unlocked:
+				btn.text = "Heroic\nReady"
+				btn.disabled = false
+			else:
+				btn.text = "Heroic\nNeed 3★"
+				btn.disabled = true
+		"iron":
+			var iron_done: bool = GameState.iron_complete.get(lid, false)
+			var iron_unlocked: bool = GameState.is_iron_unlocked(lid)
+			if iron_done:
+				btn.text = "Iron\nDone ✓"
+				btn.disabled = false
+			elif iron_unlocked:
+				btn.text = "Iron\nReady"
+				btn.disabled = false
+			else:
+				btn.text = "Iron\nNeed Heroic"
+				btn.disabled = true
+		"endless":
+			var best: int = GameState.get_endless_best_score(lid)
+			# Score, not a wave count — "Best %d" matches LoadoutScreen and
+			# LeaderboardScreen wording; "W%d" was misleading.
+			if best > 0:
+				btn.text = "Endless\nBest %d" % best
+			else:
+				btn.text = "Endless\n—"
+			btn.disabled = false
+	if not btn.disabled:
+		btn.pressed.connect(_on_mode_pill_pressed.bind(data, mode))
+	row.add_child(btn)
+
+
+func _on_mode_pill_pressed(data: Resource, mode: String) -> void:
+	GameState.current_level_id = data.level_id
+	GameState.current_mode = mode
+	# LoadoutScreen reads current_mode to pre-select the matching pill in its
+	# own mode row (which becomes redundant after this phase but stays as a
+	# pre-battle confirmation). Endless flow: LoadoutScreen hides the
+	# Campaign/Heroic/Iron row when mode == "endless" — pre-existing logic.
+	SceneManager.goto("res://ui/LoadoutScreen.tscn")
 
 
 func _format_level_metrics(level_id: String) -> String:
@@ -167,15 +274,20 @@ func _format_seconds(s: float) -> String:
 	return "%d:%05.2f" % [minutes, rem]
 
 
-func _on_level_selected(data: Resource) -> void:
-	GameState.current_level_id = data.level_id
-	GameState.current_mode = "campaign"
-	# Don't reset_for_level here — LoadoutScreen does it on Start so the
-	# player can browse loadout without committing.
-	SceneManager.goto("res://ui/LoadoutScreen.tscn")
+# Debug-only — looks up the level's WaveList and returns its hardness score
+# as a plain integer string. Returns "—" if the level isn't in _LEVEL_WAVES,
+# the file is missing, or BalanceCalculator was deleted with the balance/
+# folder. Caller is already gated by OS.is_debug_build().
+func _format_hardness(level_id: String) -> String:
+	var path: String = _LEVEL_WAVES.get(level_id, "")
+	if path == "":
+		return "—"
+	var wl: WaveList = load(path)
+	if wl == null:
+		return "—"
+	var bc: GDScript = load("res://balance/BalanceCalculator.gd")
+	if bc == null:
+		return "—"
+	return "%d" % int(bc.score_level(wl, GameState.STARTING_GOLD))
 
 
-func _on_level_endless(data: Resource) -> void:
-	GameState.current_level_id = data.level_id
-	GameState.current_mode = "endless"
-	SceneManager.goto("res://ui/LoadoutScreen.tscn")

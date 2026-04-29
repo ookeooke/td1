@@ -40,12 +40,7 @@ func is_tower_unlocked(tower_id: String) -> bool:
 
 
 func is_spell_unlocked(spell_id: String) -> bool:
-	var data: Resource = null
-	for s in ContentRegistry.spells:
-		if s != null and "spell_id" in s and s.spell_id == spell_id:
-			data = s
-			break
-	return _is_unlocked_in(spell_id, data)
+	return _is_unlocked_in(spell_id, ContentRegistry.find_spell(spell_id))
 
 
 # Shared three-path check used by every type-specific method.

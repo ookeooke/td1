@@ -6,6 +6,7 @@
 [ext_resource type="Script" uid="uid://cbnmfnm6r853q" path="res://towers/TowerUpgradeData.gd" id="4_upg"]
 [ext_resource type="Resource" uid="uid://b1td1sold002" path="res://soldiers/data/soldier_elite.tres" id="5_elite"]
 [ext_resource type="PackedScene" uid="uid://b1td1towbar02" path="res://towers/TowerBarracks.tscn" id="6_scene"]
+[ext_resource type="Resource" uid="uid://b1td1sold003" path="res://soldiers/data/soldier_veteran.tres" id="7_vet"]
 
 [sub_resource type="Resource" id="BarracksUpg_L2"]
 script = ExtResource("4_upg")
@@ -15,6 +16,15 @@ sell_value = 75
 tint = Color(1.15, 1.05, 0.85, 1)
 soldier_data_override = ExtResource("5_elite")
 soldier_rally_range = 450.0
+
+[sub_resource type="Resource" id="BarracksUpg_L3"]
+script = ExtResource("4_upg")
+upgrade_name = "Veteran Garrison"
+cost = 140
+sell_value = 130
+tint = Color(1.25, 1.0, 0.65, 1)
+soldier_data_override = ExtResource("7_vet")
+soldier_rally_range = 500.0
 
 [resource]
 script = ExtResource("1_data")
@@ -27,7 +37,7 @@ attack_range = 0.0
 attack_speed = 0.0
 cost = 70
 sell_value = 40
-level_upgrades = Array[Resource]([SubResource("BarracksUpg_L2")])
+level_upgrades = Array[Resource]([SubResource("BarracksUpg_L2"), SubResource("BarracksUpg_L3")])
 upgrade_cost_lvl2 = 90
 upgrade_cost_lvl3 = 140
 soldier_scene = ExtResource("2_soldier")

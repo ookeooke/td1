@@ -42,6 +42,11 @@ signal spawn_direction_changed(path_id, screen_edge_position)
 signal gold_changed(new_amount)
 signal lives_changed(new_amount)
 signal stars_changed(total_stars)
+# Persistent meta-currency. Run-gold (gold_changed) is volatile per level;
+# meta-gold survives across levels. Earned today by selling items in the
+# Equipment tab; future Town phases will let the player spend it.
+signal meta_gold_changed(new_amount)
+signal item_sold(instance, gold_reward)
 
 # Hero
 signal hero_spawned(hero)

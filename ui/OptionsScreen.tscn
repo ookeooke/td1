@@ -1,0 +1,102 @@
+[gd_scene format=3 uid="uid://cn11dbrixn31r"]
+
+[ext_resource type="Script" path="res://ui/OptionsScreen.gd" id="1_opt"]
+[ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
+
+[node name="OptionsScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme = ExtResource("2_theme")
+script = ExtResource("1_opt")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.1, 0.14, 0.18, 1.0)
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 80.0
+
+[node name="BackButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 60)
+layout_mode = 2
+text = "Back"
+theme_override_font_sizes/font_size = 20
+
+[node name="Title" type="Label" parent="TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Options"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+
+[node name="Spacer" type="Control" parent="TopBar"]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+
+[node name="MenuVBox" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -160.0
+offset_right = 220.0
+offset_bottom = 160.0
+theme_override_constants/separation = 18
+
+[node name="CleanViewButton" type="Button" parent="MenuVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 70)
+layout_mode = 2
+text = "Clean View: Off"
+theme_override_font_sizes/font_size = 20
+
+[node name="HintLabel" type="Label" parent="MenuVBox"]
+layout_mode = 2
+text = "Disables damage numbers + death VFX. Reduces visual noise on dense waves."
+horizontal_alignment = 1
+autowrap_mode = 2
+modulate = Color(0.65, 0.72, 0.85, 1.0)
+theme_override_font_sizes/font_size = 13
+
+[node name="Spacer" type="Control" parent="MenuVBox"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+
+[node name="ResetButton" type="Button" parent="MenuVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 70)
+layout_mode = 2
+text = "Reset Progress"
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(0.85, 0.4, 0.4, 1.0)
+
+[node name="ResetHint" type="Label" parent="MenuVBox"]
+layout_mode = 2
+text = "Erases all progress (stars, unlocks, equipment, talents). Two-tap confirm."
+horizontal_alignment = 1
+autowrap_mode = 2
+modulate = Color(0.55, 0.5, 0.5, 1.0)
+theme_override_font_sizes/font_size = 12
+
+[node name="ComingSoonLabel" type="Label" parent="MenuVBox"]
+layout_mode = 2
+text = "SFX / music volume · color-blind palette · language coming later"
+horizontal_alignment = 1
+autowrap_mode = 2
+modulate = Color(0.4, 0.45, 0.55, 1.0)
+theme_override_font_sizes/font_size = 12

@@ -21,6 +21,10 @@ var _alive_count: int = 0
 var _wave_active: bool = false
 var _running: bool = false
 var _endless: bool = false
+# Per-instance HP multiplier applied to enemies spawned during endless mode.
+# 8% compounding per wave (≈ 2× by wave 10, 10× by wave 30) — see BALANCE.md
+# "Mode multipliers" → Endless. Reset to 1.0 in start() / start_endless().
+var _endless_hp_scale: float = 1.0
 # Tick-based countdown state (replaces await-based timer for interruptibility).
 var _in_countdown: bool = false
 var _countdown_remaining: float = 0.0
@@ -65,6 +69,7 @@ func start(wave_list: Resource, level: Node) -> void:
 	_active_spawners = 0
 	_wave_active = false
 	_running = true
+	_endless_hp_scale = 1.0  # reset — campaign uses authored HP
 	GameState.wave_number = 0
 	_begin_next_wave()
 
@@ -77,6 +82,7 @@ func start_endless(level: Node) -> void:
 	_wave_active = false
 	_endless = true
 	_running = true
+	_endless_hp_scale = 1.0  # set per-wave by _generate_endless_wave
 	GameState.wave_number = 0
 	_begin_next_wave()
 
@@ -254,6 +260,9 @@ func _generate_endless_wave(wave_num: int) -> Resource:
 	var spawn_script := preload("res://waves/WaveSpawn.gd")
 	wave_data.countdown = maxf(1.5, 3.0 - wave_num * 0.1)
 	wave_data.bounty = 10 + wave_num * 5
+	# 8% HP per wave compounding — reapplied here every wave so the value
+	# stays fresh as _wave_index advances. See BALANCE.md endless multiplier.
+	_endless_hp_scale = 1.0 + 0.08 * float(wave_num)
 
 	# Base enemy count scales with wave number.
 	var base_count: int = 4 + wave_num * 2
@@ -336,6 +345,11 @@ func spawn_enemy(path: Path2D, path_id: String, scene: PackedScene) -> Node:
 		follow.v_offset = float(lane_idx - 1) * LANE_SPACING
 	path.add_child(follow)
 	var enemy: Node = scene.instantiate()
+	# Endless-mode HP scaling — set BEFORE add_child so base_enemy._ready()
+	# initializes current_health from the scaled max. Skip in campaign /
+	# heroic / iron / Test Range — those keep authored values (scale = 1.0).
+	if _endless and "_hp_scale" in enemy:
+		enemy._hp_scale = _endless_hp_scale
 	follow.add_child(enemy)
 	if enemy.has_method("setup"):
 		enemy.setup(follow, path_id)

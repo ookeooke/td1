@@ -1,11 +1,15 @@
 # STATUS
 
-**Last shipped**: Phase 48d complete + 2026-04-20 interaction/game-over audit pass (see [SESSIONS.md](SESSIONS.md)).
+**Last shipped**: Reset / TestRange leak audit + fixes (2026-04-29) — closed two player-visible bugs (extra tower slot at level start, items surviving Reset Progress) by completing `GameState.reset()`, adding `InventoryManager.reset()`, wiring both into `SaveManager.delete_save()`, sandboxing TestRange's GameState mutations with capture/restore, and adding a one-shot polluted-cap repair on save load. See SESSIONS.md "2026-04-29 — Reset / TestRange leak audit + fixes".
 
 **Currently working on**:
-- Doc hygiene — this file + CLAUDE.md compaction (in progress).
+- WorldMap UI overhaul series (research doc: `~/.claude/plans/lets-make-deep-research-robust-sunbeam.md`). Phase A shipped; Phases B–F queued.
 
 **Next up** (in priority order):
+
+0. **WorldMap UI overhaul — DONE.** All six phases (A–F) shipped. Optional cleanup later: retire the now-orphaned standalone meta scenes that the hubs embed (EquipmentScreen / TalentScreen / LoadoutPickerScreen / UpgradeTree / EncyclopediaScreen / LeaderboardScreen) once it's clear no other code paths still reach them directly.
+
+0a. **Town/City — Sell phase (T1) shipped.** Future Town phases queued in research doc (`~/.claude/plans/lets-make-deep-research-robust-sunbeam.md` "DEFERRED" section): T2 Buy + Town hub, T3 Disenchant + Scrap, T4 Affix Reroll, T5 Rarity Bump, T6 Polish. Each shippable independently.
 
 1. **Engineering hardening week** (~10–12h total — do this BEFORE the content sprint; bugs in untested code compound fast):
    - **Mon–Tue (~4h)** — Install [GUT](https://github.com/bitwes/Gut) (addon, enable plugin). Write ~30 unit tests:

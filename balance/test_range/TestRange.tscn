@@ -1,0 +1,108 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://balance/test_range/TestRange.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://balance/test_range/TestRangeMap.tscn" id="2_map"]
+[ext_resource type="PackedScene" path="res://ui/HUD.tscn" id="3_hud"]
+[ext_resource type="Script" path="res://ui/TowerPlacer.gd" id="4_placer"]
+[ext_resource type="PackedScene" path="res://ui/RangePreview.tscn" id="6_range"]
+[ext_resource type="PackedScene" path="res://ui/TowerRadialMenu.tscn" id="15_radial"]
+[ext_resource type="PackedScene" path="res://ui/GameOverScreen.tscn" id="7_gameover"]
+[ext_resource type="Script" path="res://heroes/HeroInputManager.gd" id="9_heroinput"]
+[ext_resource type="Script" path="res://map/GameCamera.gd" id="13_camera"]
+[ext_resource type="PackedScene" path="res://ui/SkillBar.tscn" id="10_skillbar"]
+[ext_resource type="PackedScene" path="res://ui/SpellPanel.tscn" id="11_spellpanel"]
+[ext_resource type="PackedScene" path="res://ui/PauseMenu.tscn" id="12_pause"]
+[ext_resource type="Script" path="res://ui/SpawnIndicator.gd" id="14_spawnindicator"]
+
+[node name="TestRange" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="GameCamera" type="Camera2D" parent="."]
+script = ExtResource("13_camera")
+
+[node name="TestRangeMap" parent="." instance=ExtResource("2_map")]
+
+[node name="Towers" type="Node2D" parent="."]
+
+[node name="TowerPlacer" type="Node" parent="."]
+script = ExtResource("4_placer")
+towers_parent_path = NodePath("../Towers")
+grid_manager_path = NodePath("../TestRangeMap/GridManager")
+
+[node name="RangePreview" parent="." instance=ExtResource("6_range")]
+
+[node name="HeroInputManager" type="Node" parent="."]
+script = ExtResource("9_heroinput")
+hero_path = NodePath("")
+grid_manager_path = NodePath("../TestRangeMap/GridManager")
+map_path = NodePath("../TestRangeMap")
+
+[node name="HUD" parent="." instance=ExtResource("3_hud")]
+
+[node name="SkillBar" parent="." instance=ExtResource("10_skillbar")]
+
+[node name="SpellPanel" parent="." instance=ExtResource("11_spellpanel")]
+
+[node name="TowerRadialMenu" parent="." instance=ExtResource("15_radial")]
+visible = false
+
+[node name="GameOverScreen" parent="." instance=ExtResource("7_gameover")]
+
+[node name="SpawnIndicator" type="CanvasLayer" parent="."]
+follow_viewport_enabled = false
+script = ExtResource("14_spawnindicator")
+
+[node name="DrawLayer" type="Control" parent="SpawnIndicator"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="PauseMenu" parent="." instance=ExtResource("12_pause")]
+
+[node name="DevPanel" type="CanvasLayer" parent="."]
+follow_viewport_enabled = false
+layer = 50
+
+[node name="Margin" type="MarginContainer" parent="DevPanel"]
+offset_left = 20.0
+offset_top = 80.0
+offset_right = 360.0
+offset_bottom = 600.0
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="DevPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TitleLabel" type="Label" parent="DevPanel/Margin/VBox"]
+layout_mode = 2
+text = "Test Range"
+
+[node name="EnemyDropdown" type="OptionButton" parent="DevPanel/Margin/VBox"]
+layout_mode = 2
+
+[node name="SpawnOneBtn" type="Button" parent="DevPanel/Margin/VBox"]
+layout_mode = 2
+text = "Spawn 1"
+
+[node name="SpawnPackBtn" type="Button" parent="DevPanel/Margin/VBox"]
+layout_mode = 2
+text = "Spawn Pack (5)"
+
+[node name="StreamCheck" type="CheckBox" parent="DevPanel/Margin/VBox"]
+layout_mode = 2
+text = "Continuous Stream"
+
+[node name="ResetStatsBtn" type="Button" parent="DevPanel/Margin/VBox"]
+layout_mode = 2
+text = "Reset Stats"
+
+[node name="StatsLabel" type="Label" parent="DevPanel/Margin/VBox"]
+layout_mode = 2
+text = "[per-tower damage]"
+autowrap_mode = 2

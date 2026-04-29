@@ -33,6 +33,7 @@ PurchaseManager="*res://autoloads/PurchaseManager.gd"
 VFXSpawner="*res://autoloads/VFXSpawner.gd"
 SoundManager="*res://autoloads/SoundManager.gd"
 Toast="*res://autoloads/Toast.gd"
+RunStats="*res://autoloads/RunStats.gd"
 
 [debug]
 

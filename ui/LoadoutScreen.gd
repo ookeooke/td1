@@ -32,7 +32,10 @@ func _ready() -> void:
 	campaign_button.pressed.connect(_on_mode_selected.bind("campaign"))
 	heroic_button.pressed.connect(_on_mode_selected.bind("heroic"))
 	iron_button.pressed.connect(_on_mode_selected.bind("iron"))
-	_selected_mode = "campaign"
+	# Inherit the mode the caller set (level-card pill, prior Endless button,
+	# legacy default "campaign"). Hardcoding "campaign" here was silently
+	# downgrading every non-campaign pick at _on_start time.
+	_selected_mode = GameState.current_mode
 	_refresh()
 
 
@@ -156,7 +159,12 @@ func _refresh_hero_info() -> void:
 				break
 	if selected == null:
 		selected = heroes[0]  # absolute fallback
+	# Only emit on actual change — _refresh_hero_info runs on every _refresh,
+	# and we don't want to spam hero_selected with no-op signals.
+	var changed: bool = GameState.selected_hero_id != selected.hero_id
 	GameState.selected_hero_id = selected.hero_id
+	if changed:
+		EventBus.hero_selected.emit(selected.hero_id)
 	# Build hero info text with tap-to-switch hint.
 	var dmg_type: String = "Magic" if selected.damage_type == 1 else "Physical"
 	var skill_names: PackedStringArray = []
@@ -188,6 +196,10 @@ func _on_hero_title_tapped() -> void:
 		var candidate: Resource = heroes[try_idx]
 		if UnlockManager.is_hero_unlocked(candidate.hero_id):
 			GameState.selected_hero_id = candidate.hero_id
+			# Symmetric with HeroesHub: notify any listening screens. The
+			# offset starts at 1 so candidate is always different — no
+			# conditional needed here.
+			EventBus.hero_selected.emit(candidate.hero_id)
 			_refresh_hero_info()
 			return
 

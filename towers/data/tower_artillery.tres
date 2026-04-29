@@ -3,6 +3,47 @@
 [ext_resource type="Script" uid="uid://eg36tioogljo" path="res://towers/TowerData.gd" id="1_data"]
 [ext_resource type="PackedScene" uid="uid://b1td1artshell" path="res://projectiles/ArtilleryShell.tscn" id="2_proj"]
 [ext_resource type="PackedScene" uid="uid://i78jurl1exh5" path="res://towers/TowerCombat.tscn" id="3_scene"]
+[ext_resource type="Script" uid="uid://cbnmfnm6r853q" path="res://towers/TowerUpgradeData.gd" id="4_upg"]
+
+[sub_resource type="Resource" id="ArtilleryUpg_L2"]
+script = ExtResource("4_upg")
+upgrade_name = "Cannon"
+damage = 36.0
+attack_range = 525.0
+attack_speed = 0.5
+cost = 75
+sell_value = 60
+tint = Color(0.95, 0.85, 0.75, 1)
+
+[sub_resource type="Resource" id="ArtilleryUpg_L3"]
+script = ExtResource("4_upg")
+upgrade_name = "Mortar"
+damage = 70.0
+attack_range = 555.0
+attack_speed = 0.6
+cost = 120
+sell_value = 110
+tint = Color(0.85, 0.55, 0.4, 1)
+
+[sub_resource type="Resource" id="ArtilleryBranch_Howitzer"]
+script = ExtResource("4_upg")
+upgrade_name = "Howitzer"
+damage = 100.0
+attack_range = 600.0
+attack_speed = 0.4
+cost = 140
+sell_value = 130
+tint = Color(0.55, 0.45, 0.35, 1)
+
+[sub_resource type="Resource" id="ArtilleryBranch_TripleCannon"]
+script = ExtResource("4_upg")
+upgrade_name = "Triple Cannon"
+damage = 30.0
+attack_range = 525.0
+attack_speed = 1.4
+cost = 160
+sell_value = 140
+tint = Color(1.15, 0.5, 0.3, 1)
 
 [resource]
 script = ExtResource("1_data")
@@ -17,5 +58,7 @@ cost = 120
 sell_value = 70
 aoe_radius = 200.0
 body_color = Color(0.6, 0.35, 0.2, 1)
+level_upgrades = Array[Resource]([SubResource("ArtilleryUpg_L2"), SubResource("ArtilleryUpg_L3")])
+level_3_branches = Array[Resource]([SubResource("ArtilleryBranch_Howitzer"), SubResource("ArtilleryBranch_TripleCannon")])
 projectile_scene = ExtResource("2_proj")
 encyclopedia_entry = "Massive ground explosions. Devastating AoE but can't hit flying enemies. Slow reload."

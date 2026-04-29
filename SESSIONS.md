@@ -1129,3 +1129,533 @@ Not a numbered phase — an audit + cleanup session between content sprints. Thr
 - Added "Working here" section at top of CLAUDE.md pointing at STATUS.md / SESSIONS.md / CLAUDE.md roles.
 
 Next up: playtest the vertical slice, then content sprint (4-8 weeks: 5 levels, 2 more heroes, 2 more towers, 4 more enemies, 1 more spell). No new systems until content fills the ones that exist.
+
+---
+
+## 2026-04-27 — Phase A: WorldMap UI consolidation (4-hub corner layout)
+First slice of the WorldMap UI overhaul (research doc: `~/.claude/plans/lets-make-deep-research-robust-sunbeam.md`). Reduces the 8-button bottom bar to 4 corner-grouped buttons backed by category hubs. Sets up the structural shell for Phase B/C/D (proper TabContainers inside each hub) and Phase F (Endless mode pill on the level card).
+
+### What changed
+- `ui/WorldMap.tscn`: `BottomBar` HBoxContainer now holds `HeroesButton · TowersButton · Spacer · CodexButton · ShopButton` — each 140×80, font 20, separator 16. Spacer pushes Heroes/Towers to bottom-left and Codex/Shop to bottom-right (Kingdom Rush corner-icons feel). Removed: `LoadoutButton`, `EquipmentButton`, `UpgradesButton`, `EndlessButton`, `LeaderboardButton`, `EncyclopediaButton`. The prior `HeroesButton` was misnamed — its text said "Talents" and it routed to TalentScreen; now genuinely points to a Heroes hub.
+- `ui/WorldMap.gd`: dropped 7 button vars + handlers (`_on_loadout`, `_on_equipment`, `_on_upgrades`, `_on_endless`, `_on_leaderboard`, `_on_encyclopedia`). Rewired `_on_heroes` → `HeroesHub.tscn`. Added `_on_towers` / `_on_codex` to the new hubs. `_on_shop` and `_on_back` unchanged.
+- **Endless virtual level removed**: previously the bottom-bar Endless button set `current_level_id = "endless"` to bootstrap a level-agnostic endless mode. Functionally redundant — `Main.gd` always loads `$Level1` regardless of `current_level_id`, and the per-level Endless button on each level panel produces equivalent gameplay (`current_mode = "endless"` on a real level id). Per-level Endless button kept untouched (Phase F will fold it into a unified mode pill row alongside Campaign/Heroic/Iron on the level card).
+- `ui/HeroesHub.tscn + .gd` (new): placeholder hub. Top bar (Back + "Heroes" title + spacer); centered VBox with `Equipment` + `Talents` buttons routing to existing standalone screens; "coming soon" hint mentioning Loadout/Stats/Skills tabs in Phase B. Same dark theme as TalentScreen.
+- `ui/TowersHub.tscn + .gd` (new): mirror layout. `Loadout` → LoadoutPickerScreen, `Upgrades` → UpgradeTree.
+- `ui/CodexHub.tscn + .gd` (new): mirror layout. `Bestiary` → EncyclopediaScreen, `Records` → LeaderboardScreen (renamed UX-side from "Scores" to "Records" per the plan; the underlying screen is still `LeaderboardScreen.tscn`).
+
+### Why hubs are transitional in Phase A
+The hubs are not yet TabContainers — they're vertical button lists pointing to the existing standalone screens. This is deliberate: Phase A's only job is to clean the WorldMap. Inlining the screens as tabs is Phase B (Heroes), Phase C (Towers), Phase D (Codex). This avoids a feature regression — every screen reachable before Phase A is still reachable after Phase A, just one extra tap deep through the hub.
+
+### Pre-flight checks done
+- Grepped for external references to the deleted button names — none (all 9 standalone screens just navigate back to `WorldMap.tscn` via `SceneManager.goto`, no button-name coupling).
+- Grepped for dependencies on `current_level_id == "endless"` — only `WorldMap.gd:52` set it (now removed). All endless-mode behavior keys off `current_mode == "endless"`, which the per-level Endless button still produces.
+- No save migration needed; all changes are presentation layer.
+
+### Verification
+- Open in Godot editor; tap Heroes / Towers / Codex / Shop from WorldMap; each opens the new hub or the existing Shop.
+- From each hub, tap subscreen buttons → confirm they open the existing standalone screen → Back returns to WorldMap (the standalone screens still route back to WorldMap, not the hub; that gets fixed in Phase B/C/D when they're absorbed as tabs).
+- Level panel Play / Endless buttons unchanged — confirm Forest Path → Campaign and Forest Path → Endless still launch gameplay correctly.
+
+### What's next
+- **Phase B** — inline LoadoutScreen (hero pick portion) + EquipmentScreen + TalentScreen as tabs inside HeroesHub. Stub Stats/Skills tabs as "Coming soon".
+- **Phase C** — inline LoadoutPickerScreen + UpgradeTree as tabs inside TowersHub.
+- **Phase D** — inline EncyclopediaScreen + LeaderboardScreen as tabs inside CodexHub.
+- **Phase E** — add top-bar Stars/Gold counter buttons + Settings gear → new OptionsScreen.
+- **Phase F** — Endless pill on level card (replaces inline per-level Endless button with a mode-pill row alongside Campaign/Heroic/Iron).
+
+---
+
+## 2026-04-27 — Phase B: HeroesHub TabContainer (Loadout / Equipment / Stats / Skills / Talents)
+HeroesHub upgraded from Phase A's vertical-button placeholder into a real `TabContainer` with five tabs. Equipment + Talents tabs **embed** the existing standalone screens (no rewrite, no logic duplication, ~500 lines avoided). Loadout tab is built inline (hero picker). Stats + Skills tabs are stubs reserved for future per-hero attribute and skill-tree systems.
+
+### What changed
+- `ui/HeroesHub.tscn`: replaced placeholder `MenuVBox` with a `TabContainer` (anchor full-rect under TopBar, offset 96/-16) holding five Control children — `Loadout`, `Equipment`, `Stats`, `Skills`, `Talents`. Top bar (Back + "Heroes" title) unchanged.
+- `ui/HeroesHub.gd`:
+  - `_build_loadout_tab()` builds an inline hero picker — large hero text block (name, type, HP/DMG/RNG/SPD, skills) + ◄ Switch Hero ► button. Hero pick + cycling logic mirrored from `LoadoutScreen._refresh_hero_info` + `_on_hero_title_tapped` to stay consistent (validates unlock state, falls back through roster, skips locked heroes during cycling). Switch button auto-disables when only one hero is unlocked.
+  - `_embed_screen(tab, scene_path)` instantiates a screen `.tscn` as a child of the given tab, hides its `TopBar` + `Background`, and pulls body offsets up so content sits flush below the tab strip. Equipment: `Body.offset_top = 8`. Talents: `StarsLabel.offset_top = 8` + `ScrollContainer.offset_top = 48`.
+  - `_build_coming_soon_tab(tab, title, subtitle)` builds a centered "Coming soon" placeholder — used for Stats and Skills tabs.
+
+### Embedding pattern (key decision)
+Equipment + Talents content is large (370 + 130 lines respectively) and stable. Re-implementing as tab-bodies would either duplicate it or require a structural refactor of the existing scenes. Instead, `_embed_screen` instantiates the existing `.tscn` as a tab child and just hides its chrome. The embedded scene's `_ready` runs as normal when added to the tree — `InventoryManager.ensure_starter_gear`, EventBus connections, all functional. The hidden `BackButton` still has its `pressed.connect` but is non-interactive while invisible. The hub's own back button handles WorldMap navigation.
+
+### Why standalone scenes still exist
+`EquipmentScreen.tscn` and `TalentScreen.tscn` remain for now — they're untouched. Direct navigation to them still works (e.g. if a future hub-bypass route is added). The hub is the canonical entry point; standalone scenes are dormant but functional. They can be retired in a later cleanup pass once it's clear no other code paths need them.
+
+### Verification
+- Open WorldMap → Heroes → confirm five tabs visible: Loadout / Equipment / Stats / Skills / Talents.
+- Loadout tab: hero name + stats render; ◄ Switch Hero ► cycles through unlocked heroes (currently only one — Warrior — so button is disabled, expected).
+- Equipment tab: full inventory grid + slot grid + stats panel + hover details all functional. Tap inventory item → equip. Tap equipped slot → unequip. Locked slots toast on tap.
+- Stats / Skills tabs: "Coming soon" centered placeholder.
+- Talents tab: stars label + talent list. Purchase flow functional (stars deduct, panel rebuilds).
+- Hub Back button → WorldMap. Embedded scenes' own back buttons are hidden — no double-back.
+
+### Risks / known follow-ups
+- Embedded scenes connect to EventBus on `_ready` and stay connected for the hub's lifetime even when their tab is not visible. Acceptable overhead — no other state changes while user browses tabs. If a future tab body becomes heavy (e.g. a real-time stat preview), revisit.
+- TabContainer renders tab strip text from child node names (`Loadout`, etc.). Localization will need `set_tab_title(idx, tr("HEROES_TAB_LOADOUT"))` when i18n lands.
+- Standalone `EquipmentScreen.tscn` / `TalentScreen.tscn` retired-but-not-deleted. Cleanup pass after Phase D.
+- Embedded EquipmentScreen has its `HeroLabel` (hero name display) inside its TopBar, which is hidden in the embed. Acceptable today because the Loadout tab is the canonical "which hero" indicator one tab over. If users get confused, reparent HeroLabel up like Phase C does for UpgradeTree's StarsLabel.
+
+---
+
+## 2026-04-27 — Phase C: TowersHub TabContainer (Loadout / Upgrades)
+TowersHub upgraded from Phase A's button-list placeholder into a real `TabContainer` with two tabs. Same embed strategy as HeroesHub (Phase B) — instantiate the existing standalone scenes inside each tab, hide their chrome, adjust body offsets.
+
+### What changed
+- `ui/TowersHub.tscn`: replaced placeholder `MenuVBox` with a `TabContainer` (anchor full-rect under TopBar, offset 96/-16) holding two Control children — `Loadout` and `Upgrades`. Top bar (Back + "Towers" title) unchanged.
+- `ui/TowersHub.gd`:
+  - `_embed_screen(tab, scene_path)` — same pattern as HeroesHub: instantiate scene, hide TopBar + Background, adjust body offsets.
+  - LoadoutPickerScreen: HintLabel pulled up to `offset_top = 8`. RingAnchor (anchor-relative at 35% vertical) and PoolTitle/PoolScroll/ResetButton (absolute or bottom-anchored) scale into the tab area without further changes.
+  - UpgradeTree: `StarsLabel` lives **inside** the screen's TopBar (and would have been hidden along with it). Reparented via `top_bar.remove_child(stars); screen.add_child(stars)` and re-anchored to `PRESET_TOP_WIDE` at `offset_top = 8` so the player still sees their star budget. ScrollContainer pulled up to `offset_top = 48` to sit right under the relocated label.
+
+### Why the StarsLabel reparenting (UpgradeTree only)
+The upgrade tree's primary affordance is "do I have stars to spend?" Hiding the TopBar would hide that signal. Reparenting moves the existing `unique_name_in_owner` Label to a sibling position inside `screen`, preserving the `%StarsLabel` lookup that `UpgradeTree.gd._refresh_stars_label()` relies on. Since the node's `owner` is still the screen root, `%StarsLabel` still resolves correctly. LoadoutPickerScreen needs no equivalent treatment — it has no in-TopBar resource counter.
+
+### Verification
+- WorldMap → Towers → confirm two tabs visible: Loadout / Upgrades.
+- Loadout tab: ring of slots (current loadout), pool of unlocked towers below, hint text at top, "Reset to Default" button bottom-center. Tap-arm-then-tap-place flow works as in standalone screen. Saves persist (`SaveManager.save_game()` on every change).
+- Upgrades tab: "★ N / M available" label at top, scrollable upgrade panels below. Purchase flow works (deducts stars, refreshes prereq states).
+- Hub Back → WorldMap. Embedded scenes' own back buttons hidden — no double-back.
+
+---
+
+## 2026-04-27 — Phase D: CodexHub TabContainer (Bestiary / Records)
+CodexHub upgraded from Phase A's button-list placeholder into a real `TabContainer` with two tabs. Same embed strategy as Phases B + C.
+
+### What changed
+- `ui/CodexHub.tscn`: replaced `MenuVBox` with a `TabContainer` (anchor full-rect under TopBar, offset 96/-16) holding two Control children — `Bestiary` and `Records`. Top bar (Back + "Codex" title) unchanged.
+- `ui/CodexHub.gd`:
+  - `_embed_screen(tab, scene_path)` — same pattern as the prior hubs.
+  - EncyclopediaScreen: `TabRow` (inner Enemies/Towers/Heroes/Items pills) pulled to `offset_top = 8` so it sits right under the outer Codex tab strip; `ScrollContainer` pulled to `offset_top = 80` to follow.
+  - LeaderboardScreen: `ScrollContainer` pulled to `offset_top = 8` (no inner tab row to make room for).
+  - The `inner_tabs` test in `_embed_screen` distinguishes the two screens so the same helper handles both layouts.
+
+### Nested-tabs note
+Codex's outer Bestiary tab embeds a screen that has its own inner pill row (Enemies / Towers / Heroes / Items). Two levels of tabbing nested visually OK because the levels mean different things — outer = which Codex section, inner = which content type within Bestiary. Kingdom Rush bestiaries do the same.
+
+### Verification
+- WorldMap → Codex → confirm two tabs visible: Bestiary / Records.
+- Bestiary tab: inner pill row (Enemies/Towers/Heroes/Items) renders directly under the outer tab strip; tap each to filter the list. Locked entries show "???"; unlocked entries show stats + flavor text.
+- Records tab: leaderboard rows or "No scores yet" empty state.
+- Hub Back → WorldMap.
+
+### Status across all hubs
+With Phases A–D shipped, all three of WorldMap's category buttons (Heroes / Towers / Codex) lead to TabContainer hubs that consolidate the prior 6 standalone screens (Equipment, Talents, LoadoutPicker, UpgradeTree, Encyclopedia, Leaderboard) into 3 tabbed surfaces. Standalone scenes remain in the codebase and still work for direct navigation — they will be retired in a cleanup pass after Phase F.
+
+---
+
+## 2026-04-27 — Phase E: WorldMap top-bar resources + OptionsScreen
+WorldMap top bar gains a Stars counter (KR convention) and Settings gear; both are tappable shortcuts. Settings gear opens a new OptionsScreen that absorbs the prior in-HUD VFX toggle and the prior MainMenu Reset Progress button.
+
+### What changed
+- `ui/WorldMap.tscn`: TopBar adds a `StarsButton` (120×80, gold tint, `★ N` text) and a `SettingsButton` (80×80, gear glyph). Both sit between the existing Title and the right edge. Separation tightened to 12.
+- `ui/WorldMap.gd`:
+  - `_refresh_stars_label()` reads `GameState.get_available_stars()` and sets the button text. Called once in `_ready` — fresh each WorldMap visit (the screen reinstantiates on `SceneManager.goto`, so no live update needed).
+  - `_on_stars()` sets `TowersHub.pending_tab = TowersHub.TAB_UPGRADES` then navigates to TowersHub. Hub reads the hint in its `_ready` and clears it.
+  - `_on_settings()` navigates to the new OptionsScreen.
+- `ui/TowersHub.gd`: added `class_name TowersHub`, `const TAB_LOADOUT = 0` / `const TAB_UPGRADES = 1`, and `static var pending_tab: int = -1`. `_ready` applies + clears the hint:
+  ```
+  if pending_tab >= 0:
+      tab_container.current_tab = pending_tab
+      pending_tab = -1
+  ```
+  `class_name` is what makes `TowersHub.pending_tab = …` resolvable from WorldMap.gd without preload boilerplate.
+- `ui/OptionsScreen.tscn + .gd` (new): TopBar (Back + "Options" title) + centered VBox with two action buttons:
+  - **Clean View toggle** — emits `EventBus.clean_view_toggled` exactly like the prior HUD CleanButton, just relocated. Label syncs to `VFXSpawner.clean_view`.
+  - **Reset Progress** — same two-tap-confirm flow as before (relocated from MainMenu). Calls `SaveManager.delete_save()`.
+  - Hint labels under each explaining what they do.
+  - "Coming soon" footer mentioning SFX/music volume, color-blind palette, language.
+  Back returns to WorldMap.
+- `ui/MainMenu.gd + .tscn`: removed `ResetButton` + the two-tap-confirm logic. MainMenu is now Play-only. Reset Progress is one tap deeper (Play → Settings gear → Reset) — intentional friction so first-launch confusion doesn't nuke saves.
+- `ui/HUD.gd + .tscn`: removed `CleanButton` (the in-game VFX/Clean toggle). The state still lives on `VFXSpawner.clean_view`; the toggle moved to Options. HUD top-right is now Speed + Pause only — cleaner, more KR-feel.
+
+### Why a static var for `TowersHub.pending_tab`
+Three alternatives considered:
+1. **Static var on TowersHub** (chosen) — caller sets `TowersHub.pending_tab = X` before `goto`, hub reads + clears in `_ready`. Simple, type-checked via `class_name`.
+2. **GameState field** — would couple a transient UI hint to gameplay state, which is wrong-headed. Rejected.
+3. **SceneManager parameter** — would require extending `SceneManager.goto()` to accept arbitrary user data. Overkill for a single use case. If more shortcuts need this pattern, revisit.
+
+### Verification
+- WorldMap → top bar shows `★ N` (matches `GameState.get_available_stars()`) and `⚙` gear.
+- Tap `★ N` → lands inside Towers hub on the **Upgrades** tab (not Loadout, the default).
+- Tap `⚙` → OptionsScreen opens.
+- OptionsScreen → toggle Clean View → label flips, in-game VFX state matches on next gameplay session.
+- OptionsScreen → tap Reset Progress → "Are you sure?" → tap again → save deleted.
+- MainMenu → only "Play" button (no Reset Progress at the bottom).
+- In-game HUD top-right → only Speed + Pause buttons (no VFX button).
+
+### Risks / known follow-ups
+- Stars counter shows on WorldMap only. Could add to the hub TopBars too for consistency (KR shows stars/gems on every meta screen) — small follow-up.
+- Clean View state still per-session (resets on app restart). Persisting it would require a `SaveManager` field; deferred until a real settings persistence story is needed.
+- `TowersHub.pending_tab` is a static var, which means it persists across instances within the same process (intentional — that's how the hint passes through `goto`). If a future code path navigates to TowersHub WITHOUT going through WorldMap stars-counter, the hint stays at -1 (no-op) so no contamination risk.
+
+---
+
+## 2026-04-27 — Phase F: Endless mode pill on level card
+Each level panel on WorldMap now shows a 4-pill mode row (Campaign / Heroic / Iron / Endless) instead of the prior Play + Endless button pair. Mode picking happens here on the level card; LoadoutScreen receives the chosen mode and skips back to being a pre-battle confirmation.
+
+### What changed
+- `ui/WorldMap.gd`:
+  - `_make_level_panel(data)`: replaced the `Play` + `Endless` VBox with an HBox of four mode pills via the new `_add_mode_pill` helper.
+  - `_add_mode_pill(row, data, mode)`: builds one pill per mode. Logic mirrors `LoadoutScreen._refresh_mode_buttons` so the gating + status text reads identically:
+    - **Campaign** — always enabled, shows star count `★★☆`.
+    - **Heroic** — `Done ✓` if completed, `Ready` if 3★ earned, `Need 3★` (disabled) otherwise.
+    - **Iron** — `Done ✓` if completed, `Ready` if Heroic done, `Need Heroic` (disabled) otherwise.
+    - **Endless** — always enabled, shows best wave (`W27`) or `—` if no run posted.
+  - `_on_mode_pill_pressed(data, mode)` sets `current_level_id` + `current_mode` and routes to LoadoutScreen.
+  - Removed `_on_level_selected` and `_on_level_endless` (replaced by `_on_mode_pill_pressed`).
+- The `_format_level_metrics(level_id)` helper (best time + endless best at the panel's center) is preserved — it duplicates the Endless wave info the new pill shows, but the metrics line carries Best Time which the pills don't. Could trim later if redundant.
+
+### Why pills here, not in LoadoutScreen
+LoadoutScreen still has its Campaign/Heroic/Iron mode row (lines 71–104 of `LoadoutScreen.gd`) which now becomes redundant for mode selection — the pill on the level card already committed `current_mode`. LoadoutScreen reads `current_mode` to pre-highlight the matching pill there. The pre-battle screen continues to show modes for confirmation; tapping a different pill there overrides the level-card choice. This intentional redundancy lets the player double-check before spending stars / starting Iron mode. If user feedback flags it as confusing, retire the LoadoutScreen pill row (small change — just hide the row when reached from the level card).
+
+### Verification
+- WorldMap → confirm each unlocked level panel shows 4 pills (Campaign / Heroic / Iron / Endless) instead of the prior Play / Endless pair.
+- Campaign pill: star count visible, tap → LoadoutScreen with Campaign pre-selected → Start Battle launches gameplay.
+- Heroic pill: starts disabled with "Need 3★"; after earning 3★ on Campaign, becomes "Ready" → tap launches Heroic.
+- Iron pill: gated behind Heroic completion.
+- Endless pill: always available; shows best wave; tap launches endless mode.
+- Locked levels: still show single "Locked" button (unchanged).
+
+### What's done across all six phases
+- **Phase A** — WorldMap bottom bar 8 buttons → 4 corner buttons (Heroes / Towers / Codex / Shop). Endless virtual level removed.
+- **Phase B** — HeroesHub TabContainer (Loadout / Equipment / Stats / Skills / Talents). Equipment + Talents embedded.
+- **Phase C** — TowersHub TabContainer (Loadout / Upgrades). Both embedded; UpgradeTree's StarsLabel reparented out of hidden TopBar.
+- **Phase D** — CodexHub TabContainer (Bestiary / Records). Both embedded.
+- **Phase E** — WorldMap top-bar Stars counter + Settings gear; new OptionsScreen absorbs in-HUD VFX toggle and MainMenu Reset Progress.
+- **Phase F** — Per-level mode pills (Campaign / Heroic / Iron / Endless) replace the Play + Endless pair.
+
+WorldMap is now Kingdom Rush-shaped: spatial level list (still scrollable, spatial map is a future item), corner-icon hubs, top-bar resource counter + settings, and per-level mode pills. The 6 prior standalone meta screens are reachable in ≤2 taps; future Stats / Skills / Achievements / OptionsScreen extras drop into the existing hubs as new tabs without further WorldMap layout changes. Standalone meta scenes (`EquipmentScreen.tscn`, `TalentScreen.tscn`, `LoadoutPickerScreen.tscn`, `UpgradeTree.tscn`, `EncyclopediaScreen.tscn`, `LeaderboardScreen.tscn`) remain in the codebase as embedded targets — retiring them as standalones is a small cleanup pass available whenever, but harmless to leave.
+
+---
+
+## 2026-04-27 — Post-implementation review fixes (Phases A–F audit)
+Code review pass after Phases A–F surfaced four bugs (one was a pre-existing latent issue that Fix 1 also resolves as a bonus). All four fixed in this entry.
+
+### Bugs fixed
+
+**Fix 1 — LoadoutScreen mode init** ([ui/LoadoutScreen.gd:35](ui/LoadoutScreen.gd#L35))
+- Changed `_selected_mode = "campaign"` → `_selected_mode = GameState.current_mode`
+- **Phase F regression**: pills set `current_mode` to "heroic" / "iron"; LoadoutScreen's hardcoded init wiped it back to "campaign" before `_on_start()` committed it. Player picked Iron, played Campaign.
+- **Pre-existing latent bug**: same path was broken for Endless pre-Phase-F. The level-panel Endless button (and the now-removed bottom-bar Endless) set `current_mode = "endless"`, but LoadoutScreen overwrote it with "campaign" at Start, so `Main.gd._ready()` saw `current_mode != "endless"` and started Campaign waves instead of `WaveManager.start_endless`. Endless never actually launched via LoadoutScreen — appears to have been masked by `level_endless_best_scores` data persisting from earlier code paths.
+- One-line fix kills both regressions and the latent bug.
+
+**Fix 2 — Endless pill label** ([ui/WorldMap.gd:180-182](ui/WorldMap.gd#L180))
+- Changed `"Endless\nW%d"` → `"Endless\nBest %d"`
+- `GameState.get_endless_best_score()` returns a SCORE, not a wave number ([autoloads/GameState.gd:205](autoloads/GameState.gd#L205)). LeaderboardScreen distinguishes the two. "W27" was misleading; "Best 27" matches LoadoutScreen's "Best score: %d" wording.
+
+**Fix 3 — Equipment HeroLabel reparenting** ([ui/HeroesHub.gd `_embed_screen`](ui/HeroesHub.gd))
+- Lift `EquipmentScreen.tscn`'s `HeroLabel` out of the (now hidden) TopBar to a sibling position anchored at the top of the screen — same pattern Phase C used for `UpgradeTree`'s `StarsLabel`.
+- Equipment tab Body's `offset_top` becomes `48` (was `8`) when HeroLabel is present, to make room. Falls back to `8` if no HeroLabel found (defensive).
+- `unique_name_in_owner = true` makes `%HeroLabel` resolve regardless of parent within the same owner tree, so `EquipmentScreen.gd._refresh()` continues to update the relocated label without changes.
+
+**Fix 4 — Hero-switch propagation** (HeroesHub + EquipmentScreen + TalentScreen)
+- HeroesHub's Loadout-tab Switch button updated `selected_hero_id` but didn't notify the embedded Equipment + Talents tabs. They kept showing the prior hero's data until the hub was re-entered.
+- Used the existing (previously declared but never emitted/connected) `EventBus.hero_selected(hero_id)` signal at [autoloads/EventBus.gd:55](autoloads/EventBus.gd#L55).
+- [ui/HeroesHub.gd `_on_switch_hero`](ui/HeroesHub.gd) now emits `EventBus.hero_selected.emit(candidate.hero_id)` after setting `selected_hero_id`.
+- [ui/EquipmentScreen.gd:58](ui/EquipmentScreen.gd#L58) `_ready` connects: `EventBus.hero_selected.connect(func(_id): _refresh())`.
+- [ui/TalentScreen.gd:21](ui/TalentScreen.gd#L21) `_ready` connects: `EventBus.hero_selected.connect(_select_hero)`.
+- Side benefit: any future code path that changes the active hero (LoadoutScreen pre-battle pick, future stats screen) just needs to emit the signal and the listeners react automatically.
+
+### Files changed
+- [ui/LoadoutScreen.gd](ui/LoadoutScreen.gd) — Fix 1
+- [ui/WorldMap.gd](ui/WorldMap.gd) — Fix 2
+- [ui/HeroesHub.gd](ui/HeroesHub.gd) — Fix 3 + Fix 4 emit
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) — Fix 4 listener
+- [ui/TalentScreen.gd](ui/TalentScreen.gd) — Fix 4 listener
+
+### Verification
+- WorldMap → Forest Path → Iron pill → Start Battle → in-game `current_mode == "iron"` (was previously silently downgraded to `"campaign"`).
+- Same flow with Heroic and Endless — each launches the intended mode.
+- WorldMap level panel → Endless pill reads `Endless\nBest 27` (no `W` prefix).
+- WorldMap → Heroes → Equipment tab → hero name + level visible at top of panel.
+- (Once a 2nd hero is unlocked) Heroes → Loadout tab → ◄ Switch Hero ► → switch tabs to Equipment / Talents → confirm both show the new hero's data without the user leaving the hub.
+
+### Observations flagged but not fixed (per the plan's "second-pass observations" list)
+1. LoadoutScreen mode-row redundancy after Phase F — UX-acceptable as an override surface.
+2. `_format_level_metrics` Endless line duplicates the Endless pill — cosmetic.
+3. OptionsScreen Reset Progress lambda timer leak on early exit — pre-existing pattern.
+4. `TowersHub.pending_tab` no bound-check — defensive only.
+5. `VFXSpawner.clean_view` not persisted — needs a real settings-persistence story.
+6. `_embed_screen` boilerplate duplicated across 3 hubs — mild duplication, leave for now.
+
+## 2026-04-28 — Inventory Sell feature (Town phase T1, minimal slice)
+After research on a full Town/City system (sell + buy + craft), the user picked the smallest valuable slice: just sell. Adds a way to clear unwanted items from the hero inventory and rewards a new persistent currency. Future Town phases (buy, disenchant, reroll) drop in on top of this without touching what shipped here.
+
+### What changed
+
+**New persistent currency: `meta_gold`**
+- [autoloads/GameState.gd](autoloads/GameState.gd): `meta_gold: int = 0` field. Setters `add_meta_gold(amount)` / `spend_meta_gold(amount)` mirror the per-run gold pattern. Cleared in `reset()` alongside other meta state.
+- [autoloads/EventBus.gd](autoloads/EventBus.gd): new signals `meta_gold_changed(new_amount)` and `item_sold(instance, gold_reward)`.
+- Distinct from `gold` (which is per-run, resets every level). Distinct save field, distinct top-bar counter.
+
+**Persistence (additive, no SAVE_VERSION bump)**
+- [autoloads/SaveManager.gd](autoloads/SaveManager.gd): saves `meta_gold` field; loads with `data.get("meta_gold", 0)` so older saves get 0 by default. SAVE_VERSION stays at 2 — the field is pure-extension and won't confuse v2 loaders.
+
+**Sell-price resource**
+- New [economy/SellPriceTable.gd](economy/SellPriceTable.gd) — Resource class with rarity → gold mapping (`common`, `magic`, `rare`, `epic`, `legendary` int fields) and a `price_for(rarity)` lookup.
+- New [economy/sell_price_table.tres](economy/sell_price_table.tres) — default tunable values: 10 / 50 / 200 / 1000 / 5000.
+
+**Sell endpoints in InventoryManager**
+- [autoloads/InventoryManager.gd](autoloads/InventoryManager.gd):
+  - `_is_equipped(hero_id, uid)` — internal helper, scans all 6 slots.
+  - `destroy(hero_id, uid)` — lower-level removal primitive. Refuses if equipped (push_warning). Returns true on success. Future disenchant/craft endpoints will reuse this.
+  - `sell(hero_id, uid) -> int` — looks up price, calls `destroy`, awards meta-gold, emits `item_sold`, calls `SaveManager.save_game()`. Returns awarded gold (0 on any failure path — bad uid, missing base, equipped item).
+  - `get_sell_price(hero_id, uid) -> int` — preview helper for UI labeling without committing.
+- Equipped items can't be sold. The `destroy` refusal is the safety net; the UI layer also blocks (toast hint), so the player never even arrives at a "would have sold equipped" state.
+
+**Sell UI on the Equipment tab**
+- [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn): `RightControls` HBoxContainer added between `RightTitle` and `ScrollContainer`, holding `SellModeButton` (140×44) on the left and `MetaGoldLabel` ("💰 N", gold tint) on the right.
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd):
+  - `_sell_mode: bool` and `_pending_sell_uid: String` state.
+  - `_on_sell_mode_toggled` flips the mode, clears any pending sell, refreshes visuals + grid.
+  - `_refresh_sell_mode_visuals` swaps the button label ("Sell Mode" ↔ "Done"), tints the button red when active, and rewrites the hint label.
+  - `_handle_sell_tap(inst)` — first tap on an item arms it (toast: "Sell <name> for Ng? Tap again to confirm"). Second tap on the same uid commits via `InventoryManager.sell`. Different uid re-arms. 3-second auto-disarm via `get_tree().create_timer` (with `is_instance_valid(self)` guard so the lambda is safe if the player navigates away mid-window).
+  - `_refresh()` inventory loop modulates icons in sell mode: faint red tint by default, brighter glow on the armed (pending) uid.
+  - `_on_meta_gold_changed` listener syncs the `MetaGoldLabel` live as sales fire.
+
+**WorldMap top-bar counter**
+- [ui/WorldMap.tscn](ui/WorldMap.tscn): `MetaGoldButton` (140×80, "💰 N", gold tint) added between `StarsButton` and `SettingsButton`. Mirrors the Phase E Stars-counter pattern.
+- [ui/WorldMap.gd](ui/WorldMap.gd): `_refresh_meta_gold_label()` reads `GameState.meta_gold`. `_on_meta_gold()` routes to HeroesHub (where the player can actually sell — no Town Buy destination exists yet). Once buy/craft ships, retarget to the Town hub.
+
+### Mode discipline (kept all current behavior)
+- One-tap-equip flow is preserved when sell mode is OFF — no regression for the existing player workflow.
+- Slots still tap-to-unequip in either mode; sell mode only re-routes the inventory-icon press handler.
+- Equipped items can't be sold from the UI, can't be destroyed by the API, and would just produce a toast if the user finds a way to try.
+
+### Verification
+1. **Fresh save**: boot → WorldMap → confirm `💰 0` in top bar.
+2. **Old save**: existing save loads cleanly with `meta_gold` defaulted to 0 (no version mismatch).
+3. **Sell flow**: WorldMap → Heroes hub → Equipment tab → tap "Sell Mode" → button turns red, hint updates, inventory tints red. Tap an item → toast "Sell <name> for Ng? Tap again to confirm" + that icon glows. Tap same item again → toast "Sold for Ng", item disappears, MetaGoldLabel ticks up. Top-bar counter on next WorldMap visit shows the new total.
+4. **Wrong-item re-arm**: in sell mode, tap item A (armed), then tap item B → arms B, no commit on A.
+5. **Auto-disarm**: arm an item, wait 3s without confirming → glow fades; tap again does NOT commit (re-arms instead).
+6. **Equipped items**: try to sell-mode-tap an equipped slot → handled by existing slot-tap path (unequips). Item then in inventory, sellable.
+7. **Persistence**: sell items, quit Godot, relaunch → `meta_gold` and missing items both persist.
+8. **Counter shortcut**: tap `💰 N` in WorldMap top bar → opens HeroesHub (currently the canonical "do something with meta-gold" surface).
+
+### Risks / known follow-ups
+- Sell mode currently re-runs `_refresh()` on every tap to update icon modulation. With a large inventory this is a full grid rebuild per tap. Acceptable for current item counts; revisit when inventory grows past ~50 items.
+- `_handle_sell_tap`'s 3-second timer captures `armed_uid` and checks `is_instance_valid(self)` — won't crash if the player leaves, but will silently fire and no-op. Same lambda-leak class as the OptionsScreen Reset Progress timer. Defensible pattern; revisit when refactoring meta-screen lifecycle.
+- No "are you sure?" wall on the toggle into sell mode. Players who panic-tap-sell two items in a row each had two-tap confirms, but they could speedrun-sell their entire inventory in seconds. If that becomes a support issue, add a "you sold N items, undo last?" toast or a session-undo buffer.
+- WorldMap `_on_meta_gold` routes to HeroesHub (where the sell UI lives). When the Town hub ships with a Buy tab, retarget there.
+
+---
+
+## 2026-04-28 — Inventory Polish phase (IP)
+After auditing the inventory menu against ARPG conventions (Diablo, Path of Exile, Last Epoch, Hero Wars), four polish items shipped together. Goal: make the menu feel like a real ARPG, not a placeholder, with mobile-friendly affordances and protection against accidental sales.
+
+### IP-1 — Dramatic rarity visuals on `ItemIcon`
+[ui/ItemIcon.gd](ui/ItemIcon.gd) — added per-rarity scaling for two visual properties so higher-rarity items pop visibly out of the grid at a glance:
+- `_RARITY_BORDER_THICKNESS = [3.0, 4.0, 4.5, 5.0, 6.0]` — Common 3px → Legendary 6px (doubles).
+- `_RARITY_BG_TINT_AMOUNT = [0.0, 0.10, 0.16, 0.22, 0.30]` — Common keeps the original `_FILLED_BG` (no tint), Magic+ lerp toward their rarity color so the icon background reads colored.
+- `_draw()` now computes `bg = _FILLED_BG.lerp(_RARITY_COLORS[r], _RARITY_BG_TINT_AMOUNT[r])` for filled items and `border_thickness = _RARITY_BORDER_THICKNESS[r]` instead of a flat constant.
+- Pre-existing rarity pip overlay (`ItemGlyph.draw_rarity_pips`) untouched — still adds 1-5 dots indicating rarity tier.
+
+### IP-2 — Long-press to show details (mobile-friendly hover replacement)
+[ui/ItemIcon.gd](ui/ItemIcon.gd) — added a `long_pressed(instance)` signal that fires after `LONG_PRESS_SECONDS = 0.45` of unbroken touch/click hold:
+- New tracking state: `_press_timer: SceneTreeTimer` and `_long_press_consumed: bool`.
+- `_on_gui_input` now branches on press-down vs release. Press-down → `_begin_press()` starts the timer; release → `_end_press()` either fires `pressed` (if the timer never elapsed) or swallows the release (if `long_pressed` already fired).
+- The timer's lambda checks `is_instance_valid(self) and _press_timer == captured_timer` so a release-then-new-press doesn't fire `long_pressed` against the new press.
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) connects `long_pressed → _on_item_hovered` for both inventory items and equipped slots — reuses the existing details panel logic, zero duplication. Mobile players now have a non-hover read-without-acting path; PC players get an alternative to mouse-hover.
+- Tap behavior is unchanged: tap = equip / unequip / sell-arm. Long-press is the new sibling gesture, not a replacement.
+
+### IP-3 — Item lock toggle (🔒 pin against accidental sale)
+- [items/ItemInstance.gd](items/ItemInstance.gd) — new `locked: bool = false` field. Round-trips through `to_dict()` / `from_dict()` (older saves missing the field default to `false`, additive — no migration needed).
+- [autoloads/InventoryManager.gd](autoloads/InventoryManager.gd) — new `toggle_lock(hero_id, uid) -> bool` returning the new state. Persists immediately via `SaveManager.save_game()`. `sell()` refuses locked items at the API layer (defense-in-depth — UI also blocks).
+- [ui/ItemIcon.gd](ui/ItemIcon.gd) — new `_locked_for_sale: bool` rendering state, set by `setup_instance` from `inst.locked`. `_draw()` overlays a small padlock glyph in the upper-right corner: filled yellow rect (body) with two short verticals + a top horizontal stroke (shackle). Pure draw primitives — no font dependency.
+- [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) — added `LockButton` (120×44, `🔒 Lock` initial label) to `RightControls`. Hidden by default; visible only in sell mode.
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd):
+  - `_on_lock_pressed()` toggles the armed item's lock state, clears the arm (locking shouldn't also keep the item armed for sale — confusing UX), refreshes the button label.
+  - `_refresh_lock_button()` flips label between `🔒 Lock` and `🔓 Unlock` based on the armed item's current state. Disabled with the `🔒 Lock` label when nothing's armed.
+  - `_handle_sell_tap` now refuses to arm a locked item for sale — instead it sets the armed uid and shows a toast "Locked — tap 🔓 Unlock to allow sale", so the player can immediately unlock with one more tap.
+
+### IP-4 — "Sell all Common" batch button
+- [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) — added `SellAllButton` (140×44) next to the Lock button. Hidden outside sell mode.
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd):
+  - `_count_sell_all_eligible(hero_id)` counts unlocked Commons in the unequipped pool. Mirrors the criteria used by the sell sweep so the displayed count matches what gets sold.
+  - `_refresh_sell_all_button()` shows count: e.g., `Sell all Common (5)`. Disables when count is 0.
+  - `_on_sell_all_pressed()` — first tap arms (`_sell_all_armed = true`, label flips to `Confirm: sell N`, modulate to amber). Second tap commits: collects uids, iterates `InventoryManager.sell` per uid (each individually skips locked / equipped per its own contract), tallies count + total gold, emits one summary toast "Sold N items for Mg".
+  - 3-second auto-disarm matches the single-item sell flow.
+- The two-tap confirm is critical here — single-tap would let an accidental tap liquidate every Common in one move.
+
+### Cross-feature wiring (kept all current behavior consistent)
+- `_on_inventory_changed_simple` now also calls `_refresh_lock_button()` and `_refresh_sell_all_button()` when sell mode is active, so a lock toggle or batch sell elsewhere flows through to the buttons' labels live.
+- Slot icons also get `long_pressed → _on_item_hovered` wiring — equipped items can be inspected via long-press on mobile.
+- Default-mode (sell-mode-off) one-tap-equip preserved. No regression for the existing flow.
+
+### Verification
+1. **IP-1 visual check**: drop or grant a Common, Magic, Rare, Epic, Legendary item — confirm border thickness and background tint scale up. Legendary should look obviously special at grid scale.
+2. **IP-2 mobile**: tap inventory item = instant equip (unchanged). Long-press (0.45s+) = details panel populates without equipping. Release before 0.45s = no details, no swallow.
+3. **IP-2 PC**: hover still populates details. Long-press also populates (Win/Mac mouse-down hold equivalent).
+4. **IP-3 lock flow**:
+   - Sell mode on → arm an item → tap `🔒 Lock` → 🔒 glyph appears in icon corner, item un-arms, label resets. Quit + relaunch → lock persists.
+   - Re-arm same item → toast "Locked — tap 🔓 Unlock to allow sale" + button label = `🔓 Unlock`. Tap to unlock → glyph gone, ready to sell.
+5. **IP-4 batch sell**:
+   - Drop 3 Commons + 1 Magic. Lock 1 Common (IP-3). Enter sell mode. `Sell all Common (2)` shows count = 2 (locked excluded).
+   - Tap once → button flips to `Confirm: sell 2`, amber tint. Tap again → toast "Sold 2 items for 20g", inventory updated, locked Common stays, Magic untouched.
+   - Wait 3 seconds without confirming → auto-disarm, label reverts.
+
+### Risks / known follow-ups
+- `_on_inventory_changed_simple` calling both `_refresh_lock_button` and `_refresh_sell_all_button` adds ~2 extra inventory iterations per signal. Negligible at current item counts.
+- The padlock glyph drawing is pure primitives — readable but not pretty. A real 16×16 sprite would land better when art arrives.
+- Long-press detection uses `SceneTreeTimer` — pause-mode-aware. If the player long-presses while a future pause-modal is active, behavior depends on tree pause state. Edit: this UI runs on the meta-game side, never paused — so OK for now. Document if any meta UI ever needs pause.
+- Lock button only appears in sell mode. Outside sell mode, the long-press → details panel is read-only — no lock toggle there. Could add a Lock button in the details panel later, but that requires the details Label to become a richer Container; deferred.
+
+### Status across the inventory + sell + polish work
+- 2026-04-28 Sell phase shipped sell + meta_gold + WorldMap counter.
+- 2026-04-28 IP phase shipped rarity drama + long-press + locking + batch sell.
+- Inventory now matches ~80% of ARPG-genre conventions. Remaining (deferred): real item sprites, sort/filter row, side-by-side compare, multi-select, drag-and-drop. None blocking ship.
+
+---
+
+## 2026-04-28 — Inventory Architecture phase (IA)
+After the AAA-vs-us deeper audit, the user picked four structural gaps to close: equip-time restriction enforcement (Gap 9), shared inventory architecture (Gaps 4+5 — same root cause), and inventory capacity (Gap 1). Three sub-phases shipped together. The result moves the data model from "per-hero silos" (each hero has its own inventory dict) to AAA-shape "shared pool + per-hero equipment refs", plus a soft cap with auto-sell overflow and finally enforces the previously-decorative `hero_restriction` and `level_requirement` fields on `ItemBase`.
+
+### IA-1 — Equip-time restriction enforcement (Gap 9)
+[autoloads/InventoryManager.gd](autoloads/InventoryManager.gd) — `equip()` previously ignored `ItemBase.hero_restriction[]` and `level_requirement`, even though both fields had been declared since Phase 48. Items meant for one hero could be equipped by any; level-gated items could be equipped at any level. Added two refusal paths:
+- `hero_restriction` non-empty + hero not in list → toast "<HeroName> can't use this item".
+- `level_requirement > 1` + hero level below it → toast "Requires Lv N".
+- Defensive: same gates also applied to `ensure_starter_gear`'s auto-equip step via the new `_can_hero_equip(hero_id, base)` helper. A misconfigured starter pack (Mage-only item in Warrior's starter list) now silently skips auto-equip rather than force-equipping invalid gear.
+
+### IA-2 — Shared inventory architecture (Gaps 4 + 5)
+The big refactor. Old data model:
+```
+hero_inventories: Dictionary    # hero_id -> Array[ItemInstance]   (silos)
+hero_equipment:   Dictionary    # hero_id -> Dict[slot_str -> uid]
+```
+New data model:
+```
+shared_inventory: Array[ItemInstance]   # ALL owned items, hero-agnostic
+hero_equipment:   Dictionary             # hero_id -> Dict[slot_str -> uid]   (unchanged)
+```
+Items live once in `shared_inventory`. `hero_equipment[hero_id][slot]` references items by uid. Multiple heroes browse the same pool; `hero_restriction` (now enforced by IA-1) gates who can equip what. UID uniqueness preserved by `SaveManager.next_uid` (monotonic) — no aliasing risk.
+
+**Behavior changes**:
+- Drop in level → flows into `round_pickups` then `shared_inventory` on `level_completed` (no longer attributed to current hero).
+- `EquipmentScreen` Equipment tab now reads `get_unequipped()` (hero-agnostic) — items equipped on Hero A don't appear in Hero B's grid (matches Diablo / WoW / PoE convention: equipped is in-use everywhere).
+- Switch hero in HeroesHub → same items show; only the equipment slot row changes.
+
+**API changes** (rename, drop hero_id from non-equipment paths):
+- `get_inventory(hero_id)` → `get_shared_inventory()` (direct access)
+- `get_unequipped(hero_id)` → `get_unequipped()` (filters across ALL heroes' equipment)
+- `find_by_uid(hero_id, uid)` → `find_by_uid(uid)`
+- `_is_equipped(hero_id, uid)` → `_is_equipped(uid)` (sweeps all heroes)
+- `destroy(hero_id, uid)` → `destroy(uid)`
+- `sell(hero_id, uid)` → `sell(uid)`
+- `toggle_lock(hero_id, uid)` → `toggle_lock(uid)`
+- `get_sell_price(hero_id, uid)` → `get_sell_price(uid)`
+
+Equipment-related signatures (still per-hero) unchanged: `equip(hero_id, uid)`, `unequip(hero_id, slot)`, `get_equipped_uid/instance/all_equipped(hero_id)`.
+
+**Save migration v2 → v3** ([autoloads/SaveManager.gd](autoloads/SaveManager.gd)):
+- `SAVE_VERSION` bumped 2 → 3.
+- Migration is **implicit** in `InventoryManager.from_save_dict`: accepts either `shared_inventory` (new) or `hero_inventories` (v2). Old saves load with their per-hero silos flattened into the shared pool in encounter order. UID uniqueness from `next_uid` guarantees no collision.
+- `to_save_dict` writes only the new `shared_inventory` key going forward.
+- `load_game` prints a `[SaveManager] migrating save vN → v3 (shared_inventory)` line when an older save is detected.
+
+**Call-sites updated** ([ui/EquipmentScreen.gd](ui/EquipmentScreen.gd)): every renamed API. Removed `hero_id` locals that no longer needed (the `_handle_sell_tap`, `_on_lock_pressed`, `_refresh_lock_button`, `_refresh_sell_all_button`, `_count_sell_all_eligible`, `_on_sell_all_pressed` paths). Equipment-related API calls (`equip`, `unequip`, `get_equipped_*`, `get_all_equipped`, `ensure_starter_gear`) keep their hero_id arg.
+
+### IA-3 — Inventory capacity (Gap 1)
+[autoloads/InventoryManager.gd](autoloads/InventoryManager.gd) — added `MAX_INVENTORY_SIZE = 60` cap and `add_to_shared(instance) -> bool` chokepoint. When the pool is at cap, drops are auto-sold for **half their normal sell price** (`_AUTO_SELL_RATIO = 0.5`), feeding into `meta_gold` with a toast "Inventory full — auto-sold for Ng". Soft pressure rather than hard punishment — players never lose loot outright, but they're nudged to clean inventory if they want full sell value.
+
+`commit_round()` now routes each `round_pickups` entry through `add_to_shared`. Starter gear bypasses the cap (appends directly to `shared_inventory`) — it's a one-time idempotent grant, not a "drop" semantically.
+
+UI surface ([ui/EquipmentScreen.gd](ui/EquipmentScreen.gd)): `RightTitle` changed from `Inventory (N)` to `Inventory (N / 60)` showing total pool size against cap. Color modulation: white below 90%, amber (1.0, 0.7, 0.3) at 90–99%, red (1.0, 0.4, 0.4) at 100%.
+
+### Files affected
+- [autoloads/InventoryManager.gd](autoloads/InventoryManager.gd) — IA-1 enforcement + helper, IA-2 data model + API rename, IA-3 cap + add_to_shared
+- [autoloads/SaveManager.gd](autoloads/SaveManager.gd) — IA-2 SAVE_VERSION 2 → 3, migration log line, migration comment
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) — IA-2 API rename, IA-3 capacity display + tint
+
+### Verification
+1. **IA-1 hero gate**: equip a hero-restricted item on the wrong hero → toast refusal, item stays unequipped.
+2. **IA-1 level gate**: drop an item with `level_requirement > current hero level` → tap to equip refuses with "Requires Lv N".
+3. **IA-1 starter gate**: a misconfigured starter pack with a too-restrictive item silently skips auto-equip (item still added to inventory, just not equipped).
+4. **IA-2 migration**: load an existing v2 save → console prints `migrating save v2 → v3 (shared_inventory)` → all items appear in Equipment tab regardless of which hero is selected. Switch hero → same items, different equipment slots.
+5. **IA-2 hero switch**: drop an item playing as Warrior → return to WorldMap → switch to Mage in HeroesHub Loadout tab → drop visible from Mage's Equipment tab. Hero-restricted items refuse equip on wrong hero (IA-1).
+6. **IA-2 cross-hero in-use**: equip a Sword on Warrior → switch to Mage → Sword does NOT appear in Mage's inventory grid (it's in use on Warrior).
+7. **IA-3 cap**: spam drops to 60 / 60 → next drop auto-sells for half price, toast appears, MetaGoldLabel ticks up. Sell 5 items → header reads `(55 / 60)`, color reverts to white. Refill to 54 → 90% → header turns amber.
+8. **Save round-trip**: with locks, equipped, and capacity-near-cap state → quit and relaunch → all state persists.
+
+### Risks / known follow-ups
+- **`equip(hero_id, uid)` keeps hero_id arg** even though `find_by_uid(uid)` is now hero-agnostic. The arg now identifies WHICH hero is doing the equipping (writes to `hero_equipment[hero_id]`). Signature is correct but slightly confusing alongside the renamed dropping siblings.
+- **Auto-sell penalty (50%) is a guess.** Tunable via `_AUTO_SELL_RATIO`. If playtesters say "I lost a Legendary, that's brutal" — raise it (or block the auto-sell on Epic+ and let the ground drop persist).
+- **No ground-drop fallback** when inventory is full. PoE keeps drops on the ground; we auto-sell. If players miss the agency, switch to ground-persists by setting `_AUTO_SELL_RATIO = 0` and skipping the `add_meta_gold` call (drop is just discarded, with a toast).
+- **Cap bypass for starter gear** is intentional but subtle. If a future content rule grants more starter items than `MAX_INVENTORY_SIZE`, ensure_starter_gear would silently overrun the cap. Defense: clamp at append time, defer until that scale is real.
+- **`get_unequipped()` iterates every hero's equipment** every call — O(heroes × 6 + items). Negligible at 1-3 heroes; revisit if there's ever an "all heroes" view that calls this in a tight loop.
+- **No "transfer to stash" UI** because there is no stash — shared_inventory IS the stash. The mental model is still "every hero shares one bag." If players ask for a separate stash tab later, that's a future phase (split shared_inventory into "active inventory" + "stash" with a transfer UI).
+- **Hero-restricted items in inventory grid render normally today** — IA-1 just refuses the equip. Future polish: desaturate them per the plan's open design decision #1 (visible-but-not-equippable visual cue).
+
+---
+
+## 2026-04-29 — Reset / TestRange leak audit + fixes
+Player-visible bugs raised after the IA phase shipped: an extra (5th) tower slot at level start, and items not clearing after Reset Progress. Audit found both stem from incomplete `reset()` semantics across the autoloads, plus a debug-only Test Range scene that mutated global GameState with no restore. Five fixes shipped together.
+
+### Bugs
+1. **Extra tower slot**: [balance/test_range/TestRange.gd](balance/test_range/TestRange.gd) `_ready()` set `GameState.tower_slot_cap = 6` and `selected_tower_ids` to a 5-tower list (`tower_archer`, `tower_barracks`, `tower_mage`, `tower_artillery`, `tower_ice`, `""`). No `_exit_tree`, no save/restore. The comment claimed "doesn't persist" but **any subsequent `SaveManager.save_game()`** (selling an item, locking, etc.) wrote the polluted state to disk. After visiting Test Range once, the player's regular gameplay had 5 unlocked tower slots permanently.
+2. **Items survive Reset Progress**: `SaveManager.delete_save()` deleted the file and called `GameState.reset()`, but neither cleared `InventoryManager.shared_inventory`, `hero_equipment`, `starter_gear_granted`, or `SaveManager.next_uid`. Reset wiped stars + meta_gold + upgrades but left the inventory + equipment + UID counter intact. The next save fired (e.g. via the Equipment tab's `ensure_starter_gear` call) re-persisted all the "deleted" data.
+
+### Structural finding — `reset()` was incomplete on multiple axes
+[autoloads/GameState.gd `reset()`](autoloads/GameState.gd) didn't reset `tower_slot_cap`, `selected_tower_ids`, `hero_progress`, `level_best_times`, or `level_endless_best_scores`. These are all persisted player-progression fields — they should clear on Reset Progress like stars and upgrades do. Pre-existing gap; surfaced when TestRange started actively polluting one of them.
+
+### Fix 1 — `GameState.reset()` completed
+[autoloads/GameState.gd](autoloads/GameState.gd) — added the missing field clears:
+```gdscript
+tower_slot_cap = 4
+reset_loadout_to_default()       # selected_tower_ids → 4 launch towers
+hero_progress = {}
+level_best_times = {}
+level_endless_best_scores = {}
+```
+
+### Fix 2 — `InventoryManager.reset()` (new)
+[autoloads/InventoryManager.gd](autoloads/InventoryManager.gd) — new public method clearing every InventoryManager-owned field: `shared_inventory`, `hero_equipment`, `round_pickups`, `starter_gear_granted`. Emits `EventBus.inventory_changed` so any open UI re-renders empty.
+
+### Fix 3 — `SaveManager.delete_save()` wires up the full reset
+[autoloads/SaveManager.gd](autoloads/SaveManager.gd) — now calls `InventoryManager.reset()` and resets `next_uid = 1` after deleting the file and calling `GameState.reset()`. Reset Progress is now an actual full wipe.
+
+### Fix 4 — TestRange capture/restore
+[balance/test_range/TestRange.gd](balance/test_range/TestRange.gd) — added `_saved_*` fields capturing `tower_slot_cap`, `selected_tower_ids`, `current_mode`, `current_level_id` in `_ready()` before mutating, and restoring them in a new `_exit_tree()`. Sandbox state never leaks past scene exit. The `_saved_selected_tower_ids` uses `.duplicate()` to avoid by-reference aliasing — the saved snapshot stays pristine even though Test Range overwrites the live array.
+
+### Fix 5 — One-shot recovery for already-polluted saves
+[autoloads/SaveManager.gd](autoloads/SaveManager.gd) `load_game()` — after restoring `tower_slot_cap` from disk, checks if it's > 4. Slots 5–6 aren't unlocked through any progression yet, so any cap > 4 is by definition stale state from the prior TestRange leak. Repairs back to 4, prints `[SaveManager] repairing polluted tower_slot_cap=N → 4`, and trims `selected_tower_ids` to the first 4 entries (the player's original picks survive; the leaked `tower_ice` + placeholder get dropped).
+
+This means existing players don't have to use Reset Progress to fix Bug 1 — first launch after this update auto-corrects.
+
+### Files affected
+- [autoloads/GameState.gd](autoloads/GameState.gd) — `reset()` body
+- [autoloads/InventoryManager.gd](autoloads/InventoryManager.gd) — new `reset()`
+- [autoloads/SaveManager.gd](autoloads/SaveManager.gd) — `delete_save()` body, `load_game()` polluted-cap repair
+- [balance/test_range/TestRange.gd](balance/test_range/TestRange.gd) — capture/restore via `_ready` + new `_exit_tree`
+
+### Verification
+1. **Polluted save auto-repair**: existing save with `tower_slot_cap = 6` → boot game → console line `[SaveManager] repairing polluted tower_slot_cap=6 → 4`. WorldMap → start a level → build ring shows 4 unlocked slots.
+2. **TestRange sandbox**: WorldMap → Test Range button (debug-only) → confirm 5 towers in build ring inside Test Range. Exit Test Range → return to gameplay → build ring back to 4 slots. Quit + relaunch → still 4 slots (no leak to disk).
+3. **Reset Progress full wipe**: drop a few items, equip something, level up the hero → Reset Progress (Options gear) → confirm:
+   - Inventory empty (next visit to Equipment tab regrants starter gear).
+   - Hero level back to 1, XP 0.
+   - Best times / endless scores cleared on level cards.
+   - Tower loadout back to 4 launch towers.
+   - meta_gold back to 0 (was already correct; just confirming).
+4. **Save consistency**: after Reset Progress, immediately quit + relaunch → state stays cleared (no zombie data revives from auto-save side effects).
+
+### Risks / known follow-ups
+- The **polluted-cap repair** is keyed on `tower_slot_cap > 4` being equivalent to "stale state." The day a real progression unlock raises the cap (slot 5 via star threshold or IAP), this check needs to be relaxed — maybe `tower_slot_cap > GameState.get_unlocked_tower_slot_cap()` once that exists. Not urgent — no real cap-progression today.
+- TestRange `_exit_tree()` runs when the scene is freed by `SceneManager.goto`. If TestRange is freed in some unusual path (force-quit, crash mid-scene), the restore won't run and the leak returns. The polluted-cap repair (Fix 5) is the safety net for that case.
+- `InventoryManager.reset()` clears `starter_gear_granted` so the next `ensure_starter_gear` call regrants. Fine for normal Reset Progress flow. If some future code path calls `reset()` mid-session, the player would suddenly have starter items again — not an issue today since the only caller is `delete_save()`.
+- `next_uid = 1` after reset is harmless (UIDs are scoped per-session and per-save). If a future "import save" feature reads UIDs from external data, this might need re-thinking.
+
+---
+
+### Cross-feature link follow-up — `hero_selected` emit symmetry
+After the post-implementation review, a deeper cross-feature link audit caught one asymmetry: `GameState.selected_hero_id` was being set in two LoadoutScreen sites without emitting `EventBus.hero_selected`, breaking the contract HeroesHub now relies on. Fixed for symmetry / future-proofing:
+
+- [ui/LoadoutScreen.gd `_refresh_hero_info`](ui/LoadoutScreen.gd) (line 162 area): conditional emit — only fires when the value actually changes (the function runs on every `_refresh`, so unconditional emit would spam listeners with no-op signals). Pattern:
+  ```gdscript
+  var changed: bool = GameState.selected_hero_id != selected.hero_id
+  GameState.selected_hero_id = selected.hero_id
+  if changed:
+	  EventBus.hero_selected.emit(selected.hero_id)
+  ```
+- [ui/LoadoutScreen.gd `_on_hero_title_tapped`](ui/LoadoutScreen.gd) (line 193 area): unconditional emit — the cycle loop starts at `offset = 1` so the candidate is always different from the current selection. Mirrors the pattern used in `HeroesHub._on_switch_hero`.
+
+**Why now**: today there are no other UI screens listening to `hero_selected` while LoadoutScreen is alive (HeroesHub is freed by the time LoadoutScreen runs). So these emits are no-ops in current flows. But the contract should be symmetric: any code path that mutates `selected_hero_id` should emit, so future listeners (Stats / Skills tabs, etc.) don't silently miss switches done from the pre-battle screen. Cheap to add now, expensive to debug later.

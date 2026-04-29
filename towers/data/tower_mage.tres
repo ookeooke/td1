@@ -3,6 +3,48 @@
 [ext_resource type="Script" uid="uid://eg36tioogljo" path="res://towers/TowerData.gd" id="1_data"]
 [ext_resource type="PackedScene" uid="uid://b1td1magebolt" path="res://projectiles/MageBolt.tscn" id="2_proj"]
 [ext_resource type="PackedScene" uid="uid://i78jurl1exh5" path="res://towers/TowerCombat.tscn" id="3_scene"]
+[ext_resource type="Script" uid="uid://cbnmfnm6r853q" path="res://towers/TowerUpgradeData.gd" id="4_upg"]
+
+[sub_resource type="Resource" id="MageUpg_L2"]
+script = ExtResource("4_upg")
+upgrade_name = "Sage Tower"
+damage = 17.0
+attack_range = 380.0
+attack_speed = 0.85
+cost = 75
+sell_value = 60
+tint = Color(0.95, 0.85, 1.05, 1)
+
+[sub_resource type="Resource" id="MageUpg_L3"]
+script = ExtResource("4_upg")
+upgrade_name = "Wizard Tower"
+damage = 32.0
+attack_range = 415.0
+attack_speed = 1.0
+cost = 120
+sell_value = 110
+tint = Color(0.85, 0.7, 1.15, 1)
+
+[sub_resource type="Resource" id="MageBranch_Archmage"]
+script = ExtResource("4_upg")
+upgrade_name = "Archmage"
+damage = 28.0
+attack_range = 450.0
+attack_speed = 1.2
+cost = 140
+sell_value = 130
+tint = Color(0.95, 0.55, 1.25, 1)
+
+[sub_resource type="Resource" id="MageBranch_Necromancer"]
+script = ExtResource("4_upg")
+upgrade_name = "Necromancer"
+damage = 38.0
+attack_range = 400.0
+attack_speed = 0.85
+cost = 160
+sell_value = 140
+on_hit_stun_duration = 0.5
+tint = Color(0.45, 0.7, 0.55, 1)
 
 [resource]
 script = ExtResource("1_data")
@@ -19,5 +61,7 @@ sell_value = 50
 targets_flying = true
 aoe_radius = 150.0
 body_color = Color(0.45, 0.3, 0.75, 1)
+level_upgrades = Array[Resource]([SubResource("MageUpg_L2"), SubResource("MageUpg_L3")])
+level_3_branches = Array[Resource]([SubResource("MageBranch_Archmage"), SubResource("MageBranch_Necromancer")])
 projectile_scene = ExtResource("2_proj")
 encyclopedia_entry = "Slow magic bolts that splash in an area. Hits flying. Low single-target DPS, high crowd control."

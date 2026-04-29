@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="SoldierData" format=3 uid="uid://b1td1sold003"]
+
+[ext_resource type="Script" uid="uid://dvlbdetyl4lyd" path="res://soldiers/SoldierData.gd" id="1_data"]
+[ext_resource type="Resource" uid="uid://bw1p8lmshuvfh" path="res://soldiers/data/visual_soldier.tres" id="2_vis"]
+
+[resource]
+script = ExtResource("1_data")
+soldier_id = "soldier_veteran"
+soldier_name = "Veteran Guard"
+max_health = 50
+attack_damage = 10.0
+attack_speed = 1.1
+move_speed = 140.0
+armor = 0.25
+visual = ExtResource("2_vis")
+encyclopedia_entry = "Battle-hardened sergeants. Reinforced plate, heavier blades, decades of drill — they don't break."

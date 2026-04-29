@@ -67,13 +67,6 @@ size_flags_vertical = 0
 theme_override_constants/separation = 8
 alignment = 2
 
-[node name="CleanButton" type="Button" parent="SafeArea/TopRight"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(60, 60)
-layout_mode = 2
-text = "VFX"
-theme_override_font_sizes/font_size = 16
-
 [node name="SpeedButton" type="Button" parent="SafeArea/TopRight"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(80, 60)

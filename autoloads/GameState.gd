@@ -102,6 +102,10 @@ var unlocked_content: Array[String] = []       # explicitly unlocked (IAP, star-
 # Per-hero purchased talents: hero_id → Array[String] of talent_ids.
 var hero_talents: Dictionary = {}
 var endless_best_score: int = 0
+# Persistent meta-currency for the inventory sell loop. Earned by selling
+# unwanted items; future Town phases (Buy / Smith) will spend it. Distinct
+# from `gold`, which is per-run and resets every level.
+var meta_gold: int = 0
 # Per-level fastest completion time (campaign mode only). Seconds as float.
 # Only wall-time spent in the level is counted; pause doesn't add (Main.gd
 # accumulates process_delta which stops during PAUSE_MODE_STOP).
@@ -378,9 +382,18 @@ func reset() -> void:
 	_spent_stars_cache = 0
 	endless_best_score = 0
 	endless_leaderboard = []
+	meta_gold = 0
 	encyclopedia_unlocked = []
 	unlocked_content = []
 	hero_talents = {}
+	# 2026-04-29 audit fix — these were missing, leading to stale state
+	# surviving Reset Progress + persisted leakage from TestRange's
+	# tower_slot_cap = 6 / 5-tower override.
+	tower_slot_cap = 4
+	reset_loadout_to_default()  # selected_tower_ids back to the four launch towers
+	hero_progress = {}
+	level_best_times = {}
+	level_endless_best_scores = {}
 	reset_for_level()  # now reads zeroed caches → correct starting gold
 
 
@@ -396,6 +409,21 @@ func spend_gold(amount: int) -> bool:
 		return false
 	gold -= amount
 	EventBus.gold_changed.emit(gold)
+	return true
+
+
+func add_meta_gold(amount: int) -> void:
+	if amount == 0:
+		return
+	meta_gold += amount
+	EventBus.meta_gold_changed.emit(meta_gold)
+
+
+func spend_meta_gold(amount: int) -> bool:
+	if amount > meta_gold:
+		return false
+	meta_gold -= amount
+	EventBus.meta_gold_changed.emit(meta_gold)
 	return true
 
 

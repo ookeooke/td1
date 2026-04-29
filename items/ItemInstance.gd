@@ -14,6 +14,10 @@ var uid: String = ""
 var base_id: String = ""
 var rolled_affixes: Array = []   # Array of { "affix_id": String, "value": float }
 var found_at_wave: int = 0
+# IP-3 — player-set "do not sell" pin. Sell endpoint refuses locked items.
+# Defaults to false; round-trips through to_dict/from_dict; older saves
+# missing the field default to false (additive — no migration needed).
+var locked: bool = false
 
 
 func to_dict() -> Dictionary:
@@ -22,6 +26,7 @@ func to_dict() -> Dictionary:
 		"base_id": base_id,
 		"affixes": rolled_affixes.duplicate(true),
 		"found_at_wave": found_at_wave,
+		"locked": locked,
 	}
 
 
@@ -31,6 +36,7 @@ static func from_dict(d: Dictionary) -> ItemInstance:
 	inst.base_id = String(d.get("base_id", ""))
 	inst.rolled_affixes = (d.get("affixes", []) as Array).duplicate(true)
 	inst.found_at_wave = int(d.get("found_at_wave", 0))
+	inst.locked = bool(d.get("locked", false))
 	return inst
 
 

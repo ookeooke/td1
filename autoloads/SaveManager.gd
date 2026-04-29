@@ -14,7 +14,11 @@ extends Node
 # Never auto-saves mid-wave.
 
 const SAVE_PATH: String = "user://save.json"
-const SAVE_VERSION: int = 2
+# v3 — IA-2 collapsed `hero_inventories` (per-hero silos) into a single
+# `shared_inventory` array. Migration is implicit: `InventoryManager.from_save_dict`
+# accepts either format, flattening v2's nested dict into the flat pool on
+# load. No explicit migration step needed in this file.
+const SAVE_VERSION: int = 3
 
 # Phase 48 — monotonic UID counter for ItemInstance. Issued only by
 # issue_uid(); persisted in the save file so it survives restarts. Never
@@ -81,6 +85,10 @@ func save_game() -> void:
 		# endless high score. Additive; missing keys default to empty dicts.
 		"level_best_times": GameState.level_best_times,
 		"level_endless_best_scores": GameState.level_endless_best_scores,
+		# Persistent inventory-sell currency. Additive — older saves load it
+		# as 0 by default. No SAVE_VERSION bump needed since the field is
+		# pure-extension; existing keys are untouched.
+		"meta_gold": GameState.meta_gold,
 	}
 	# Merge InventoryManager's own slice — keeps the save dict flat while
 	# letting the manager own its shape (to_save_dict / from_save_dict).
@@ -116,14 +124,20 @@ func load_game() -> void:
 		push_warning("[SaveManager] save file root is not a Dictionary")
 		return
 	# Version check — future phases can branch on version for migration.
-	# v1 → v2 is purely additive (hero_progress, next_uid, inventory dicts
-	# default to empty/1). No destructive migration.
+	# v1 → v2: additive (hero_progress, next_uid, inventory dicts default to
+	#   empty/1). No destructive migration.
+	# v2 → v3: hero_inventories silos collapsed into shared_inventory. Migration
+	#   is implicit — InventoryManager.from_save_dict reads either shape and
+	#   flattens. uid uniqueness is preserved by the monotonic next_uid counter
+	#   so no collision risk.
 	var version: int = int(data.get("version", 0))
 	if version < 1:
 		push_warning("[SaveManager] unknown save version %d — ignoring" % version)
 		return
 	if version > SAVE_VERSION:
 		push_warning("[SaveManager] save version %d newer than code %d — continuing" % [version, SAVE_VERSION])
+	if version < 3:
+		print("[SaveManager] migrating save v%d → v3 (shared_inventory)" % version)
 	# Populate GameState from save data.
 	if data.has("level_stars") and data.level_stars is Dictionary:
 		# JSON stores keys as strings, values as floats. Convert to int.
@@ -175,6 +189,18 @@ func load_game() -> void:
 		for tid in data.selected_tower_ids:
 			restored.append(str(tid))
 		GameState.selected_tower_ids = restored
+	# 2026-04-29 audit fix — repair saves polluted by the prior TestRange leak
+	# (cap=6 + 5-tower loadout). Slots 5–6 aren't unlocked through any
+	# progression yet, so any cap > 4 is by definition stale state. Force back
+	# to 4; the player keeps their 4 chosen towers (truncates extras silently).
+	if GameState.tower_slot_cap > 4:
+		print("[SaveManager] repairing polluted tower_slot_cap=%d → 4" % GameState.tower_slot_cap)
+		GameState.tower_slot_cap = 4
+		# Trim selected_tower_ids to the first 4 entries — the player's
+		# original picks come back; tower_ice / placeholder entries leaked
+		# from TestRange get dropped.
+		if GameState.selected_tower_ids.size() > 4:
+			GameState.selected_tower_ids = GameState.selected_tower_ids.slice(0, 4)
 	# Phase 48 — hero_progress + inventory + UID counter.
 	if data.has("hero_progress") and data.hero_progress is Dictionary:
 		GameState.hero_progress = {}
@@ -187,6 +213,8 @@ func load_game() -> void:
 				}
 	if data.has("next_uid"):
 		next_uid = int(data.next_uid)
+	# Phase Sell — meta-gold (default 0 if save predates this field).
+	GameState.meta_gold = int(data.get("meta_gold", 0))
 	# Phase 48 — level metrics.
 	if data.has("level_best_times") and data.level_best_times is Dictionary:
 		GameState.level_best_times = {}
@@ -213,8 +241,15 @@ func issue_uid() -> String:
 
 
 func delete_save() -> void:
-	# For debug / reset-all. Not exposed to the player yet.
+	# Player-facing "Reset Progress" path. Wipes the file AND the in-memory
+	# state in every autoload that holds player progression — otherwise the
+	# next save would re-persist whatever was in memory at delete time.
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(SAVE_PATH)
 		print("[SaveManager] save file deleted")
 	GameState.reset()
+	InventoryManager.reset()
+	# Reset the monotonic UID counter so a fresh save starts at itm_1.
+	# (UID uniqueness within a session is still preserved — the counter only
+	# matters across sessions and it'll just count up again from 1.)
+	next_uid = 1

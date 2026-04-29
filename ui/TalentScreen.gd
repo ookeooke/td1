@@ -16,6 +16,8 @@ var _hero_data: Resource = null
 func _ready() -> void:
 	back_button.pressed.connect(_on_back)
 	switch_button.pressed.connect(_on_switch_hero)
+	# Refresh when the active hero changes (e.g. HeroesHub Loadout-tab switch).
+	EventBus.hero_selected.connect(_select_hero)
 	_select_hero(GameState.selected_hero_id)
 
 

@@ -97,13 +97,13 @@ bounty = 80
 [sub_resource type="Resource" id="Spawn_W5_LeftBasic"]
 script = ExtResource("3_spawn")
 enemy_scene = ExtResource("4_basic")
-count = 12
+count = 7
 interval = 0.6
 
 [sub_resource type="Resource" id="Spawn_W5_LeftArmor"]
 script = ExtResource("3_spawn")
 enemy_scene = ExtResource("8_armor")
-count = 4
+count = 3
 interval = 1.4
 start_delay = 3.0
 
@@ -111,7 +111,7 @@ start_delay = 3.0
 script = ExtResource("3_spawn")
 path_id = "right"
 enemy_scene = ExtResource("9_scout")
-count = 8
+count = 4
 interval = 0.5
 start_delay = 1.5
 
@@ -119,7 +119,7 @@ start_delay = 1.5
 script = ExtResource("3_spawn")
 path_id = "right"
 enemy_scene = ExtResource("8_armor")
-count = 3
+count = 2
 interval = 1.8
 start_delay = 6.0
 
@@ -127,7 +127,7 @@ start_delay = 6.0
 script = ExtResource("3_spawn")
 path_id = "top"
 enemy_scene = ExtResource("5_fly")
-count = 6
+count = 4
 start_delay = 2.5
 
 [sub_resource type="Resource" id="Spawn_W5_Healer"]

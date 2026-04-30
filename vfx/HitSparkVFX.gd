@@ -7,8 +7,8 @@ extends Node2D
 #   TRUE     → gold 4-point star
 # Fades over ~0.18 s.
 
-const LIFETIME: float = 0.18
-const REACH_FROM: float = 14.0
+const LIFETIME: float = 0.30
+const REACH_FROM: float = 22.0
 const REACH_TO: float = 2.0
 const SPREAD_RAD: float = 0.6
 

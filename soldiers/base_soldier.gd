@@ -39,6 +39,29 @@ var _attack_cooldown: float = 0.0
 var _lunge_dir: Vector2 = Vector2.ZERO
 var _lunge_t: float = 0.0
 var _hit_flash_t: float = 0.0
+# Animation pipeline parity with BaseHero/BaseEnemy. Drives walk-bob, flinch,
+# breath, hit-stop, direction-aware eyes, and per-soldier skin variation
+# through UnitVisualDrawer's ctx Dictionary.
+const FLINCH_DURATION: float = 0.12
+const FLINCH_DISTANCE: float = 5.0
+const HIT_STOP_DURATION: float = 0.05
+var _walk_t: float = 0.0
+var _walk_phase: float = 0.0
+# Stuck-in-MOVING fallback. If the soldier hasn't made meaningful progress
+# toward the rally for STUCK_TIMEOUT seconds, force the BLOCKING transition.
+# Prevents the walk-loop bug where overshoot oscillation around a navmesh
+# edge point kept the top-row soldiers in MOVING forever.
+const ARRIVE_THRESHOLD: float = 8.0
+const STUCK_TIMEOUT: float = 1.5
+var _stuck_t: float = 0.0
+var _stuck_last_pos: Vector2 = Vector2.ZERO
+var _flinch_t: float = 0.0
+var _flinch_dir: Vector2 = Vector2.ZERO
+var _breath_t: float = 0.0
+var _hit_stop_t: float = 0.0
+var _facing_dir: Vector2 = Vector2.RIGHT
+var _prev_pos: Vector2 = Vector2.ZERO
+var _skin_tint: Color = Color.WHITE
 
 # Kingdom-Rush charge: enemy this soldier is committed to chase after
 # spotting it in aggro_range. Cleared when the target dies or the soldier
@@ -51,6 +74,7 @@ var _charge_target: BaseEnemy = null
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
 const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
+const _DeathVFXScript := preload("res://vfx/DeathVFX.gd")
 var _ability_host: RefCounted = null
 
 @onready var melee_range: Area2D = $MeleeRange
@@ -78,6 +102,13 @@ func _ready() -> void:
 	if data != null and "abilities" in data:
 		for ability in data.abilities:
 			_ability_host.add_ability(ability)
+	# Per-soldier variation: phase + skin tint randomized at spawn so a
+	# squad of three doesn't march and look identical.
+	_walk_phase = randf() * TAU
+	var v_seed: float = randf()
+	var tint_amount: float = (v_seed - 0.5) * 0.10
+	_skin_tint = Color(1.0 + tint_amount, 1.0 + tint_amount * 0.6, 1.0 + tint_amount * 0.3, 1.0)
+	_prev_pos = global_position
 
 
 func setup(blocking_position: Vector2, flag_position: Vector2 = Vector2.INF) -> void:
@@ -104,11 +135,24 @@ func set_blocking_position(new_pos: Vector2, flag_position: Vector2 = Vector2.IN
 func change_state(new_state: int) -> void:
 	if state == new_state:
 		return
+	# Reset stuck-detector + walk accumulator on any transition into / out of
+	# MOVING so the next traversal starts clean and the previous walk-bob
+	# phase doesn't persist into the rest pose.
+	if new_state == State.MOVING:
+		_stuck_t = 0.0
+		_stuck_last_pos = global_position
+	if state == State.MOVING and new_state != State.MOVING:
+		_walk_t = 0.0
 	state = new_state
 
 
 func _physics_process(delta: float) -> void:
 	if state == State.DEAD or data == null:
+		return
+	# Hit-stop — universal freeze for a few frames after every hit. Matches
+	# BaseHero / BaseEnemy behavior so combat reads consistently.
+	if _hit_stop_t > 0.0:
+		_hit_stop_t = maxf(0.0, _hit_stop_t - delta)
 		return
 	if _lunge_t > 0.0:
 		_lunge_t = maxf(0.0, _lunge_t - delta)
@@ -116,20 +160,61 @@ func _physics_process(delta: float) -> void:
 	if _hit_flash_t > 0.0:
 		_hit_flash_t = maxf(0.0, _hit_flash_t - delta)
 		queue_redraw()
+	if _flinch_t > 0.0:
+		_flinch_t = maxf(0.0, _flinch_t - delta)
+		queue_redraw()
+	# Facing direction — sampled from world delta. Falls back to lunge dir
+	# when soldier is stationary so eyes still face the target while engaged.
+	var dp: Vector2 = global_position - _prev_pos
+	if dp.length_squared() > 0.05:
+		_facing_dir = dp.normalized()
+	elif _lunge_t > 0.0 and _lunge_dir.length_squared() > 0.001:
+		_facing_dir = _lunge_dir
+	_prev_pos = global_position
 	if _ability_host != null:
 		_ability_host.tick(delta)
+	# Walk-bob accumulator — ticks in any state where we're actually moving
+	# (MOVING, CHARGING, RETURNING). Idle states use breath instead.
+	var moving_state: bool = state == State.MOVING or state == State.CHARGING or state == State.RETURNING
+	if moving_state and data != null and data.visual != null:
+		var v: UnitVisualData = data.visual
+		if v.walk_bob_amplitude > 0.0 or v.walk_squash > 0.0:
+			_walk_t += delta
+			queue_redraw()
+	elif state == State.BLOCKING:
+		_breath_t += delta
+		queue_redraw()
 	match state:
 		State.MOVING:
 			# Direct straight-line motion toward the assigned rally slot.
 			# Rally slot positions are snapped to navmesh by TowerBarracks, so
 			# soldiers always arrive on walkable terrain. No nav-agent routing.
 			var to_target: Vector2 = _blocking_position - global_position
-			if to_target.length() < 3.0:
+			var dist: float = to_target.length()
+			var step: float = data.move_speed * delta
+			# Arrive when within the threshold OR when the next frame would
+			# overshoot the target (prevents oscillation around the slot).
+			if dist <= ARRIVE_THRESHOLD or dist <= step:
+				global_position = _blocking_position
 				velocity = Vector2.ZERO
 				change_state(State.BLOCKING)
 			else:
 				velocity = to_target.normalized() * data.move_speed
-			move_and_slide()
+				move_and_slide()
+				# Stuck-detection: if the soldier hasn't moved much since the
+				# last sample and is still in MOVING, count up. Force-block
+				# after STUCK_TIMEOUT so a slot the soldier physically can't
+				# reach (snapped onto an edge, etc.) doesn't loop forever.
+				if global_position.distance_squared_to(_stuck_last_pos) < 0.25:
+					_stuck_t += delta
+					if _stuck_t >= STUCK_TIMEOUT:
+						global_position = _blocking_position
+						velocity = Vector2.ZERO
+						change_state(State.BLOCKING)
+						_stuck_t = 0.0
+				else:
+					_stuck_t = 0.0
+				_stuck_last_pos = global_position
 		State.BLOCKING:
 			# Idle at rally. Anything in melee_range already gets engaged
 			# (covers enemies that wandered right into us); otherwise scan
@@ -350,6 +435,25 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 	current_health -= int(ceil(final))
 	if final > 0.0:
 		_hit_flash_t = HIT_FLASH_DURATION
+		# Hit-stop on both this soldier and the source.
+		_hit_stop_t = HIT_STOP_DURATION
+		if source != null and is_instance_valid(source) and "_hit_stop_t" in source:
+			source._hit_stop_t = HIT_STOP_DURATION
+		# Flinch — recoil away from damage source.
+		_flinch_t = FLINCH_DURATION
+		var have_src_pos: bool = false
+		var src_pos: Vector2 = Vector2.ZERO
+		if source != null and is_instance_valid(source) and source is Node2D:
+			src_pos = (source as Node2D).global_position
+			have_src_pos = true
+		if have_src_pos:
+			var away: Vector2 = global_position - src_pos
+			if away.length_squared() > 0.001:
+				_flinch_dir = away.normalized()
+			else:
+				_flinch_dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 0.0)).normalized()
+		else:
+			_flinch_dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 0.0)).normalized()
 		EventBus.hit_landed.emit(self, source, final, type)
 		var parent: Node = get_tree().current_scene
 		if parent != null:
@@ -368,6 +472,13 @@ func _die() -> void:
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_DEATH, {})
 	EventBus.soldier_died.emit(self)
+	# Impact ring + dust puff at fall point — same DeathVFX enemies use,
+	# colored from the soldier's body so the burst reads as "this guy fell".
+	var parent: Node = get_tree().current_scene
+	if parent != null and data != null and data.visual != null:
+		var ring_color: Color = data.visual.body_color
+		var ring_radius: float = data.visual.radius if data.visual.shape == UnitVisualData.Shape.CIRCLE else maxf(data.visual.body_size.x, data.visual.body_size.y) * 0.5
+		_DeathVFXScript.spawn(parent, ring_color, ring_radius, global_position)
 	# Fall-over death — tip the body ~90° and fade out over 0.4 s before
 	# freeing. Tween inherits pause mode so tactical pause freezes it.
 	var tilt_dir: float = 1.0 if randf() < 0.5 else -1.0
@@ -380,21 +491,67 @@ func _die() -> void:
 
 
 func _draw() -> void:
-	var off: Vector2 = _lunge_offset()
+	# 1. Ground shadow — anchored under feet, ignores body offset/scale.
+	if data != null and data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
+		UnitVisualDrawer.draw_ground_shadow(self, data.visual)
+
+	# 2. Compose body offset + scale.
+	var lunge_off: Vector2 = _lunge_offset()
+	var body_offset: Vector2 = lunge_off
+	var body_scale: Vector2 = Vector2.ONE
+	var moving_state: bool = state == State.MOVING or state == State.CHARGING or state == State.RETURNING
+	if data != null and data.visual != null and moving_state:
+		var anim: Dictionary = UnitVisualDrawer.compute_walk_anim(data.visual, _walk_t, _walk_phase)
+		body_offset += anim.offset
+		body_scale = anim.scale
+	if _flinch_t > 0.0:
+		var fa: float = _flinch_t / FLINCH_DURATION
+		body_offset += _flinch_dir * FLINCH_DISTANCE * fa
+	if state == State.BLOCKING:
+		var breath: float = sin(_breath_t * 2.5) * 0.025
+		body_scale.x *= 1.0 + breath
+		body_scale.y *= 1.0 - breath
+	# Impact squash on attack commit — peaks around the strike frame.
+	if _lunge_t > 0.0:
+		var lt: float = 1.0 - (_lunge_t / LUNGE_DURATION)
+		if lt > 0.30 and lt < 0.65:
+			var sq: float = sin((lt - 0.30) / 0.35 * PI) * 0.18
+			body_scale.x *= 1.0 + sq
+			body_scale.y *= 1.0 - sq
+
+	# 3. Build ctx for the drawer.
+	var ctx: Dictionary = {}
 	if data != null and data.visual != null:
-		UnitVisualDrawer.draw_unit(self, data.visual, off)
+		ctx["skin_tint"] = _skin_tint
+		ctx["face"] = _facing_dir
+		var max_hp: int = _effective_max_hp if _effective_max_hp > 0 else (data.max_health if data != null else 1)
+		if max_hp > 0 and float(current_health) / float(max_hp) < 0.30:
+			ctx["low_hp"] = true
+		# Wind-up / strike-arc derived from lunge curve, mirroring BaseHero.
+		if _lunge_t > 0.0:
+			var t01: float = 1.0 - (_lunge_t / LUNGE_DURATION)
+			if t01 < 0.30:
+				ctx["wind_t"] = clampf(t01 / 0.30, 0.0, 1.0)
+			else:
+				ctx["strike_t"] = clampf((t01 - 0.30) / 0.65, 0.0, 1.0)
+				ctx["strike_dir"] = _lunge_dir
+
+	# 4. Body draw.
+	if data != null and data.visual != null:
+		var walk_t_arg: float = _walk_t if moving_state else -1.0
+		UnitVisualDrawer.draw_unit(self, data.visual, body_offset, body_scale, walk_t_arg, _walk_phase, ctx)
 		if _hit_flash_t > 0.0:
-			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, off)
+			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, body_offset, body_scale)
 		if _lunge_t > 0.0:
 			var t01: float = 1.0 - (_lunge_t / LUNGE_DURATION)
 			UnitVisualDrawer.draw_swing_arc_trail(self, data.visual, _lunge_dir, t01)
 	else:
 		# Legacy fallback.
-		if off != Vector2.ZERO:
-			draw_set_transform(off, 0.0, Vector2.ONE)
+		if body_offset != Vector2.ZERO:
+			draw_set_transform(body_offset, 0.0, body_scale)
 		draw_rect(Rect2(-15, -15, 30, 30), Color(0.8, 0.8, 0.2))
 		draw_rect(Rect2(-15, -15, 30, 30), Color(0.3, 0.25, 0.05), false, 3.0)
-		if off != Vector2.ZERO:
+		if body_offset != Vector2.ZERO:
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_health_bar()
 

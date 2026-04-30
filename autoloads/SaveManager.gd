@@ -18,7 +18,10 @@ const SAVE_PATH: String = "user://save.json"
 # `shared_inventory` array. Migration is implicit: `InventoryManager.from_save_dict`
 # accepts either format, flattening v2's nested dict into the flat pool on
 # load. No explicit migration step needed in this file.
-const SAVE_VERSION: int = 3
+# v4 — Phase 49 added grid placement (grid_row/col on ItemInstance, footprint
+# on ItemBase). Migration is implicit: legacy items deserialize at -1/-1 and
+# InventoryManager._reflow_unplaced() lays them onto the grid on load.
+const SAVE_VERSION: int = 4
 
 # Phase 48 — monotonic UID counter for ItemInstance. Issued only by
 # issue_uid(); persisted in the save file so it survives restarts. Never
@@ -61,6 +64,14 @@ func _try_unlock_next_level(_completed_level_id: String) -> void:
 
 
 func save_game() -> void:
+	# 2026-04-29 audit fix — refuse to write while a Test Range run is active.
+	# Test Range mutates GameState (tower_slot_cap = 6, 5-tower loadout, etc.)
+	# for sandbox convenience; without this guard, any save trigger during
+	# Test Range — e.g. encyclopedia_unlocked when a new enemy is first seen —
+	# would persist the polluted state to disk. _exit_tree restores in-memory
+	# state but can't undo a save that already wrote.
+	if GameState.current_mode == "test_range":
+		return
 	var data: Dictionary = {
 		"version": SAVE_VERSION,
 		"level_stars": GameState.level_stars,
@@ -138,6 +149,8 @@ func load_game() -> void:
 		push_warning("[SaveManager] save version %d newer than code %d — continuing" % [version, SAVE_VERSION])
 	if version < 3:
 		print("[SaveManager] migrating save v%d → v3 (shared_inventory)" % version)
+	if version < 4:
+		print("[SaveManager] migrating save v%d → v4 (grid placement)" % version)
 	# Populate GameState from save data.
 	if data.has("level_stars") and data.level_stars is Dictionary:
 		# JSON stores keys as strings, values as floats. Convert to int.

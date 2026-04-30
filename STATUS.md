@@ -1,6 +1,6 @@
 # STATUS
 
-**Last shipped**: Reset / TestRange leak audit + fixes (2026-04-29) — closed two player-visible bugs (extra tower slot at level start, items surviving Reset Progress) by completing `GameState.reset()`, adding `InventoryManager.reset()`, wiring both into `SaveManager.delete_save()`, sandboxing TestRange's GameState mutations with capture/restore, and adding a one-shot polluted-cap repair on save load. See SESSIONS.md "2026-04-29 — Reset / TestRange leak audit + fixes".
+**Last shipped**: Wave pacing rework (KR-style hybrid) — first wave countdown bumped to 60s for setup time, inter-wave grace bumped to 20s, Send Wave button blinks during countdown to advertise itself, early-call bonus is now 1g per second saved (scales with the longer countdowns). See SESSIONS.md "2026-04-29 — Wave pacing rework".
 
 **Currently working on**:
 - WorldMap UI overhaul series (research doc: `~/.claude/plans/lets-make-deep-research-robust-sunbeam.md`). Phase A shipped; Phases B–F queued.

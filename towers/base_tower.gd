@@ -44,6 +44,7 @@ var _next_buff_threshold: int = 0
 # set to TowerAnim.UPGRADE_DURATION on every upgrade / branch choice.
 # _aim_angle lerps toward the current target so the barrel tracks smoothly.
 const _TowerAnimScript := preload("res://systems/TowerAnim.gd")
+const _TowerSilhouetteScript := preload("res://systems/TowerSilhouette.gd")
 const AIM_LERP_SPEED: float = 12.0
 var _construct_t: float = 0.0
 var _upgrade_t: float = 0.0
@@ -443,39 +444,27 @@ func _draw() -> void:
 	_TowerAnimScript.draw_construct_ring(self, _construct_t)
 
 	# Combined uniform scale — construction grow × upgrade pulse × recoil.
+	# Base size bump: silhouette art reads better at +18 % vs the legacy
+	# 55 px circle the old draw used. Build / upgrade / recoil multiply on top.
+	const BASE_SIZE: float = 1.18
 	var s_construct: float = _TowerAnimScript.construct_scale(_construct_t)
 	var s_upgrade: float = _TowerAnimScript.upgrade_scale(_upgrade_t)
 	var s_recoil: float = 1.0 - (0.12 * clampf(_recoil_t / 0.08, 0.0, 1.0))
-	var s: float = s_construct * s_upgrade * s_recoil
+	var s: float = s_construct * s_upgrade * s_recoil * BASE_SIZE
 
-	# Body — scale-only transform.
+	# Tower silhouette — per-type procedural identity (archer / mage / ice /
+	# artillery / barracks fall-back). Owns the entire body + aimable part
+	# so the player can read tower type at a glance instead of seeing a
+	# generic colored circle.
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
-	var base_body: Color = data.body_color if data != null else Color(0.35, 0.45, 0.75)
 	var ov: Resource = _level_override()
-	if ov != null:
-		base_body = base_body * ov.tint
-	draw_circle(Vector2.ZERO, 55.0, base_body)
-	draw_arc(Vector2.ZERO, 55.0, 0, TAU, 28, Color(0.08, 0.1, 0.25), 6.25)
+	var tint: Color = ov.tint if ov != null else Color.WHITE
+	var tower_id: String = data.tower_id if data != null else ""
+	_TowerSilhouetteScript.draw(self, tower_id, level, branch_idx, tint, _aim_angle)
 
-	# Barrel — drawn in a rotated + scaled coordinate frame so it sticks out
-	# toward the target. barrel_length == 0 disables (e.g. support towers).
-	if data != null and data.barrel_length > 0.0:
-		draw_set_transform(Vector2.ZERO, _aim_angle, Vector2(s, s))
-		var half_w: float = data.barrel_width * 0.5
-		var inset: float = data.barrel_inset
-		var barrel_rect: Rect2 = Rect2(inset, -half_w, data.barrel_length, data.barrel_width)
-		var barrel_col: Color = Color(base_body.r * 0.6, base_body.g * 0.6, base_body.b * 0.6, 1.0)
-		draw_rect(barrel_rect, barrel_col)
-		draw_rect(barrel_rect, Color(0.08, 0.1, 0.25), false, 4.0)
-		# Muzzle cap — small dark disc at the tip so the barrel reads as a
-		# proper opening rather than a floating bar.
-		var tip_local: Vector2 = Vector2(inset + data.barrel_length, 0.0)
-		draw_circle(tip_local, half_w * 0.7, Color(0.08, 0.1, 0.25))
-
-	# Level pips — back in scale-only space so they ride the body, not the barrel.
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
+	# Level pips — small gold dots above the silhouette indicating tower level.
 	for i in level:
-		draw_circle(Vector2(-15.0 + i * 15.0, -70.0), 5.5, Color(1.0, 0.85, 0.2))
+		draw_circle(Vector2(-15.0 + i * 15.0, -82.0), 5.5, Color(1.0, 0.85, 0.2))
 
 	# Reset to identity for post-body VFX.
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

@@ -7,10 +7,10 @@
 script = ExtResource("1_data")
 enemy_id = "enemy_armored"
 enemy_name = "Armored Orc"
-max_health = 20
-move_speed = 112.0
-armor = 0.3
-gold_worth = 10
+max_health = 35
+move_speed = 95.0
+armor = 0.45
+gold_worth = 6
 xp_worth = 12
 attack_damage = 4.0
 visual = ExtResource("2_vis")

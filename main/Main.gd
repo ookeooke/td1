@@ -28,7 +28,23 @@ func _ready() -> void:
 	if GameState.current_mode == "endless":
 		WaveManager.start_endless(level)
 	else:
-		WaveManager.start(LEVEL1_WAVES, level)
+		# Look up early_call_window for this level from level_list.tres so the
+		# Send-Wave button is bounded per the level's authored design.
+		WaveManager.start(LEVEL1_WAVES, level, _resolve_early_call_window())
+
+
+# Read early_call_window_sec from the LevelNodeData matching current_level_id.
+# Falls back to 10s default if the registry / level can't be found.
+func _resolve_early_call_window() -> float:
+	var registry: Resource = load("res://ui/world_map/level_list.tres")
+	if registry == null:
+		return 10.0
+	# `.levels` resolves via the LevelList script attached to the resource.
+	var levels: Array = registry.levels
+	for entry in levels:
+		if entry is LevelNodeData and entry.level_id == GameState.current_level_id:
+			return entry.early_call_window_sec
+	return 10.0
 
 
 func _process(delta: float) -> void:

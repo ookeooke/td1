@@ -22,4 +22,8 @@ enum Rarity { COMMON, MAGIC, RARE, EPIC, LEGENDARY }
 @export var allowed_affix_pools: Array[String] = []    # pool_id references
 @export var drop_weight: float = 1.0                   # 0 = excluded from random tables
 @export var min_wave: int = 1
+# Inventory footprint in grid cells. Defaults to 1×1 — existing .tres files
+# need no edit. Mark larger items (e.g. great-sword 1×2) by overriding.
+@export var grid_width: int = 1
+@export var grid_height: int = 1
 @export_multiline var description: String = ""

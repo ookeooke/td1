@@ -22,6 +22,7 @@ var _dragging_flag: bool = false
 # share the same feel on placement / upgrade. Decremented in _process (no
 # _physics_process on barracks — _process is fine for visual-only ticks).
 const _TowerAnimScript := preload("res://systems/TowerAnim.gd")
+const _TowerSilhouetteScript := preload("res://systems/TowerSilhouette.gd")
 var _construct_t: float = 0.0
 var _upgrade_t: float = 0.0
 # Tap-to-place mode entered from the TowerSpotMenu's "Move Rally" button.
@@ -403,21 +404,23 @@ func _draw() -> void:
 	_TowerAnimScript.draw_construct_ring(self, _construct_t, 40.0)
 	# Build + upgrade scale stack. Applied to the body only — flag sits at its
 	# own world offset so scaling it would drift it outward from the barracks.
+	# Base size bump matches base_tower so all tower types read at the same
+	# scale relative to the spot footprint.
+	const BASE_SIZE: float = 1.18
 	var s_construct: float = _TowerAnimScript.construct_scale(_construct_t)
 	var s_upgrade: float = _TowerAnimScript.upgrade_scale(_upgrade_t)
-	var s: float = s_construct * s_upgrade
+	var s: float = s_construct * s_upgrade * BASE_SIZE
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
-	# Tower body — tint per upgrade level for visual read.
-	var body_color: Color = Color(0.55, 0.35, 0.2)
+	# Procedural barracks silhouette — wood at L1, stone walls + windows at
+	# L2, watchtower + battlements at L3. Banner sways automatically inside
+	# draw_barracks. Aim angle isn't relevant for barracks (no projectile).
 	var ov: Resource = _level_override()
-	if ov != null:
-		body_color = body_color * ov.tint
-	draw_rect(Rect2(-50, -50, 100, 100), body_color)
-	draw_rect(Rect2(-50, -50, 100, 100), Color(0.2, 0.1, 0.05), false, 6.25)
-	# Level pips at the top so upgrade state is visible at a glance.
+	var tint: Color = ov.tint if ov != null else Color.WHITE
+	var tower_id: String = data.tower_id if data != null else "tower_barracks"
+	_TowerSilhouetteScript.draw(self, tower_id, level, -1, tint, 0.0)
+	# Level pips above the silhouette.
 	for i in level:
-		draw_circle(Vector2(-15.0 + i * 15.0, -60.0), 5.0, Color(1.0, 0.85, 0.2))
-	draw_line(Vector2(-50, -20), Vector2(50, -20), Color(0.2, 0.1, 0.05), 3.75)
+		draw_circle(Vector2(-15.0 + i * 15.0, -82.0), 5.0, Color(1.0, 0.85, 0.2))
 	# Back to identity so the flag + upgrade ring aren't dragged by the scale.
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	# Rally flag at _flag_offset (pole + cloth)

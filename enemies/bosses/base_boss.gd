@@ -66,12 +66,17 @@ func _transition_to_phase(idx: int) -> void:
 		_phase_damage_mult = 1.0
 		_phase_speed_mult = 1.0
 		_phase_tint = Color.WHITE
+		modulate = Color.WHITE
 		queue_redraw()
 		return
 	var phase: Resource = boss_phases[idx]
 	_phase_damage_mult = phase.damage_mult
 	_phase_speed_mult = phase.speed_mult
 	_phase_tint = phase.tint
+	# Apply phase tint via modulate so the shared drawer (multi-part body)
+	# inherits it without needing a tint-aware signature. Health bar /
+	# status rings absorb the same tint, which is acceptable.
+	modulate = _phase_tint
 	# Push new phase abilities.
 	if _ability_host != null:
 		for a in phase.abilities:
@@ -106,29 +111,17 @@ func _combat_tick(delta: float) -> void:
 
 
 func _draw() -> void:
-	if data != null and data.visual != null:
-		# Data-driven body with multiplicative phase tint.
-		var v: Resource = data.visual
-		var tinted: Color = v.body_color * _phase_tint
-		draw_circle(Vector2.ZERO, v.radius, tinted)
-		draw_arc(Vector2.ZERO, v.radius, 0, TAU, 32, v.outline_color, v.outline_width)
-		UnitVisualDrawer._draw_accent(self, v)
-		var ring_r: float = v.radius + 6.0
-		if _effects.has("slow"):
-			draw_arc(Vector2.ZERO, ring_r, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
-		if _effects.has("stun"):
-			draw_arc(Vector2.ZERO, ring_r + 4.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)
-	else:
-		# Legacy fallback: larger body with phase tint.
-		var body_color: Color = Color(0.6, 0.15, 0.15) * _phase_tint
-		draw_circle(Vector2.ZERO, BOSS_BODY_RADIUS, body_color)
-		draw_arc(Vector2.ZERO, BOSS_BODY_RADIUS, 0, TAU, 32, Color(0.2, 0.05, 0.05), 3.0)
-		draw_line(Vector2(-10, -BOSS_BODY_RADIUS), Vector2(-6, -BOSS_BODY_RADIUS - 10), Color(0.9, 0.8, 0.2), 2.5)
-		draw_line(Vector2(10, -BOSS_BODY_RADIUS), Vector2(6, -BOSS_BODY_RADIUS - 10), Color(0.9, 0.8, 0.2), 2.5)
-		if _effects.has("slow"):
-			draw_arc(Vector2.ZERO, 28.0, 0, TAU, 28, Color(0.2, 0.7, 1.0), 3.0)
-		if _effects.has("stun"):
-			draw_arc(Vector2.ZERO, 32.0, 0, TAU, 28, Color(1.0, 0.95, 0.2), 3.0)
+	# Delegate the full body pipeline (shadow, slow-ghost, walk-bob, breath,
+	# flinch, hit flash, stun stars, status rings, attack telegraph) to
+	# BaseEnemy._draw. Boss-specific HP bar comes from the overridden
+	# _draw_health_bar() below. Phase tint propagates via self.modulate
+	# (set in _check_phase_transition).
+	super._draw()
+
+
+# Override BaseEnemy._draw_health_bar so the always-visible, larger boss
+# bar replaces the regular hidden-at-full-HP bar without duplicating draws.
+func _draw_health_bar() -> void:
 	_draw_boss_health_bar()
 
 
@@ -139,7 +132,13 @@ func _draw_boss_health_bar() -> void:
 		return
 	var zs: float = _get_zoom_scale()
 	var bar_size: Vector2 = BOSS_HP_BAR_SIZE * zs
-	var bar_y: float = BOSS_HP_BAR_Y * zs
+	# Boss has a head above the torso when race != NONE — push the bar above
+	# both. minf picks the more-negative (higher on screen) value.
+	var bar_y_local: float = BOSS_HP_BAR_Y
+	if data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
+		var head_top: float = data.visual.head_y_offset * data.visual.radius - data.visual.head_radius_ratio * data.visual.radius
+		bar_y_local = minf(BOSS_HP_BAR_Y, head_top - 14.0)
+	var bar_y: float = bar_y_local * zs
 	var pct: float = clampf(float(current_health) / float(data.max_health), 0.0, 1.0)
 	var origin: Vector2 = Vector2(-bar_size.x * 0.5, bar_y)
 	draw_rect(Rect2(origin, bar_size), Color(0.12, 0.12, 0.12))

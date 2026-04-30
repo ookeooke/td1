@@ -1581,6 +1581,74 @@ UI surface ([ui/EquipmentScreen.gd](ui/EquipmentScreen.gd)): `RightTitle` change
 - **Auto-sell penalty (50%) is a guess.** Tunable via `_AUTO_SELL_RATIO`. If playtesters say "I lost a Legendary, that's brutal" — raise it (or block the auto-sell on Epic+ and let the ground drop persist).
 - **No ground-drop fallback** when inventory is full. PoE keeps drops on the ground; we auto-sell. If players miss the agency, switch to ground-persists by setting `_AUTO_SELL_RATIO = 0` and skipping the `add_meta_gold` call (drop is just discarded, with a toast).
 - **Cap bypass for starter gear** is intentional but subtle. If a future content rule grants more starter items than `MAX_INVENTORY_SIZE`, ensure_starter_gear would silently overrun the cap. Defense: clamp at append time, defer until that scale is real.
+
+### Follow-up audit fixes (same-day code review)
+A second pass after the reset/TestRange fixes shipped found three more real bugs and one UX wart. All four addressed:
+
+**Bug A — TestRange polluted-save loophole**: even with `_exit_tree` restoring in-memory state, `EventBus.encyclopedia_entry_unlocked` (fired when Test Range spawned a not-yet-encountered enemy) triggers `SaveManager._on_encyclopedia_unlocked → save_game()` which wrote the polluted `tower_slot_cap = 6` + 5-tower loadout to disk before the restore could happen. Fix 5's polluted-cap repair on next load truncates `selected_tower_ids` to first 4, but that **destroys the player's customized tower loadout** (replaces it with TestRange's `[archer, barracks, mage, artillery]`). Closed at the source: [autoloads/SaveManager.gd `save_game()`](autoloads/SaveManager.gd) early-returns when `GameState.current_mode == "test_range"`. Test Range is now write-isolated — no signal can leak its sandbox state into the save file.
+
+**Bug B — same uid equippable on multiple heroes**: `equip(hero_id, uid)` wrote `hero_equipment[hero_id][slot] = uid` without clearing the same uid from any OTHER hero's slot. After IA-2 (shared pool, single uid universe), this broke the "an item is in-use globally when equipped" invariant. Latent today (single hero) but would manifest the day a 2nd hero is unlocked. Fixed in [autoloads/InventoryManager.gd](autoloads/InventoryManager.gd): new private helper `_unequip_uid_anywhere(uid, keep_hero_id)` walks every hero's slots and clears matches except for the equipping hero, emitting `item_unequipped` per cleared slot. `equip()` calls this before writing the new slot.
+
+**Bug C — `_ensure_equip_dict("")` pollutes hero_equipment**: passing an empty hero_id created `hero_equipment[""] = {0: "", ...}` which then round-tripped through the save file as a junk entry. Latent today (only `selected_hero_id = "hero_warrior"` paths reach this), but defense-in-depth: [autoloads/InventoryManager.gd `_ensure_equip_dict`](autoloads/InventoryManager.gd) early-returns an empty dict (caller's read sees no equipment) without touching the hero_equipment dict.
+
+**Improvement — details panel preserved during sell mode**: `_refresh()` fires on every sell-arm tap to re-modulate icons. Each call reset `details_label` to "Hover an item to see its details", wiping any context the player had just long-pressed to read. [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) `_refresh()` now skips that reset when `_sell_mode` is on — the hover/long-press handler owns the label in sell mode.
+
+### Files affected (follow-up)
+- [autoloads/SaveManager.gd](autoloads/SaveManager.gd) — `save_game()` test-range guard
+- [autoloads/InventoryManager.gd](autoloads/InventoryManager.gd) — `_unequip_uid_anywhere`, `equip()` calls it, `_ensure_equip_dict` empty-id guard
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) — `_refresh()` preserves details in sell mode
+
+### Verification (follow-up)
+1. **Bug A**: Customize tower loadout (e.g. swap Barracks → Ice). WorldMap → Test Range → spawn Boss1 (or any new enemy). Quit + relaunch → tower loadout still has Ice. (Pre-fix: would revert to `[archer, barracks, mage, artillery]`.)
+2. **Bug B**: (single-hero today, can't reproduce until 2nd hero ships) — when a 2nd hero is unlocked, equipping a shared item on Mage should remove it from Warrior's slot automatically.
+3. **Bug C**: not directly testable today (no path sets selected_hero_id = "") — defensive only.
+4. **Improvement 4**: enter sell mode → long-press an item → details panel populates → tap that item to arm → details panel still shows the item's stats (didn't reset to "Hover an item...").
+
+### What's still flagged but not fixed
+- `add_to_round` emits `item_picked_up` for items that may auto-sell on commit_round (cosmetic, rare today).
+- `get_shared_inventory()` is dead code (callers bypass via `InventoryManager.shared_inventory.size()` direct access). Leave or delete.
+- Batch sell triggers N grid rebuilds (negligible at small scale).
+- `delete_save` doesn't emit `gold_changed` / `meta_gold_changed` (only matters if any future screen tries to live-display these without re-instantiating).
+
+---
+
+## 2026-04-29 — Wave pacing rework (KR-style hybrid)
+Player flagged that the first wave starts on a short auto-countdown without giving them time to plan tower placement, and asked for KR-style "click Send Wave to start" with a blinking button as the affordance. Picked **Option C** (long fallback timer + Send Wave as the primary call, no hard wait): engaged players get agency + gold bonus by clicking; AFK players still progress, just slowly. No code-shape change to WaveManager — just timing tweaks + a HUD animation.
+
+### What changed
+- [waves/WaveData.gd](waves/WaveData.gd): default `countdown` bumped 3.0 → **20.0s** (inter-wave grace). Existing `level1_waves.tres` waves don't override the field, so the bump propagates automatically.
+- [autoloads/WaveManager.gd](autoloads/WaveManager.gd):
+  - New constant `FIRST_WAVE_COUNTDOWN: float = 60.0` — generous setup time at level start so the player can read the map + place towers.
+  - `_begin_next_wave()` now uses `FIRST_WAVE_COUNTDOWN` instead of `wave.countdown` when `_wave_index == 0`. Subsequent waves use the wave's authored countdown (20s default).
+  - `call_early_wave()` reward formula updated by the user during this session: now **1 second saved = 1 gold** (was a flat-cap 10g formula). Scales correctly with the longer countdowns — a full 60s first-wave call yields 60g, enough to buy an early tower upgrade.
+- [ui/HUD.gd](ui/HUD.gd):
+  - New `_send_wave_blink: Tween` member.
+  - `_start_send_wave_blink()` runs an infinite looped tween pulsing the SendWaveButton's modulate alpha between 1.0 and 0.45 (warm yellow tint for color identity), 0.55s each direction with sine ease. Uses `TWEEN_PAUSE_PROCESS` so blinking continues during tactical pause.
+  - `_stop_send_wave_blink()` kills the tween and restores `Color.WHITE`.
+  - Wired into `_on_countdown_started` (start blink) and `_hide_countdown` (stop blink). `_hide_countdown` is already called from `_on_send_wave_pressed` / `_on_wave_launched` / `_on_early_wave`, so the blink stops on every codepath that ends a countdown.
+
+### Behavior summary
+
+| Moment | Before | After |
+|---|---|---|
+| Level start → first wave | Auto-starts after 3s | Auto-starts after **60s**; Send Wave button blinks the whole time, click skips for 60g |
+| Between waves | Auto-starts after 3s | Auto-starts after **20s**; blink + click for ~20g |
+| Send Wave bonus formula | `ceil(fraction × 10)` (capped 10g) | `ceil(seconds_remaining)` (1g per second saved) |
+| AFK player | Wave still starts | Wave still starts (just later) |
+
+### Verification
+1. Level start: countdown reads ~60s, Send Wave button visible and pulses smoothly.
+2. Click Send Wave → wave starts, +60g if clicked at full grace, less if waited.
+3. Don't click → wave auto-starts at 0s. Toast/feedback should still fire (existing flow).
+4. Between waves: countdown ~20s, button blinks again, +20g max bonus.
+5. Tactical pause during countdown: blink continues (visual feedback survives pause).
+6. Endless mode: still uses the procedural `wave_data.countdown = maxf(1.5, 3.0 - wave_num * 0.1)` from `_generate_endless_wave` — endless intentionally faster, fix doesn't touch it. First-wave override still applies via `_wave_index == 0` so wave 1 of endless gets the 60s grace too.
+
+### Risks / known follow-ups
+- **Endless wave 1 grace**: gets 60s now, which is consistent with campaign but might feel long for an endless rerun. Acceptable; revisit if playtesters say "endless should drop me straight in."
+- **Gold bonus scaling on first wave (60g)**: substantial relative to the `STARTING_GOLD = 100`. May invalidate the "do you have enough gold for tower X" tension if every player just clicks immediately. Watch for this in playtest; if it skews the early game, lower the multiplier (e.g. 0.5g per second).
+- **Tween survives scene exit**: `_send_wave_blink` is a `Tween` parented to the HUD CanvasLayer. SceneManager.goto frees the HUD → tween auto-frees. Confirmed no leak.
+- **No "AFK timer" visual cue**: the player doesn't see "you have 60s left" on the button itself — the countdown_label sits separately. Future polish: show the seconds on the button face. Not urgent.
 - **`get_unequipped()` iterates every hero's equipment** every call — O(heroes × 6 + items). Negligible at 1-3 heroes; revisit if there's ever an "all heroes" view that calls this in a tight loop.
 - **No "transfer to stash" UI** because there is no stash — shared_inventory IS the stash. The mental model is still "every hero shares one bag." If players ask for a separate stash tab later, that's a future phase (split shared_inventory into "active inventory" + "stash" with a transfer UI).
 - **Hero-restricted items in inventory grid render normally today** — IA-1 just refuses the equip. Future polish: desaturate them per the plan's open design decision #1 (visible-but-not-equippable visual cue).

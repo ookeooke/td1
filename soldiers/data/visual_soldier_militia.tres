@@ -1,21 +1,23 @@
-[gd_resource type="Resource" script_class="UnitVisualData" format=3 uid="uid://fcdhosfxtqow"]
+[gd_resource type="Resource" script_class="UnitVisualData" format=3 uid="uid://b1td1solml001"]
 
 [ext_resource type="Script" uid="uid://uarc3rqaigxt" path="res://systems/UnitVisualData.gd" id="1_vis"]
 
 [resource]
 script = ExtResource("1_vis")
-shape = 1
-body_color = Color(0.85, 0.7, 0.2, 1)
+shape = 0
+body_color = Color(0.65, 0.50, 0.25, 1)
 outline_color = Color(0.18, 0.12, 0.05, 1)
 accent_color = Color(0.92, 0.92, 0.95, 1)
 accent_type = 0
+radius = 22.0
+outline_width = 3.5
 weapon_type = 0
 race = 1
 head_color = Color(0.95, 0.78, 0.62, 1)
 head_radius_ratio = 0.55
-head_y_offset = -1.5
+head_y_offset = -1.05
 has_tusks = false
-hat = 2
-hat_color = Color(0.78, 0.78, 0.82, 1)
-leg_color = Color(0.32, 0.26, 0.18, 1)
-arm_color = Color(0.85, 0.7, 0.2, 1)
+hat = 4
+hat_color = Color(0.55, 0.20, 0.18, 1)
+leg_color = Color(0.30, 0.22, 0.14, 1)
+arm_color = Color(0.65, 0.50, 0.25, 1)

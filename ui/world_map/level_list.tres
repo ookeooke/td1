@@ -1,6 +1,7 @@
-[gd_resource type="Resource" load_steps=3 format=3 uid="uid://b1td1levellist"]
+[gd_resource type="Resource" script_class="LevelList" load_steps=4 format=3 uid="uid://b1td1levellist"]
 
 [ext_resource type="Script" path="res://ui/world_map/LevelNodeData.gd" id="1_lnd"]
+[ext_resource type="Script" path="res://ui/world_map/LevelList.gd" id="2_list"]
 
 [sub_resource type="Resource" id="Level1"]
 script = ExtResource("1_lnd")
@@ -8,7 +9,14 @@ level_id = "level_1"
 display_name = "Forest Path"
 scene_path = "res://main/Main.tscn"
 unlock_order = 1
+wave_list_path = "res://levels/level1_waves.tres"
+target_duration_sec = 305.0
+gold_budget_total = 700
+wave_gold_shares = Array[float]([0.10, 0.11, 0.16, 0.23, 0.40])
+wave_time_shares = Array[float]([0.10, 0.18, 0.21, 0.21, 0.30])
+wave_pressure_targets = Array[float]([0.4, 0.5, 0.6, 0.8, 0.9])
+early_call_window_sec = 10.0
 
 [resource]
-script_class = "Resource"
+script = ExtResource("2_list")
 levels = Array[Resource]([SubResource("Level1")])

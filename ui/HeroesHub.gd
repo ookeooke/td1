@@ -171,9 +171,21 @@ func _embed_screen(tab: Control, scene_path: String) -> void:
 
 	# Equipment screen: Body at offset_top=96 — pull up so content starts
 	# below the relocated HeroLabel (or right below the tab strip if none).
+	# Phase 49 — bumped from 48→56 because the new 144px slot row sits closer
+	# to the tab strip. With the redundant LeftTitle / StatsTitle / DetailsTitle
+	# also hidden below, the content reads cleanly below "Knight — Lv N".
 	var body: Control = screen.get_node_or_null("Body")
 	if body != null:
-		body.offset_top = 48 if hero_label != null else 8
+		body.offset_top = 56 if hero_label != null else 8
+
+	# Phase 49 — hide section headers that duplicate context already provided
+	# by HeroesHub's tab strip ("Equipment" tab) and the relocated HeroLabel.
+	# Standalone EquipmentScreen still shows them. Each path is defensive —
+	# only hides when the node is actually present.
+	for header_path in ["Body/LeftPanel/LeftTitle", "Body/LeftPanel/StatsTitle", "Body/LeftPanel/DetailsTitle"]:
+		var header: Control = screen.get_node_or_null(header_path)
+		if header != null:
+			header.visible = false
 
 	# Talent screen: StarsLabel at offset_top=88 + ScrollContainer at 128 —
 	# pull both up so the empty header space disappears.

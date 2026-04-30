@@ -31,6 +31,10 @@ signal barracks_rally_move_requested(barracks)
 
 # Wave
 signal wave_started(wave_number, path_ids)
+# wave_spawning_complete: last enemy of wave N has been *spawned* (not killed).
+# Triggers next wave's countdown — see CORE RULE 19 (early-call overlap).
+signal wave_spawning_complete(wave_number)
+# wave_completed: every enemy of wave N is dead/leaked. Bounty pays here.
 signal wave_completed(wave_number)
 signal early_wave_triggered(bonus_gold)
 signal wave_countdown_started(duration)

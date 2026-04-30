@@ -12,6 +12,19 @@ const BOB_HEIGHT_PX: float = 6.0
 const BOB_PERIOD_S: float = 1.6
 const ICON_RADIUS_PX: float = 18.0
 const HALO_THICKNESS_PX: float = 3.0
+# Diablo-style beacon. Vertical light beam + ground aura intensify with
+# rarity so a legendary drop reads from across the map while a common drop
+# is a quiet halo. Per-rarity intensity multiplier drives both beam and aura.
+const BEAM_HEIGHT_PX: float = 200.0
+const BEAM_WIDTH_BASE_PX: float = 6.0
+const AURA_BASE_RADIUS_PX: float = 26.0
+const _RARITY_INTENSITY: Array[float] = [
+	0.00,  # COMMON    — no beam, very faint aura
+	0.35,  # MAGIC     — thin beam, small aura
+	0.60,  # RARE      — medium beam + ring
+	0.85,  # EPIC      — strong beam + bright aura
+	1.15,  # LEGENDARY — tallest beam, fast pulse, expanding shockwave
+]
 
 const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
 
@@ -66,16 +79,86 @@ func _physics_process(delta: float) -> void:
 
 func _draw() -> void:
 	var zs: float = _get_zoom_scale()
+	var intensity: float = _RARITY_INTENSITY[_rarity_idx]
+	# 1. Ground aura — pulsing rings under the item (drawn first so beam +
+	# item paint over it). Always on, scales with rarity.
+	_draw_ground_aura(intensity, zs)
+	# 2. Vertical beam of light — column of rarity color rising from the
+	# ground. Higher rarities get a wider, taller, brighter beam. Common
+	# items skip the beam entirely so the world isn't littered with light.
+	if intensity > 0.0:
+		_draw_beam_of_light(intensity, zs)
+	# 3. Item icon — bobs gently on top of the beam.
 	var bob: float = sin(_age * TAU / BOB_PERIOD_S) * BOB_HEIGHT_PX * zs
 	var center: Vector2 = Vector2(0, -20 + bob)
 	var radius: float = ICON_RADIUS_PX * zs
-	# Rarity halo — slightly larger than the icon
+	# Rarity halo — slightly larger than the icon.
 	draw_arc(center, radius + HALO_THICKNESS_PX * zs, 0.0, TAU, 32, _rarity_color, HALO_THICKNESS_PX * zs, true)
-	# Dark backing disc so glyph is always readable over any map terrain
+	# Dark backing disc so glyph is always readable over any map terrain.
 	draw_circle(center, radius, Color(0.08, 0.08, 0.1, 0.85))
-	# Procedural glyph + rarity pips (same helper as ItemIcon)
+	# Procedural glyph + rarity pips (same helper as ItemIcon).
 	ItemGlyph.draw(self, _icon_glyph, center, radius, _icon_color)
 	ItemGlyph.draw_rarity_pips(self, _rarity_idx, center, radius)
+
+
+# Pulsing ground aura — soft inner disc + mid ring + an expanding outer ring
+# that ripples outward and resets, so even at rest the drop reads as alive.
+func _draw_ground_aura(intensity: float, zs: float) -> void:
+	# Common drops still get a faint baseline glow so they don't blend into
+	# the terrain. Higher tiers stack brightness on top.
+	var base_intensity: float = 0.25 + intensity * 0.85
+	var pulse_speed: float = 2.0 + intensity * 1.5
+	var pulse: float = 0.55 + sin(_age * pulse_speed) * 0.45  # 0.10 .. 1.0
+	var base_r: float = AURA_BASE_RADIUS_PX * zs * (0.85 + intensity * 0.35)
+	# Inner soft disc.
+	var inner_alpha: float = 0.22 * pulse * base_intensity
+	draw_circle(Vector2.ZERO, base_r, Color(_rarity_color.r, _rarity_color.g, _rarity_color.b, inner_alpha))
+	# Mid ring — fixed radius, alpha pulses in sync with disc.
+	var mid_alpha: float = 0.45 * pulse * base_intensity
+	draw_arc(Vector2.ZERO, base_r * 1.30, 0.0, TAU, 32, Color(_rarity_color.r, _rarity_color.g, _rarity_color.b, mid_alpha), 2.5 * zs)
+	# Outer shockwave — expands outward over ~1.5 s then resets, so the
+	# drop continually emits a soft ripple. Fades as it grows.
+	var ripple_period: float = maxf(0.6, 1.6 - intensity * 0.5)
+	var ripple_t: float = fmod(_age, ripple_period) / ripple_period  # 0 → 1
+	var ripple_r: float = base_r * (1.0 + ripple_t * 1.6)
+	var ripple_alpha: float = (1.0 - ripple_t) * 0.40 * (0.4 + intensity)
+	draw_arc(Vector2.ZERO, ripple_r, 0.0, TAU, 32, Color(_rarity_color.r, _rarity_color.g, _rarity_color.b, ripple_alpha), 2.0 * zs)
+
+
+# Vertical beam — drawn as two stacked tapered quads (outer wider/fainter,
+# inner narrower/brighter). Per-vertex alpha gradient fades the top to 0
+# so the beam dissolves into the sky instead of cutting off hard.
+func _draw_beam_of_light(intensity: float, zs: float) -> void:
+	var pulse: float = 0.85 + sin(_age * (2.5 + intensity * 1.5)) * 0.15
+	var h: float = BEAM_HEIGHT_PX * zs * (0.7 + intensity * 0.5)
+	# Outer wide layer (drawn first, behind inner).
+	var outer_w: float = (BEAM_WIDTH_BASE_PX + intensity * 14.0) * zs
+	_draw_beam_layer(outer_w, h, _rarity_color, 0.30 * intensity * pulse)
+	# Inner brighter core.
+	var inner_w: float = (BEAM_WIDTH_BASE_PX + intensity * 6.0) * zs
+	_draw_beam_layer(inner_w, h, _rarity_color, 0.55 * intensity * pulse)
+	# Bright base flare at the foot of the beam — small filled disc that
+	# pulses in size; sells the "beam emerging from the ground" silhouette.
+	var flare_r: float = (4.0 + intensity * 6.0) * zs * pulse
+	draw_circle(Vector2.ZERO, flare_r, Color(_rarity_color.r, _rarity_color.g, _rarity_color.b, 0.55 * intensity))
+	draw_circle(Vector2.ZERO, flare_r * 0.45, Color(1.0, 1.0, 1.0, 0.65 * intensity))
+
+
+# One trapezoid layer of the beam — bottom = full alpha, top = 0 alpha.
+# Slight inward taper at the top so the beam looks like a column of light.
+func _draw_beam_layer(width: float, height: float, base_color: Color, alpha: float) -> void:
+	var hw_bot: float = width * 0.5
+	var hw_top: float = width * 0.30
+	var bot: Color = Color(base_color.r, base_color.g, base_color.b, alpha)
+	var top: Color = Color(base_color.r, base_color.g, base_color.b, 0.0)
+	var pts: PackedVector2Array = PackedVector2Array([
+		Vector2(-hw_bot, 0.0),
+		Vector2(hw_bot, 0.0),
+		Vector2(hw_top, -height),
+		Vector2(-hw_top, -height),
+	])
+	var cols: PackedColorArray = PackedColorArray([bot, bot, top, top])
+	draw_polygon(pts, cols)
 
 
 func _get_zoom_scale() -> float:

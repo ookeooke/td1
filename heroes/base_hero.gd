@@ -81,6 +81,34 @@ var _nav_repath_timer: float = 0.0
 var _lunge_dir: Vector2 = Vector2.ZERO
 var _lunge_t: float = 0.0
 var _hit_flash_t: float = 0.0
+# Hurt flinch — body recoil away from damage source on each hit. Mirrors
+# the BaseEnemy flinch so combat readability is consistent across units.
+const FLINCH_DURATION: float = 0.12
+const FLINCH_DISTANCE: float = 6.0
+var _flinch_t: float = 0.0
+var _flinch_dir: Vector2 = Vector2.ZERO
+# Walk-bob accumulator and per-hero phase. Driven by the same UnitVisualData
+# fields enemies use; ticks while MOVING.
+var _walk_t: float = 0.0
+var _walk_phase: float = 0.0
+# Hit-stop — freezes _physics_process for a few frames after every hit
+# (mirrors the BaseEnemy device). Set in take_damage and externally
+# (BaseEnemy.take_damage looks up this property by name on its source).
+const HIT_STOP_DURATION: float = 0.05
+var _hit_stop_t: float = 0.0
+# Skill cast pose — when cast_skill fires, arm raises + body briefly
+# stretches for CAST_ANIM_DURATION so casts don't feel instant. The skill
+# effect itself still applies immediately; this is purely cosmetic on top.
+const CAST_ANIM_DURATION: float = 0.25
+var _cast_t: float = 0.0
+var _cast_dir: Vector2 = Vector2.RIGHT
+# Idle breathing — small Y squish pulse while IDLE / COMBAT so a stationary
+# hero doesn't read as frozen.
+var _breath_t: float = 0.0
+# Facing direction for direction-aware eyes. Updated from velocity when the
+# hero moves, falls back to the active target / lunge direction otherwise.
+var _facing_dir: Vector2 = Vector2.RIGHT
+var _prev_pos: Vector2 = Vector2.ZERO
 # Rally point — world position the hero leashes to. Seeded from the spawn
 # marker in _ready() and reseeded on each player-commanded move. Enemies
 # outside LEASH_RADIUS of this point are ignored; when idle, the hero
@@ -169,6 +197,8 @@ func _ready() -> void:
 	# by tapping to move. Position is already set by Main._spawn_hero before
 	# add_child, so global_position here is the HeroSpawn marker.
 	_rally_position = global_position
+	_walk_phase = randf() * TAU
+	_prev_pos = global_position
 	# Listen for confirmed taps from GameCamera's gesture classifier.
 	EventBus.map_tap_confirmed.connect(_on_map_tap)
 	# Deferred so sibling nodes (HUD, Main) have finished _ready() and
@@ -328,9 +358,20 @@ func cast_skill(idx: int, target) -> bool:
 	_skill_cooldowns[idx] = skill.cooldown
 	EventBus.hero_skill_used.emit(skill.skill_name)
 	EventBus.skill_cooldown_started.emit(skill.skill_name, skill.cooldown)
-	# Face the target for the lunge visual on melee single-target casts.
+	# Cast pose — arm raised + body stretch for CAST_ANIM_DURATION so the
+	# skill activation reads as a deliberate cast rather than a silent
+	# instant. The cast direction faces the target when there is one.
+	_cast_t = CAST_ANIM_DURATION
 	if target is Node2D:
+		var d: Vector2 = (target as Node2D).global_position - global_position
+		_cast_dir = d.normalized() if d.length_squared() > 0.001 else Vector2.RIGHT
+		# Single-target melee cast also gets the standard lunge.
 		_start_lunge(target.global_position)
+	elif target is Vector2:
+		var d2: Vector2 = (target as Vector2) - global_position
+		_cast_dir = d2.normalized() if d2.length_squared() > 0.001 else _facing_dir
+	else:
+		_cast_dir = _facing_dir
 	return true
 
 
@@ -431,12 +472,34 @@ func _get_zoom_scale() -> float:
 func _physics_process(delta: float) -> void:
 	if state == State.DEAD or data == null:
 		return
+	# Hit-stop — universal freeze on hit. Decrement and bail before any
+	# state machine / movement / animation tick so the world holds frame.
+	if _hit_stop_t > 0.0:
+		_hit_stop_t = maxf(0.0, _hit_stop_t - delta)
+		return
 	if _lunge_t > 0.0:
 		_lunge_t = maxf(0.0, _lunge_t - delta)
+		queue_redraw()
+	if _cast_t > 0.0:
+		_cast_t = maxf(0.0, _cast_t - delta)
 		queue_redraw()
 	if _hit_flash_t > 0.0:
 		_hit_flash_t = maxf(0.0, _hit_flash_t - delta)
 		queue_redraw()
+	if _flinch_t > 0.0:
+		_flinch_t = maxf(0.0, _flinch_t - delta)
+		queue_redraw()
+	# Facing direction — sampled from world delta. Falls back to active
+	# target direction when the hero is stationary so eyes still face the
+	# enemy during combat.
+	var dp: Vector2 = global_position - _prev_pos
+	if dp.length_squared() > 0.05:
+		_facing_dir = dp.normalized()
+	elif state == State.COMBAT and _target_enemy != null and is_instance_valid(_target_enemy):
+		var to_t: Vector2 = (_target_enemy.global_position - global_position)
+		if to_t.length_squared() > 0.001:
+			_facing_dir = to_t.normalized()
+	_prev_pos = global_position
 	_tick_skill_cooldowns(delta)
 	if _ability_host != null:
 		_ability_host.tick(delta)
@@ -444,11 +507,22 @@ func _physics_process(delta: float) -> void:
 		State.IDLE:
 			velocity = Vector2.ZERO
 			_seek_target()
+			_breath_t += delta
+			queue_redraw()
 		State.MOVING:
 			_move_step(delta)
+			# Walk-bob tick — gated on visual fields so heroes with bob
+			# disabled skip the per-frame redraw.
+			if data != null and data.visual != null:
+				var v: UnitVisualData = data.visual
+				if v.walk_bob_amplitude > 0.0 or v.walk_squash > 0.0:
+					_walk_t += delta
+					queue_redraw()
 		State.COMBAT:
 			velocity = Vector2.ZERO
 			_attack_step(delta)
+			_breath_t += delta
+			queue_redraw()
 	move_and_slide()
 
 
@@ -671,6 +745,26 @@ func take_damage(amount: float, type: int, source: Node = null) -> void:
 	current_health -= int(ceil(final))
 	if final > 0.0:
 		_hit_flash_t = HIT_FLASH_DURATION
+		# Hit-stop on both this hero and the source (universal action-game
+		# device — adds weight to every hit landed on the hero).
+		_hit_stop_t = HIT_STOP_DURATION
+		if source != null and is_instance_valid(source) and "_hit_stop_t" in source:
+			source._hit_stop_t = HIT_STOP_DURATION
+		# Flinch — recoil away from damage source for a brief window.
+		_flinch_t = FLINCH_DURATION
+		var have_src_pos: bool = false
+		var src_pos: Vector2 = Vector2.ZERO
+		if source != null and is_instance_valid(source) and source is Node2D:
+			src_pos = (source as Node2D).global_position
+			have_src_pos = true
+		if have_src_pos:
+			var away: Vector2 = global_position - src_pos
+			if away.length_squared() > 0.001:
+				_flinch_dir = away.normalized()
+			else:
+				_flinch_dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 0.0)).normalized()
+		else:
+			_flinch_dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 0.0)).normalized()
 		EventBus.hit_landed.emit(self, source, final, type)
 		var parent: Node = get_tree().current_scene
 		if parent != null:
@@ -799,30 +893,91 @@ func _prune_blocks_out_of_range() -> void:
 
 
 func _draw() -> void:
-	# Skill targeting range circle (Phase 20) — drawn first so the body
-	# and selection ring sit on top of the faint fill.
 	var zs: float = _get_zoom_scale()
+	# Skill targeting range circle (Phase 20) — drawn first.
 	if _skill_range_preview > 0.0:
 		draw_circle(Vector2.ZERO, _skill_range_preview, Color(1.0, 0.9, 0.3, 0.08))
 		draw_arc(Vector2.ZERO, _skill_range_preview, 0.0, TAU, 48, Color(1.0, 0.9, 0.3, 0.85), 2.5 * zs)
-	# Selection ring sits on the ground (no lunge) so it reads as a marker
-	# under the unit, not as part of the body. Drawn first so the body
-	# covers the inside of the ring.
+	# Selection ring sits on the ground, drawn before the shadow so the
+	# shadow can darken it slightly where they overlap.
 	if is_selected:
 		draw_arc(Vector2.ZERO, SELECTION_RING_RADIUS, 0, TAU, 32, Color(1.0, 0.95, 0.3, 0.85), 2.5 * zs)
-	# Body + accent translated by the lunge offset.
-	var off: Vector2 = _lunge_offset()
+	# Ground shadow under the hero — anchored, doesn't bob with the body.
+	if data != null and data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
+		UnitVisualDrawer.draw_ground_shadow(self, data.visual)
+
+	# Compose body offset + scale.
+	var lunge_off: Vector2 = _lunge_offset()
+	var body_offset: Vector2 = lunge_off
+	var body_scale: Vector2 = Vector2.ONE
+	if data != null and data.visual != null and state == State.MOVING:
+		var anim: Dictionary = UnitVisualDrawer.compute_walk_anim(data.visual, _walk_t, _walk_phase)
+		body_offset += anim.offset
+		body_scale = anim.scale
+	if _flinch_t > 0.0:
+		var fa: float = _flinch_t / FLINCH_DURATION
+		body_offset += _flinch_dir * FLINCH_DISTANCE * fa
+	if state == State.IDLE or state == State.COMBAT:
+		var breath: float = sin(_breath_t * 2.5) * 0.025
+		body_scale.x *= 1.0 + breath
+		body_scale.y *= 1.0 - breath
+	# Impact squash on attack commit — peaks around the strike frame
+	# (lunge curve t01 ≈ 0.5). Reads as weight transfer at impact.
+	if _lunge_t > 0.0:
+		var lt: float = 1.0 - (_lunge_t / LUNGE_DURATION)
+		if lt > 0.30 and lt < 0.65:
+			var sq: float = sin((lt - 0.30) / 0.35 * PI) * 0.18
+			body_scale.x *= 1.0 + sq
+			body_scale.y *= 1.0 - sq
+	# Cast pose — slight Y stretch so the hero "rears up" when channelling.
+	if _cast_t > 0.0:
+		var ct: float = 1.0 - (_cast_t / CAST_ANIM_DURATION)
+		var pulse: float = sin(ct * PI) * 0.10
+		body_scale.x *= 1.0 - pulse * 0.4
+		body_scale.y *= 1.0 + pulse
+
+	# Build ctx for the drawer.
+	var ctx: Dictionary = {}
 	if data != null and data.visual != null:
-		UnitVisualDrawer.draw_unit(self, data.visual, off)
+		ctx["face"] = _facing_dir
+		var max_hp: int = _effective_max_health()
+		if max_hp > 0 and float(current_health) / float(max_hp) < 0.30:
+			ctx["low_hp"] = true
+		# Attack wind-up + strike sweep — derived from the same lunge curve
+		# so the held weapon follows the body offset through the swing.
+		if _lunge_t > 0.0:
+			var t01: float = 1.0 - (_lunge_t / LUNGE_DURATION)
+			if t01 < 0.30:
+				ctx["wind_t"] = clampf(t01 / 0.30, 0.0, 1.0)
+			else:
+				# Map [0.30, 0.95] of the lunge to [0, 1] of the strike arc
+				# so the weapon sweeps overhead → through target → low.
+				ctx["strike_t"] = clampf((t01 - 0.30) / 0.65, 0.0, 1.0)
+				ctx["strike_dir"] = _lunge_dir
+		# Cast pose — force arm raised and pointing at the cast direction.
+		# Overrides any walk swing for the duration. Drops back to wind-up
+		# control after _cast_t hits 0.
+		if _cast_t > 0.0:
+			var ct2: float = clampf(1.0 - (_cast_t / CAST_ANIM_DURATION), 0.0, 1.0)
+			# Ramp to 1 in first half, hold, then ramp back so the arm
+			# returns smoothly to rest after the pose ends.
+			var raise_amount: float = sin(ct2 * PI) * 0.85 + 0.15
+			ctx["wind_t"] = clampf(raise_amount, 0.0, 1.0)
+			ctx["strike_dir"] = _cast_dir
+
+	# Body draw.
+	if data != null and data.visual != null:
+		var walk_t_arg: float = _walk_t if state == State.MOVING else -1.0
+		UnitVisualDrawer.draw_unit(self, data.visual, body_offset, body_scale, walk_t_arg, _walk_phase, ctx)
 		if _hit_flash_t > 0.0:
-			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, off)
+			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, body_offset, body_scale)
 		if _lunge_t > 0.0:
 			var t01: float = 1.0 - (_lunge_t / LUNGE_DURATION)
 			UnitVisualDrawer.draw_swing_arc_trail(self, data.visual, _lunge_dir, t01)
 	else:
 		# Legacy fallback: color varies by damage type.
-		if off != Vector2.ZERO:
-			draw_set_transform(off, 0.0, Vector2.ONE)
+		if body_offset != Vector2.ZERO:
+			draw_set_transform(body_offset, 0.0, body_scale)
 		var is_magic: bool = data != null and data.damage_type == 1
 		var body_color: Color = Color(0.3, 0.4, 0.85) if is_magic else Color(0.85, 0.7, 0.2)
 		var outline_color: Color = Color(0.1, 0.12, 0.3) if is_magic else Color(0.2, 0.15, 0.05)
@@ -830,7 +985,7 @@ func _draw() -> void:
 		draw_rect(Rect2(-25, -25, 50, 50), body_color)
 		draw_rect(Rect2(-25, -25, 50, 50), outline_color, false, 4.0)
 		draw_line(Vector2(0, -25), Vector2(0, -40), accent_color, 5.0)
-		if off != Vector2.ZERO:
+		if body_offset != Vector2.ZERO:
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_health_bar()
 
@@ -845,7 +1000,14 @@ func _draw_health_bar() -> void:
 		return
 	var zs: float = _get_zoom_scale()
 	var bar_size: Vector2 = HP_BAR_SIZE * zs
-	var bar_y: float = HP_BAR_Y_OFFSET * zs
+	# Head sits above the torso when race != NONE — bump the bar so it
+	# clears the head + hat. minf picks the more-negative (higher) value.
+	var bar_y_local: float = HP_BAR_Y_OFFSET
+	if data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
+		var torso_r: float = data.visual.radius if data.visual.shape == UnitVisualData.Shape.CIRCLE else maxf(data.visual.body_size.x, data.visual.body_size.y) * 0.5
+		var head_top: float = data.visual.head_y_offset * torso_r - data.visual.head_radius_ratio * torso_r
+		bar_y_local = minf(HP_BAR_Y_OFFSET, head_top - 14.0)
+	var bar_y: float = bar_y_local * zs
 	var pct: float = clampf(float(current_health) / float(max_hp), 0.0, 1.0)
 	var origin: Vector2 = Vector2(-bar_size.x * 0.5, bar_y)
 	draw_rect(Rect2(origin, bar_size), Color(0.12, 0.12, 0.12))

@@ -11,6 +11,16 @@ const HIT_FLASH_DURATION: float = 0.08
 # side of the enemy facing its blocker — gives the player a visible "tell"
 # before each counter-attack lands.
 const ATTACK_TELEGRAPH_DURATION: float = 0.15
+# Strike animation — ticks AFTER damage applies. Enemy lunges forward then
+# eases back, mirroring the hero lunge so counter-attacks have visible
+# follow-through, not just an invisible damage event.
+const STRIKE_ANIM_DURATION: float = 0.12
+const STRIKE_BACK_DIST: float = 4.0   # pulled back during anticipation
+const STRIKE_PUSH_DIST: float = 14.0  # forward at peak commit
+# Hit-stop — both attacker and defender freeze for a few frames on every
+# successful hit. Applies to BaseEnemy._physics_process and BaseHero
+# (mirrored there). Universal action-game readability device.
+const HIT_STOP_DURATION: float = 0.05
 
 @export var data: EnemyData
 
@@ -31,6 +41,13 @@ var _effects: Dictionary = {}
 # telegraph arc points at one stable target instead of flickering.
 var _blockers: Array[Node] = []
 var _combat_cooldown: float = 0.0
+# Strike animation state — set by _start_strike(); decays in _physics_process.
+# While > 0, body lunges forward toward _strike_dir then eases back.
+var _strike_t: float = 0.0
+var _strike_dir: Vector2 = Vector2.ZERO
+# Hit-stop accumulator — when > 0, _physics_process bails early so all
+# motion freezes for a moment after the hit lands.
+var _hit_stop_t: float = 0.0
 
 # Last source that dealt damage — used by _die() to award XP to the hero
 # when the hero landed the killing blow (last-hit semantics). Towers get
@@ -49,6 +66,28 @@ var _status_ring_t: float = 0.0
 # per-enemy so a swarm doesn't step in sync. Driven by UnitVisualData fields.
 var _walk_t: float = 0.0
 var _walk_phase: float = 0.0
+# Hurt flinch: brief recoil away from the damage source on each hit. Reads as
+# a physical reaction to complement the white hit-flash overlay.
+const FLINCH_DURATION: float = 0.12
+const FLINCH_DISTANCE: float = 6.0
+var _flinch_t: float = 0.0
+var _flinch_dir: Vector2 = Vector2.ZERO
+# Idle breathing: stationary enemies (COMBAT / STUNNED) torso pulses ~3% so
+# they don't look frozen when not walking. Not used during WALKING (walk-bob
+# already provides aliveness) or DYING.
+var _breath_t: float = 0.0
+# Direction the enemy is facing along its path. Sampled from PathFollow2D
+# position deltas in _physics_process. Used for direction-aware eye shift.
+var _facing_dir: Vector2 = Vector2.RIGHT
+var _prev_pos: Vector2 = Vector2.ZERO
+# Per-enemy spawn variation — small randomized tweaks so a wave of grunts
+# reads as individuals not clones. Set once in _ready, never changes.
+var _skin_tint: Color = Color.WHITE
+# Slowed-enemy ghost trail: stores the world position from ~0.2s ago so we
+# can draw a translucent silhouette behind a slowed enemy.
+const SLOW_GHOST_LAG: float = 0.20
+var _slow_pos_history: Array[Vector2] = []
+var _slow_time_history: Array[float] = []
 
 # Phase 20.5: per-unit ability dispatcher. Populated from data.abilities
 # in _ready(); ticked each physics frame; triggered on death so
@@ -74,6 +113,13 @@ func _ready() -> void:
 		for ability in data.abilities:
 			_ability_host.add_ability(ability)
 	_walk_phase = randf() * TAU
+	# Per-spawn variation: slight skin-tint shift (±5%) so a wave of identical
+	# enemies reads as individuals rather than clones. Hue stays near body
+	# color — only luminance/saturation drift.
+	var v_seed: float = randf()
+	var tint_amount: float = (v_seed - 0.5) * 0.10  # -0.05 .. +0.05
+	_skin_tint = Color(1.0 + tint_amount, 1.0 + tint_amount * 0.6, 1.0 + tint_amount * 0.3, 1.0)
+	_prev_pos = global_position
 	queue_redraw()
 
 
@@ -91,22 +137,52 @@ func change_state(new_state: int) -> void:
 func _physics_process(delta: float) -> void:
 	if _path_follow == null or data == null:
 		return
+	# Hit-stop: freeze all motion for a few frames after every successful
+	# hit (universal action-game readability). Decrement here and bail —
+	# state machine, cooldowns, animations all hold their last frame.
+	if _hit_stop_t > 0.0:
+		_hit_stop_t = maxf(0.0, _hit_stop_t - delta)
+		return
+	if _strike_t > 0.0:
+		_strike_t = maxf(0.0, _strike_t - delta)
+		queue_redraw()
 	_tick_effects(delta)
 	if _hit_flash_t > 0.0:
 		_hit_flash_t = maxf(0.0, _hit_flash_t - delta)
+		queue_redraw()
+	if _flinch_t > 0.0:
+		_flinch_t = maxf(0.0, _flinch_t - delta)
 		queue_redraw()
 	if not _effects.is_empty():
 		_status_ring_t += delta
 		queue_redraw()
 	if _ability_host != null:
 		_ability_host.tick(delta)
+	# Facing direction sampled from world-position delta — survives any
+	# path/lane configuration and matches what the player sees move.
+	var dp: Vector2 = global_position - _prev_pos
+	if dp.length_squared() > 0.05:
+		_facing_dir = dp.normalized()
+	_prev_pos = global_position
+	# Slow-ghost trail history: only sampled while the slow effect is active
+	# so we don't burn memory on every enemy. Records {pos, time}; older than
+	# SLOW_GHOST_LAG seconds get trimmed.
+	if _effects.has("slow") and state == State.WALKING:
+		var now: float = Time.get_ticks_msec() / 1000.0
+		_slow_pos_history.append(global_position)
+		_slow_time_history.append(now)
+		while _slow_time_history.size() > 0 and (now - _slow_time_history[0]) > SLOW_GHOST_LAG * 1.5:
+			_slow_pos_history.pop_front()
+			_slow_time_history.pop_front()
+		queue_redraw()
+	elif not _slow_pos_history.is_empty():
+		_slow_pos_history.clear()
+		_slow_time_history.clear()
 	match state:
 		State.WALKING:
 			_path_follow.progress += _effective_speed() * delta
 			if _path_follow.progress_ratio >= 1.0:
 				_reach_end()
-			# Walk-bob tick. Gated on visual fields so enemies with bob
-			# disabled (amplitude 0 + squash 0) skip the per-frame redraw.
 			if data != null and data.visual != null:
 				var v: UnitVisualData = data.visual
 				if v.walk_bob_amplitude > 0.0 or v.walk_squash > 0.0:
@@ -114,7 +190,14 @@ func _physics_process(delta: float) -> void:
 					queue_redraw()
 		State.COMBAT:
 			_combat_tick(delta)
-		State.STUNNED, State.STEALTHED, State.DYING:
+			# Idle breathing while engaged — small scale pulse so the enemy
+			# reads as alive while standing still.
+			_breath_t += delta
+			queue_redraw()
+		State.STUNNED:
+			_breath_t += delta
+			queue_redraw()
+		State.STEALTHED, State.DYING:
 			pass
 
 
@@ -170,6 +253,10 @@ func _combat_tick(delta: float) -> void:
 	var focus: Node = _blockers[0]
 	if focus == null or not is_instance_valid(focus) or not focus.has_method("take_damage"):
 		return
+	# Snapshot strike direction before damage applies — focus may die or
+	# walk away during take_damage / hit-stop, but the swing animation
+	# should still play out toward where the strike was aimed.
+	_start_strike(focus)
 	var splash_r: float = data.attack_splash_radius if "attack_splash_radius" in data else 0.0
 	if splash_r <= 0.0:
 		focus.take_damage(data.attack_damage, DamageCalculator.DamageType.PHYSICAL, self)
@@ -245,6 +332,27 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 	current_health -= int(ceil(final))
 	if final > 0.0:
 		_hit_flash_t = HIT_FLASH_DURATION
+		# Hit-stop — both this enemy and the attacker freeze briefly so the
+		# moment of impact reads as weighty rather than instantaneous.
+		_hit_stop_t = HIT_STOP_DURATION
+		if source != null and is_instance_valid(source) and "_hit_stop_t" in source:
+			source._hit_stop_t = HIT_STOP_DURATION
+		# Flinch away from damage source — direction inferred from source
+		# global_position when available, else random small kick.
+		_flinch_t = FLINCH_DURATION
+		var src_pos: Vector2 = Vector2.ZERO
+		var have_src_pos: bool = false
+		if source != null and is_instance_valid(source) and source is Node2D:
+			src_pos = (source as Node2D).global_position
+			have_src_pos = true
+		if have_src_pos:
+			var away: Vector2 = global_position - src_pos
+			if away.length_squared() > 0.001:
+				_flinch_dir = away.normalized()
+			else:
+				_flinch_dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 0.0)).normalized()
+		else:
+			_flinch_dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 0.0)).normalized()
 		EventBus.hit_landed.emit(self, source, final, type)
 		EventBus.enemy_damaged.emit(self, final, type)
 	if source != null:
@@ -319,24 +427,81 @@ func _despawn() -> void:
 
 
 func _draw() -> void:
-	var inhale: Vector2 = _inhale_offset()
-	var body_offset: Vector2 = inhale
+	# 1. Ground shadow — fixed under feet, ignores walk-bob / breath / flinch.
+	if data != null and data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
+		UnitVisualDrawer.draw_ground_shadow(self, data.visual)
+
+	# 2. Slow-ghost trail at the lagged position (behind a slowed enemy).
+	if data != null and data.visual != null and not _slow_pos_history.is_empty():
+		var lag_world: Vector2 = _slow_pos_history[0]
+		var lag_local: Vector2 = lag_world - global_position
+		UnitVisualDrawer.draw_slow_ghost(self, data.visual, lag_local, 0.30)
+
+	# 3. Compose body offset + scale.
+	var strike_off: Vector2 = _strike_offset()
+	var body_offset: Vector2 = strike_off
 	var body_scale: Vector2 = Vector2.ONE
-	# Walk-bob + squash applied only while walking — stationary (COMBAT /
-	# STUNNED / DYING) bodies stay still so the tell reads clearly.
 	if data != null and data.visual != null and state == State.WALKING:
 		var anim: Dictionary = UnitVisualDrawer.compute_walk_anim(data.visual, _walk_t, _walk_phase)
 		body_offset += anim.offset
 		body_scale = anim.scale
+	# Hurt flinch — recoil from damage source, eases out over FLINCH_DURATION.
+	if _flinch_t > 0.0:
+		var fa: float = _flinch_t / FLINCH_DURATION
+		body_offset += _flinch_dir * FLINCH_DISTANCE * fa
+	# Idle breathing — small Y squish pulse while stationary.
+	if state == State.COMBAT or state == State.STUNNED:
+		var breath: float = sin(_breath_t * 2.5) * 0.025
+		body_scale.x *= 1.0 + breath
+		body_scale.y *= 1.0 - breath
+
+	# Impact squash — attacker briefly compresses vertically and stretches
+	# horizontally at the peak of the strike commit (~the moment damage
+	# applied). Reads as weight transfer landing.
+	if _strike_t > 0.0:
+		var s: float = 1.0 - (_strike_t / STRIKE_ANIM_DURATION)
+		# Squash window is narrow around the impact frame (s ≈ 0.45).
+		if s > 0.30 and s < 0.65:
+			var sq: float = sin((s - 0.30) / 0.35 * PI) * 0.18
+			body_scale.x *= 1.0 + sq
+			body_scale.y *= 1.0 - sq
+
+	# 4. Build ctx for the drawer (variant + state hooks).
+	var ctx: Dictionary = {}
 	if data != null and data.visual != null:
-		UnitVisualDrawer.draw_unit(self, data.visual, body_offset, body_scale)
+		ctx["skin_tint"] = _skin_tint
+		ctx["face"] = _facing_dir
+		var max_hp: int = _effective_max_health()
+		if max_hp > 0 and float(current_health) / float(max_hp) < 0.30:
+			ctx["low_hp"] = true
+		# Attack wind-up — arm raises during anticipation window.
+		if state == State.COMBAT and not _blockers.is_empty() and _combat_cooldown > 0.0 and _combat_cooldown <= ATTACK_TELEGRAPH_DURATION:
+			ctx["wind_t"] = smoothstep(ATTACK_TELEGRAPH_DURATION, 0.0, _combat_cooldown)
+		# Strike commit — arm sweeps through the swing arc.
+		if _strike_t > 0.0:
+			ctx["strike_t"] = 1.0 - (_strike_t / STRIKE_ANIM_DURATION)
+			ctx["strike_dir"] = _strike_dir
+
+	# 5. Body draw.
+	if data != null and data.visual != null:
+		var walk_t_arg: float = _walk_t if state == State.WALKING else -1.0
+		UnitVisualDrawer.draw_unit(self, data.visual, body_offset, body_scale, walk_t_arg, _walk_phase, ctx)
 		if _hit_flash_t > 0.0:
 			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, body_offset, body_scale)
+		# Swing-arc trail — weapon swooshing through the air during the
+		# strike commit. Same helper heroes use, so the visual is consistent.
+		if _strike_t > 0.0:
+			var t01: float = 1.0 - (_strike_t / STRIKE_ANIM_DURATION)
+			UnitVisualDrawer.draw_swing_arc_trail(self, data.visual, _strike_dir, t01)
 	else:
 		draw_circle(Vector2.ZERO, 35.0, Color(0.75, 0.2, 0.2))
 		draw_arc(Vector2.ZERO, 35.0, 0, TAU, 24, Color(0.15, 0.05, 0.05), 2.0)
-	# Status-effect overlay rings — dashed + rotating so active effects read as
-	# animated rather than static. Stun is outermost and spins opposite to slow.
+
+	# 6. Stun stars — orbit the head while stunned.
+	if _effects.has("stun") and data != null and data.visual != null:
+		UnitVisualDrawer.draw_stun_stars(self, data.visual, _status_ring_t)
+
+	# 7. Status rings (existing): slow + stun overlays.
 	var ring_r: float = (data.visual.radius if data != null and data.visual != null else 35.0) + 12.0
 	if _effects.has("slow"):
 		UnitVisualDrawer.draw_status_ring(self, ring_r, Color(0.2, 0.7, 1.0), 8, _status_ring_t * 1.5, 5.0)
@@ -346,22 +511,46 @@ func _draw() -> void:
 	_draw_health_bar()
 
 
-# Body pulls back slightly in the last 150 ms before a counter-attack strike,
-# so the forward lunge reads as release. Returns zero outside the telegraph
-# window or when no valid focus exists.
-func _inhale_offset() -> Vector2:
-	if state != State.COMBAT or _blockers.is_empty():
-		return Vector2.ZERO
-	if _combat_cooldown <= 0.0 or _combat_cooldown > ATTACK_TELEGRAPH_DURATION:
-		return Vector2.ZERO
-	var focus: Node = _blockers[0]
-	if focus == null or not is_instance_valid(focus):
-		return Vector2.ZERO
-	var dir: Vector2 = focus.global_position - global_position
-	if dir.length_squared() < 0.01:
-		return Vector2.ZERO
-	var t: float = smoothstep(ATTACK_TELEGRAPH_DURATION, 0.0, _combat_cooldown)
-	return -dir.normalized() * 4.0 * t
+# Cache the strike direction the moment the counter-attack fires, so the
+# follow-through animation completes even if the focus dies / drifts away.
+func _start_strike(focus: Node) -> void:
+	if focus == null or not is_instance_valid(focus) or not (focus is Node2D):
+		_strike_dir = Vector2.RIGHT
+	else:
+		var d: Vector2 = (focus as Node2D).global_position - global_position
+		_strike_dir = d.normalized() if d.length_squared() > 0.001 else Vector2.RIGHT
+	_strike_t = STRIKE_ANIM_DURATION
+
+
+# Body offset combining anticipation (telegraph window before strike) +
+# commit + recoil (after strike fires). Replaces the old _inhale_offset —
+# enemies now have visible follow-through, not just a silent pull-back.
+#   Anticipation: cooldown ∈ (0, ATTACK_TELEGRAPH_DURATION], offset goes
+#                 from 0 → -STRIKE_BACK_DIST along strike_dir.
+#   Commit:       _strike_t in (~0.45, 1] of normalized strike progress,
+#                 offset peaks at +STRIKE_PUSH_DIST forward.
+#   Recoil:       _strike_t < 0.45, offset eases from peak back to 0.
+func _strike_offset() -> Vector2:
+	# Anticipation — derive direction live from focus so a moving target
+	# drags the pull-back with it. Strike phase uses the snapshot.
+	if state == State.COMBAT and not _blockers.is_empty() and _combat_cooldown > 0.0 and _combat_cooldown <= ATTACK_TELEGRAPH_DURATION:
+		var focus: Node = _blockers[0]
+		if focus != null and is_instance_valid(focus) and focus is Node2D:
+			var d: Vector2 = (focus as Node2D).global_position - global_position
+			if d.length_squared() > 0.01:
+				var t: float = smoothstep(ATTACK_TELEGRAPH_DURATION, 0.0, _combat_cooldown)
+				return -d.normalized() * STRIKE_BACK_DIST * t
+	# Commit + recoil. Normalized progress s = 1 at start, 0 at end (mirrors
+	# the lunge curve: rear-back peak → forward peak → ease back to neutral).
+	if _strike_t > 0.0 and _strike_dir.length_squared() > 0.001:
+		var s: float = 1.0 - (_strike_t / STRIKE_ANIM_DURATION)
+		var amount: float
+		if s < 0.45:
+			amount = lerp(-STRIKE_BACK_DIST, STRIKE_PUSH_DIST, s / 0.45)
+		else:
+			amount = lerp(STRIKE_PUSH_DIST, 0.0, (s - 0.45) / 0.55)
+		return _strike_dir * amount
+	return Vector2.ZERO
 
 
 # Red warning arc drawn on the side of the enemy facing its blocker during
@@ -400,7 +589,12 @@ func _draw_health_bar() -> void:
 		return
 	var zs: float = _get_zoom_scale()
 	var bar_size: Vector2 = HP_BAR_SIZE * zs
-	var bar_y: float = HP_BAR_Y_OFFSET * zs
+	# Multi-part bodies have a head above the torso; bar must clear the head.
+	var bar_y_local: float = HP_BAR_Y_OFFSET
+	if data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
+		var head_top: float = data.visual.head_y_offset * data.visual.radius - data.visual.head_radius_ratio * data.visual.radius
+		bar_y_local = minf(HP_BAR_Y_OFFSET, head_top - 12.0)
+	var bar_y: float = bar_y_local * zs
 	var pct: float = clampf(float(current_health) / float(max_hp), 0.0, 1.0)
 	var origin: Vector2 = Vector2(-bar_size.x * 0.5, bar_y)
 	draw_rect(Rect2(origin, bar_size), Color(0.12, 0.12, 0.12))

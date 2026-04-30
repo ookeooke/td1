@@ -18,6 +18,12 @@ var found_at_wave: int = 0
 # Defaults to false; round-trips through to_dict/from_dict; older saves
 # missing the field default to false (additive — no migration needed).
 var locked: bool = false
+# Phase 49 — grid placement on the shared inventory grid. -1/-1 means
+# unplaced; InventoryManager._reflow_unplaced() assigns coordinates on the
+# next opportunity (load, equip-back, manual reflow). Equipped items also
+# carry -1/-1 since they don't occupy any grid cell while equipped.
+var grid_row: int = -1
+var grid_col: int = -1
 
 
 func to_dict() -> Dictionary:
@@ -27,6 +33,8 @@ func to_dict() -> Dictionary:
 		"affixes": rolled_affixes.duplicate(true),
 		"found_at_wave": found_at_wave,
 		"locked": locked,
+		"grid_row": grid_row,
+		"grid_col": grid_col,
 	}
 
 
@@ -37,6 +45,8 @@ static func from_dict(d: Dictionary) -> ItemInstance:
 	inst.rolled_affixes = (d.get("affixes", []) as Array).duplicate(true)
 	inst.found_at_wave = int(d.get("found_at_wave", 0))
 	inst.locked = bool(d.get("locked", false))
+	inst.grid_row = int(d.get("grid_row", -1))
+	inst.grid_col = int(d.get("grid_col", -1))
 	return inst
 
 

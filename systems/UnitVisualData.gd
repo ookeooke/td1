@@ -10,6 +10,12 @@ enum Accent { NONE, WEAPON_LINE, CROSSHAIR, WINGS, CROWN }
 # Drives draw_swing_arc_trail's silhouette. Default SWORD keeps the existing
 # 60° arc, so every existing .tres renders unchanged until explicitly updated.
 enum WeaponType { SWORD, SPEAR, STAFF, CLAWS }
+# Race tag selects the multi-part body silhouette (head, legs, optional tusks).
+# NONE = legacy single-shape draw, kept as fallback for any visual not migrated.
+enum Race { NONE, HUMAN, ORC, GOBLIN, TROLL, UNDEAD }
+# Headgear drawn over the head when race != NONE. CROWN_BIG reproduces the old
+# Accent.CROWN silhouette as a hat so bosses keep their crown after migration.
+enum Hat { NONE, HORNS, HELMET, HOOD, BANDANA, CROWN_BIG }
 
 @export var shape: Shape = Shape.CIRCLE
 @export var body_color: Color = Color(0.75, 0.2, 0.2)
@@ -35,3 +41,23 @@ enum WeaponType { SWORD, SPEAR, STAFF, CLAWS }
 @export_range(0.0, 20.0, 0.1) var walk_bob_speed: float = 7.0
 # Squash magnitude at each foot-plant (body scales X+ Y-). 0 = off.
 @export_range(0.0, 0.25, 0.01) var walk_squash: float = 0.04
+
+# Multi-part body composition (head + legs + optional tusks + hat). When
+# race == NONE the drawer skips these and draws the legacy single shape, so
+# every pre-existing .tres renders unchanged until it opts in.
+@export_group("Body Parts")
+@export var race: Race = Race.NONE
+@export var head_color: Color = Color(0.42, 0.55, 0.25)
+# Head radius as a fraction of torso radius. ~0.55 keeps the head visibly
+# smaller than the torso while staying readable at low zoom.
+@export_range(0.2, 1.2, 0.05) var head_radius_ratio: float = 0.55
+# Vertical placement of head center, in units of torso radius (negative = up).
+@export_range(-2.0, 0.0, 0.05) var head_y_offset: float = -0.95
+@export var has_tusks: bool = false
+@export var hat: Hat = Hat.NONE
+# Optional second hat layered on the first — used by the boss to combine
+# CROWN_BIG (top) with HORNS (head). Hat.NONE = single-hat behavior.
+@export var hat_secondary: Hat = Hat.NONE
+@export var hat_color: Color = Color(0.3, 0.3, 0.3)
+@export var leg_color: Color = Color(0.25, 0.18, 0.12)
+@export var arm_color: Color = Color(0.42, 0.55, 0.25)

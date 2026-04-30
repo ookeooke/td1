@@ -18,9 +18,16 @@ const PATH_COLOR := Color(0.55, 0.40, 0.25)
 # needs to be at least 2 * (50 + 35) = 170px wide to visually contain every
 # enemy on the outer lanes. Keep in sync with WaveManager.LANE_SPACING.
 const PATH_WIDTH := 170.0
-const SPOT_FILL := Color(0.85, 0.75, 0.35, 0.85)
-const SPOT_OUTLINE := Color(0.25, 0.18, 0.08)
+const SPOT_FILL := Color(0.78, 0.72, 0.55, 0.95)
+const SPOT_OUTLINE := Color(0.20, 0.15, 0.08)
 const SPOT_RADIUS := 65.0
+# Cobble ring + crossed-planks build marker — drawn for unoccupied spots so
+# the player has a clear "build here" cue. Once a tower is placed on the
+# spot, only the foundation circle remains (acts as a base under the tower).
+const SPOT_COBBLE_COLOR := Color(0.50, 0.42, 0.32)
+const SPOT_COBBLE_HIGHLIGHT := Color(0.65, 0.58, 0.45)
+const SPOT_PLANK_COLOR := Color(0.55, 0.38, 0.20)
+const SPOT_PLANK_OUTLINE := Color(0.22, 0.14, 0.06)
 
 # Map border visuals — drawn beyond map_bounds edges.
 const BORDER_WIDTH := 200.0
@@ -42,6 +49,10 @@ const WATER_LIGHT := Color(0.30, 0.50, 0.70)
 @onready var grid_manager: Node = $GridManager
 
 var _paths_by_id: Dictionary = {}
+# Procedural off-path scenery — trees, bushes, flowers, grass tufts. Generated
+# once in _ready (deterministic seed) and drawn between borders and paths.
+var _decorations: Array = []
+const _EnvironmentScatterScript := preload("res://systems/EnvironmentScatter.gd")
 
 
 func _ready() -> void:
@@ -55,6 +66,7 @@ func _ready() -> void:
 		return
 	_register_tower_spots()
 	_configure_camera()
+	_generate_decorations()
 	print("[Level1] ready — %d paths, %d spots, %d spawn markers" % [
 		_paths_by_id.size(),
 		grid_manager.get_spot_count(),
@@ -84,11 +96,115 @@ func _print_hardness_readout() -> void:
 	var b: Dictionary = bc.score_level_breakdown(wl, GameState.STARTING_GOLD)
 	var per: String = ""
 	var pw: Array = b.per_wave
+	var pg: Array = b.per_wave_gold
+	var pd: Array = b.per_wave_density
 	for i in range(pw.size()):
-		per += "  W%d=%d" % [i + 1, int(pw[i])]
-	print("[Level1/Balance] net=%d (waves=%d, gold=%d)%s" % [
-		int(b.net_score), int(b.wave_total), int(b.starting_gold), per
+		per += "  W%d=%d (%dg, %.1fe/s)" % [i + 1, int(pw[i]), int(pg[i]), float(pd[i])]
+	print("[Level1/Balance] %s net=%d (waves=%d, start=%dg)%s" % [
+		String(b.tier), int(b.net_score), int(b.wave_total), int(b.starting_gold), per
 	])
+	print("[Level1/Budget] natural=%dg  max_with_early_calls=%dg  swing=+%dg" % [
+		int(b.gold_natural), int(b.gold_max_with_early_calls), int(b.early_call_swing)
+	])
+	# Damage/cost ratios — the load-bearing hardness diagnostic.
+	# req_dmg = total physical EHP to clear the wave with zero leak.
+	# req_dps = DPS floor over the spawn window.
+	# g/dmg   = gold-awarded ÷ damage-required (stinginess: <0.08 brutal,
+	#           0.10–0.25 healthy, >0.30 trivial).
+	var ratio_line: String = ""
+	var total_req_dmg: float = 0.0
+	for i in range(wl.waves.size()):
+		var w: WaveData = wl.waves[i]
+		var req_dmg: float = bc.wave_required_damage(w)
+		var req_dps: float = bc.wave_required_dps(w)
+		var gpd: float = bc.wave_gold_per_damage(w)
+		ratio_line += "  W%d=%d req_dps=%.1f g/dmg=%.2f" % [i + 1, int(req_dmg), req_dps, gpd]
+		total_req_dmg += req_dmg
+	# Level-wide ratio: gold-per-damage-required averaged over the level.
+	# Compare: a player wins by dealing total_req_dmg damage, funded by
+	# gold_natural. Ratio < 0.20 means the player must commit gold tightly;
+	# > 0.30 means the level is over-funded and trivially soluble.
+	var level_gpd: float = 0.0
+	if total_req_dmg > 0.0:
+		level_gpd = float(b.gold_natural) / total_req_dmg
+	print("[Level1/Ratios] req_dmg=%d  natural_g/dmg=%.2f%s" % [
+		int(total_req_dmg), level_gpd, ratio_line
+	])
+	# Tower damage-per-gold table — the load-bearing efficiency lookup.
+	# Each row: 1 gold buys X damage over a 60s wave window, by tier.
+	# Use the cheapest L1 row to size the next per-wave gold target.
+	var towers: Array = ContentRegistry.towers if ContentRegistry != null else []
+	var window_sec: float = 60.0  # canonical window for tower comparison
+	print("[Level1/Towers] dmg per gold over %.0fs window:" % window_sec)
+	var best_l1: float = 0.0
+	for t in towers:
+		if not (t is TowerData) or t.damage <= 0.0:
+			continue
+		var l1: float = bc.tower_damage_per_gold(t, 0, window_sec)
+		var l2: float = bc.tower_damage_per_gold(t, 1, window_sec)
+		var l3: float = bc.tower_damage_per_gold(t, 2, window_sec)
+		print("  %s  L1=%.2f  L2=%.2f  L3=%.2f" % [String(t.tower_name), l1, l2, l3])
+		if l1 > best_l1:
+			best_l1 = l1
+	# Per-wave required gold based on best-L1 efficiency. Compare against
+	# per_wave_gold (above) — if required > earned, wave is gear-gated.
+	if best_l1 > 0.0:
+		var req_line: String = "  best_L1=%.2f dmg/g  →" % best_l1
+		for i in range(wl.waves.size()):
+			var w: WaveData = wl.waves[i]
+			var rg: int = bc.wave_required_gold(w, best_l1)
+			req_line += "  W%d_need=%dg/got=%dg" % [i + 1, rg, int(b.per_wave_gold[i])]
+		print("[Level1/GoldVsNeed]%s" % req_line)
+	# Dead-air audit — flag spawn gaps >5s. KR rule of thumb: keep arrivals
+	# continuous so the player never sits idle. Big gap = re-stagger emitters
+	# (use parallel WaveSpawn entries with offset start_delays).
+	var dead_line: String = ""
+	for i in range(wl.waves.size()):
+		var w: WaveData = wl.waves[i]
+		var t: Dictionary = bc.wave_spawn_timeline(w)
+		var flag: String = " ⚠" if float(t.max_gap) > 5.0 else ""
+		dead_line += "  W%d max=%.1fs dead=%.1fs%s" % [
+			i + 1, float(t.max_gap), float(t.dead_air), flag
+		]
+	print("[Level1/DeadAir]%s" % dead_line)
+	# Pressure block — the headline metric in the new authored-economy model.
+	# For each wave: actual gold vs target_gold, actual_pressure vs target_pressure
+	# where pressure = required_DPS / affordable_DPS. Drift > 15% triggers WARN.
+	var ld: LevelNodeData = _find_level_data("level_1")
+	if ld == null:
+		return
+	var rep: Dictionary = bc.level_pressure_report(wl, ld, GameState.STARTING_GOLD)
+	var pressure_line: String = ""
+	for entry in rep.per_wave:
+		pressure_line += "  W%d g=%d/%d p=%.2f/%.2f" % [
+			int(entry.wave),
+			int(entry.actual_gold), int(entry.target_gold),
+			float(entry.actual_pressure), float(entry.target_pressure),
+		]
+	print("[Level1/Pressure] total=%d/%dg (%+.0f%%)%s" % [
+		int(rep.total_actual_gold), int(rep.total_target_gold),
+		float(rep.total_drift_pct), pressure_line
+	])
+	for w in rep.warnings:
+		print("[Level1/DRIFT] WARN %s" % String(w))
+
+
+# Look up this level's authored targets from level_list.tres. Returns null if
+# the registry is missing or the level_id isn't found — drift warnings just
+# silently skip in that case.
+func _find_level_data(level_id: String) -> LevelNodeData:
+	# Avoid `as LevelList` cast — class_name registration may race with the
+	# editor's class index (CORE RULE 16). Untyped Resource access works
+	# because the loaded resource has the LevelList script attached, and
+	# Godot resolves `.levels` dynamically on the instance.
+	var registry: Resource = load("res://ui/world_map/level_list.tres")
+	if registry == null:
+		return null
+	var levels: Array = registry.levels
+	for entry in levels:
+		if entry is LevelNodeData and entry.level_id == level_id:
+			return entry
+	return null
 
 
 func _configure_camera() -> void:
@@ -105,10 +221,20 @@ func _on_editor_tree_changed() -> void:
 	queue_redraw()
 
 
-func _process(_delta: float) -> void:
+var _spot_pulse_accum: float = 0.0
+
+
+func _process(delta: float) -> void:
 	# Editor-only: keep the preview in sync with live Marker2D / Path2D drags.
-	# Cheap — _draw() only re-runs when queue_redraw flags the node dirty.
 	if Engine.is_editor_hint():
+		queue_redraw()
+		return
+	# Runtime: drive the empty-spot pulse at ~20 Hz so unoccupied build pads
+	# breathe gently. Throttled so we don't redraw the whole level every
+	# frame (paths + borders + spots all share this _draw).
+	_spot_pulse_accum += delta
+	if _spot_pulse_accum >= 0.05:
+		_spot_pulse_accum = 0.0
 		queue_redraw()
 
 
@@ -142,6 +268,30 @@ func _register_tower_spots() -> void:
 			grid_manager.register_spot(child.name, child.position)
 
 
+# Builds the off-path decoration list — deterministic per seed so the same
+# map always lays out the same way. Called once at runtime in _ready.
+func _generate_decorations() -> void:
+	# Collect baked path points from every Path2D (uses the existing pattern
+	# from _draw + _cache_paths). Flatten into a single PackedVector2Array.
+	var path_pts: PackedVector2Array = PackedVector2Array()
+	if paths_node != null:
+		for child in paths_node.get_children():
+			if child is Path2D and child.curve != null:
+				path_pts.append_array(child.curve.get_baked_points())
+	# Tower spot positions.
+	var spot_positions: Array = []
+	if tower_spots_node != null:
+		for child in tower_spots_node.get_children():
+			if child is Marker2D:
+				spot_positions.append(child.position)
+	# Hero spawn — defer to the existing helper so future levels with a
+	# different marker layout still work.
+	var hero_spawn: Vector2 = get_hero_spawn_position()
+	_decorations = _EnvironmentScatterScript.generate(
+		0xCAFEFACE, map_bounds, path_pts, spot_positions, hero_spawn, 80, 600
+	)
+
+
 func _draw() -> void:
 	# Bleed the background far beyond the design viewport so wider/taller
 	# devices and zoomed-out views see grass instead of gray void.
@@ -149,6 +299,12 @@ func _draw() -> void:
 
 	# Map border visuals — mountains (top), cliffs (sides), water (bottom).
 	_draw_borders()
+
+	# Off-path scenery — drawn after borders but before paths, so the road
+	# cleanly overlays anything that grew right up to the edge. Trees / bushes
+	# pre-sorted by Y inside generate() for a faux-isometric overlap.
+	for d in _decorations:
+		_EnvironmentScatterScript.draw(self, d)
 
 	# Paths come from children so the Godot Path2D curve editor works.
 	var source := paths_node if paths_node != null else get_node_or_null("Paths")
@@ -161,10 +317,46 @@ func _draw() -> void:
 
 	var spots := tower_spots_node if tower_spots_node != null else get_node_or_null("TowerSpots")
 	if spots != null:
+		# Pulse phase shared across all unoccupied spots — synchronized
+		# breathing so empty spots read as one "ready to build" beat.
+		var pulse_t: float = sin(Time.get_ticks_msec() / 480.0) * 0.5 + 0.5  # 0..1
 		for child in spots.get_children():
-			if child is Marker2D:
-				draw_circle(child.position, SPOT_RADIUS, SPOT_FILL)
-				draw_arc(child.position, SPOT_RADIUS, 0.0, TAU, 32, SPOT_OUTLINE, 3.0)
+			if not (child is Marker2D):
+				continue
+			_draw_tower_spot(child.position, child.name, pulse_t)
+
+
+func _draw_tower_spot(pos: Vector2, spot_id: String, pulse_t: float) -> void:
+	# 1. Stone foundation — sandy fill so it reads as a packed-earth pad.
+	draw_circle(pos, SPOT_RADIUS, SPOT_FILL)
+	# 2. Cobble ring around the perimeter — eight small darker stones with
+	# a tiny lighter highlight on each so they read as 3D pebbles. Phase-
+	# offset alpha pulse adds gentle life to the spot.
+	for i in 8:
+		var ang: float = TAU * float(i) / 8.0 + 0.20
+		var p: Vector2 = pos + Vector2(cos(ang), sin(ang)) * (SPOT_RADIUS - 7.0)
+		draw_circle(p, 7.0, SPOT_COBBLE_COLOR)
+		draw_circle(p + Vector2(-1.5, -1.5), 2.5, SPOT_COBBLE_HIGHLIGHT)
+	# 3. Outline ring on top of the cobbles for a clean silhouette.
+	draw_arc(pos, SPOT_RADIUS, 0.0, TAU, 32, SPOT_OUTLINE, 3.0)
+
+	# 4. Build-ready marker — only shown when the spot is empty. Crossed
+	# wooden planks (X shape) plus a small hammer-head dot, gently pulsing
+	# in scale so the player's eye is drawn to buildable locations.
+	var occupied: bool = grid_manager != null and grid_manager.is_occupied(spot_id)
+	if occupied:
+		return
+	var pulse_scale: float = 0.92 + pulse_t * 0.10
+	var arm: float = 18.0 * pulse_scale
+	# Plank 1 (top-left to bottom-right) — drawn as a thick rounded line.
+	draw_line(pos + Vector2(-arm, -arm), pos + Vector2(arm, arm), SPOT_PLANK_OUTLINE, 9.0, true)
+	draw_line(pos + Vector2(-arm, -arm), pos + Vector2(arm, arm), SPOT_PLANK_COLOR, 6.0, true)
+	# Plank 2 (top-right to bottom-left).
+	draw_line(pos + Vector2(arm, -arm), pos + Vector2(-arm, arm), SPOT_PLANK_OUTLINE, 9.0, true)
+	draw_line(pos + Vector2(arm, -arm), pos + Vector2(-arm, arm), SPOT_PLANK_COLOR, 6.0, true)
+	# Center nail / hammer-head dot.
+	draw_circle(pos, 4.0 * pulse_scale, SPOT_COBBLE_COLOR)
+	draw_circle(pos, 2.0 * pulse_scale, Color(0.85, 0.78, 0.55))
 
 
 func _draw_borders() -> void:

@@ -60,23 +60,38 @@ layout_mode = 2
 text = "Send Wave!"
 theme_override_font_sizes/font_size = 18
 
-[node name="TopRight" type="HBoxContainer" parent="SafeArea"]
+[node name="TopRight" type="VBoxContainer" parent="SafeArea"]
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 0
+theme_override_constants/separation = 6
+alignment = 2
+
+[node name="Buttons" type="HBoxContainer" parent="SafeArea/TopRight"]
+layout_mode = 2
+size_flags_horizontal = 10
 theme_override_constants/separation = 8
 alignment = 2
 
-[node name="SpeedButton" type="Button" parent="SafeArea/TopRight"]
+[node name="SpeedButton" type="Button" parent="SafeArea/TopRight/Buttons"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(80, 60)
 layout_mode = 2
 text = "1x"
 theme_override_font_sizes/font_size = 22
 
-[node name="PauseButton" type="Button" parent="SafeArea/TopRight"]
+[node name="PauseButton" type="Button" parent="SafeArea/TopRight/Buttons"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(80, 60)
 layout_mode = 2
 text = "| |"
 theme_override_font_sizes/font_size = 22
+
+[node name="SpawnRateLabel" type="Label" parent="SafeArea/TopRight"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Incoming: 0 HP/5s"
+horizontal_alignment = 2
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(1, 0.85, 0.4, 1)

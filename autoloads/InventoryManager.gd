@@ -25,11 +25,11 @@ extends Node
 const _ItemInstanceScript := preload("res://items/ItemInstance.gd")
 const _SellPriceTable: Resource = preload("res://economy/sell_price_table.tres")
 const SLOT_COUNT: int = 6
-# IA-3 — soft inventory cap. Drops past this point are auto-sold at half
-# price (per `_AUTO_SELL_RATIO`) instead of being lost — converts the cap
-# into pressure to clean up rather than a hard punishment. Tunable.
-const MAX_INVENTORY_SIZE: int = 60
-const _AUTO_SELL_RATIO: float = 0.5
+# Phase 49 — fixed-size spatial grid. Cap is GRID_COLS × GRID_ROWS = 40 cells.
+# Items occupy 1×1, 1×2, 2×2 etc footprints from ItemBase.grid_width/height.
+# Drops that don't fit are hard-refused with a toast (no auto-sell).
+const GRID_COLS: int = 8
+const GRID_ROWS: int = 5
 
 var shared_inventory: Array = []           # Array[ItemInstance] — global pool
 var hero_equipment: Dictionary = {}        # hero_id -> Dict[slot_str -> uid]
@@ -94,6 +94,11 @@ func from_save_dict(d: Dictionary) -> void:
 					shared_inventory.append(_ItemInstanceScript.from_dict(entry))
 	hero_equipment = (d.get("hero_equipment", {}) as Dictionary).duplicate(true)
 	starter_gear_granted = (d.get("starter_gear_granted", []) as Array).duplicate()
+	# Phase 49 — first invalidate any placement that's now broken (item's
+	# stored coords assumed an old footprint, or overlap because another base
+	# was made larger). Then reflow everything still at -1 onto valid cells.
+	_invalidate_broken_placements()
+	_reflow_unplaced()
 
 
 # -- Round lifecycle --------------------------------------------------------
@@ -125,28 +130,188 @@ func commit_round() -> void:
 	SaveManager.save_game()
 
 
-# IA-3 — Single chokepoint for adding an instance to the shared pool.
-# Returns true when the item entered inventory; false when the cap auto-sold
-# it. Emits `item_sold` + meta-gold credit + a toast on the auto-sell path
-# so the player has clear feedback that something happened to the drop.
-# Starter gear bypasses this on purpose — call paths that grant starter
-# items append directly to `shared_inventory` (idempotent + always allowed).
+# Phase 49 — Single chokepoint for adding an instance to the shared pool.
+# Returns true when the item placed onto the grid; false when no footprint
+# fits (hard refuse — no auto-sell, no meta-gold). Starter gear takes the
+# same path so its items participate in placement instead of overrunning
+# the grid silently.
 func add_to_shared(instance) -> bool:
 	if instance == null:
 		return false
-	if shared_inventory.size() >= MAX_INVENTORY_SIZE:
-		var auto_sell_price: int = 0
-		var base: Resource = ContentRegistry.find_item_base(instance.base_id)
-		if base != null:
-			auto_sell_price = int(_SellPriceTable.price_for(int(base.rarity)) * _AUTO_SELL_RATIO)
-		if auto_sell_price > 0:
-			GameState.add_meta_gold(auto_sell_price)
-			EventBus.item_sold.emit(instance, auto_sell_price)
-			Toast.show_message("Inventory full — auto-sold for %dg" % auto_sell_price)
-		else:
-			Toast.show_message("Inventory full — drop discarded")
+	var base: Resource = ContentRegistry.find_item_base(instance.base_id)
+	if base == null:
+		# Unknown base — drop without occupying cells; UI hides until base
+		# resolves. Defensive only; ContentRegistry should always resolve.
+		shared_inventory.append(instance)
+		return true
+	var w: int = maxi(1, int(base.grid_width))
+	var h: int = maxi(1, int(base.grid_height))
+	var pos: Vector2i = _find_first_fit(w, h)
+	if pos.x < 0:
+		Toast.show_message("Inventory full — drop discarded")
 		return false
+	instance.grid_col = pos.x
+	instance.grid_row = pos.y
 	shared_inventory.append(instance)
+	return true
+
+
+# Phase 49 — Build a GRID_ROWS × GRID_COLS bool occupancy mask from every
+# placed instance in shared_inventory. Equipped items don't occupy cells
+# (they're cleared to -1/-1 on equip, restored on unequip). Items with
+# row=-1 or col=-1 are treated as unplaced and skipped — they'll be picked
+# up by _reflow_unplaced(). Cheap to rebuild on demand at this scale.
+func _build_occupancy() -> Array:
+	var mask: Array = []
+	for r in GRID_ROWS:
+		var row: Array = []
+		row.resize(GRID_COLS)
+		for c in GRID_COLS:
+			row[c] = false
+		mask.append(row)
+	for inst in shared_inventory:
+		if inst == null:
+			continue
+		if inst.grid_row < 0 or inst.grid_col < 0:
+			continue
+		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+		if base == null:
+			continue
+		var w: int = maxi(1, int(base.grid_width))
+		var h: int = maxi(1, int(base.grid_height))
+		for dr in h:
+			for dc in w:
+				var rr: int = inst.grid_row + dr
+				var cc: int = inst.grid_col + dc
+				if rr >= 0 and rr < GRID_ROWS and cc >= 0 and cc < GRID_COLS:
+					mask[rr][cc] = true
+	return mask
+
+
+# Phase 49 — Row-major scan for first opening of size w × h. Returns top-left
+# (col, row) as Vector2i, or (-1, -1) if no fit exists.
+func _find_first_fit(w: int, h: int) -> Vector2i:
+	if w <= 0 or h <= 0 or w > GRID_COLS or h > GRID_ROWS:
+		return Vector2i(-1, -1)
+	var mask: Array = _build_occupancy()
+	for r in (GRID_ROWS - h + 1):
+		for c in (GRID_COLS - w + 1):
+			var fits: bool = true
+			for dr in h:
+				for dc in w:
+					if mask[r + dr][c + dc]:
+						fits = false
+						break
+				if not fits:
+					break
+			if fits:
+				return Vector2i(c, r)
+	return Vector2i(-1, -1)
+
+
+# Phase 49 — Save-migration helper. Walks every placed item and, in load
+# order, claims its footprint cells against a running mask. An item whose
+# footprint goes out-of-bounds OR overlaps an earlier item's claim is
+# invalidated (grid_row/col reset to -1) so _reflow_unplaced can re-pack
+# it. Triggers when a base's grid_width/height changed since the save was
+# written (e.g. chain mail 1×1 → 2×2 in Phase 49).
+func _invalidate_broken_placements() -> void:
+	var mask: Array = []
+	for r in GRID_ROWS:
+		var row: Array = []
+		row.resize(GRID_COLS)
+		for c in GRID_COLS:
+			row[c] = false
+		mask.append(row)
+	for inst in shared_inventory:
+		if inst == null:
+			continue
+		if inst.grid_row < 0 or inst.grid_col < 0:
+			continue
+		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+		if base == null:
+			continue
+		var w: int = maxi(1, int(base.grid_width))
+		var h: int = maxi(1, int(base.grid_height))
+		var ok: bool = true
+		# In-bounds check.
+		if inst.grid_row + h > GRID_ROWS or inst.grid_col + w > GRID_COLS:
+			ok = false
+		# Overlap check.
+		if ok:
+			for dr in h:
+				for dc in w:
+					if mask[inst.grid_row + dr][inst.grid_col + dc]:
+						ok = false
+						break
+				if not ok:
+					break
+		if not ok:
+			inst.grid_row = -1
+			inst.grid_col = -1
+			continue
+		# Claim cells for this item so later items can detect overlaps.
+		for dr in h:
+			for dc in w:
+				mask[inst.grid_row + dr][inst.grid_col + dc] = true
+
+
+# Phase 49 — Walk every unplaced (row=-1) item and try to lay it down.
+# Items that still don't fit stay at -1 (UI hides them); should not happen
+# in practice since add_to_shared rejects on full, but defensive after a
+# legacy save load or grid resize.
+func _reflow_unplaced() -> void:
+	for inst in shared_inventory:
+		if inst == null:
+			continue
+		if inst.grid_row >= 0 and inst.grid_col >= 0:
+			continue
+		# Equipped items legitimately stay at -1/-1 — skip them.
+		if _is_equipped(inst.uid):
+			continue
+		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+		if base == null:
+			continue
+		var w: int = maxi(1, int(base.grid_width))
+		var h: int = maxi(1, int(base.grid_height))
+		var pos: Vector2i = _find_first_fit(w, h)
+		if pos.x < 0:
+			continue
+		inst.grid_col = pos.x
+		inst.grid_row = pos.y
+
+
+# Phase 49 — Player-driven reposition. Validates that placing `uid` at
+# (row, col) keeps its footprint inside the grid and doesn't overlap any
+# OTHER placed item. Returns true on success and writes the new position;
+# false leaves the item where it was. Drag-and-drop UI (deferred phase)
+# is the primary consumer.
+func move_item(uid: String, row: int, col: int) -> bool:
+	var inst = find_by_uid(uid)
+	if inst == null:
+		return false
+	var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+	if base == null:
+		return false
+	var w: int = maxi(1, int(base.grid_width))
+	var h: int = maxi(1, int(base.grid_height))
+	if row < 0 or col < 0 or row + h > GRID_ROWS or col + w > GRID_COLS:
+		return false
+	# Build occupancy with this item EXCLUDED so it can move within its own cells.
+	var prev_row: int = inst.grid_row
+	var prev_col: int = inst.grid_col
+	inst.grid_row = -1
+	inst.grid_col = -1
+	var mask: Array = _build_occupancy()
+	for dr in h:
+		for dc in w:
+			if mask[row + dr][col + dc]:
+				inst.grid_row = prev_row
+				inst.grid_col = prev_col
+				return false
+	inst.grid_row = row
+	inst.grid_col = col
+	EventBus.inventory_changed.emit()
 	return true
 
 
@@ -199,6 +364,12 @@ func find_by_uid(uid: String):
 
 
 func _ensure_equip_dict(hero_id: String) -> Dictionary:
+	# 2026-04-29 audit fix — refuse to create a junk entry for an empty
+	# hero_id. Without this, any caller that passed "" (e.g. via a transient
+	# selected_hero_id) would create hero_equipment[""] = {0: "", 1: ""...}
+	# and pollute the save with a permanent empty-string-keyed entry.
+	if hero_id == "":
+		return {}
 	if not hero_equipment.has(hero_id):
 		var d: Dictionary = {}
 		for i in SLOT_COUNT:
@@ -258,16 +429,41 @@ func equip(hero_id: String, uid: String) -> bool:
 	if base.level_requirement > 1 and GameState.get_hero_level(hero_id) < base.level_requirement:
 		Toast.show_message("Requires Lv %d" % base.level_requirement)
 		return false
+	# 2026-04-29 audit fix — IA-2's "shared in-use" semantic was broken: the
+	# same uid could end up in two heroes' equipment dicts simultaneously.
+	# Strip the uid from any other hero's slot before writing it to this one.
+	# Stays a no-op for fresh equips (uid not currently owned anywhere).
+	_unequip_uid_anywhere(uid, hero_id)
 	var d: Dictionary = _ensure_equip_dict(hero_id)
 	var previous_uid: String = String(d.get(str(slot), ""))
 	if previous_uid == uid:
 		return false
 	d[str(slot)] = uid
+	# Phase 49 — equipped items vacate their grid cells; previous-occupant
+	# of the slot returns to the grid (reflow finds a fit).
+	inst.grid_row = -1
+	inst.grid_col = -1
 	if previous_uid != "":
 		EventBus.item_unequipped.emit(hero_id, slot, find_by_uid(previous_uid))
+		_reflow_unplaced()
 	EventBus.item_equipped.emit(hero_id, slot, inst)
 	EventBus.inventory_changed.emit()
 	return true
+
+
+# 2026-04-29 audit helper — strip a uid from every hero's equipment slots
+# EXCEPT `keep_hero_id`. Used by `equip()` to enforce the "an item is equipped
+# at most once across all heroes" invariant introduced by the IA-2 shared
+# pool. Emits item_unequipped per slot it actually clears.
+func _unequip_uid_anywhere(uid: String, keep_hero_id: String) -> void:
+	for hid in hero_equipment.keys():
+		if hid == keep_hero_id:
+			continue
+		var d: Dictionary = hero_equipment[hid]
+		for i in SLOT_COUNT:
+			if String(d.get(str(i), "")) == uid:
+				d[str(i)] = ""
+				EventBus.item_unequipped.emit(hid, i, find_by_uid(uid))
 
 
 # IA-1 — Internal helper used by both the equip path and ensure_starter_gear.
@@ -291,6 +487,8 @@ func unequip(hero_id: String, slot: int) -> bool:
 	if uid == "":
 		return false
 	d[str(slot)] = ""
+	# Phase 49 — coming off a slot, item needs a grid spot again.
+	_reflow_unplaced()
 	EventBus.item_unequipped.emit(hero_id, slot, find_by_uid(uid))
 	EventBus.inventory_changed.emit()
 	return true
@@ -402,6 +600,13 @@ func ensure_starter_gear(hero_id: String) -> void:
 		inst.base_id = base.base_id
 		inst.rolled_affixes = []
 		inst.found_at_wave = 0
+		# Phase 49 — append unplaced; either the auto-equip path adopts the
+		# item (so it stays at -1/-1, no grid cell consumed) or _reflow_unplaced
+		# lays it down at the bottom of this function. Cleaner than calling
+		# add_to_shared here because we don't want the "Inventory full" toast
+		# to fire on a hero's first load.
+		inst.grid_row = -1
+		inst.grid_col = -1
 		shared_inventory.append(inst)
 		# Auto-equip into the base's slot (if empty AND the base passes the
 		# same hero/level gates that interactive equip uses). Defense against
@@ -413,6 +618,8 @@ func ensure_starter_gear(hero_id: String) -> void:
 		var d: Dictionary = _ensure_equip_dict(hero_id)
 		if String(d.get(slot_str, "")) == "":
 			d[slot_str] = inst.uid
+	# Phase 49 — place any starter items that didn't auto-equip onto the grid.
+	_reflow_unplaced()
 	starter_gear_granted.append(hero_id)
 	EventBus.inventory_changed.emit()
 	SaveManager.save_game()

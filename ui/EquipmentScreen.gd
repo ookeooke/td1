@@ -12,26 +12,34 @@ extends Control
 const _ItemIconScript := preload("res://ui/ItemIcon.gd")
 const SLOT_COUNT: int = 6
 const SLOT_NAMES: Array[String] = ["Weapon", "Armor", "Helm", "Gloves", "Boots", "Trinket"]
-# Grid order — W/A/T on top row, locked H/G/B on bottom.
-const SLOT_ORDER: Array[int] = [0, 1, 5, 2, 3, 4]
+# Phase 49 — Diablo-Immortal-style two-column flanking layout. Defense +
+# main-hand stack on the left of the portrait; accessories on the right.
+# Top→bottom order within each column.
+const LEFT_SLOT_ORDER: Array[int] = [2, 1, 0]   # HELM, ARMOR, WEAPON
+const RIGHT_SLOT_ORDER: Array[int] = [5, 3, 4]  # TRINKET, GLOVES, BOOTS
 # Slots the player can equip into today. Others render locked until Phase F
 # activates them.
 const ACTIVE_SLOTS: Array[int] = [0, 1, 5]
+# Phase 49 — equipment slots are larger than inventory tiles to give the
+# equipped gear visual prominence (Diablo Immortal idiom). Mirrors the
+# touch-target floor (80px) with comfortable margin.
+const EQUIPPED_SLOT_PX: float = 144.0
 
-# Inventory is always padded to at least this many cells so the grid feels
-# like a proper inventory with headroom (empty tiles = free space).
-# Auto-grows in steps of one row beyond MIN so 40+ items still look clean.
-const MIN_INVENTORY_CELLS: int = 40
-const INVENTORY_ROW_STEP: int = 8
+# Phase 49 — fixed spatial grid. CELL_PX matches ItemIcon.SIZE_PX so 1×1
+# tiles look identical to the prior reflow layout; multi-cell items extend
+# to (w*CELL_PX, h*CELL_PX). No gaps between cells (Diablo-style packed grid).
+const CELL_PX: float = 92.0
 
 @onready var back_button: Button = %BackButton
 @onready var title_label: Label = %TitleLabel
 @onready var hero_label: Label = %HeroLabel
-@onready var slot_grid: GridContainer = %SlotGrid
+@onready var left_slot_col: VBoxContainer = %LeftSlotCol
+@onready var right_slot_col: VBoxContainer = %RightSlotCol
+@onready var hero_portrait: Control = %HeroPortrait
 @onready var stats_label: Label = %StatsLabel
 @onready var details_label: Label = %DetailsLabel
 @onready var right_title: Label = %RightTitle
-@onready var inventory_grid: HFlowContainer = %InventoryGrid
+@onready var inventory_grid: Control = %InventoryGrid
 @onready var hint_label: Label = %HintLabel
 @onready var sell_mode_button: Button = %SellModeButton
 @onready var lock_button: Button = %LockButton
@@ -99,24 +107,35 @@ func _on_back() -> void:
 
 
 func _build_slots() -> void:
-	for slot_idx in SLOT_ORDER:
-		var container: VBoxContainer = VBoxContainer.new()
-		container.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		var label: Label = Label.new()
-		label.text = SLOT_NAMES[slot_idx]
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", 14)
-		var icon: Control = _ItemIconScript.new()
-		icon.pressed.connect(_on_slot_pressed.bind(slot_idx))
-		icon.hovered.connect(_on_item_hovered)
-		icon.unhovered.connect(_on_item_unhovered)
-		# IP-2 — long-press an equipped slot to see its details (mobile-only
-		# path; on PC, hover already works).
-		icon.long_pressed.connect(_on_item_hovered)
-		_slot_icons[slot_idx] = icon
-		container.add_child(label)
-		container.add_child(icon)
-		slot_grid.add_child(container)
+	# Phase 49 — two columns of 3 slots each, flanking the central HeroPortrait.
+	# Left col reads HELM / ARMOR / WEAPON top→bottom; right col TRINKET /
+	# GLOVES / BOOTS. Slots use EQUIPPED_SLOT_PX (144) — bigger than the 92px
+	# inventory tile so equipped gear feels prominent.
+	for slot_idx in LEFT_SLOT_ORDER:
+		_build_one_slot(slot_idx, left_slot_col)
+	for slot_idx in RIGHT_SLOT_ORDER:
+		_build_one_slot(slot_idx, right_slot_col)
+
+
+func _build_one_slot(slot_idx: int, parent_col: VBoxContainer) -> void:
+	var container: VBoxContainer = VBoxContainer.new()
+	container.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var label: Label = Label.new()
+	label.text = SLOT_NAMES[slot_idx]
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 14)
+	var icon: Control = _ItemIconScript.new()
+	icon.set_slot_size(EQUIPPED_SLOT_PX)
+	icon.pressed.connect(_on_slot_pressed.bind(slot_idx))
+	icon.hovered.connect(_on_item_hovered)
+	icon.unhovered.connect(_on_item_unhovered)
+	# IP-2 — long-press an equipped slot to see its details (mobile-only
+	# path; on PC, hover already works).
+	icon.long_pressed.connect(_on_item_hovered)
+	_slot_icons[slot_idx] = icon
+	container.add_child(label)
+	container.add_child(icon)
+	parent_col.add_child(container)
 
 
 func _refresh() -> void:
@@ -129,9 +148,19 @@ func _refresh() -> void:
 	# shown here match what the hero will have on next spawn.
 	stats_label.text = _compute_stats_text(hero_data, InventoryManager.get_all_equipped(hero_id))
 	# Clear details on any refresh; hover repopulates.
-	details_label.text = "Hover an item to see its details."
-	# Left: slot state
-	for slot_idx in SLOT_ORDER:
+	# 2026-04-29 audit fix — preserve details during sell mode. _refresh()
+	# fires on every sell-arm tap (to re-modulate icons), and wiping the
+	# details panel each tap kills any context the player just long-pressed
+	# to read. In sell mode, the hover/long-press path owns the label.
+	if not _sell_mode:
+		details_label.text = "Hover an item to see its details."
+	# Phase 49 — central portrait reflects the currently selected hero. Setup
+	# is idempotent; reads off hero_data.visual.
+	if hero_portrait != null and hero_portrait.has_method("setup"):
+		hero_portrait.setup(hero_data)
+	# Left: slot state — both columns are populated from the same _slot_icons
+	# dict so iteration order doesn't matter; we paint every entry.
+	for slot_idx in _slot_icons.keys():
 		var icon: Control = _slot_icons[slot_idx]
 		if not ACTIVE_SLOTS.has(slot_idx):
 			icon.setup_locked()
@@ -147,24 +176,73 @@ func _refresh() -> void:
 	# how much room is left before drops start auto-selling.
 	for child in inventory_grid.get_children():
 		child.queue_free()
+	# Phase 49 — fixed spatial grid. Position each item icon at its grid
+	# coordinates (top-left corner = (col * CELL_PX, row * CELL_PX)), sized
+	# by its base footprint. Empty cells render a placeholder so the grid
+	# reads as a real container even when sparse.
 	var inv: Array = InventoryManager.get_unequipped()
-	var total: int = InventoryManager.shared_inventory.size()
-	var cap: int = InventoryManager.MAX_INVENTORY_SIZE
-	right_title.text = "Inventory (%d / %d)" % [total, cap]
-	# IA-3 — tint to warn the player as they approach the cap.
-	# Amber at 90%+, red at 100%.
-	var ratio: float = float(total) / float(cap) if cap > 0 else 0.0
-	if ratio >= 1.0:
-		right_title.modulate = Color(1.0, 0.4, 0.4, 1.0)
-	elif ratio >= 0.9:
-		right_title.modulate = Color(1.0, 0.7, 0.3, 1.0)
-	else:
-		right_title.modulate = Color.WHITE
+	var rows: int = InventoryManager.GRID_ROWS
+	var cols: int = InventoryManager.GRID_COLS
+	# Build a "covered" mask in this scope to decide which cells need a
+	# placeholder. Mirrors InventoryManager._build_occupancy but limited to
+	# unequipped items (equipped ones are guaranteed to be at -1/-1).
+	var cover: Array = []
+	for _r in rows:
+		var row: Array = []
+		row.resize(cols)
+		for c in cols:
+			row[c] = false
+		cover.append(row)
 	for inst in inv:
-		if inst == null:
+		if inst == null or inst.grid_row < 0 or inst.grid_col < 0:
 			continue
+		var b: Resource = ContentRegistry.find_item_base(inst.base_id)
+		if b == null:
+			continue
+		var iw: int = maxi(1, int(b.grid_width))
+		var ih: int = maxi(1, int(b.grid_height))
+		for dr in ih:
+			for dc in iw:
+				var rr: int = inst.grid_row + dr
+				var cc: int = inst.grid_col + dc
+				if rr >= 0 and rr < rows and cc >= 0 and cc < cols:
+					cover[rr][cc] = true
+	var filled_cells: int = 0
+	for r in rows:
+		for c in cols:
+			if cover[r][c]:
+				filled_cells += 1
+	var total_cells: int = rows * cols
+	right_title.text = "Inventory (%d / %d)" % [filled_cells, total_cells]
+	right_title.modulate = Color.WHITE
+	# Empty placeholders first — drawn under any item icons. mouse_filter set
+	# to IGNORE so they don't catch clicks (which would no-op anyway) and so
+	# moving the cursor across an empty cell between two real items doesn't
+	# fire spurious enter/exit events on the empty.
+	for r in rows:
+		for c in cols:
+			if cover[r][c]:
+				continue
+			var empty_icon: Control = _ItemIconScript.new()
+			empty_icon.setup_empty()
+			empty_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			empty_icon.position = Vector2(c * CELL_PX, r * CELL_PX)
+			empty_icon.size = Vector2(CELL_PX, CELL_PX)
+			inventory_grid.add_child(empty_icon)
+	# Item tiles — placed at their stored grid coordinates, sized by footprint.
+	for inst in inv:
+		if inst == null or inst.grid_row < 0 or inst.grid_col < 0:
+			continue
+		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+		var w: int = 1
+		var h: int = 1
+		if base != null:
+			w = maxi(1, int(base.grid_width))
+			h = maxi(1, int(base.grid_height))
 		var icon: Control = _ItemIconScript.new()
 		icon.setup_instance(inst)
+		icon.position = Vector2(inst.grid_col * CELL_PX, inst.grid_row * CELL_PX)
+		icon.size = Vector2(w * CELL_PX, h * CELL_PX)
 		icon.pressed.connect(_on_inventory_item_pressed)
 		icon.hovered.connect(_on_item_hovered)
 		icon.unhovered.connect(_on_item_unhovered)
@@ -181,17 +259,6 @@ func _refresh() -> void:
 			else:
 				icon.modulate = Color(1.0, 0.85, 0.85, 1.0)
 		inventory_grid.add_child(icon)
-	# Phase polish — always pad beyond current inventory so the grid shows
-	# headroom. At minimum MIN_INVENTORY_CELLS; if the player has more than
-	# that, grow in row steps AND always leave at least one empty row so it
-	# never looks "exactly full".
-	var target_cells: int = MIN_INVENTORY_CELLS
-	if inv.size() >= target_cells:
-		target_cells = inv.size() + INVENTORY_ROW_STEP
-	for _i in (target_cells - inv.size()):
-		var empty_icon: Control = _ItemIconScript.new()
-		empty_icon.setup_empty()
-		inventory_grid.add_child(empty_icon)
 
 
 # --- Interaction (D3) -------------------------------------------------------
@@ -446,13 +513,16 @@ func _compute_stats_text(hero_data: Resource, equipped: Array) -> String:
 
 func _on_item_hovered(inst) -> void:
 	if inst == null:
-		details_label.text = ""
 		return
 	details_label.text = _format_item_details(inst)
 
 
 func _on_item_unhovered() -> void:
-	details_label.text = "Hover an item to see its details."
+	# Phase 49 — sticky details panel. Don't reset on unhover; the last-shown
+	# item's stats stay visible until the player hovers another item or the
+	# screen refreshes. Avoids flicker when the mouse passes over empty cells
+	# between two adjacent real items, and matches ARPG convention.
+	pass
 
 
 const _RARITY_NAMES: Array[String] = ["Common", "Magic", "Rare", "Epic", "Legendary"]

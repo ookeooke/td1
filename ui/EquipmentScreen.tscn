@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://ui/EquipmentScreen.gd" id="1_script"]
 [ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
+[ext_resource type="Script" path="res://ui/HeroPortrait.gd" id="3_portrait"]
 
 [node name="EquipmentScreen" type="Control"]
 layout_mode = 3
@@ -62,7 +63,7 @@ offset_bottom = -16.0
 theme_override_constants/separation = 20
 
 [node name="LeftPanel" type="VBoxContainer" parent="Body"]
-custom_minimum_size = Vector2(360, 0)
+custom_minimum_size = Vector2(620, 0)
 layout_mode = 2
 theme_override_constants/separation = 12
 
@@ -71,12 +72,26 @@ layout_mode = 2
 text = "Equipped"
 theme_override_font_sizes/font_size = 20
 
-[node name="SlotGrid" type="GridContainer" parent="Body/LeftPanel"]
+[node name="EquippedRow" type="HBoxContainer" parent="Body/LeftPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="LeftSlotCol" type="VBoxContainer" parent="Body/LeftPanel/EquippedRow"]
 unique_name_in_owner = true
 layout_mode = 2
-columns = 3
-theme_override_constants/h_separation = 12
-theme_override_constants/v_separation = 12
+theme_override_constants/separation = 12
+
+[node name="HeroPortrait" type="Control" parent="Body/LeftPanel/EquippedRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(280, 456)
+layout_mode = 2
+mouse_filter = 2
+script = ExtResource("3_portrait")
+
+[node name="RightSlotCol" type="VBoxContainer" parent="Body/LeftPanel/EquippedRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="StatsTitle" type="Label" parent="Body/LeftPanel"]
 layout_mode = 2
@@ -96,8 +111,11 @@ theme_override_font_sizes/font_size = 20
 
 [node name="DetailsLabel" type="Label" parent="Body/LeftPanel"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 220)
 layout_mode = 2
+size_flags_vertical = 3
 autowrap_mode = 2
+clip_text = true
 theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.88, 0.92, 1, 1)
 
@@ -163,10 +181,8 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="InventoryGrid" type="HFlowContainer" parent="Body/RightPanel/ScrollContainer"]
+[node name="InventoryGrid" type="Control" parent="Body/RightPanel/ScrollContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(736, 460)
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/h_separation = 10
-theme_override_constants/v_separation = 10
+mouse_filter = 1

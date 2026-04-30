@@ -142,6 +142,148 @@ Each new campaign level should target a multiple of S₁ ≈ 6,530 (post-tune):
 
 ---
 
+## Authored economy + pressure curve
+
+The level designer authors three numbers; everything else (per-wave bounties, enemy gold drops, countdowns) becomes a *derived quantity* the readout compares actual against.
+
+### The three knobs
+
+Per-level, in [ui/world_map/LevelNodeData.gd](../ui/world_map/LevelNodeData.gd) → [ui/world_map/level_list.tres](../ui/world_map/level_list.tres):
+
+| Field | Example (L1) | Meaning |
+|---|---|---|
+| `target_duration_sec` | 360 | Passive run length floor |
+| `gold_budget_total` | 700 | Max gold from kills + bounties (no early-calls) |
+| `wave_pressure_targets` | [0.4, 0.5, 0.6, 0.8, 0.9] | Per-wave gear pressure target |
+| `wave_gold_shares` | [0.10, 0.11, 0.16, 0.23, 0.40] | % of `gold_budget_total` per wave; sums to 1.0 |
+| `wave_time_shares` | [0.13, 0.16, 0.20, 0.23, 0.28] | % of `target_duration_sec` per wave; sums to 1.0 |
+| `early_call_window_sec` | 10 | Send-Wave button visible only in last N seconds of countdown |
+
+### Gear pressure
+
+The headline metric. For each wave:
+
+```
+required_dps   = wave_required_damage / wave_spawn_window
+affordable_dps = cumul_gold_at_wave_start × dps_per_gold   (Archer L1 = 0.096)
+gear_pressure  = required_dps / affordable_dps
+```
+
+Bands:
+
+| Pressure | Read |
+|---|---|
+| < 0.5 | Trivial — too much gold, towers idle |
+| 0.5 – 0.8 | Comfortable — has buy options, mistakes survivable |
+| 0.8 – 1.0 | Tight — must commit to right damage type, no slack |
+| > 1.0 | Gear-gated — Naked Baseline at risk |
+
+Authoring rule: peak wave pressure ≤ 1.0 with default loadout (Naked Baseline invariant — CORE RULE 18).
+
+### Early-call mechanic (risk + reward — CORE RULE 19)
+
+Calling next wave early is BOTH an economic decision AND a difficulty decision:
+
+- **Reward:** bonus gold scales with how early you click
+- **Risk:** the next wave starts while prior wave's stragglers are still alive — concurrent threat from both waves on the map at once
+
+The countdown for wave N+1 begins when **wave N finishes spawning** (NOT when wave N is fully cleared). Without this, calling early is free money — overlap is what gives the bonus a cost.
+
+**Send-Wave button is visible the entire countdown (KR-canonical).** The window caps *bonus magnitude*, not *button availability* — gating button visibility creates "where's the button" dead time, which is exactly what the design tries to avoid.
+
+```
+bonus = min(countdown_remaining, early_call_window_sec)
+```
+
+| Click moment | Bonus | Board state |
+|---|---|---|
+| T=0 of 25s countdown | `min(25, 10) = 10g` (max) | Maximum overlap — prior wave's tail still spawning/walking |
+| T=mid (15s remaining) | `min(15, 10) = 10g` (still max) | Heavy overlap |
+| T=20 (5s remaining) | `min(5, 10) = 5g` (shrinking) | Light overlap |
+| Wait full countdown | 0g | Clean board, normal start |
+
+Three valid playstyles: aggressive (+gold, +pressure), balanced (less gold, less pressure), passive (no gold, clean start). Player has agency every second of the countdown — no dead waiting.
+
+```
+max_gold_with_early_calls = gold_budget_total + (wave_count × early_call_window_sec)
+```
+
+For L1 (5 waves × 10s = 50g max), early-call swing is ~7% of budget — meaningful tactical reward without distorting the authored economy.
+
+Implementation: [autoloads/WaveManager.gd](../autoloads/WaveManager.gd) splits `_on_spawning_complete` (triggers next countdown) from `_maybe_pay_bounty` (triggers wave_completed + bounty when alive→0). Per-wave alive counts tracked in `_alive_per_wave: Dictionary` so the right bounty pays at the right moment, even when waves run concurrently.
+
+### Editor readout
+
+`Level<N>.gd._print_hardness_readout` calls `BalanceCalculator.level_pressure_report()` and prints:
+
+```
+[Level1/Pressure] total=700/700g (+0%)  W1 g=70/70 p=0.40/0.40  W2 g=77/77 p=0.51/0.50 ...
+[Level1/DRIFT]    WARN W3 pressure actual=0.85 vs target=0.60 (+42%)   ← if drifted
+```
+
+Drift bands:
+
+| Drift | State | Action |
+|---|---|---|
+| <±15% | green | ship it |
+| ±15–25% | yellow | tune soon |
+| >±25% | red | retune now |
+
+### Authoring workflow
+
+1. Open `level_list.tres`. Set `target_duration_sec`, `gold_budget_total`, `wave_pressure_targets`.
+2. Set `wave_gold_shares` and `wave_time_shares` (each sums to 1.0). Default: heavier on later waves (40% of gold + 28% of time on the climax wave).
+3. Open the level scene. Readout prints actuals vs targets per wave.
+4. If gold drifts: adjust enemy `gold_worth` and per-wave `bounty` until each wave hits its target.
+5. If pressure drifts: adjust enemy quantities (more = higher pressure, fewer = lower). Don't adjust individual enemy stats — that breaks pressure measurements.
+6. Verify Naked Baseline still 1-stars with default loadout.
+7. Three runs hit all KPI bands (final gold 50–200g, spend 70–90%, hero 15–35%, top tower <60%, towers built ≥5) → ship.
+
+One knob (the pressure curve) drives the difficulty. The system tells you when it drifts.
+
+---
+
+## Gold budget & pacing
+
+Hardness measures the *threat*; budget measures the *means*. Both must agree per level — a level with target hardness 6,500 and budget 400g is gear-gated; a level with hardness 6,500 and budget 1,500g is trivial. Authoring formula:
+
+| Metric | Formula | Source |
+|---|---|---|
+| Per-wave gold | `Σ(enemy.gold_worth × spawn.count) + wave.bounty` | `BalanceCalculator.wave_gold()` |
+| Natural budget | `starting_gold + Σ wave_gold` | `score_level_breakdown.gold_natural` |
+| Max budget | `natural + Σ wave.countdown` (early-calls) | `score_level_breakdown.gold_max_with_early_calls` |
+| Early-call swing | `max - natural` | `score_level_breakdown.early_call_swing` |
+
+The **swing** is the design lever — it's how much extra gold an aggressive player earns over a passive one. Tune it to ~10–20% of the natural budget; smaller and the early-call mechanic doesn't matter, larger and the optimal play is "always call immediately" (which destroys pacing).
+
+### Early-call formula
+
+`bonus_gold = ceil(countdown_remaining_seconds)` — Kingdom Rush convention. 1 second saved = 1 gold. No fraction-of-total cap. Implemented in [WaveManager.call_early_wave()](../autoloads/WaveManager.gd) and emitted via `EventBus.early_wave_triggered(bonus_gold)`.
+
+### Per-wave pressure (density)
+
+`density = total_count / spawn_window_seconds` where `spawn_window = max emitter (start_delay + (count-1)·interval)`. Surfaces the difference between "10 enemies in 10s" (high pressure) and "10 enemies in 60s" (low pressure) at equal EHP. The hardness score deliberately doesn't fold density in — keeps the scoring monotonic — but the editor readout prints density per wave so authors can spot pacing cliffs that the score misses.
+
+Rule of thumb: density should ramp gently across waves (e.g. 0.6 → 0.8 → 1.0 → 1.2 → 1.5 e/s). A density jump of >2× wave-over-wave is a pacing cliff even if the hardness ratio looks fine.
+
+### Min playing time
+
+There is no authored minimum. Total floor time = Σ wave_duration + max(enemy travel time on slowest path). The level can't end faster than enemies physically walk. If a level feels too short, add waves or stretch spawn intervals — don't add a clock.
+
+### Hardness tiers
+
+Text label rendered next to raw score on WorldMap cards. Bands match `BalanceCalculator.tier_for_score()`:
+
+| Tier | Score range |
+|---|---|
+| Tutorial | < 4,000 |
+| Easy | 4,000 – 7,000 |
+| Medium | 7,000 – 11,000 |
+| Hard | 11,000 – 16,000 |
+| Brutal | 16,000+ |
+
+---
+
 ## Invariants
 
 Hard rules. If a change breaks one of these, the change is wrong — re-tune until the rule holds.

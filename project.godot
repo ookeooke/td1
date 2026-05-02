@@ -42,6 +42,10 @@ RunStats="*res://autoloads/RunStats.gd"
 
 gdscript/warnings/unused_signal=0
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/gut/plugin.cfg")
+
 [display]
 
 window/size/viewport_width=1920

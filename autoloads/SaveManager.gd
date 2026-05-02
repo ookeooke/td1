@@ -70,6 +70,14 @@ func _try_unlock_next_level(_completed_level_id: String) -> void:
 
 
 func save_game() -> void:
+	_save_to_path(SAVE_PATH)
+
+
+# Internal — path-parameterized save primitive. save_game() is the production
+# path (writes to user://save.json); tests call this directly with a temp
+# path so they don't trample the player's real save. The Test Range guard
+# stays here so neither path can persist sandbox state.
+func _save_to_path(path: String) -> void:
 	# 2026-04-29 audit fix — refuse to write while a Test Range run is active.
 	# Test Range mutates LoadoutState (tower_slot_cap = 6, 5-tower loadout, etc.)
 	# for sandbox convenience; without this guard, any save trigger during
@@ -111,7 +119,7 @@ func save_game() -> void:
 	var inv_slice: Dictionary = InventoryManager.to_save_dict()
 	for k in inv_slice.keys():
 		data[k] = inv_slice[k]
-	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	var file: FileAccess = FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		push_error("[SaveManager] cannot open save file for writing: %s" % FileAccess.get_open_error())
 		return
@@ -121,10 +129,17 @@ func save_game() -> void:
 
 
 func load_game() -> void:
-	if not FileAccess.file_exists(SAVE_PATH):
+	_load_from_path(SAVE_PATH)
+
+
+# Internal — path-parameterized load primitive. load_game() is the production
+# path (reads from user://save.json); tests call this directly with a temp
+# path that holds whatever fixture they prepared.
+func _load_from_path(path: String) -> void:
+	if not FileAccess.file_exists(path):
 		print("[SaveManager] no save file found — using defaults")
 		return
-	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.READ)
+	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		push_warning("[SaveManager] cannot open save file for reading")
 		return

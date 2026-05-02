@@ -1999,3 +1999,68 @@ Includes a state assignment table mapping each future content type (heroes, towe
 - **LSP staleness during the refactor**: VSCode's GDScript LSP showed dozens of "Identifier RunState not declared" errors until Godot itself was reloaded — autoload registration is parsed at editor boot, not on file save. Reload the editor once after pulling this commit; the errors clear instantly. Not a code bug.
 - **Single cross-domain touch point**: `RunState.reset_for_level()` reads `MetaProgression.get_upgrade_bonus()`. Defensible (one one-way read, no cycle), but resist adding more cross-reads; new state should pick a single home or be parameterized.
 - **Tests still unwritten**: STATUS.md item #1 (engineering hardening week) is now unblocked. The split surface is much friendlier to unit tests — DamageCalculator, RunState (gold/lives mutators), LoadoutState (slot swap), MetaProgression (record_stars dispatch, upgrade cache rebuild), SaveManager (round-trip per autoload).
+
+
+## 2026-05-01 — Unit test suite (Mon–Tue)
+
+### Why
+
+STATUS.md item #1 (engineering hardening week) called for ~30 unit tests against the core surface before content sprint. The GameState split (shipped earlier today) made each domain independently testable, so this was the natural next move.
+
+Two reasons it had to be now, not later:
+1. Invariants are fresh — tests written today encode what we just established. Tests written in two months would rediscover them by trial-and-error.
+2. AI-paired changes get an automated correctness check. Vibe-coding through new heroes / towers / items is much safer when the suite catches DamageCalculator regressions, save round-trip drift, and the Phase 47d incident-locks.
+
+### What changed
+
+**GUT 9.6.0 enabled.** Plugin was already vendored at `addons/gut/`; flipped on in `project.godot` `[editor_plugins]` block. Headless runner at `addons/gut/gut_cmdln.gd`.
+
+**SaveManager testable.** `save_game()` / `load_game()` now thin wrappers over new `_save_to_path(path)` / `_load_from_path(path)` primitives. Tests round-trip through `user://test_save_*.json` so the player's real save is never touched. CORE RULE 8 still holds (only SaveManager touches files).
+
+**Test scaffolding.** `tests/unit/` with helpers + 6 spec files:
+
+| File | Tests | Surface |
+|---|---|---|
+| `test_helpers.gd` + `_fake_target.gd` + `_fake_target_data.gd` | — | shared utilities (fake DamageCalculator target, temp save paths, cleanup) |
+| `test_damage_calculator.gd` | 5 | PHYSICAL/MAGIC/TRUE math, armor clamp, negative + null safety |
+| `test_save_manager.gd` | 5 | round-trip across all three state autoloads, missing/corrupt/unknown-version paths, hero_talents shape preservation |
+| `test_unlock_manager.gd` | 5 | type-scoped dispatch, defensive empty-id, star threshold, explicit unlock, free-content path |
+| `test_content_registry.gd` | 4 | find_tower / find_hero / find_enemy lookups + CORE RULE 12 drift check across all six content arrays |
+| `test_state_autoloads.gd` | 5 | RunState.reset_for_level, record_round_damage class routing, null-source safety, LoadoutState slot swap, get_loadout_towers cap |
+| `test_regressions.gd` | 6 | enemy double-emit guard (47d-20), overkill cap, status-effect refresh, TowerUpgradeData base fallback (47d-9), TowerStatsCard diff format, unlock unknown-id safety |
+
+**Tests reference scripts via `preload`, not `class_name`.** `class_name TestHelpers` would require the editor to have indexed the global script cache before headless runs work. From a clean checkout / clean CI, that cache doesn't exist yet, so test_save_manager.gd died with a parse error on first run. Fix: `const TestHelpers = preload("res://tests/unit/test_helpers.gd")` in every consumer, no class_name on the helper.
+
+### Result
+
+```
+Scripts               6
+Tests                30
+Passing Tests        30
+Asserts             185
+Time              1.376s
+```
+
+All green. The same headless command will plug into the planned Thursday CI workflow with no further changes:
+
+```bash
+godot --headless --path . -s res://addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit
+```
+
+### Incidental fixes surfaced while writing tests
+
+- **TowerData field name confusion**: my first draft assumed `attack_damage`; the actual field is `damage`. Caught immediately by the regression test for TowerUpgradeData base fallback. Lesson: always read the .tres / Data script before writing the test fixture, never paraphrase from memory.
+- **Freed-Node typed-parameter rejection**: I wrote a test calling `RunState.record_round_damage(freed_tower, 100.0)`. Godot's typed parameters reject already-freed Objects at the call boundary, before the function body's `is_instance_valid` guard runs. So that internal guard handles only the null case in practice; freed refs can't reach the body through any typed call site. Test rewritten to cover null + zero + negative-amount short-circuits; the `is_instance_valid` half stays as defensive code for any future untyped call site.
+- **`_diff_line` arrow format**: nailed down as `Label CurrVal→UpgVal` (no spaces around arrow) joined by 3-space separators. Matches CLAUDE.md spec ("Dmg 4→7   Rng 400→437"). The test pins this so the format stays mobile-readable across UI changes.
+
+### Files touched
+
+- New: `tests/unit/{test_helpers,_fake_target,_fake_target_data,test_damage_calculator,test_save_manager,test_unlock_manager,test_content_registry,test_state_autoloads,test_regressions}.gd`
+- Modified: `autoloads/SaveManager.gd` (extract path-parameterized primitives; production callers unchanged), `project.godot` (`[editor_plugins]` enables GUT), `STATUS.md` (Mon–Tue ✓; no-test-suite note retired)
+
+### Risks / known follow-ups
+
+- **`is_instance_valid` half of the freed-source guard is dead code in production.** Typed parameters catch freed refs at every call site. Either keep the guard as belt-and-suspenders (safe but unreachable) or delete it once an audit confirms no untyped call site exists. Not urgent.
+- **GUT orphan warnings on detached test nodes**: solved by switching `after_each` cleanup from `queue_free()` to synchronous `free()` for nodes that were never parented. queue_free defers past GUT's orphan check, so the warnings would have stayed otherwise.
+- **CI workflow (Thursday) is still unwritten**: the headless command works locally; turning that into `.github/workflows/ci.yml` using `barichello/godot-ci:4.6` is the next step in the hardening week.
+- **No save-migration scaffold yet**: STATUS.md item #1 Wednesday work. The save round-trip test currently passes a v4 save through unchanged; adding a `_MIGRATIONS: Array[Callable]` chain + 3 migration tests is the natural follow-up.

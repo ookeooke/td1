@@ -5,8 +5,12 @@
 /export/
 *.translation
 
-# Godot export
-export_presets.cfg
+# Godot export — export_presets.cfg IS committed (CI needs it). Only ignore
+# the credentials siblings Godot generates when keystores / signing keys are
+# configured locally.
+export_presets.cfg.bak
+*.keystore
+*.jks
 
 # OS files
 .DS_Store

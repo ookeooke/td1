@@ -1,6 +1,6 @@
 # STATUS
 
-**Last shipped**: Save migration scaffold (Wed of engineering hardening week). Added `_migrations: Array[Callable]` chain in SaveManager — empty for now, but the framework is wired so the next schema shift is a one-liner. Added `content_hash` key + `_purge_orphaned_content` so saves with refs to removed/renamed heroes / towers drop those refs silently on load instead of crashing. 3 new tests in `test_save_migrations.gd` (chain runs in order, no-ops at current version, orphan purge). Suite total now 33/33 in 1.5s headless. See SESSIONS.md "2026-05-01 — Save migration scaffold (Wed)".
+**Last shipped**: CI workflow (Thu of engineering hardening week). Added `.github/workflows/ci.yml` using `barichello/godot-ci:4.6` — runs the 33-test GUT suite headless on every push and PR, then (on test pass) exports a debug Android APK as a build artifact retained for 14 days. Promoted `export_presets.cfg` from gitignored to tracked so CI can read the Android preset; tightened `.gitignore` to still exclude keystore / signing-key siblings. See SESSIONS.md "2026-05-01 — CI workflow (Thu)".
 
 **Currently working on**:
 - WorldMap UI overhaul series (research doc: `~/.claude/plans/lets-make-deep-research-robust-sunbeam.md`). Phase A shipped; Phases B–F queued.
@@ -14,7 +14,7 @@
 1. **Engineering hardening week** (~10–12h total — do this BEFORE the content sprint; bugs in untested code compound fast):
    - ~~**Mon–Tue (~4h)** — Install [GUT](https://github.com/bitwes/Gut), write ~30 unit tests.~~ **Shipped 2026-05-01.** 30/30 passing in 1.4s headless. See SESSIONS.md.
    - ~~**Wed (~3h)** — Save migration scaffold + content_hash orphan tolerance.~~ **Shipped 2026-05-01.** Framework + 3 tests, 33/33 total. See SESSIONS.md.
-   - **Thu (~1h)** — `.github/workflows/ci.yml` using `barichello/godot-ci:4.6`. Runs GUT headless + exports Android APK as artifact on every push. Headless command already validated: `godot --headless -s res://addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit`.
+   - ~~**Thu (~1h)** — `.github/workflows/ci.yml` using `barichello/godot-ci:4.6`. Runs GUT headless + exports Android APK as artifact on every push.~~ **Shipped 2026-05-01.** First push will validate the image tag + Android export pipeline; iterate from the run output if either step needs adjustment.
    - **Fri (~2–4h)** — Playtest the APK CI built. Put it in front of 3–5 humans. Watch silently, don't explain. Write the first 5 things that confused or bored them into this file.
 
 2. **Content sprint** (4–8 weeks, after hardening): 4 more levels, 2 more heroes (ranger / paladin), 2 more towers (support or AoE-slow variant), 4 more enemies (shielded, fast-swarm, self-heal, boss #2), 1 more spell. Architecture already supports one-file adds.

@@ -2114,3 +2114,37 @@ Suite total: **33/33 passing in 1.5s** headless.
 - **content_hash includes only hero/tower/enemy ids**, not skills / items / affixes. If a skill_id is removed, the orphan purge today doesn't catch a stale entry in `hero_equipped_skills[hero_id][slot] = "skill_removed"` — but `LoadoutState.get_equipped_skills` already self-heals that case at read time (drops sids the hero no longer authors and persists the cleaned form). Belt-and-suspenders, fine.
 - **No rollback path**: if a migration ships and is later found to be wrong, the next migration must repair the damage (forward-only). Migrations should be tested in isolation before they ship.
 - **CI workflow (Thursday) is still next**: the headless command works locally; turning that into `.github/workflows/ci.yml` using `barichello/godot-ci:4.6` is the immediate next step.
+
+
+## 2026-05-01 — CI workflow (Thu)
+
+### Why
+
+STATUS.md item #1 Thu. The 33-test suite shipped Tue/Wed only protects code that passes through a developer's local machine. CI extends that to every push and PR — pushing a refactor or content add now fails fast on broken tests, before anyone else pulls the change. The Android-APK build step closes Friday's loop: playtesters get a fresh build per push without anyone manually exporting from the editor.
+
+### What changed
+
+- **`.github/workflows/ci.yml`** — two jobs in series (`test` gates `build-android`):
+  - `test` runs `godot --headless --path . -s res://addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit` inside `barichello/godot-ci:4.6`. Same command that's been green locally since Tue.
+  - `build-android` (only on test pass) stages the export templates from the image's `/root/...` location into `~/.local/share/godot/export_templates/${GODOT_VERSION}.stable`, then runs `godot --headless --export-debug "Android" build/td1-debug.apk`. APK uploaded as the `td1-android-debug` artifact, 14-day retention.
+- **`export_presets.cfg`** promoted from gitignored to tracked. The local file was clean (no keystores, no personal paths — `export_path=""`, default `com.example.$genname` package name), so committing it is safe and lets CI read the Android preset without per-env injection.
+- **`.gitignore`** tightened: `export_presets.cfg` removed from the ignore list; replaced with explicit ignores for keystore / signing-key siblings (`*.keystore`, `*.jks`, `export_presets.cfg.bak`) so the preset file is shared but credentials never are.
+
+Triggers: push to `main` or any `phase-**` branch, PRs to `main`, plus a `workflow_dispatch` manual trigger so a flaky run can be re-kicked from the Actions UI.
+
+### Known unknowns (will surface on first CI run)
+
+- **Image tag `barichello/godot-ci:4.6`** — CLAUDE.md specifies Godot 4.6.2; the closest published Docker tag is what the user gets. If 4.6 doesn't yet exist as a tag, bump to whatever the project README directs (likely `4.5` or `latest`). The `GODOT_VERSION` env var lets the template-staging step track the same number without diverging.
+- **Android debug-keystore handling** — Godot's Android export with `package/signed=true` needs a debug keystore wired through editor settings. The barichello image typically pre-stages this; if not, the first CI run will fail with a keystore-path error and the fix is one extra step that creates a keystore via `keytool` and points editor settings at it.
+- **Tests inside Docker** — locally the suite runs against a vendored Godot 4.6.2 binary; the image's Godot may differ in patch level. If any test depends on a behavior that shifted between patch versions, it'd surface here. Suite is invariant-focused (math, dispatch, schema) so divergence is unlikely.
+
+### Files touched
+
+- New: `.github/workflows/ci.yml`, `export_presets.cfg` (now tracked)
+- Modified: `.gitignore`, `STATUS.md`
+
+### Risks / known follow-ups
+
+- **APK is debug-signed only.** Release signing requires a release keystore behind a secret + a separate `--export-release` job. Out of scope for the hardening week; ship a release pipeline alongside the IAP work in production hardening round 2.
+- **No caching of the Godot image / templates yet.** Each CI run pulls the image fresh; on a paid runner this matters less than on the free tier. If PR throughput grows, add an `actions/cache` step keyed on `GODOT_VERSION`.
+- **Friday's playtest depends on Thursday's APK pipeline working.** If the `build-android` job needs iteration, that gates Friday — flag it as the first thing to verify after the initial CI push.

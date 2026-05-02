@@ -1,0 +1,79 @@
+name: CI
+
+# Runs the GUT test suite headless and (on success) exports a debug Android
+# APK as a build artifact. Triggered on every push and on pull-requests
+# targeting main. The test job gates the build job — broken tests never
+# produce an APK.
+#
+# Local equivalent of the test step:
+#   godot --headless --path . -s res://addons/gut/gut_cmdln.gd \
+#         -gdir=res://tests/unit -gexit
+#
+# Image: barichello/godot-ci:4.6 ships Godot 4.6 + Android export templates
+# pre-installed. Bump the tag when CLAUDE.md's Godot version moves.
+
+on:
+  push:
+    branches:
+      - main
+      - "phase-**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.6"
+
+jobs:
+  test:
+    name: Unit tests (GUT)
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run GUT headless
+        run: |
+          godot --headless --path . \
+            -s res://addons/gut/gut_cmdln.gd \
+            -gdir=res://tests/unit \
+            -gexit
+
+  build-android:
+    name: Export Android APK (debug)
+    needs: test
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Image stages templates under /root/... Godot looks for them under the
+      # invoking user's home, so move them into place. See barichello/godot-ci
+      # README for the canonical pattern.
+      - name: Stage export templates
+        run: |
+          mkdir -v -p ~/.local/share/godot/export_templates/
+          mv /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable \
+             ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+
+      - name: Export Android (debug)
+        run: |
+          mkdir -v -p build
+          godot --headless --verbose --path . \
+            --export-debug "Android" build/td1-debug.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: td1-android-debug
+          path: build/td1-debug.apk
+          if-no-files-found: error
+          retention-days: 14

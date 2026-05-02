@@ -2064,3 +2064,53 @@ godot --headless --path . -s res://addons/gut/gut_cmdln.gd -gdir=res://tests/uni
 - **GUT orphan warnings on detached test nodes**: solved by switching `after_each` cleanup from `queue_free()` to synchronous `free()` for nodes that were never parented. queue_free defers past GUT's orphan check, so the warnings would have stayed otherwise.
 - **CI workflow (Thursday) is still unwritten**: the headless command works locally; turning that into `.github/workflows/ci.yml` using `barichello/godot-ci:4.6` is the next step in the hardening week.
 - **No save-migration scaffold yet**: STATUS.md item #1 Wednesday work. The save round-trip test currently passes a v4 save through unchanged; adding a `_MIGRATIONS: Array[Callable]` chain + 3 migration tests is the natural follow-up.
+
+
+## 2026-05-01 — Save migration scaffold (Wed)
+
+### Why
+
+STATUS.md item #1 Wed. The content sprint is up next (4 levels, 2 heroes, 2 towers, 4 enemies). Every content add risks a save-breaking schema shift — renaming a hero_id, removing a tower, restructuring a dict. Building the migration framework under content-sprint pressure later is a recipe for a save-corrupting update; building it cold today is a 90-minute job and removes the risk.
+
+The Mon–Tue test suite makes this cheap: 3 migration tests slot directly into the existing harness, ~80 lines total.
+
+### What changed
+
+[autoloads/SaveManager.gd](autoloads/SaveManager.gd) gained three small additions:
+
+1. **`_migrations: Array[Callable]`** (instance var, not const). Empty today — every prior version transition (v1→v2→v3→v4) was implicit-on-load (InventoryManager flatten, spell-purge), so there's nothing to register yet. The next schema shift appends one Callable + bumps `SAVE_VERSION`. Tests can monkey-patch this array to exercise the chain logic without a real bump.
+
+2. **`_run_migrations(data, from_version)`** runs every Callable whose target version is > the loaded version. Indexed so that `_migrations[k]` migrates v(k+1) → v(k+2). Loaded after the version-check / before state population in `_load_from_path`.
+
+3. **`_compute_content_hash()`** + **`_purge_orphaned_content(data)`**: at save time we persist a stable hash of all hero/tower/enemy ids in `ContentRegistry`. At load time, if the hash differs (catalog has changed since the save), the purge drops orphaned content_ids from `selected_hero_id`, `selected_tower_ids` (positional — replaces with `""`), and `hero_progress` / `hero_equipped_skills` / `hero_talents` (key dropped). Hash-match short-circuits to avoid the per-load scan in the common case.
+
+### Tests
+
+[tests/unit/test_save_migrations.gd](tests/unit/test_save_migrations.gd) — 3 new:
+
+1. **`test_migration_chain_runs_in_forward_order`** — register 2 mock migrations, write a v=1 save, load, verify both fired in order. Sanity-check that state population still happens after migrations.
+2. **`test_no_migrations_run_when_save_at_current_version`** — register 1 mock migration, write a v=SAVE_VERSION save, load, verify the migration was NOT called. Forward-only invariant.
+3. **`test_orphaned_content_ids_purged_on_load`** — write a save with `selected_hero_id` = unknown, `selected_tower_ids` containing one orphan, `hero_progress` keyed on an unknown hero. Force `content_hash` mismatch by writing a deliberately wrong hash. Load, assert: orphan hero_id → `""`, orphan tower → `""` at its slot position (positional preserved), orphan hero key dropped from `hero_progress`, valid entries retained.
+
+Suite total: **33/33 passing in 1.5s** headless.
+
+### Design notes
+
+- **Positional purge for tower loadout**: replacing an orphan tower_id with `""` (rather than removing the entry) keeps slot positions stable. The player's other tower picks stay where they were on the build ring; the orphan slot just shows empty until they pick a new tower for it. Removing instead would shuffle every later slot left, which would surprise the player.
+- **Dict-key purge for hero state**: `hero_progress[hero_id]` etc. drop the key entirely. There's no "slot position" to preserve — the dict is unordered by hero_id.
+- **Hash short-circuit is an optimization, not correctness**: even without `content_hash` in the save, the loader would Just Work — every state-population step that takes a content_id already null-checks via `find_hero` / `find_tower`. The hash just lets us skip the scan when nothing has changed.
+- **Forward-only chain**: no rollback. Once the player runs a save through migration v3→v4, downgrading the binary won't read the v4 save back as v3. Acceptable — Steam/mobile players don't downgrade.
+- **Why not bump SAVE_VERSION**: nothing in the schema changed today. The framework is in; the version stays at 4. The next time you rename / remove / restructure, append a Callable and bump.
+
+### Files touched
+
+- Modified: `autoloads/SaveManager.gd` (+86 LOC for the three helpers + content_hash save key + load wiring)
+- New: `tests/unit/test_save_migrations.gd`
+- Modified: `STATUS.md` (Wed ✓; "Save-file migration framework" closed in Open design questions; "Last shipped" updated)
+
+### Risks / known follow-ups
+
+- **`_migrations` is `var` not `const`** to support test injection. Production code must never mutate it after `_ready()`. Document if you ever feel the urge to add a runtime-register path.
+- **content_hash includes only hero/tower/enemy ids**, not skills / items / affixes. If a skill_id is removed, the orphan purge today doesn't catch a stale entry in `hero_equipped_skills[hero_id][slot] = "skill_removed"` — but `LoadoutState.get_equipped_skills` already self-heals that case at read time (drops sids the hero no longer authors and persists the cleaned form). Belt-and-suspenders, fine.
+- **No rollback path**: if a migration ships and is later found to be wrong, the next migration must repair the damage (forward-only). Migrations should be tested in isolation before they ship.
+- **CI workflow (Thursday) is still next**: the headless command works locally; turning that into `.github/workflows/ci.yml` using `barichello/godot-ci:4.6` is the immediate next step.

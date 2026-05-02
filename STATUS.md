@@ -1,6 +1,6 @@
 # STATUS
 
-**Last shipped**: First unit-test suite (Mon–Tue of engineering hardening week). Enabled GUT 9.6.0 plugin; extracted `_save_to_path` / `_load_from_path` primitives in SaveManager so tests can round-trip without touching the player's real save; wrote 30 tests across 6 files covering DamageCalculator (5), SaveManager (5), UnlockManager (5), ContentRegistry (4), state autoloads (5), regressions (6). All green in 1.4s headless. Same headless command will plug into the planned Thursday CI workflow. See SESSIONS.md "2026-05-01 — Unit test suite (Mon–Tue)".
+**Last shipped**: Save migration scaffold (Wed of engineering hardening week). Added `_migrations: Array[Callable]` chain in SaveManager — empty for now, but the framework is wired so the next schema shift is a one-liner. Added `content_hash` key + `_purge_orphaned_content` so saves with refs to removed/renamed heroes / towers drop those refs silently on load instead of crashing. 3 new tests in `test_save_migrations.gd` (chain runs in order, no-ops at current version, orphan purge). Suite total now 33/33 in 1.5s headless. See SESSIONS.md "2026-05-01 — Save migration scaffold (Wed)".
 
 **Currently working on**:
 - WorldMap UI overhaul series (research doc: `~/.claude/plans/lets-make-deep-research-robust-sunbeam.md`). Phase A shipped; Phases B–F queued.
@@ -13,7 +13,7 @@
 
 1. **Engineering hardening week** (~10–12h total — do this BEFORE the content sprint; bugs in untested code compound fast):
    - ~~**Mon–Tue (~4h)** — Install [GUT](https://github.com/bitwes/Gut), write ~30 unit tests.~~ **Shipped 2026-05-01.** 30/30 passing in 1.4s headless. See SESSIONS.md.
-   - **Wed (~3h)** — Save migration scaffold in [autoloads/SaveManager.gd](autoloads/SaveManager.gd): `SAVE_VERSION` constant + `_MIGRATIONS: Array[Callable]` chain that runs per-version mutators forward until current. Add `content_hash` key for orphaned-content tolerance (unknown IDs in loadout → drop instead of crash). 3 migration tests in `tests/unit/test_save_migrations.gd`.
+   - ~~**Wed (~3h)** — Save migration scaffold + content_hash orphan tolerance.~~ **Shipped 2026-05-01.** Framework + 3 tests, 33/33 total. See SESSIONS.md.
    - **Thu (~1h)** — `.github/workflows/ci.yml` using `barichello/godot-ci:4.6`. Runs GUT headless + exports Android APK as artifact on every push. Headless command already validated: `godot --headless -s res://addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit`.
    - **Fri (~2–4h)** — Playtest the APK CI built. Put it in front of 3–5 humans. Watch silently, don't explain. Write the first 5 things that confused or bored them into this file.
 
@@ -31,7 +31,7 @@
 ## Open design questions
 - Spell `cast_range > 0` semantics: measured from hero? tower? map center? Current code toasts "not wired up" when encountered. Needs decision before authoring a ranged spell.
 - Tower slot cap progression (`LoadoutState.tower_slot_cap`) — what gates slots 5 and 6? Star threshold? IAP? Quest? Wired up but not triggered.
-- Save-file migration framework — deferred since Phase 46c/46d. Next content rename that changes an `*_id` should ship with the migration scaffold.
+- ~~Save-file migration framework — deferred since Phase 46c/46d. Next content rename that changes an `*_id` should ship with the migration scaffold.~~ Shipped 2026-05-01. `SaveManager._migrations: Array[Callable]` is the registration point; `content_hash` triggers orphan purge on mismatch.
 
 ## Deferred from prior audits (not scheduled, but noted)
 - SoundManager 8-player pool exhaustion silently drops SFX in dense combat. Grow pool or preempt oldest.

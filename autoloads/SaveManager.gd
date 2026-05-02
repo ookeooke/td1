@@ -29,6 +29,16 @@ const SAVE_PATH: String = "user://save.json"
 # InventoryManager._reflow_unplaced() lays them onto the grid on load.
 const SAVE_VERSION: int = 4
 
+# Forward-only migration chain. Index N migrates v(N+1) → v(N+2). The chain
+# is empty today because every prior version transition (v1→v2→v3→v4) was
+# implicit-on-load (InventoryManager / spell-purge) — the framework is here
+# so the NEXT schema shift is a one-liner: append a Callable that takes
+# (data: Dictionary) and mutates in place, then bump SAVE_VERSION.
+#
+# Test seam: tests overwrite this array with synthetic mutators to exercise
+# the chain logic without needing a real schema bump.
+var _migrations: Array[Callable] = []
+
 # Phase 48 — monotonic UID counter for ItemInstance. Issued only by
 # issue_uid(); persisted in the save file so it survives restarts. Never
 # decrement on delete — a sold/salvaged item's UID is retired forever so
@@ -113,6 +123,10 @@ func _save_to_path(path: String) -> void:
 		"hero_equipped_skills": LoadoutState.hero_equipped_skills,
 		# SaveManager-owned counter.
 		"next_uid": next_uid,
+		# Stable hash of the authored content set (hero/tower/enemy ids).
+		# On load, a mismatch triggers _purge_orphaned_content to drop save
+		# refs to content the catalog no longer authors (rename / removal).
+		"content_hash": _compute_content_hash(),
 	}
 	# Merge InventoryManager's own slice — keeps the save dict flat while
 	# letting the manager own its shape (to_save_dict / from_save_dict).
@@ -171,6 +185,18 @@ func _load_from_path(path: String) -> void:
 		print("[SaveManager] migrating save v%d → v3 (shared_inventory)" % version)
 	if version < 4:
 		print("[SaveManager] migrating save v%d → v4 (grid placement)" % version)
+	# Run the executable migration chain. Today the chain is empty (every
+	# prior version transition was implicit-on-load); future schema shifts
+	# append a Callable to _migrations and bump SAVE_VERSION.
+	if version < SAVE_VERSION:
+		_run_migrations(data, version)
+	# Drop save references to content the catalog no longer authors. Cheap
+	# fast-path: skip when content_hash matches the current registry. Slow
+	# path runs the purge explicitly so a removed hero / tower doesn't
+	# crash the loader.
+	var saved_hash: String = str(data.get("content_hash", ""))
+	if saved_hash != _compute_content_hash():
+		_purge_orphaned_content(data)
 	# ── MetaProgression ───────────────────────────────────────────────
 	if data.has("level_stars") and data.level_stars is Dictionary:
 		# JSON stores keys as strings, values as floats. Convert to int.
@@ -278,6 +304,74 @@ func _load_from_path(path: String) -> void:
 	print("[SaveManager] loaded save v%d — stars=%s upgrades=%d" % [
 		version, str(MetaProgression.level_stars), MetaProgression.purchased_upgrades.size(),
 	])
+
+
+# ── Migration scaffold ──────────────────────────────────────────────────
+
+# Runs every registered migration whose target version is > `from_version`.
+# Each Callable mutates `data` in place. Index N migrates v(N+1) → v(N+2),
+# so to advance from v3 to current we run migrations starting at index 2.
+# `from_version` is 1-based (the version stored in the save file).
+func _run_migrations(data: Dictionary, from_version: int) -> void:
+	# Start index in _migrations array: position of the first migration that
+	# advances PAST the loaded version. _migrations[k] migrates v(k+1)→v(k+2),
+	# so to migrate from v=N forward we start at index k=N-1.
+	var start_idx: int = max(0, from_version - 1)
+	for i in range(start_idx, _migrations.size()):
+		var fn: Callable = _migrations[i]
+		if not fn.is_valid():
+			continue
+		print("[SaveManager] migrating save v%d → v%d" % [i + 1, i + 2])
+		fn.call(data)
+
+
+# Stable hash of the content set the registry currently authors. Fast-path:
+# if the saved hash matches, the loader skips the orphan purge entirely.
+# When content is added/removed/renamed, the hash changes and the purge
+# runs. Cheap to compute (~30 string concatenations + one hash).
+func _compute_content_hash() -> String:
+	var ids: PackedStringArray = PackedStringArray()
+	for h in ContentRegistry.heroes:
+		if h != null and "hero_id" in h:
+			ids.append(h.hero_id)
+	for t in ContentRegistry.towers:
+		if t != null and "tower_id" in t:
+			ids.append(t.tower_id)
+	for e in ContentRegistry.enemies:
+		if e != null and "enemy_id" in e:
+			ids.append(e.enemy_id)
+	ids.sort()
+	return "|".join(ids).md5_text()
+
+
+# Drops save-dict references to content_ids the catalog no longer authors.
+# Run on load when content_hash mismatch indicates the registry has changed
+# since the save was written. Quietly converges the dict — no crash, no
+# user-visible warning. Keys we sweep:
+#   - selected_hero_id  → "" if hero gone
+#   - selected_tower_ids → entry replaced with "" if tower gone
+#   - hero_progress / hero_equipped_skills / hero_talents → key removed if
+#     the hero_id is gone
+func _purge_orphaned_content(data: Dictionary) -> void:
+	var hero_ok := func(id: String) -> bool:
+		return id != "" and ContentRegistry.find_hero(id) != null
+	var tower_ok := func(id: String) -> bool:
+		return id != "" and ContentRegistry.find_tower(id) != null
+	if data.has("selected_hero_id"):
+		var sid: String = str(data.selected_hero_id)
+		if sid != "" and not hero_ok.call(sid):
+			data["selected_hero_id"] = ""
+	if data.has("selected_tower_ids") and data.selected_tower_ids is Array:
+		var swept: Array = []
+		for tid in data.selected_tower_ids:
+			swept.append(str(tid) if tower_ok.call(str(tid)) else "")
+		data["selected_tower_ids"] = swept
+	for hero_dict_key in ["hero_progress", "hero_equipped_skills", "hero_talents"]:
+		if data.has(hero_dict_key) and data[hero_dict_key] is Dictionary:
+			var d: Dictionary = data[hero_dict_key]
+			for hid in d.keys():
+				if not hero_ok.call(str(hid)):
+					d.erase(hid)
 
 
 # Phase 48 — monotonic UID issuer. Called by LootRoller and

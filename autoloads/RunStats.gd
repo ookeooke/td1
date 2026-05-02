@@ -31,7 +31,6 @@ func _ready() -> void:
 	EventBus.tower_branch_chosen.connect(_on_tower_branch_chosen)
 	EventBus.tower_sold.connect(_on_tower_sold)
 	EventBus.hero_died.connect(_on_hero_died)
-	EventBus.spell_cast.connect(_on_spell_cast)
 	EventBus.level_completed.connect(_on_level_completed)
 	EventBus.game_over.connect(_on_game_over)
 
@@ -70,7 +69,6 @@ func _start_new_run() -> void:
 		"tower_upgrades": 0,
 		"tower_sells": 0,
 		"hero_deaths": 0,
-		"spells_cast": {},
 		"gold_timeline": [],   # one entry per wave: start/end gold + duration
 		"outcome": "in_progress",
 	}
@@ -163,14 +161,6 @@ func _on_hero_died() -> void:
 	_current["hero_deaths"] = int(_current.get("hero_deaths", 0)) + 1
 
 
-func _on_spell_cast(spell_name: String, _pos) -> void:
-	if _current.is_empty():
-		return
-	var d: Dictionary = _current["spells_cast"]
-	d[spell_name] = int(d.get(spell_name, 0)) + 1
-	_current["spells_cast"] = d
-
-
 func _on_level_completed(_level_id: String, stars_earned: int, _mode: String) -> void:
 	_finalize("victory", stars_earned)
 
@@ -205,7 +195,6 @@ func _finalize(outcome: String, stars: int) -> void:
 	_current["damage_by_source"] = {
 		"hero": GameState.round_damage_hero,
 		"soldiers": GameState.round_damage_soldiers,
-		"spells": GameState.round_damage_spells,
 		"towers_total": towers_total,
 	}
 	_current["damage_by_tower"] = per_tower

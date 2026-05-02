@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="SummonSoldiersSkillData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/summon_soldiers_skill_data.gd" id="1_summon"]
+[ext_resource type="PackedScene" path="res://soldiers/Soldier.tscn" id="2_scene"]
+[ext_resource type="Resource" path="res://soldiers/data/soldier_basic.tres" id="3_data"]
+
+[resource]
+script = ExtResource("1_summon")
+skill_name = "Summon Soldiers"
+skill_id = "summon_soldiers"
+cooldown = 30.0
+target_type = 2
+soldier_scene = ExtResource("2_scene")
+soldier_data = ExtResource("3_data")
+count = 2
+lifetime = 15.0
+spread_radius = 35.0
+description = "Call 2 militia to your side. They fight for 15 seconds before falling."

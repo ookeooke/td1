@@ -48,6 +48,7 @@ func _ready() -> void:
 		balance_report_button.visible = false
 	_refresh_stars_label()
 	_refresh_meta_gold_label()
+	_refresh_heroes_button_dot()
 	_build_level_entries()
 
 
@@ -59,6 +60,43 @@ func _refresh_stars_label() -> void:
 func _refresh_meta_gold_label() -> void:
 	# Persistent inventory-sell currency (distinct from per-run gold).
 	meta_gold_button.text = "💰 %d" % GameState.meta_gold
+
+
+# Phase 48 — red dot in the corner of the Heroes button when ANY unlocked
+# hero has at least one unlocked-but-unequipped skill. Mirrors the unread-
+# badge convention from mobile games and tells the player at a glance that
+# there's a loadout decision waiting in Heroes → Skills. Recalculated on
+# WorldMap entry; HeroesHub redraws cards on its own when it mutates state.
+func _refresh_heroes_button_dot() -> void:
+	if heroes_button == null:
+		return
+	var dot: Control = heroes_button.get_node_or_null("UnequippedDot")
+	var any_pending: bool = false
+	for h in ContentRegistry.heroes:
+		if h == null:
+			continue
+		if not UnlockManager.is_hero_unlocked(h.hero_id):
+			continue
+		if GameState.has_unequipped_skills(h.hero_id):
+			any_pending = true
+			break
+	if not any_pending:
+		if dot != null:
+			dot.visible = false
+		return
+	if dot == null:
+		dot = ColorRect.new()
+		dot.name = "UnequippedDot"
+		dot.color = ThemeColors.ACCENT_RED
+		dot.custom_minimum_size = Vector2(16, 16)
+		dot.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		dot.offset_left = -20
+		dot.offset_top = 4
+		dot.offset_right = -4
+		dot.offset_bottom = 20
+		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		heroes_button.add_child(dot)
+	dot.visible = true
 
 
 func _on_back() -> void:

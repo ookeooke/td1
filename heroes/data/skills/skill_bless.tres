@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="BlessSoldiersSkillData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/bless_soldiers_skill_data.gd" id="1_bless"]
+
+[resource]
+script = ExtResource("1_bless")
+skill_name = "Bless"
+skill_id = "bless"
+cooldown = 25.0
+target_type = 2
+radius = 200.0
+damage_bonus = 8.0
+health_bonus = 30
+buff_duration = 8.0
+description = "Empower nearby soldiers for 8 seconds: +8 attack damage and +30 max HP."

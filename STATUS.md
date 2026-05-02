@@ -1,6 +1,6 @@
 # STATUS
 
-**Last shipped**: Wave pacing rework (KR-style hybrid) — first wave countdown bumped to 60s for setup time, inter-wave grace bumped to 20s, Send Wave button blinks during countdown to advertise itself, early-call bonus is now 1g per second saved (scales with the longer countdowns). See SESSIONS.md "2026-04-29 — Wave pacing rework".
+**Last shipped**: Spell-purge cleanup pass. Caught and fixed 7 leftover threads from the spell removal: LoadoutScreen still showed `"Spells: Fireball, Recruit"`; the Spell Mastery upgrade was purchasable for no effect; dead enum values + stale comments scrubbed; 9 orphan skill files deleted (5 `.tres` + 2 `.gd` + uids). Added a one-shot save migration that auto-refunds Spell Mastery's 3★ for any save where it was already purchased. See SESSIONS.md "2026-05-01 — Spell-purge cleanup pass".
 
 **Currently working on**:
 - WorldMap UI overhaul series (research doc: `~/.claude/plans/lets-make-deep-research-robust-sunbeam.md`). Phase A shipped; Phases B–F queued.

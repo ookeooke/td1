@@ -95,8 +95,7 @@ func _build_damage_breakdown() -> String:
 	var tower_entries: Array = GameState.round_damage_towers.values()
 	var hero: float = GameState.round_damage_hero
 	var sold: float = GameState.round_damage_soldiers
-	var spells: float = GameState.round_damage_spells
-	if tower_entries.is_empty() and hero <= 0.0 and sold <= 0.0 and spells <= 0.0:
+	if tower_entries.is_empty() and hero <= 0.0 and sold <= 0.0:
 		return ""
 	tower_entries.sort_custom(func(a, b): return float(a.get("total", 0.0)) > float(b.get("total", 0.0)))
 	var lines: PackedStringArray = ["", "— Damage dealt —"]
@@ -111,8 +110,6 @@ func _build_damage_breakdown() -> String:
 		lines.append("Hero: %s" % _fmt(hero))
 	if sold > 0.0:
 		lines.append("Soldiers: %s" % _fmt(sold))
-	if spells > 0.0:
-		lines.append("Spells: %s" % _fmt(spells))
 	return "\n" + "\n".join(lines)
 
 

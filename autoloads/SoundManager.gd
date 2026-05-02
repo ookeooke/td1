@@ -17,7 +17,6 @@ const SFX_PATHS: Dictionary = {
 	"wave_start":     "res://audio/sfx/wave_start.wav",
 	"wave_complete":  "res://audio/sfx/wave_complete.wav",
 	"hero_skill":     "res://audio/sfx/hero_skill.wav",
-	"spell_cast":     "res://audio/sfx/spell_cast.wav",
 	"game_over":      "res://audio/sfx/game_over.wav",
 	"victory":        "res://audio/sfx/victory.wav",
 	"boss_phase":     "res://audio/sfx/boss_phase.wav",
@@ -50,7 +49,6 @@ func _ready() -> void:
 	EventBus.wave_started.connect(func(_w, _p): play_sfx("wave_start"))
 	EventBus.wave_completed.connect(func(_w): play_sfx("wave_complete"))
 	EventBus.hero_skill_used.connect(func(_s): play_sfx("hero_skill"))
-	EventBus.spell_cast.connect(func(_s, _p): play_sfx("spell_cast"))
 	EventBus.game_over.connect(func(): play_sfx("game_over"))
 	EventBus.all_waves_completed.connect(func(): play_sfx("victory"))
 

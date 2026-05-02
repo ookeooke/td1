@@ -18,64 +18,118 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 color = Color(0.1, 0.14, 0.18, 1.0)
 
-[node name="TopBar" type="HBoxContainer" parent="."]
+[node name="HubBar" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
 offset_left = 16.0
-offset_top = 16.0
+offset_top = 8.0
 offset_right = -16.0
 offset_bottom = 80.0
+theme_override_constants/separation = 8
 
-[node name="BackButton" type="Button" parent="TopBar"]
+[node name="BackButton" type="Button" parent="HubBar"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(80, 60)
+custom_minimum_size = Vector2(96, 64)
 layout_mode = 2
-text = "Back"
-theme_override_font_sizes/font_size = 20
+size_flags_vertical = 4
+text = "← Back"
+theme_override_font_sizes/font_size = 18
 
-[node name="Title" type="Label" parent="TopBar"]
+[node name="LeftSpacer" type="Control" parent="HubBar"]
+custom_minimum_size = Vector2(24, 0)
+layout_mode = 2
+
+[node name="SegmentGroup" type="HBoxContainer" parent="HubBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 8
+
+[node name="FlexSpacer" type="Control" parent="HubBar"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Heroes"
-horizontal_alignment = 1
-theme_override_font_sizes/font_size = 28
 
-[node name="Spacer" type="Control" parent="TopBar"]
-custom_minimum_size = Vector2(80, 0)
+[node name="ContextGroup" type="VBoxContainer" parent="HubBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 64)
 layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 0
+alignment = 1
 
-[node name="TabContainer" type="TabContainer" parent="."]
+[node name="HeroNameLabel" type="Label" parent="HubBar/ContextGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+horizontal_alignment = 2
+text = "Hero"
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(1.0, 1.0, 1.0, 1.0)
+
+[node name="HeroLevelLabel" type="Label" parent="HubBar/ContextGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+horizontal_alignment = 2
+text = "Lv 1   XP 0/0"
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.6, 0.66, 0.78, 1.0)
+
+[node name="HeroGoldLabel" type="Label" parent="HubBar/ContextGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+horizontal_alignment = 2
+text = "💰 0"
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(1.0, 0.85, 0.4, 1.0)
+
+[node name="ContentArea" type="Control" parent="."]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 16.0
-offset_top = 96.0
+offset_top = 88.0
 offset_right = -16.0
 offset_bottom = -16.0
+mouse_filter = 1
 
-[node name="Loadout" type="Control" parent="TabContainer"]
+[node name="Loadout" type="Control" parent="ContentArea"]
 unique_name_in_owner = true
-layout_mode = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 
-[node name="Equipment" type="Control" parent="TabContainer"]
+[node name="Stats" type="Control" parent="ContentArea"]
 unique_name_in_owner = true
-layout_mode = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 visible = false
 
-[node name="Stats" type="Control" parent="TabContainer"]
+[node name="Equipment" type="Control" parent="ContentArea"]
 unique_name_in_owner = true
-layout_mode = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 visible = false
 
-[node name="Skills" type="Control" parent="TabContainer"]
+[node name="Skills" type="Control" parent="ContentArea"]
 unique_name_in_owner = true
-layout_mode = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 visible = false
 
-[node name="Talents" type="Control" parent="TabContainer"]
+[node name="Talents" type="Control" parent="ContentArea"]
 unique_name_in_owner = true
-layout_mode = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 visible = false

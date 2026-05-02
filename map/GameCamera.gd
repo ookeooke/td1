@@ -3,7 +3,7 @@ extends Camera2D
 # Camera2D with gesture-based pan, pinch-to-zoom, mouse wheel zoom,
 # double-tap reset, and tap dispatch via EventBus.map_tap_confirmed.
 #
-# Sits in _unhandled_input — _input-phase handlers (SkillBar, SpellPanel,
+# Sits in _unhandled_input — _input-phase handlers (SkillBar,
 # TowerBarracks rally, TowerSpotMenu) consume events before this script
 # ever sees them. Only unhandled map touches reach the gesture classifier.
 #

@@ -10,7 +10,6 @@
 [ext_resource type="Script" path="res://heroes/HeroInputManager.gd" id="9_heroinput"]
 [ext_resource type="Script" path="res://map/GameCamera.gd" id="13_camera"]
 [ext_resource type="PackedScene" uid="uid://b1td1skillbar" path="res://ui/SkillBar.tscn" id="10_skillbar"]
-[ext_resource type="PackedScene" uid="uid://b1td1spellpanel" path="res://ui/SpellPanel.tscn" id="11_spellpanel"]
 [ext_resource type="PackedScene" uid="uid://ct8yuf20wlabe" path="res://ui/PauseMenu.tscn" id="12_pause"]
 [ext_resource type="Script" path="res://ui/SpawnIndicator.gd" id="14_spawnindicator"]
 
@@ -40,8 +39,6 @@ map_path = NodePath("../Level1")
 [node name="HUD" parent="." unique_id=1889816095 instance=ExtResource("3_hud")]
 
 [node name="SkillBar" parent="." instance=ExtResource("10_skillbar")]
-
-[node name="SpellPanel" parent="." instance=ExtResource("11_spellpanel")]
 
 [node name="TowerRadialMenu" parent="." instance=ExtResource("15_radial")]
 visible = false

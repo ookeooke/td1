@@ -1,19 +1,37 @@
 extends CanvasLayer
 
-# Phase 20 skill bar. Bottom-right column of skill buttons, one per skill
-# in hero.data.skills. Tap a button → enter targeting mode (range circle
-# drawn around the hero, radius = skill's effective range). Next screen
-# tap inside the range that lands on an enemy → cast. Tap outside range
-# or with no enemy nearby → cancel targeting, nothing happens.
+# Phase 20 / 48 — in-level skill cluster.
+#
+# Bottom-right corner of the screen. The HeroHudPortrait lives at the
+# corner; two skill slots arc up-and-left from it (DI-style thumb
+# cluster). Each slot reads from `GameState.hero_equipped_skills[hero_id]`;
+# unequipped slots render an EmptySkillSlot placeholder ("+" tile).
+#
+# Tap a slot → enter targeting mode (range circle drawn around the hero,
+# radius = skill's effective range). Next screen tap inside the range that
+# lands on an enemy → cast. Tap outside range or with no enemy nearby →
+# cancel targeting, nothing happens.
 #
 # Cooldown display is a radial fill overlay drawn via the button's _draw
 # override (CooldownButton.gd). Never text, per CLAUDE.md.
 
 const CooldownButtonScene: PackedScene = preload("res://ui/CooldownButton.tscn")
 const _SkillDataScript: Script = preload("res://heroes/skills/skill_data.gd")
+const _EmptySlotScript: Script = preload("res://ui/EmptySkillSlot.gd")
 const TARGET_TAP_TOLERANCE: float = 80.0
 
-@onready var button_column: VBoxContainer = %ButtonColumn
+# Slot positions inside the Cluster Control. Each entry is the top-left
+# corner of an 80×80 slot. Slot 0 sits closest to the portrait (right
+# thumb's natural reach); slot 1 steps up and to the left along a 45° arc.
+# Distance between slot centers ≈ 100px so the 80px tiles don't overlap.
+# Cluster size in the .tscn is 200×400 — extra headroom kept so a future
+# 3rd / 4th slot can slot in without retuning the layout.
+const SLOT_POSITIONS: Array[Vector2] = [
+	Vector2(80.0, 180.0),   # Slot 0 — closest to portrait
+	Vector2(40.0, 100.0),   # Slot 1 — above-left of slot 0
+]
+
+@onready var cluster: Control = %Cluster
 
 var _hero: Node = null
 var _buttons: Array = []
@@ -23,6 +41,11 @@ var _targeting_idx: int = -1
 func _ready() -> void:
 	EventBus.hero_spawned.connect(_on_hero_spawned)
 	EventBus.hero_died.connect(_on_hero_died)
+	# Loadout changes happen on the WorldMap (Heroes → Skills tab) — the
+	# in-level bar is a passive read of GameState.hero_equipped_skills.
+	# Listening here is defensive: if a future feature ever flips a slot
+	# mid-run, the bar reflects it without a manual rebuild.
+	EventBus.hero_skill_equipped.connect(_on_loadout_changed)
 
 
 func _process(_delta: float) -> void:
@@ -44,18 +67,58 @@ func _on_hero_died() -> void:
 	_cancel_targeting()
 
 
+func _on_loadout_changed(hero_id: String, _slot: int, _skill_id: String) -> void:
+	if _hero == null or _hero.data == null or _hero.data.hero_id != hero_id:
+		return
+	_cancel_targeting()
+	_rebuild_buttons()
+
+
 func _rebuild_buttons() -> void:
-	for child in button_column.get_children():
+	# Free everything except the Portrait child, which is authored in the
+	# .tscn and owns its own state (hero/HP/XP signals). Slots are recreated
+	# fresh on every loadout change.
+	for child in cluster.get_children():
+		if child.name == "Portrait":
+			continue
 		child.queue_free()
 	_buttons.clear()
 	if _hero == null or _hero.data == null:
 		return
+	# Phase 48 — render the per-hero equipped loadout (length 3) instead of
+	# every authored skill. The button's `idx` stays as the index into
+	# data.skills so the hero's parallel _skill_cooldowns / get_skill_data
+	# accessors keep working unchanged. Empty slots get an EmptySkillSlot
+	# placeholder so the cluster always reads as 3 tiles.
+	var equipped: Array[String] = GameState.get_equipped_skills(_hero.data.hero_id)
+	for slot_idx in SLOT_POSITIONS.size():
+		var skill_id: String = equipped[slot_idx] if slot_idx < equipped.size() else ""
+		var slot: Control
+		if skill_id == "":
+			slot = _EmptySlotScript.new()
+		else:
+			var idx: int = _find_skill_idx_by_id(skill_id)
+			if idx < 0:
+				# Stale loadout entry (e.g. skill_id renamed) — show placeholder.
+				slot = _EmptySlotScript.new()
+			else:
+				slot = CooldownButtonScene.instantiate()
+				slot.setup(_hero, idx)
+				slot.triggered.connect(_on_skill_button_pressed)
+				_buttons.append(slot)
+		slot.position = SLOT_POSITIONS[slot_idx]
+		slot.size = Vector2(80.0, 80.0)
+		cluster.add_child(slot)
+
+
+func _find_skill_idx_by_id(skill_id: String) -> int:
+	if _hero == null or _hero.data == null:
+		return -1
 	for i in _hero.data.skills.size():
-		var btn: Control = CooldownButtonScene.instantiate()
-		btn.setup(_hero, i)
-		btn.triggered.connect(_on_skill_button_pressed)
-		button_column.add_child(btn)
-		_buttons.append(btn)
+		var s: Resource = _hero.data.skills[i]
+		if s != null and s.skill_id == skill_id:
+			return i
+	return -1
 
 
 func _on_skill_button_pressed(idx: int) -> void:

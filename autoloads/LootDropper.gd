@@ -7,8 +7,8 @@ extends Node
 # Design:
 # - Uses a global default LootTableData loaded at _ready. Future: read
 #   enemy.data.loot_table for per-enemy overrides (Phase E tuning).
-# - Any killer triggers drops (tower, hero, soldier, spell) — enemy_died
-#   fires regardless of source. Matches user's confirmed design decision.
+# - Any killer triggers drops (tower, hero, soldier) — enemy_died fires
+#   regardless of source. Matches user's confirmed design decision.
 # - drop_chance is rolled once per kill; if it passes, a specific base is
 #   picked by weighted random from the table; LootRoller generates the
 #   instance with UID and affixes.

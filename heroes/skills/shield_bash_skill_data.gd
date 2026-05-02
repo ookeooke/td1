@@ -14,6 +14,10 @@ const _SlowEffectScript: Script = preload("res://systems/SlowEffect.gd")
 # Optional: apply a slow to each enemy hit. Leave at 0 for pure-damage AoE.
 @export_range(0.0, 1.0) var on_hit_slow_factor: float = 0.0
 @export var on_hit_slow_duration: float = 0.0
+# Optional: scene to spawn at the impact point (e.g. FireballVFX). The scene
+# is instantiated as a child of the current level, positioned at `target`,
+# and `setup(aoe_radius)` is called if the scene defines that method.
+@export var vfx_scene: PackedScene
 
 
 func apply(hero: Node, target) -> void:
@@ -32,3 +36,13 @@ func apply(hero: Node, target) -> void:
 			enemy.take_damage(damage, damage_type, hero)
 			if on_hit_slow_factor > 0.0 and on_hit_slow_duration > 0.0:
 				enemy.apply_status_effect(_SlowEffectScript.new(on_hit_slow_factor, on_hit_slow_duration))
+	# VFX — optional. Spawned after the damage pass so the visual impact
+	# always plays even if no enemy was hit (a designed miss is the player's
+	# problem; the cast still "fired").
+	if vfx_scene != null:
+		var vfx: Node = vfx_scene.instantiate()
+		hero.get_tree().current_scene.add_child(vfx)
+		if vfx is Node2D:
+			(vfx as Node2D).global_position = center
+		if vfx.has_method("setup"):
+			vfx.setup(aoe_radius)

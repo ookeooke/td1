@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="EnemyData" format=3]
+
+[ext_resource type="Script" uid="uid://bfgo62wek7fpf" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://enemies/data/visual_brute.tres" id="2_vis"]
+
+[resource]
+script = ExtResource("1_data")
+enemy_id = "enemy_brute"
+enemy_name = "Orc Brute"
+max_health = 80
+move_speed = 70.0
+armor = 0.70
+magic_resist = 0.0
+gold_worth = 8
+xp_worth = 12
+attack_damage = 6.0
+visual = ExtResource("2_vis")
+encyclopedia_entry = "Massive iron-clad brute. Arrows clatter off; magic chews through it. Slow but unstoppable without proper damage type."

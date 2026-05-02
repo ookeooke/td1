@@ -20,7 +20,7 @@ const STRIKE_PUSH_DIST: float = 14.0  # forward at peak commit
 # Hit-stop — both attacker and defender freeze for a few frames on every
 # successful hit. Applies to BaseEnemy._physics_process and BaseHero
 # (mirrored there). Universal action-game readability device.
-const HIT_STOP_DURATION: float = 0.05
+const HIT_STOP_DURATION: float = 0.0
 
 @export var data: EnemyData
 
@@ -68,8 +68,8 @@ var _walk_t: float = 0.0
 var _walk_phase: float = 0.0
 # Hurt flinch: brief recoil away from the damage source on each hit. Reads as
 # a physical reaction to complement the white hit-flash overlay.
-const FLINCH_DURATION: float = 0.12
-const FLINCH_DISTANCE: float = 6.0
+const FLINCH_DURATION: float = 0.0
+const FLINCH_DISTANCE: float = 0.0
 var _flinch_t: float = 0.0
 var _flinch_dir: Vector2 = Vector2.ZERO
 # Idle breathing: stationary enemies (COMBAT / STUNNED) torso pulses ~3% so

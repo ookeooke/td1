@@ -91,6 +91,7 @@ func save_game() -> void:
 		"tower_slot_cap": GameState.tower_slot_cap,
 		# Phase 48 — persistent hero progression + loot.
 		"hero_progress": GameState.hero_progress,
+		"hero_equipped_skills": GameState.hero_equipped_skills,
 		"next_uid": next_uid,
 		# Phase 48 level metrics — per-level best time (seconds) + per-level
 		# endless high score. Additive; missing keys default to empty dicts.
@@ -192,6 +193,15 @@ func load_game() -> void:
 		GameState.purchased_upgrades.clear()
 		for id in data.purchased_upgrades:
 			GameState.purchased_upgrades.append(str(id))
+		# 2026-05-01 spell purge — Spell Mastery upgrade was removed; any save
+		# with "spell_mastery" in purchased_upgrades carries a dead string
+		# that contributed nothing once the matching effect_type was retired.
+		# Drop it on load so the dict converges. The player auto-refunds the
+		# 3 stars they spent because rebuild_upgrade_cache no longer counts
+		# the cost (matching UpgradeData is gone from the tree).
+		if "spell_mastery" in GameState.purchased_upgrades:
+			GameState.purchased_upgrades.erase("spell_mastery")
+			print("[SaveManager] purged retired upgrade 'spell_mastery' (3★ refunded)")
 	# Phase 47d-2: restore loadout state.
 	if data.has("selected_hero_id"):
 		GameState.selected_hero_id = str(data.selected_hero_id)
@@ -224,6 +234,14 @@ func load_game() -> void:
 					"level": int(entry_in.get("level", 1)),
 					"xp": int(entry_in.get("xp", 0)),
 				}
+	if data.has("hero_equipped_skills") and data.hero_equipped_skills is Dictionary:
+		GameState.hero_equipped_skills = {}
+		for hero_id in data.hero_equipped_skills:
+			var arr: Array = []
+			if data.hero_equipped_skills[hero_id] is Array:
+				for sid in data.hero_equipped_skills[hero_id]:
+					arr.append(str(sid))
+			GameState.hero_equipped_skills[hero_id] = arr
 	if data.has("next_uid"):
 		next_uid = int(data.next_uid)
 	# Phase Sell — meta-gold (default 0 if save predates this field).

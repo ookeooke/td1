@@ -20,6 +20,11 @@ enum TargetType { SINGLE, AREA, SELF }
 @export var target_type: int = TargetType.SINGLE
 @export var icon: Texture2D
 @export_multiline var description: String = ""
+# Hero level at which this skill becomes equippable. Default 1 = always
+# available. Skills with level_required > hero level appear in the WorldMap
+# Skills tab as locked ("Unlocks at Lv X"); only unlocked skills can be
+# slotted into the hero's 3 equipped-skill loadout.
+@export var level_required: int = 1
 
 
 # Subclasses override this with the actual effect. hero is BaseHero,

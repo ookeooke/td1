@@ -12,31 +12,52 @@ extends Control
 const _ItemIconScript := preload("res://ui/ItemIcon.gd")
 const SLOT_COUNT: int = 6
 const SLOT_NAMES: Array[String] = ["Weapon", "Armor", "Helm", "Gloves", "Boots", "Trinket"]
-# Phase 49 — Diablo-Immortal-style two-column flanking layout. Defense +
-# main-hand stack on the left of the portrait; accessories on the right.
-# Top→bottom order within each column.
-const LEFT_SLOT_ORDER: Array[int] = [2, 1, 0]   # HELM, ARMOR, WEAPON
-const RIGHT_SLOT_ORDER: Array[int] = [5, 3, 4]  # TRINKET, GLOVES, BOOTS
+# Phase 49 — Each slot has a footprint matching its item type; the slot
+# claims (col, row, w, h) cells in the EquipmentGrid Control at the same
+# CELL_PX (120) the inventory uses, so a sword renders 120×240 and chest
+# armor renders 240×240 whether equipped or sitting in inventory. Layout
+# is 2 cols × 5 rows = 240×600.
+#
+# Visual:
+#   col0  col1
+# +-----+-----+
+# | HEL | TRI |   row 0  — 1×1 each
+# +-----+-----+
+# | ARMOR     |   rows 1-2 — 2×2 spans both cols
+# |   2×2     |
+# |           |
+# |           |
+# +-----+-----+
+# | WPN | GLV |   row 3  — WEAPON top + GLOVES (1×1)
+# |     +-----+
+# | 1×2 | BTS |   row 4  — WEAPON bottom + BOOTS (1×1)
+# +-----+-----+
+const SLOT_LAYOUT: Dictionary = {
+	# slot_idx: {col, row, w, h}
+	2: {"col": 0, "row": 0, "w": 1, "h": 1},   # HELM
+	5: {"col": 1, "row": 0, "w": 1, "h": 1},   # TRINKET
+	1: {"col": 0, "row": 1, "w": 2, "h": 2},   # ARMOR
+	0: {"col": 0, "row": 3, "w": 1, "h": 2},   # WEAPON
+	3: {"col": 1, "row": 3, "w": 1, "h": 1},   # GLOVES
+	4: {"col": 1, "row": 4, "w": 1, "h": 1},   # BOOTS
+}
 # Slots the player can equip into today. Others render locked until Phase F
 # activates them.
 const ACTIVE_SLOTS: Array[int] = [0, 1, 5]
-# Phase 49 — equipment slots are larger than inventory tiles to give the
-# equipped gear visual prominence (Diablo Immortal idiom). Mirrors the
-# touch-target floor (80px) with comfortable margin.
-const EQUIPPED_SLOT_PX: float = 144.0
 
 # Phase 49 — fixed spatial grid. CELL_PX matches ItemIcon.SIZE_PX so 1×1
 # tiles look identical to the prior reflow layout; multi-cell items extend
 # to (w*CELL_PX, h*CELL_PX). No gaps between cells (Diablo-style packed grid).
-const CELL_PX: float = 92.0
+# Bumped 92→120 in the mobile-fit pass so tiles clear Material Design's
+# 7 mm touch-target floor on a typical 6.1″ phone.
+const CELL_PX: float = 120.0
 
 @onready var back_button: Button = %BackButton
 @onready var title_label: Label = %TitleLabel
 @onready var hero_label: Label = %HeroLabel
-@onready var left_slot_col: VBoxContainer = %LeftSlotCol
-@onready var right_slot_col: VBoxContainer = %RightSlotCol
+@onready var equipment_grid: Control = %EquipmentGrid
 @onready var hero_portrait: Control = %HeroPortrait
-@onready var stats_label: Label = %StatsLabel
+@onready var stats_panel: VBoxContainer = %StatsPanel
 @onready var details_label: Label = %DetailsLabel
 @onready var right_title: Label = %RightTitle
 @onready var inventory_grid: Control = %InventoryGrid
@@ -61,6 +82,32 @@ var _pending_sell_uid: String = ""
 # accidental tap can't liquidate every Common in one move.
 var _sell_all_armed: bool = false
 
+# Phase 49 — Stats panel state. _stat_rows maps stat key → StatRow Control,
+# populated once in _build_stats_panel and addressed by key on every refresh
+# / flash. _last_stats_dict caches the previously-rendered values so we can
+# detect which stats changed when an item is equipped/unequipped. The
+# _first_refresh flag suppresses flash + toast on initial load (no prior
+# state to compare against). _last_equipped_name caches the name of the
+# item that triggered the most recent refresh, consumed when building the
+# toast summary line.
+const _StatRowScript := preload("res://ui/StatRow.gd")
+const _GAIN_FLASH_COLOR: Color = Color(0.55, 1.0, 0.55, 1.0)
+const _LOSS_FLASH_COLOR: Color = Color(1.0, 0.55, 0.55, 1.0)
+const _SECTION_HEADER_COLOR: Color = Color(0.6, 0.66, 0.78, 1.0)
+const _STATS_LAYOUT: Array = [
+	# section_name, [ (stat_key, display_name), ... ]
+	# stat_key matches the keys returned by _compute_stats_dict — same string
+	# is also passed to StatIcon.draw to pick the glyph.
+	["OFFENSE", [["damage", "Damage"], ["attack_speed", "Atk Speed"]]],
+	["DEFENSE", [["max_health", "Max HP"], ["armor", "Armor"]]],
+	["UTILITY", [["move_speed", "Move Speed"], ["xp_gain_mult", "XP Gain"]]],
+]
+var _stat_rows: Dictionary = {}
+var _last_stats_dict: Dictionary = {}
+var _first_refresh: bool = true
+var _last_equipped_name: String = ""
+var _last_change_was_unequip: bool = false
+
 
 func _ready() -> void:
 	back_button.pressed.connect(_on_back)
@@ -74,8 +121,9 @@ func _ready() -> void:
 	if hero_id != "":
 		InventoryManager.ensure_starter_gear(hero_id)
 	_build_slots()
-	EventBus.item_equipped.connect(_on_inventory_changed)
-	EventBus.item_unequipped.connect(_on_inventory_changed)
+	_build_stats_panel()
+	EventBus.item_equipped.connect(_on_item_equipped)
+	EventBus.item_unequipped.connect(_on_item_unequipped)
 	EventBus.inventory_changed.connect(_on_inventory_changed_simple)
 	# Refresh when the active hero changes (e.g. HeroesHub Loadout-tab switch).
 	EventBus.hero_selected.connect(func(_id): _refresh())
@@ -93,6 +141,30 @@ func _on_inventory_changed(_hero_id, _slot, _instance) -> void:
 	_refresh()
 
 
+# Phase 49 — separate handlers for equip vs unequip so we can capture the
+# affected item's name for the on-equip toast summary. Both still trigger
+# a full _refresh which is where the flash + toast logic actually fires.
+func _on_item_equipped(_hero_id, _slot, instance) -> void:
+	_last_equipped_name = _resolve_item_name(instance)
+	_last_change_was_unequip = false
+	_refresh()
+
+
+func _on_item_unequipped(_hero_id, _slot, instance) -> void:
+	_last_equipped_name = _resolve_item_name(instance)
+	_last_change_was_unequip = true
+	_refresh()
+
+
+func _resolve_item_name(instance) -> String:
+	if instance == null:
+		return ""
+	var base: Resource = ContentRegistry.find_item_base(instance.base_id)
+	if base != null and "base_name" in base:
+		return String(base.base_name)
+	return String(instance.base_id)
+
+
 func _on_inventory_changed_simple() -> void:
 	_refresh()
 	# IP-3 / IP-4 — keep lock-button label and sell-all count in sync with
@@ -107,25 +179,23 @@ func _on_back() -> void:
 
 
 func _build_slots() -> void:
-	# Phase 49 — two columns of 3 slots each, flanking the central HeroPortrait.
-	# Left col reads HELM / ARMOR / WEAPON top→bottom; right col TRINKET /
-	# GLOVES / BOOTS. Slots use EQUIPPED_SLOT_PX (144) — bigger than the 92px
-	# inventory tile so equipped gear feels prominent.
-	for slot_idx in LEFT_SLOT_ORDER:
-		_build_one_slot(slot_idx, left_slot_col)
-	for slot_idx in RIGHT_SLOT_ORDER:
-		_build_one_slot(slot_idx, right_slot_col)
+	# Phase 49 — slots positioned absolutely inside EquipmentGrid (a Control,
+	# not a Container) at the SAME CELL_PX the inventory uses. Each slot
+	# claims its item type's footprint via set_slot_footprint, so a sword
+	# equipped or in inventory renders at the same 120×240 pixels.
+	for slot_idx in SLOT_LAYOUT.keys():
+		_build_one_slot(int(slot_idx))
 
 
-func _build_one_slot(slot_idx: int, parent_col: VBoxContainer) -> void:
-	var container: VBoxContainer = VBoxContainer.new()
-	container.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	var label: Label = Label.new()
-	label.text = SLOT_NAMES[slot_idx]
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 14)
+func _build_one_slot(slot_idx: int) -> void:
+	var entry: Dictionary = SLOT_LAYOUT[slot_idx]
+	var col: int = int(entry["col"])
+	var row: int = int(entry["row"])
+	var w: int = int(entry["w"])
+	var h: int = int(entry["h"])
 	var icon: Control = _ItemIconScript.new()
-	icon.set_slot_size(EQUIPPED_SLOT_PX)
+	icon.set_slot_footprint(w, h)
+	icon.position = Vector2(col * CELL_PX, row * CELL_PX)
 	icon.pressed.connect(_on_slot_pressed.bind(slot_idx))
 	icon.hovered.connect(_on_item_hovered)
 	icon.unhovered.connect(_on_item_unhovered)
@@ -133,9 +203,7 @@ func _build_one_slot(slot_idx: int, parent_col: VBoxContainer) -> void:
 	# path; on PC, hover already works).
 	icon.long_pressed.connect(_on_item_hovered)
 	_slot_icons[slot_idx] = icon
-	container.add_child(label)
-	container.add_child(icon)
-	parent_col.add_child(container)
+	equipment_grid.add_child(icon)
 
 
 func _refresh() -> void:
@@ -145,8 +213,9 @@ func _refresh() -> void:
 	var level: int = GameState.get_hero_level(hero_id)
 	hero_label.text = "%s — Lv %d" % [hero_data.hero_name, level] if hero_data != null else hero_id
 	# Stats panel — mirrors BaseHero.recompute_stats formulas so the numbers
-	# shown here match what the hero will have on next spawn.
-	stats_label.text = _compute_stats_text(hero_data, InventoryManager.get_all_equipped(hero_id))
+	# shown here match what the hero will have on next spawn. The grouped /
+	# iconified rows + on-equip flash live in _refresh_stats_panel.
+	_refresh_stats_panel(hero_data, InventoryManager.get_all_equipped(hero_id))
 	# Clear details on any refresh; hover repopulates.
 	# 2026-04-29 audit fix — preserve details during sell mode. _refresh()
 	# fires on every sell-arm tap (to re-modulate icons), and wiping the
@@ -494,19 +563,130 @@ const _LEVEL_HEALTH_GROWTH: float = 0.15   # must match BaseHero
 const _LEVEL_DAMAGE_GROWTH: float = 0.10   # must match BaseHero
 
 
-func _compute_stats_text(hero_data: Resource, equipped: Array) -> String:
-	if hero_data == null:
-		return ""
+# Phase 49 — Stats panel builder. Runs once at _ready, populates StatsPanel
+# with three section headers and 6 StatRow children (2 per section). After
+# this, _refresh_stats_panel just updates values + flashes the rows that
+# changed; never rebuilds.
+func _build_stats_panel() -> void:
+	if stats_panel == null:
+		return
+	# Idempotent — clear in case _ready ran twice for any reason.
+	for child in stats_panel.get_children():
+		child.queue_free()
+	_stat_rows.clear()
+	for section_entry in _STATS_LAYOUT:
+		var section_name: String = section_entry[0]
+		var rows: Array = section_entry[1]
+		# Compact header — small uppercase tag, minimal vertical footprint.
+		var header: Label = Label.new()
+		header.text = section_name
+		header.add_theme_font_size_override("font_size", 11)
+		header.add_theme_color_override("font_color", _SECTION_HEADER_COLOR)
+		header.custom_minimum_size = Vector2(0, 14)
+		stats_panel.add_child(header)
+		# Two stat rows per section. Skip a bottom-divider — the next header's
+		# uppercase color already differentiates sections without extra height.
+		for row_entry in rows:
+			var key: String = row_entry[0]
+			var display: String = row_entry[1]
+			var row: Control = _StatRowScript.new()
+			stats_panel.add_child(row)
+			# setup() needs both labels constructed; safe after add_child since
+			# _ready ran. Initial value is empty — gets filled by the first
+			# _refresh_stats_panel call right after.
+			row.setup(key, display, "—")
+			_stat_rows[key] = row
+
+
+# Phase 49 — value-update + flash + toast pass. Walks every stat row,
+# refreshes its value text, and on subsequent refreshes flashes the rows
+# that changed. Suppresses flash + toast on the first call (no prior
+# state) so the player isn't pelted with feedback on initial screen load.
+func _refresh_stats_panel(hero_data: Resource, equipped: Array) -> void:
+	if hero_data == null or _stat_rows.is_empty():
+		return
 	var current: Dictionary = _compute_stats_dict(hero_data, equipped)
-	# Format — aligned columns, fixed-width labels.
-	var lines: Array[String] = []
-	lines.append("Damage      %d" % int(round(current.damage)))
-	lines.append("Max HP      %d" % int(ceil(current.max_health)))
-	lines.append("Armor       %d%%" % int(round(current.armor * 100.0)))
-	lines.append("Atk Speed   %.2f/s" % current.attack_speed)
-	lines.append("Move Speed  %d" % int(round(current.move_speed)))
-	lines.append("XP Gain     +%d%%" % int(round((current.xp_gain_mult - 1.0) * 100.0)))
-	return "\n".join(lines)
+	var deltas: Array = []   # Array of {key, display_name, dir, formatted_delta}
+	for section_entry in _STATS_LAYOUT:
+		for row_entry in section_entry[1]:
+			var key: String = row_entry[0]
+			var display: String = row_entry[1]
+			if not _stat_rows.has(key):
+				continue
+			var row: Control = _stat_rows[key]
+			var new_val: float = float(current.get(key, 0.0))
+			var formatted: String = _format_stat_value(key, new_val)
+			row.update_value(formatted)
+			# Flash + delta capture, only on non-first refresh.
+			if not _first_refresh and _last_stats_dict.has(key):
+				var old_val: float = float(_last_stats_dict[key])
+				var diff: float = new_val - old_val
+				if absf(diff) > 0.0005:
+					if diff > 0.0:
+						row.flash(_GAIN_FLASH_COLOR)
+					else:
+						row.flash(_LOSS_FLASH_COLOR)
+					deltas.append({
+						"display": display,
+						"diff": diff,
+						"key": key,
+					})
+	_last_stats_dict = current
+	# Toast summary — fires only when at least one stat changed AND there's
+	# an originating item name (i.e., this refresh came from an equip/unequip,
+	# not a hero-switch or initial load).
+	if not _first_refresh and not deltas.is_empty() and _last_equipped_name != "":
+		var verb: String = "Unequipped" if _last_change_was_unequip else "Equipped"
+		var parts: Array[String] = []
+		# Cap at 3 deltas to keep the toast short on big legendary swaps.
+		for i in mini(deltas.size(), 3):
+			var d: Dictionary = deltas[i]
+			var arrow: String = "▲" if d.diff > 0.0 else "▼"
+			parts.append("%s %s %s" % [arrow, d.display, _format_stat_delta(String(d.key), float(d.diff))])
+		Toast.show_message("%s %s — %s" % [verb, _last_equipped_name, ", ".join(parts)])
+	# Consume the trigger info regardless — a hero-switch refresh that follows
+	# an equip shouldn't replay the same toast.
+	_last_equipped_name = ""
+	_last_change_was_unequip = false
+	_first_refresh = false
+
+
+# Phase 49 — single-stat formatter used by both the row update and the
+# delta line in toasts. Mirrors the format strings the prior flat-label
+# stats panel used so the numbers read identically.
+func _format_stat_value(key: String, value: float) -> String:
+	match key:
+		"damage":
+			return "%d" % int(round(value))
+		"max_health":
+			return "%d" % int(ceil(value))
+		"armor":
+			return "%d%%" % int(round(value * 100.0))
+		"attack_speed":
+			return "%.2f/s" % value
+		"move_speed":
+			return "%d" % int(round(value))
+		"xp_gain_mult":
+			return "+%d%%" % int(round((value - 1.0) * 100.0))
+		_:
+			return "%.2f" % value
+
+
+# Phase 49 — delta-string formatter for toast lines. Signed integer for
+# integer stats, signed percentage for armor/xp, signed 2-decimal for
+# attack speed. Sign always shown so "+3" vs "-2" reads at a glance.
+func _format_stat_delta(key: String, diff: float) -> String:
+	match key:
+		"damage", "max_health", "move_speed":
+			return "%+d" % int(round(diff))
+		"armor":
+			return "%+d%%" % int(round(diff * 100.0))
+		"attack_speed":
+			return "%+.2f/s" % diff
+		"xp_gain_mult":
+			return "%+d%%" % int(round(diff * 100.0))
+		_:
+			return "%+.2f" % diff
 
 
 # --- Hover details ---------------------------------------------------------
@@ -647,7 +827,8 @@ func _append_diff_line(lines: Array[String], label: String, old_val: int, new_va
 	lines.append("%s %d%s%d" % [label, old_val, arrow, new_val])
 
 
-# Shared stat-computation core; _compute_stats_text is just a formatter over this.
+# Shared stat-computation core; _refresh_stats_panel + _format_stat_diff are
+# the formatters over this dict.
 func _compute_stats_dict(hero_data: Resource, equipped: Array) -> Dictionary:
 	var level: int = GameState.get_hero_level(hero_data.hero_id)
 	var hp_mult: float = 1.0 + float(level - 1) * _LEVEL_HEALTH_GROWTH

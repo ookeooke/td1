@@ -23,10 +23,10 @@ signal unhovered
 # doesn't also accidentally equip / sell-arm the item.
 signal long_pressed(instance)
 
-const SIZE_PX: float = 92.0
+const SIZE_PX: float = 120.0
 const BORDER_THICKNESS_PX: float = 3.0
 const ARMED_RING_THICKNESS_PX: float = 3.0
-const GLYPH_RADIUS_PX: float = 28.0
+const GLYPH_RADIUS_PX: float = 36.0
 
 # Rarity tints for the border — same palette as ItemPickup halo so drops
 # the player sees on the ground match what they see in the UI.
@@ -77,11 +77,12 @@ var _base: Resource = null
 var _armed: bool = false
 var _locked: bool = false
 var _is_empty: bool = true
-# Phase 49 — equipment slots use a fixed pixel size regardless of the
-# equipped item's grid footprint (a 1×2 sword should still render at slot
-# size when worn, not stretch the slot vertically). Inventory icons leave
-# this at -1 and pick up footprint sizing automatically.
-var _slot_size_px: float = -1.0
+# Phase 49 — equipment slots claim a fixed footprint matching their item
+# type (HELM 1×1, ARMOR 2×2, WEAPON 1×2, etc) so a sword appears at the
+# same pixel size whether equipped or sitting in inventory. (0, 0) means
+# "no slot override" — sizing falls back to the item's natural footprint
+# (used by inventory icons).
+var _slot_footprint: Vector2i = Vector2i.ZERO
 # IP-3 — "do not sell" pin (separate from `_locked` which means slot-locked /
 # disabled). When true, the icon draws a small padlock glyph in the
 # upper-right corner; rendering is otherwise unchanged.
@@ -108,21 +109,21 @@ func _ready() -> void:
 	mouse_exited.connect(_on_mouse_exited)
 
 
-# Phase 49 — pixel size = SIZE_PX * footprint. Read from _base when available;
-# fallback 1×1 so empty / locked / unknown-base tiles keep the existing look.
-# Called from _ready and setup_instance — order-independent so callers can
-# setup_instance either before OR after add_child without losing sizing.
-# When _slot_size_px > 0 (set via set_slot_size for equipment slot icons),
-# the override wins — equipped items don't stretch the slot to their footprint.
+# Phase 49 — pixel size = SIZE_PX * footprint. Sizing priority:
+#   1. _slot_footprint when non-zero (equipment slot icons use a fixed
+#      footprint matching their item type — items render at the same
+#      size in inventory and in slots)
+#   2. _base.grid_width × grid_height when an item is set
+#   3. 1×1 fallback for empty / locked tiles
+# Called from _ready, set_slot_footprint, and setup_instance — order-
+# independent so callers can setup either before OR after add_child.
 func _apply_footprint_size() -> void:
-	if _slot_size_px > 0.0:
-		var slot_px: Vector2 = Vector2(_slot_size_px, _slot_size_px)
-		custom_minimum_size = slot_px
-		size = slot_px
-		return
 	var w: int = 1
 	var h: int = 1
-	if _base != null:
+	if _slot_footprint != Vector2i.ZERO:
+		w = maxi(1, _slot_footprint.x)
+		h = maxi(1, _slot_footprint.y)
+	elif _base != null:
 		w = maxi(1, int(_base.grid_width))
 		h = maxi(1, int(_base.grid_height))
 	var px: Vector2 = Vector2(SIZE_PX * float(w), SIZE_PX * float(h))
@@ -130,12 +131,13 @@ func _apply_footprint_size() -> void:
 	size = px
 
 
-# Phase 49 — pin this icon to a fixed square pixel size, used by the
-# equipment slot icons (which should always look the same regardless of
-# what footprint the equipped item has). Pass <= 0 to revert to footprint
-# sizing.
-func set_slot_size(px: float) -> void:
-	_slot_size_px = px
+# Phase 49 — pin this icon to a fixed footprint regardless of which item
+# (if any) is later equipped here. Used by equipment slot icons so the
+# slot's shape matches its item type (HELM 1×1, ARMOR 2×2, WEAPON 1×2)
+# and items render at the same pixel size as in inventory. Pass (0, 0) to
+# revert to base-footprint sizing (the default for inventory icons).
+func set_slot_footprint(w: int, h: int) -> void:
+	_slot_footprint = Vector2i(maxi(0, w), maxi(0, h))
 	_apply_footprint_size()
 
 
@@ -273,8 +275,24 @@ func _draw() -> void:
 		_draw_sparkles(rect, rarity_color, rarity, scale_factor)
 	# Layer 7 — glyph with drop shadow. Shadow first (offset down), then the
 	# real glyph + rarity pips. Glyph radius scales with tile size.
+	# Phase 49 — sword glyphs are taller than wide (~2.4:1 in r-units after
+	# the 1.25× vertical stretch); use a separate calc that lets `r` grow
+	# with tile height. Square glyphs (armor, trinkets, generic) keep the
+	# old min(w,h)-based scale.
 	var center: Vector2 = rect.position + rect.size * 0.5
-	var glyph_r: float = GLYPH_RADIUS_PX * scale_factor
+	var glyph_id: String = String(_base.icon_glyph)
+	var glyph_r: float
+	if glyph_id.begins_with("sword"):
+		# Half-extents in r-units after the stretch: sword is about ±0.55
+		# wide (crossguard) and ±1.20 tall (blade tip to pommel bottom).
+		var half_w: float = 0.55
+		var half_h: float = 1.20
+		var max_r_w: float = rect.size.x * 0.5 / half_w
+		var max_r_h: float = rect.size.y * 0.5 / half_h
+		# 0.92 leaves a small breathing margin at the tile edge.
+		glyph_r = minf(max_r_w, max_r_h) * 0.92
+	else:
+		glyph_r = GLYPH_RADIUS_PX * scale_factor
 	_draw_glyph_shadow(_base.icon_glyph, center, glyph_r, _base.icon_color)
 	ItemGlyph.draw(self, _base.icon_glyph, center, glyph_r, _base.icon_color)
 	ItemGlyph.draw_rarity_pips(self, rarity, center, glyph_r)

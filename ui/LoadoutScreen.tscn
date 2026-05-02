@@ -143,19 +143,6 @@ layout_mode = 2
 text = "Change Loadout ►"
 theme_override_font_sizes/font_size = 16
 
-[node name="SpellsTitle" type="Label" parent="Content"]
-layout_mode = 2
-text = "— Spells —"
-horizontal_alignment = 1
-theme_override_font_sizes/font_size = 20
-
-[node name="SpellsLabel" type="Label" parent="Content"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Spells: --"
-horizontal_alignment = 1
-theme_override_font_sizes/font_size = 16
-
 [node name="StartButton" type="Button" parent="."]
 unique_name_in_owner = true
 layout_mode = 1

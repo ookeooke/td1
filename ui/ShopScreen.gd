@@ -96,6 +96,4 @@ func _is_product_unlocked(product: Resource) -> bool:
 			return UnlockManager.is_hero_unlocked(product.unlock_id)
 		ProductData.UnlockType.TOWER:
 			return UnlockManager.is_tower_unlocked(product.unlock_id)
-		ProductData.UnlockType.SPELL:
-			return UnlockManager.is_spell_unlocked(product.unlock_id)
 	return false

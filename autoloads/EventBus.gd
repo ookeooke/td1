@@ -62,11 +62,13 @@ signal hero_skill_used(skill_name)
 signal skill_cooldown_started(skill_name, duration)
 signal skill_ready(skill_name)
 signal hero_selected(hero_id)
-
-# Spells
-signal spell_cast(spell_name, position)
-signal spell_cooldown_started(spell_name, duration)
-signal spell_ready(spell_name)
+# Fired by BaseHero._level_up_apply() when a skill's level_required is
+# reached. WorldMap badge + Toast listen. Equipping is still manual — the
+# player picks from Heroes → Skills.
+signal hero_skill_unlocked(hero_id, skill_id)
+# Fired by GameState.set_equipped_skill() when the loadout changes.
+# SkillBar listens to rebuild the in-level slot cluster.
+signal hero_skill_equipped(hero_id, slot, skill_id)
 
 # Game modes
 signal endless_wave_started(wave_number)

@@ -319,73 +319,89 @@ static func _draw_sword_steel(canvas: CanvasItem, c: Vector2, r: float, col: Col
 static func _draw_sword_elven(canvas: CanvasItem, c: Vector2, r: float, col: Color) -> void:
 	var outline: Color = _outline_color(col)
 	# Leaf-shaped blade — bulges in the middle, tapers at both top and base.
+	# Y-coords stretched 1.25× for tall-tile fill.
 	var blade := PackedVector2Array([
-		c + Vector2(-r * 0.06, -r * 0.05),
-		c + Vector2(-r * 0.18, -r * 0.4),
-		c + Vector2(-r * 0.14, -r * 0.7),
-		c + Vector2(0, -r * 0.95),
-		c + Vector2(r * 0.14, -r * 0.7),
-		c + Vector2(r * 0.18, -r * 0.4),
-		c + Vector2(r * 0.06, -r * 0.05),
+		c + Vector2(-r * 0.06, -r * 0.06),
+		c + Vector2(-r * 0.18, -r * 0.5),
+		c + Vector2(-r * 0.14, -r * 0.875),
+		c + Vector2(0, -r * 1.19),
+		c + Vector2(r * 0.14, -r * 0.875),
+		c + Vector2(r * 0.18, -r * 0.5),
+		c + Vector2(r * 0.06, -r * 0.06),
 	])
 	canvas.draw_colored_polygon(blade, col)
 	var ring: PackedVector2Array = blade.duplicate()
 	ring.append(blade[0])
 	canvas.draw_polyline(ring, outline, 1.5, true)
 	# Center vein.
-	canvas.draw_line(c + Vector2(0, -r * 0.85), c + Vector2(0, -r * 0.1), outline, 1.0)
+	canvas.draw_line(c + Vector2(0, -r * 1.06), c + Vector2(0, -r * 0.13), outline, 1.0)
 	# Bright specular along the LEFT edge — leaf blade catching light.
-	_draw_blade_highlight(canvas, c + Vector2(-r * 0.10, -r * 0.7), c + Vector2(-r * 0.10, -r * 0.15), col, 0.85)
+	_draw_blade_highlight(canvas, c + Vector2(-r * 0.10, -r * 0.875), c + Vector2(-r * 0.10, -r * 0.19), col, 0.85)
 	# Small magical glint near the tip — tiny lightened triangle.
 	canvas.draw_colored_polygon(PackedVector2Array([
-		c + Vector2(0, -r * 0.95),
-		c + Vector2(-r * 0.05, -r * 0.78),
-		c + Vector2(r * 0.05, -r * 0.78),
+		c + Vector2(0, -r * 1.19),
+		c + Vector2(-r * 0.05, -r * 0.975),
+		c + Vector2(r * 0.05, -r * 0.975),
 	]), col.lightened(0.5))
-	# Ornate crossguard — two curved branches sweeping toward the blade.
-	var cg_left := PackedVector2Array([
-		c + Vector2(-r * 0.06, -r * 0.04),
-		c + Vector2(-r * 0.55, r * 0.0),
-		c + Vector2(-r * 0.6, -r * 0.18),    # tip curled up + outward
-		c + Vector2(-r * 0.4, -r * 0.05),
-		c + Vector2(-r * 0.06, r * 0.05),
+	# Ornate crossguard — base wedge + branch flourish accent. Drawn as two
+	# simple polygons per side so the triangulator never sees a self-
+	# intersecting outline. The flourish triangle overlaps the wedge for the
+	# decorative "curl" read without forming a non-simple polygon.
+	var cg_left_base := PackedVector2Array([
+		c + Vector2(-r * 0.06, -r * 0.05),    # near-blade top
+		c + Vector2(-r * 0.60, -r * 0.225),   # curled tip (up + outward)
+		c + Vector2(-r * 0.55,  r * 0.00),    # far-left mid
+		c + Vector2(-r * 0.06,  r * 0.06),    # near-blade bottom
 	])
-	canvas.draw_colored_polygon(cg_left, col)
-	canvas.draw_polyline(PackedVector2Array(cg_left + PackedVector2Array([cg_left[0]])), outline, 1.3, true)
-	var cg_right := PackedVector2Array([
-		c + Vector2(r * 0.06, -r * 0.04),
-		c + Vector2(r * 0.55, r * 0.0),
-		c + Vector2(r * 0.6, -r * 0.18),
-		c + Vector2(r * 0.4, -r * 0.05),
-		c + Vector2(r * 0.06, r * 0.05),
+	canvas.draw_colored_polygon(cg_left_base, col)
+	canvas.draw_polyline(PackedVector2Array(cg_left_base + PackedVector2Array([cg_left_base[0]])), outline, 1.3, true)
+	var cg_left_curl := PackedVector2Array([
+		c + Vector2(-r * 0.55,  r * 0.00),
+		c + Vector2(-r * 0.40, -r * 0.06),
+		c + Vector2(-r * 0.30,  r * 0.04),
 	])
-	canvas.draw_colored_polygon(cg_right, col)
-	canvas.draw_polyline(PackedVector2Array(cg_right + PackedVector2Array([cg_right[0]])), outline, 1.3, true)
+	canvas.draw_colored_polygon(cg_left_curl, col.darkened(0.15))
+	canvas.draw_polyline(PackedVector2Array(cg_left_curl + PackedVector2Array([cg_left_curl[0]])), outline, 1.0, true)
+	var cg_right_base := PackedVector2Array([
+		c + Vector2(r * 0.06, -r * 0.05),
+		c + Vector2(r * 0.60, -r * 0.225),
+		c + Vector2(r * 0.55,  r * 0.00),
+		c + Vector2(r * 0.06,  r * 0.06),
+	])
+	canvas.draw_colored_polygon(cg_right_base, col)
+	canvas.draw_polyline(PackedVector2Array(cg_right_base + PackedVector2Array([cg_right_base[0]])), outline, 1.3, true)
+	var cg_right_curl := PackedVector2Array([
+		c + Vector2(r * 0.55,  r * 0.00),
+		c + Vector2(r * 0.40, -r * 0.06),
+		c + Vector2(r * 0.30,  r * 0.04),
+	])
+	canvas.draw_colored_polygon(cg_right_curl, col.darkened(0.15))
+	canvas.draw_polyline(PackedVector2Array(cg_right_curl + PackedVector2Array([cg_right_curl[0]])), outline, 1.0, true)
 	# Slim grip with diagonal wraps.
-	var hilt_rect: Rect2 = Rect2(c + Vector2(-r * 0.07, r * 0.05), Vector2(r * 0.14, r * 0.45))
+	var hilt_rect: Rect2 = Rect2(c + Vector2(-r * 0.07, r * 0.06), Vector2(r * 0.14, r * 0.56))
 	canvas.draw_rect(hilt_rect, col.darkened(0.6), true)
 	canvas.draw_rect(hilt_rect, outline, false, 1.2)
 	_draw_grip_wraps(canvas, hilt_rect, col, 5)
 	# Teardrop pommel with highlight + a tiny embedded gem.
 	var pommel := PackedVector2Array([
-		c + Vector2(-r * 0.11, r * 0.5),
-		c + Vector2(0, r * 0.46),
-		c + Vector2(r * 0.11, r * 0.5),
-		c + Vector2(r * 0.13, r * 0.62),
-		c + Vector2(0, r * 0.78),
-		c + Vector2(-r * 0.13, r * 0.62),
+		c + Vector2(-r * 0.11, r * 0.625),
+		c + Vector2(0, r * 0.575),
+		c + Vector2(r * 0.11, r * 0.625),
+		c + Vector2(r * 0.13, r * 0.775),
+		c + Vector2(0, r * 0.975),
+		c + Vector2(-r * 0.13, r * 0.775),
 	])
 	canvas.draw_colored_polygon(pommel, col)
 	# Highlight crescent on the upper-left of the pommel.
 	canvas.draw_colored_polygon(PackedVector2Array([
-		c + Vector2(-r * 0.11, r * 0.5),
-		c + Vector2(0, r * 0.46),
-		c + Vector2(-r * 0.04, r * 0.55),
-		c + Vector2(-r * 0.10, r * 0.6),
+		c + Vector2(-r * 0.11, r * 0.625),
+		c + Vector2(0, r * 0.575),
+		c + Vector2(-r * 0.04, r * 0.69),
+		c + Vector2(-r * 0.10, r * 0.75),
 	]), col.lightened(0.45))
 	canvas.draw_polyline(PackedVector2Array(pommel + PackedVector2Array([pommel[0]])), outline, 1.3, true)
 	# Embedded gem — small bright dot near the center of the pommel.
-	canvas.draw_circle(c + Vector2(0, r * 0.6), r * 0.04, col.lightened(0.6))
+	canvas.draw_circle(c + Vector2(0, r * 0.75), r * 0.04, col.lightened(0.6))
 
 
 # --- ARMOR VARIANTS ----------------------------------------------------------

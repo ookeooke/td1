@@ -29,7 +29,7 @@ var _hide_tween: Tween = null
 
 
 func _ready() -> void:
-	layer = 6  # Below SpellPanel (7), above world
+	layer = 6  # Above world, below HUD/SkillBar
 	# Create a Control node to draw on (CanvasLayer needs a Control child).
 	if _draw_node == null:
 		var ctrl: Control = Control.new()

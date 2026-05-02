@@ -1,9 +1,11 @@
 extends Control
 
-# Phase 30 + 31: pre-level loadout + mode selection. Shows hero/tower/spell
+# Phase 30 + 31: pre-level loadout + mode selection. Shows hero + tower
 # roster and 3 mode buttons (Campaign / Heroic / Iron) with unlock status.
 # Player picks a mode, then Start → gameplay.
 # Phase 47d-5: tower row is now a live icon preview wired to LoadoutPickerScreen.
+# Phase 49 spell purge: spells row removed — every active ability is now
+# hero-scoped (cast from the in-level portrait cluster, not a global panel).
 
 const TowerIconButton := preload("res://ui/TowerIconButton.gd")
 
@@ -14,7 +16,6 @@ const TowerIconButton := preload("res://ui/TowerIconButton.gd")
 @onready var towers_label: Label = %TowersLabel
 @onready var towers_row: HBoxContainer = %TowersRow
 @onready var change_towers_button: Button = %ChangeTowersButton
-@onready var spells_label: Label = %SpellsLabel
 @onready var level_label: Label = %LevelLabel
 @onready var campaign_button: Button = %CampaignButton
 @onready var heroic_button: Button = %HeroicButton
@@ -60,7 +61,6 @@ func _refresh() -> void:
 	level_label.text = "Endless Mode" if is_endless else lid.replace("_", " ").capitalize()
 	_refresh_hero_info()
 	_rebuild_towers_row()
-	spells_label.text = "Spells: Fireball, Recruit"
 	# Endless skips the mode selector — it IS the mode.
 	campaign_button.visible = not is_endless
 	heroic_button.visible = not is_endless

@@ -310,7 +310,7 @@ func get_skill_cooldown_fraction(idx: int) -> float:
 
 
 # CooldownButton provider contract — generic names so the same button
-# class drives both hero skill buttons and (Phase 22) spell buttons.
+# class can drive any future cooldown-gated cast surface, not just hero skills.
 func cooldown_fraction(idx: int) -> float:
 	return get_skill_cooldown_fraction(idx)
 
@@ -412,6 +412,30 @@ func _level_up_apply() -> void:
 	current_health = _effective_max_health()
 	queue_redraw()
 	print("[Hero] %s reached level %d" % [data.hero_name, level])
+	# Detect any skill whose level_required matches this new level. Fire
+	# the signal + a Toast — the player still has to equip it manually
+	# from Heroes → Skills (not auto-equipped, that defeats the choice).
+	# Toast.show_message kills the prior tween on every call, so multiple
+	# unlocks at the same level (or across levels in an XP-catchup) would
+	# only ever surface the LAST message. Combine into one toast.
+	var unlocked: Array[String] = GameState.get_skills_unlocked_at_level(data.hero_id, level)
+	for skill_id in unlocked:
+		EventBus.hero_skill_unlocked.emit(data.hero_id, skill_id)
+	if unlocked.size() == 1:
+		var sd: Resource = _find_skill_data_by_id(unlocked[0])
+		var nm: String = sd.skill_name if sd != null else unlocked[0]
+		Toast.show_message("New skill: %s — equip from Heroes → Skills" % nm)
+	elif unlocked.size() > 1:
+		Toast.show_message("%d new skills unlocked — equip from Heroes → Skills" % unlocked.size())
+
+
+func _find_skill_data_by_id(skill_id: String) -> Resource:
+	if data == null or skill_id == "":
+		return null
+	for skill in data.skills:
+		if skill != null and skill.skill_id == skill_id:
+			return skill
+	return null
 
 
 func change_state(new_state: int) -> void:

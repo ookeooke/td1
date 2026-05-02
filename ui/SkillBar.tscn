@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3 uid="uid://b1td1skillbar"]
+[gd_scene load_steps=5 format=3 uid="uid://b1td1skillbar"]
 
 [ext_resource type="Script" path="res://ui/SkillBar.gd" id="1_bar"]
 [ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
 [ext_resource type="Script" path="res://ui/SafeAreaMargin.gd" id="3_safe"]
+[ext_resource type="Script" path="res://ui/HeroHudPortrait.gd" id="4_portrait"]
 
 [node name="SkillBar" type="CanvasLayer"]
 layer = 8
@@ -18,9 +19,29 @@ theme = ExtResource("2_theme")
 mouse_filter = 2
 script = ExtResource("3_safe")
 
-[node name="ButtonColumn" type="VBoxContainer" parent="SafeArea"]
-unique_name_in_owner = true
+[node name="Inner" type="Control" parent="SafeArea"]
 layout_mode = 2
-size_flags_horizontal = 10
-size_flags_vertical = 8
-theme_override_constants/separation = 12
+mouse_filter = 2
+
+[node name="Cluster" type="Control" parent="SafeArea/Inner"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -200.0
+offset_top = -400.0
+offset_right = 0.0
+offset_bottom = 0.0
+mouse_filter = 2
+
+[node name="Portrait" type="Control" parent="SafeArea/Inner/Cluster"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 40.0
+offset_top = 280.0
+offset_right = 160.0
+offset_bottom = 400.0
+script = ExtResource("4_portrait")

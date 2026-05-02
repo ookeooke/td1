@@ -17,6 +17,7 @@ const _ENEMY_PATHS: Array[String] = [
 	"res://enemies/data/enemy_healer.tres",
 	"res://enemies/data/enemy_armored.tres",
 	"res://enemies/data/enemy_scout.tres",
+	"res://enemies/data/enemy_brute.tres",
 	"res://enemies/data/boss_orc_warlord.tres",
 ]
 
@@ -31,11 +32,6 @@ const _TOWER_PATHS: Array[String] = [
 const _HERO_PATHS: Array[String] = [
 	"res://heroes/data/hero_warrior.tres",
 	"res://heroes/data/hero_mage.tres",
-]
-
-const _SPELL_PATHS: Array[String] = [
-	"res://spells/data/spell_fireball.tres",
-	"res://spells/data/spell_reinforcements.tres",
 ]
 
 # Phase 48 — loot system content. ItemBase templates back all dropped
@@ -83,7 +79,6 @@ const _AFFIX_PATHS: Array[String] = [
 var enemies: Array[Resource] = []
 var towers: Array[Resource] = []
 var heroes: Array[Resource] = []
-var spells: Array[Resource] = []
 var upgrades: Array[Resource] = []  # populated by UpgradeTree scene (inline sub_resources)
 var item_bases: Array[Resource] = []
 var affixes: Array[Resource] = []
@@ -94,12 +89,11 @@ func _ready() -> void:
 	enemies = _load_catalog(_ENEMY_PATHS, "enemies")
 	towers = _load_catalog(_TOWER_PATHS, "towers")
 	heroes = _load_catalog(_HERO_PATHS, "heroes")
-	spells = _load_catalog(_SPELL_PATHS, "spells")
 	item_bases = _load_catalog(_ITEM_BASE_PATHS, "item_bases")
 	affixes = _load_catalog(_AFFIX_PATHS, "affixes")
 	affix_pools = _load_catalog(_AFFIX_POOL_PATHS, "affix_pools")
-	print("[ContentRegistry] loaded — %d enemies, %d towers, %d heroes, %d spells, %d item_bases, %d affixes, %d pools" % [
-		enemies.size(), towers.size(), heroes.size(), spells.size(),
+	print("[ContentRegistry] loaded — %d enemies, %d towers, %d heroes, %d item_bases, %d affixes, %d pools" % [
+		enemies.size(), towers.size(), heroes.size(),
 		item_bases.size(), affixes.size(), affix_pools.size(),
 	])
 	_validate_ids()
@@ -128,7 +122,6 @@ func _validate_ids() -> void:
 	_assert_ids(enemies, "enemy_id")
 	_assert_ids(towers, "tower_id")
 	_assert_ids(heroes, "hero_id")
-	_assert_ids(spells, "spell_id")
 	_assert_ids(item_bases, "base_id")
 	_assert_ids(affixes, "affix_id")
 	_assert_ids(affix_pools, "pool_id")
@@ -169,13 +162,6 @@ func find_hero(id: String) -> Resource:
 	for h in heroes:
 		if h != null and "hero_id" in h and h.hero_id == id:
 			return h
-	return null
-
-
-func find_spell(id: String) -> Resource:
-	for s in spells:
-		if s != null and "spell_id" in s and s.spell_id == id:
-			return s
 	return null
 
 

@@ -51,15 +51,6 @@ prerequisite_id = "hero_training"
 effect_type = 4
 effect_value = 1.25
 
-[sub_resource type="Resource" id="Upg_SpellMastery"]
-script = ExtResource("2_upg")
-upgrade_id = "spell_mastery"
-upgrade_name = "Spell Mastery"
-description = "Spell cooldowns reduced by 15%."
-star_cost = 3
-effect_type = 5
-effect_value = 0.85
-
 [node name="UpgradeTree" type="Control"]
 layout_mode = 3
 anchors_preset = 15
@@ -67,7 +58,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 theme = ExtResource("3_theme")
 script = ExtResource("1_tree")
-upgrades = Array[Resource]([SubResource("Upg_WarChest"), SubResource("Upg_SharpArrows"), SubResource("Upg_ExtendedRange"), SubResource("Upg_HeroTraining"), SubResource("Upg_FastLearner"), SubResource("Upg_SpellMastery")])
+upgrades = Array[Resource]([SubResource("Upg_WarChest"), SubResource("Upg_SharpArrows"), SubResource("Upg_ExtendedRange"), SubResource("Upg_HeroTraining"), SubResource("Upg_FastLearner")])
 
 [node name="Background" type="ColorRect" parent="."]
 layout_mode = 1

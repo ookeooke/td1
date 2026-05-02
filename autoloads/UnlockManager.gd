@@ -2,16 +2,16 @@ extends Node
 
 # Phase 36: content unlock gate. Every system that shows/hides/enables
 # locked content calls one of the type-specific is_*_unlocked methods below —
-# heroes, towers, spells, etc.
+# heroes, towers, etc.
 #
 # Rule #7: all IAP-locked content checked through UnlockManager before
 # loading. Never hardcode unlock states.
 #
 # Phase 46c: the old `is_unlocked(id)` did a global-namespace search
-# (heroes→towers→spells) which silently returned the first match. When
-# hero "mage" (requires_unlock=true) and tower "mage" (requires_unlock=false)
-# shared an id, the tower query hit the hero resource and locked the tower
-# from the build ring. Type-specific methods below eliminate that class of bug.
+# which silently returned the first match. When hero "mage"
+# (requires_unlock=true) and tower "mage" (requires_unlock=false) shared an
+# id, the tower query hit the hero resource and locked the tower from the
+# build ring. Type-specific methods below eliminate that class of bug.
 #
 # Three unlock paths (identical across types):
 #   1. Free content — `requires_unlock == false` on the Data → always available.
@@ -19,8 +19,8 @@ extends Node
 #   3. Star-threshold auto-unlock — defined in _star_thresholds. Checked on
 #      every call so progress auto-grants access.
 
-# Star thresholds for auto-unlocking content. Add hero/tower/spell IDs here
-# with the total-star count needed to unlock. Players don't "spend" stars on
+# Star thresholds for auto-unlocking content. Add hero/tower IDs here with
+# the total-star count needed to unlock. Players don't "spend" stars on
 # these — reaching the threshold is enough (stars are spent on upgrades).
 var _star_thresholds: Dictionary = {
 	# "hero_mage": 5,  # uncomment to gate Mage behind 5 total campaign stars
@@ -39,10 +39,6 @@ func is_tower_unlocked(tower_id: String) -> bool:
 	return _is_unlocked_in(tower_id, ContentRegistry.find_tower(tower_id))
 
 
-func is_spell_unlocked(spell_id: String) -> bool:
-	return _is_unlocked_in(spell_id, ContentRegistry.find_spell(spell_id))
-
-
 # Shared three-path check used by every type-specific method.
 func _is_unlocked_in(id: String, data: Resource) -> bool:
 	if id == "":
@@ -51,7 +47,7 @@ func _is_unlocked_in(id: String, data: Resource) -> bool:
 	if id in GameState.unlocked_content:
 		return true
 	# 2. Free content — the Data's requires_unlock says it's always available.
-	#    Enemies/spells don't have requires_unlock today; a missing field means
+	#    Enemies don't have requires_unlock today; a missing field means
 	#    "not lockable" → treat as free.
 	if data != null:
 		if "requires_unlock" in data and not data.requires_unlock:
@@ -67,7 +63,7 @@ func _is_unlocked_in(id: String, data: Resource) -> bool:
 # Explicit unlock — called by PurchaseManager on IAP success, and by
 # progression events that unlock content outside the star-threshold path.
 # Type-agnostic because `unlocked_content` is a flat list and IDs are
-# scoped (hero_*, tower_*, spell_*) so collisions can't happen.
+# scoped (hero_*, tower_*) so collisions can't happen.
 func unlock(id: String) -> void:
 	if id in GameState.unlocked_content:
 		return

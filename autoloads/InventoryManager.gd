@@ -28,7 +28,7 @@ const SLOT_COUNT: int = 6
 # Phase 49 — fixed-size spatial grid. Cap is GRID_COLS × GRID_ROWS = 40 cells.
 # Items occupy 1×1, 1×2, 2×2 etc footprints from ItemBase.grid_width/height.
 # Drops that don't fit are hard-refused with a toast (no auto-sell).
-const GRID_COLS: int = 8
+const GRID_COLS: int = 10
 const GRID_ROWS: int = 5
 
 var shared_inventory: Array = []           # Array[ItemInstance] — global pool

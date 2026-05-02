@@ -1727,3 +1727,206 @@ After the post-implementation review, a deeper cross-feature link audit caught o
 - [ui/LoadoutScreen.gd `_on_hero_title_tapped`](ui/LoadoutScreen.gd) (line 193 area): unconditional emit — the cycle loop starts at `offset = 1` so the candidate is always different from the current selection. Mirrors the pattern used in `HeroesHub._on_switch_hero`.
 
 **Why now**: today there are no other UI screens listening to `hero_selected` while LoadoutScreen is alive (HeroesHub is freed by the time LoadoutScreen runs). So these emits are no-ops in current flows. But the contract should be symmetric: any code path that mutates `selected_hero_id` should emit, so future listeners (Stats / Skills tabs, etc.) don't silently miss switches done from the pre-battle screen. Cheap to add now, expensive to debug later.
+
+---
+
+## 2026-04-30 — Phase 48 / DI-style hero skill cluster (Stages 1–3 + bug-fix pass)
+
+Reshaped hero skills from "every authored skill is always shown in a vertical bar" to a Diablo Immortal-style **per-hero loadout** the player chooses on the WorldMap. In-level UI is now a **bottom-right portrait** (HP + XP rings + level badge) with a **2-slot arc** of skill tiles around it — the old `ui/SkillBar.gd` VBoxContainer is gone and the top-left HUD XP text is gone. Authored a new warrior kit (Summon Soldiers / Bless) and a new mage kit (Fireball / Mana Shield).
+
+### Stage 1 — Data foundation (no visual change)
+- `SkillData` gains `level_required: int = 1` ([heroes/skills/skill_data.gd](heroes/skills/skill_data.gd)). Skills with `level_required > hero level` render as locked in the Skills tab.
+- New per-hero dict `hero_equipped_skills: Dictionary` on `GameState` ([autoloads/GameState.gd](autoloads/GameState.gd)), keyed by `hero_id`, value is `Array[String]` of length `EQUIPPED_SKILL_SLOTS`. Mirror of the proven `hero_progress` / `hero_talents` pattern. Six new accessors: `get_equipped_skills`, `set_equipped_skill`, `get_unlocked_skill_ids`, `get_skills_unlocked_at_level`, `has_unequipped_skills`, `_default_equipped_for`.
+- `SaveManager` writes + reads `hero_equipped_skills` alongside `hero_progress` ([autoloads/SaveManager.gd](autoloads/SaveManager.gd)). No `SAVE_VERSION` bump needed — additive field; legacy saves load with the key missing → defaults computed on first read.
+- New EventBus signals: `hero_skill_unlocked(hero_id, skill_id)` and `hero_skill_equipped(hero_id, slot, skill_id)`.
+- `BaseHero._level_up_apply()` ([heroes/base_hero.gd](heroes/base_hero.gd)) now queries `GameState.get_skills_unlocked_at_level(hero_id, level)` after the stat bump and fires the unlock signal + a Toast. **No auto-equip** — the player picks on next WorldMap visit.
+- `SkillBar._rebuild_buttons()` reads `GameState.get_equipped_skills(hero_id)` and resolves each slot's `skill_id` back to the `data.skills` index, so the hero's parallel `_skill_cooldowns` array stays addressed by the original index (no plumbing change in `BaseHero`).
+
+### Stage 2 — In-level UI + WorldMap Skills tab
+- New widget [ui/HeroHudPortrait.gd](ui/HeroHudPortrait.gd) (named to avoid colliding with the EquipmentScreen's existing `HeroPortrait` 2D drawer): 120px disk with outer XP arc (yellow, sweeps clockwise from 12 o'clock), inner HP arc (red→green by fraction), class glyph in the center disk (warrior sword / mage star / ranger bow / paladin shield), level badge in the lower-right (replaced by respawn countdown when the hero is dead). Tap → `EventBus.camera_focus_requested.emit(hero.global_position, 0.35)` + `hero.set_selected(true)`. HP polled in `_process` (no `hero_health_changed` signal exists today); XP/level driven by `hero_xp_gained` / `hero_leveled_up`.
+- New small placeholder [ui/EmptySkillSlot.gd](ui/EmptySkillSlot.gd) — dim disk + "+" glyph for unequipped slots; tap → toast `"Set skills in Heroes → Skills"`.
+- [ui/SkillBar.tscn](ui/SkillBar.tscn) restructured: `SafeArea > Inner > Cluster (200×400, anchored bottom-right)` hosting the portrait at `(40, 280)`. Slot positions live in code (`SLOT_POSITIONS` const) so the layout is one place to tune.
+- [ui/HUD.gd](ui/HUD.gd) + [ui/HUD.tscn](ui/HUD.tscn) — removed the top-left `HeroLabel`, the `_hero` field, the `_respawn_remaining` tick, and all `_refresh_hero` plumbing. The portrait owns all of it now.
+- [ui/HeroesHub.gd](ui/HeroesHub.gd) Skills tab: replaces the "coming soon" stub. Header shows hero name + level + XP, then EQUIPPED row (3 → 2 slots after Stage 3), AVAILABLE grid (every unlocked skill), LOCKED grid (skills with `level_required > level`, shown as `???  Lv N`). Two-tap commit: tap an Available skill (highlights yellow), tap an Equipped slot to swap. Listens to `hero_selected` (Loadout-tab cycle) and `hero_skill_equipped` to re-render.
+- [ui/WorldMap.gd](ui/WorldMap.gd) `_refresh_heroes_button_dot()`: red 16×16 ColorRect overlay on the Heroes button when any unlocked hero has at least one unlocked-but-unequipped skill. Same convention used elsewhere in mobile UI.
+
+### Stage 3 — Scope cut + warrior/mage kits
+- `EQUIPPED_SKILL_SLOTS: 3 → 2`. Dropped `SLOT_POSITIONS[2]` from SkillBar. Adjustable later via a per-hero override on `HeroData`; deferred until a hero needs more.
+- **Warrior — army support**:
+  - **Summon Soldiers** ([heroes/skills/summon_soldiers_skill_data.gd](heroes/skills/summon_soldiers_skill_data.gd)): SELF cast, spawns 2 fresh militia in a front fan at hero position, each with a `LifetimeAbility(duration=15)` so they auto-die cleanly via the host's expire callback. Reuses the spawn pattern from [TowerBarracks.gd:253-273](towers/TowerBarracks.gd#L253-L273) (instantiate + `setup(rally_pos, flag_pos)` + add to "soldiers" group). 30s CD.
+  - **Bless** ([heroes/skills/bless_soldiers_skill_data.gd](heroes/skills/bless_soldiers_skill_data.gd)): SELF cast, iterates `get_tree().get_nodes_in_group("soldiers")` within 200 px of hero, pushes a fresh [SoldierBlessAbility](systems/abilities/SoldierBlessAbility.gd) onto each soldier's existing `_ability_host`. +8 attack damage / +30 max HP for 8s; soldier glows gold while active. 25s CD.
+  - **`SoldierBlessAbility`**: additive math (`damage_bonus` / `health_bonus`) on purpose — stacking N blesses adds N×bonus, and per-instance reverts on `_on_expired` arithmetically cancel back to original. A multiplicative formulation would orphan a residual multiplier when the second-applied bless reverts before the first.
+  - **Plan correction**: my plan said `BaseSoldier` needed an `AbilityHost` added. Wrong — it already has one ([base_soldier.gd:101](soldiers/base_soldier.gd#L101)) from Phase 20.5. So Stage 3 plugged straight in.
+- **Mage — burst + survival**:
+  - **Fireball** ([heroes/data/skills/skill_fireball.tres](heroes/data/skills/skill_fireball.tres)): authored as a `ShieldBashSkillData` instance — the existing class already does AoE-at-tap with magic damage. Zero new code. 25 damage in 90 px at the tap, 8s CD.
+  - **Mana Shield**: kept as-is (`BuffSkillData` + `RegenAbility` — already authored). 4 HP/s for 8s, 20s CD.
+- The **global Fireball + Reinforcements spells** in `spells/` are still in the codebase — the player hasn't decided yet whether to delete them. The hero kits now duplicate their effects, so they're stylistically redundant. Pending decision.
+
+### Bug-fix pass (post-implementation review)
+
+A focused review caught 13 issues across the three stages. All fixed.
+
+- **Cooldown overlay paints past the button** ([ui/CooldownButton.gd:79](ui/CooldownButton.gd#L79)) — high-severity visual bug exposed by the new arc layout. Polygon radius was `maxf(size.x, size.y) = 80` for an 80px button, extending 40px past every edge. Invisible in the old VBox (clipped by adjacent tiles); visible in the new arc as a dark crescent over the portrait. Changed to `(size * 0.5).length()` so the polygon stops exactly at the button corners.
+- **Bless expiry could leave a soldier at 0 HP without dying** ([SoldierBlessAbility._on_expired](systems/abilities/SoldierBlessAbility.gd)) — if a soldier took ≥30 damage during Bless, the post-expire clamp set `current_health = 0` but the death check only fires from `take_damage`. Result: a "ghost" soldier at 0 HP that wouldn't fight or respawn. Fix: route through `owner._die()` when the clamp drops the soldier to 0.
+- **Stacked Bless modulate clobber** — first-to-expire wiped the gold tint while a second bless was still active. Fix: `_STACK_META_KEY` counter on the soldier; modulate only resets when the LAST bless expires.
+- **Multi-skill toast clobber** ([base_hero.gd `_level_up_apply`](heroes/base_hero.gd)) — `Toast.show_message()` kills the prior tween, so N skills unlocked at one level surfaced only the LAST message. Fix: 1-skill case keeps the named toast; N>1 case shows `"%d new skills unlocked — equip from Heroes → Skills"`.
+- **Stale loadout entries from the Stage 3 skill rename** ([GameState.get_equipped_skills](autoloads/GameState.gd)) — saves had `["skill_slash", "shield_bash", "rally"]` referencing skills the warrior no longer authors after Stage 3. Fix: new `_authored_skill_ids(hero_id)` helper; `get_equipped_skills` purges stale sids on read AND persists the cleaned form so the dict converges. ContentRegistry-not-ready guard skips the purge if the registry returns empty (early boot).
+- **`set_equipped_skill` swap emitted only 1 signal** — when slots A↔B swap, only B's change was signaled. Fix: emit `hero_skill_equipped` for BOTH the destination AND the source slot.
+- **Empty `hero_id` polluted the dict** — getter would auto-cache a default for any string queried. Fix: empty `hero_id` returns a fresh empty array without writing.
+- **Summon spread was a vertical line, not an arc** ([summon_soldiers_skill_data.gd](heroes/skills/summon_soldiers_skill_data.gd)) — the original `TAU * i / count - PI/2` formula collapsed to ±π/2 for `count=2`. Fix: 90° fan above the hero (`_FAN_ARC = π/2`, `_FAN_CENTER = -π/2`) — front-left + front-right flankers for `count=2`, evenly distributed for higher counts.
+- **Skills tab destructive clear had no confirmation** ([HeroesHub `_on_skills_equipped_slot_pressed`](ui/HeroesHub.gd)) — accidental tap on equipped slot wiped the skill. Fix: two-tap commit. First tap arms with `Toast: "Tap slot again to clear"`; tapping any other slot or available skill cancels the arm.
+- **No equip confirmation toast** — armed highlight just disappeared after swap. Fix: `Toast.show_message("Equipped: %s")` on success; `"Slot cleared"` on clear; `"Tap a skill below first…"` hint when tapping an empty slot with nothing armed.
+- **`SaveManager.save_game()` ran on no-op** — Fix: only persist when `set_equipped_skill` returns true.
+- **Fireball hardcoded to mage's authored 350px range** ([skill_fireball.tres](heroes/data/skills/skill_fireball.tres)) — `skill_range = 0.0` falls back to `data.attack_range` per the existing `get_skill_effective_range` convention; future mage attack-range buffs scale Fireball's reach.
+- **Bonus**: hero switch in HeroesHub now clears `_skills_armed` and `_skills_clear_armed_slot` so a half-completed two-tap commit on hero A doesn't bleed into hero B.
+
+### Skipped on purpose
+- **Summons don't follow hero**: KR convention is rally-ground summons. Changing this means redesigning summon AI; a real design call, not a bug.
+- **`queue_free` rebuild can show 1 frame of duplicates**: matches the project-wide pattern (TalentScreen, EquipmentScreen). Fixing here would make this one file inconsistent.
+- **Portrait HP polled, not signaled**: works correctly today; only worth a `hero_health_changed` signal if profiling flags it.
+
+### Files affected
+- `heroes/skills/skill_data.gd` — `level_required` field
+- `autoloads/GameState.gd` — `hero_equipped_skills` dict + 7 accessors (`get_equipped_skills` self-heal, `_authored_skill_ids` helper, swap dual-signal fix in `set_equipped_skill`)
+- `autoloads/SaveManager.gd` — persist `hero_equipped_skills`
+- `autoloads/EventBus.gd` — 2 new signals
+- `heroes/base_hero.gd` — `_level_up_apply` unlock detection + combined toast
+- `ui/SkillBar.gd` + `ui/SkillBar.tscn` — Cluster Control with portrait + 2-slot arc layout
+- `ui/HeroHudPortrait.gd` (NEW) — in-level HUD dial
+- `ui/EmptySkillSlot.gd` (NEW) — placeholder tile
+- `ui/CooldownButton.gd` — overlay polygon radius fix
+- `ui/HUD.gd` + `ui/HUD.tscn` — top-left HeroLabel removed
+- `ui/HeroesHub.gd` — Skills tab wired (header, equipped row, available grid, locked grid, two-tap commit, destructive-clear two-tap, equip toast, hero-switch arm-reset)
+- `ui/WorldMap.gd` — `_refresh_heroes_button_dot()` notification badge
+- `systems/abilities/SoldierBlessAbility.gd` (NEW) — additive +damage/+HP timed buff with stack-counter modulate + ghost-soldier death routing
+- `heroes/skills/summon_soldiers_skill_data.gd` (NEW) — front-fan summon spawn
+- `heroes/skills/bless_soldiers_skill_data.gd` (NEW) — area buff dispatch
+- `heroes/data/skills/skill_summon_soldiers.tres` (NEW)
+- `heroes/data/skills/skill_bless.tres` (NEW)
+- `heroes/data/skills/skill_fireball.tres` (NEW) — `ShieldBashSkillData` instance, magic damage, `skill_range = 0` (inherits from hero)
+- `heroes/data/hero_warrior.tres` — `skills` array now `[summon, bless]`
+- `heroes/data/hero_mage.tres` — `skills` array now `[fireball, mana_shield]`
+
+### Verification (manual, in Godot editor)
+1. **Slot count**: enter a level. SkillBar shows **2** slots arcing from the portrait. WorldMap → Heroes → Skills tab equipped row shows 2 slots.
+2. **Warrior — Summon**: tap slot 0 → 2 militia spawn front-left/front-right of hero. After 15s they fall-over die cleanly. 30s CD ticks.
+3. **Warrior — Bless**: place a barracks near hero, cast Bless. Soldiers within 200px glow gold for 8s. Verify hits land harder; verify clamp on expire (no ghost soldiers).
+4. **Mage — Fireball**: tap slot 0 → range circle around hero (=mage attack range, 350px). Tap an enemy cluster → 25 magic damage in 90px radius. 8s CD.
+5. **Mage — Mana Shield**: tap slot 1 → instant SELF cast. Portrait HP ring fills 4 HP/s for 8s. 20s CD.
+6. **Cooldown overlay**: cast a skill, watch the radial fill — it shrinks within the button rect with no spillover onto the portrait.
+7. **Skills tab**: tap an Available skill → highlights yellow. Tap an Equipped slot → toast `"Equipped: %s"`. Tap an Equipped slot with nothing armed → toast `"Tap slot again to clear"`. Tap same slot → toast `"Slot cleared"`. Tap a different slot → arm cancels.
+8. **Notification dot**: temporarily set a warrior skill `level_required: 5` in its `.tres`, restart, grind to Lv 5 → Toast appears, return to WorldMap, Heroes button shows red dot. Equip the new skill → dot disappears next time WorldMap loads.
+9. **Save round-trip**: equip skills → quit → reopen save file → `"hero_equipped_skills": {"hero_warrior": ["...", "..."]}` present. Reload → equipped state restored.
+10. **Stale loadout self-heal**: open `user://save.json`, manually inject `["fake_skill_id", "another_fake"]` for warrior. Reopen game → cluster shows 2 EmptySkillSlot placeholders, Skills tab equipped row shows `(empty)` slots. Tap an Available skill → equip → Save dict converges to clean state.
+
+### Risks / known follow-ups
+- **Global spells (`spells/` folder, SpellPanel)** still load. The player wants to delete them ("only use new logic") but I held the cut pending an explicit go since it's a one-way trip and `FireballVFX.tscn` would need re-wiring to the hero Fireball skill before deletion.
+- **Old skill `.tres` files** (`skill_slash`, `skill_shield_bash`, `skill_rally`, `skill_arcane_bolt`, `skill_frost_nova`) are unreferenced but still on disk. Safe to delete in a follow-up cleanup; the loadout self-heal handles any save references that survive.
+- **`get_equipped_skills` is a side-effecting getter** (caches default + persists self-heal). Acceptable trade-off but worth noting if a future caller needs a pure read.
+- **Hero-following summons**: KR convention has soldiers hold ground at rally; this matches but may feel odd if the hero immediately runs after casting Summon. Real design call, not a bug.
+- **Portrait HP polled in `_process`**: cheap today; if a profiler later flags it, add a `hero_health_changed` signal in `BaseHero.take_damage` / `heal` paths.
+
+---
+
+## 2026-05-01 — Global spell system retirement
+
+The bottom-left **SpellPanel** + the entire `spells/` script tree are gone. After Phase 48 / Stage 3 the hero kits (Mage's Fireball, Warrior's Summon Soldiers) duplicated the global Fireball + Reinforcements spells, and the player wanted the leftover global tiles removed so every active ability is hero-scoped.
+
+### What got deleted (11 files)
+- `ui/SpellPanel.gd` + `.gd.uid` + `ui/SpellPanel.tscn`
+- `spells/SpellData.gd` + `.gd.uid`
+- `spells/fireball_spell_data.gd` + `.gd.uid`
+- `spells/reinforcements_spell_data.gd` + `.gd.uid`
+- `spells/data/spell_fireball.tres`
+- `spells/data/spell_reinforcements.tres`
+
+### What was kept
+- `spells/FireballVFX.gd` + `.tscn` — the explosion visual. Re-wired into the hero's Fireball skill via a new `vfx_scene: PackedScene` field on [ShieldBashSkillData](heroes/skills/shield_bash_skill_data.gd) (`apply()` instantiates the scene at the tap point and calls `setup(aoe_radius)` if the scene defines that method — same contract the global spell used). Authored on [skill_fireball.tres](heroes/data/skills/skill_fireball.tres) so casting the Mage's Fireball still flashes the orange disc + scorch mark.
+
+### Cross-system references cut
+| File | What changed |
+|---|---|
+| [main/Main.tscn](main/Main.tscn) | Dropped the SpellPanel CanvasLayer instance + ext_resource |
+| [balance/test_range/TestRange.tscn](balance/test_range/TestRange.tscn) | Same removal as Main.tscn |
+| [autoloads/EventBus.gd](autoloads/EventBus.gd) | Removed `spell_cast`, `spell_cooldown_started`, `spell_ready` signals |
+| [autoloads/GameState.gd](autoloads/GameState.gd) | Dropped `MOD_SPELL_COOLDOWN` (kept the numbering gap so existing UpgradeData with `effect_type = 6/7` still resolves), `round_damage_spells` field, the `elif source is SpellPanel` branch in `record_round_damage`, the matching reset in `reset_for_level`, and the SpellPanel mention in the safe-area comment |
+| [autoloads/ContentRegistry.gd](autoloads/ContentRegistry.gd) | Removed `_SPELL_PATHS` const, `spells: Array[Resource]` field, the `_load_catalog(_SPELL_PATHS, "spells")` call, the `_assert_ids(spells, "spell_id")` line, the `find_spell()` accessor, and the `%d spells` in the boot-time print |
+| [autoloads/UnlockManager.gd](autoloads/UnlockManager.gd) | Removed `is_spell_unlocked()` and updated comments / docstrings |
+| [autoloads/SoundManager.gd](autoloads/SoundManager.gd) | Removed the `spell_cast` SFX path entry and the `EventBus.spell_cast.connect(...)` line |
+| [autoloads/RunStats.gd](autoloads/RunStats.gd) | Removed the `EventBus.spell_cast.connect(_on_spell_cast)` line, the `_on_spell_cast` handler, the `spells_cast: {}` field on the per-run dict, and the `spells: GameState.round_damage_spells` row in the per-run damage breakdown |
+| [ui/GameOverScreen.gd](ui/GameOverScreen.gd) | Dropped the `Spells: %s` damage-attribution row and its inclusion in the empty-breakdown guard |
+| [ui/ShopScreen.gd](ui/ShopScreen.gd) | Removed the `ProductData.UnlockType.SPELL` case from `_is_product_unlocked` (the enum value itself is kept on `ProductData` so legacy product `.tres` referencing SPELL don't fail-load — they just read as "locked" until a content-cleanup pass) |
+| [ui/CooldownButton.gd](ui/CooldownButton.gd) | Updated the doc comment — the button's only consumer today is SkillBar |
+| [ui/SpawnIndicator.gd](ui/SpawnIndicator.gd) | Layer-6 comment no longer references SpellPanel |
+| [map/GameCamera.gd](map/GameCamera.gd) | Input-pipeline comment no longer mentions SpellPanel |
+| [CLAUDE.md](CLAUDE.md) | Removed `is_spell_unlocked` from CORE RULE 7, dropped `spell` from CORE RULE 10 + 12 examples, replaced "Global spells" row in the design-decisions table with "Hero skills (Per-hero loadout, 2 active slots)", updated the Unlock API + Damage attribution paragraphs, dropped `SpellPanel._input` from the input-pipeline diagram, removed the layer-7 SpellPanel row from the CanvasLayer table, dropped SpellPanel from the safe-area paragraph |
+
+### Verification
+1. Boot the game — `[ContentRegistry] loaded` no longer prints `%d spells`. No errors / parse warnings.
+2. Enter a level — bottom-left is empty (no SpellPanel tiles). Bottom-right cluster is unchanged.
+3. Cast the Mage's Fireball — orange disc + scorch ring still appear at the tap point (FireballVFX wiring works through `ShieldBashSkillData.vfx_scene`).
+4. Open `user://save.json` after a run — no `spells` key under `damage_by_source`, no `spells_cast` dict on the per-run record.
+5. Exit + re-enter the Test Range — no SpellPanel reference; UI is just HUD + SkillBar.
+6. Open ShopScreen — no SPELL products are authored, so nothing changes visually. (If a SPELL product `.tres` ever surfaces, it now reads as locked until removed.)
+
+### Risks / known follow-ups
+- **Empty `spells/data/` folder** is left behind by the deletion. Godot tolerates it. Can be removed by hand if desired.
+- **Old skill `.tres` files** (`skill_slash`, `skill_shield_bash`, `skill_rally`, `skill_arcane_bolt`, `skill_frost_nova`) are still on disk but unreferenced after Stage 3 — the loadout self-heal silently drops save references to them. Safe to delete in a follow-up cleanup.
+- **`ProductData.UnlockType.SPELL` enum value** is kept (no live code reads it; nothing authors a SPELL product today). If it bothers anyone, removing the enum member is safe — but doing so would technically be a breaking change for any out-of-tree shop product `.tres`.
+- **`MOD_SPELL_COOLDOWN` numbering gap** in GameState's effect-type constants. The constant itself is gone but `MOD_STARTING_GOLD = 6` and `MOD_SOLDIER_HEALTH = 7` keep their numeric values so existing UpgradeData `.tres` (which serializes integer values for `effect_type`) still resolve correctly. Documented inline.
+
+---
+
+## 2026-05-01 — Spell-purge cleanup pass (post-review)
+
+A second-pass review caught seven leftover threads from the spell removal that were quietly broken or dead. All fixed.
+
+### Visible / load-bearing fixes
+- **LoadoutScreen still showed "Spells: Fireball, Recruit"** ([ui/LoadoutScreen.gd:63](ui/LoadoutScreen.gd) and the `SpellsTitle` / `SpellsLabel` nodes in [ui/LoadoutScreen.tscn](ui/LoadoutScreen.tscn)) — every pre-battle screen rendered the stale row. Removed the field, the `_refresh()` line, and both .tscn nodes.
+- **Spell Mastery upgrade was purchasable for zero effect** ([ui/UpgradeTree.tscn](ui/UpgradeTree.tscn)) — `Upg_SpellMastery` sub_resource (3★, "Spell cooldowns reduced by 15%") survived the purge with `effect_type = 5` pointing at the retired `MOD_SPELL_COOLDOWN`. Players could spend stars and get nothing back. Removed the sub_resource + dropped it from the `upgrades` array. Added a one-shot save migration in [autoloads/SaveManager.gd `load_game`](autoloads/SaveManager.gd) that purges `"spell_mastery"` from `GameState.purchased_upgrades` on next boot — players who'd already bought it auto-refund the 3★ next time `rebuild_upgrade_cache` runs (the cost stops being counted because the matching UpgradeData is gone).
+
+### Dead enum cleanup
+- **`ProductData.UnlockType.SPELL`** dropped — no shop product `.tres` files exist (and none used it), so removal was safe. Updated comment explaining the retirement.
+- **`UpgradeData.EffectType.SPELL_COOLDOWN_MULT`** renamed to `_RETIRED_SPELL_COOLDOWN` — kept the enum slot so the next two members (`STARTING_GOLD_BONUS = 6`, `SOLDIER_HEALTH_MULT = 7`) stay at their integer-serialized values for existing `.tres` files. Mirrored the same explanation on [GameState.gd's MOD_SPELL_COOLDOWN gap comment](autoloads/GameState.gd#L13).
+
+### Stale comment scrub
+- [heroes/base_hero.gd `cooldown_fraction`](heroes/base_hero.gd#L313) — "Phase 22 spell buttons" → "any future cooldown-gated cast surface".
+- [ui/SkillBar.gd](ui/SkillBar.gd#L6) — header comment said "three skill slots arc up-and-left"; corrected to "two" to match the Stage 3 slot cut.
+- [autoloads/LootDropper.gd](autoloads/LootDropper.gd#L10) — dropped `spell` from the killer-source list.
+- [levels/Level1.gd](levels/Level1.gd#L43) — `map_bounds` comment now says "hero VFX" instead of "spell effects".
+- [heroes/skills/shield_bash_skill_data.gd](heroes/skills/shield_bash_skill_data.gd) — two comments that referenced "the old global Fireball spell" / "the spell still 'fired'" reworded to plain skill terminology.
+
+### Orphan files deleted (9)
+After Stage 3 swapped the warrior + mage skill arrays, the old skill resources were unreferenced. Loadout self-heal silently dropped any save references, but the files themselves stayed on disk.
+- `heroes/data/skills/skill_slash.tres`
+- `heroes/data/skills/skill_shield_bash.tres` (the Warrior's original Bash — distinct from the new `skill_fireball.tres` which uses the same `ShieldBashSkillData` class)
+- `heroes/data/skills/skill_rally.tres`
+- `heroes/data/skills/skill_arcane_bolt.tres`
+- `heroes/data/skills/skill_frost_nova.tres`
+- `heroes/skills/slash_skill_data.gd` (+ `.gd.uid`)
+- `heroes/skills/rally_skill_data.gd` (+ `.gd.uid`)
+
+`shield_bash_skill_data.gd` (still backs Fireball) and `buff_skill_data.gd` (still backs Mana Shield) stay.
+
+### Files affected
+- `ui/LoadoutScreen.gd` + `ui/LoadoutScreen.tscn`
+- `ui/UpgradeTree.tscn`
+- `autoloads/SaveManager.gd` — `purged "spell_mastery"` migration
+- `progression/ProductData.gd`
+- `progression/UpgradeData.gd`
+- `autoloads/GameState.gd` — comment refresh
+- `ui/ShopScreen.gd` — dropped the no-longer-needed defensive comment
+- `heroes/base_hero.gd`, `ui/SkillBar.gd`, `autoloads/LootDropper.gd`, `levels/Level1.gd`, `heroes/skills/shield_bash_skill_data.gd` — comment scrub
+- 9 orphan files deleted
+
+### Verification
+1. **LoadoutScreen**: open WorldMap → tap any level → mode pill → loadout. No "Spells" row. Hero + tower rows present.
+2. **UpgradeTree**: open WorldMap → ★ counter → 5 upgrades visible (no Spell Mastery tile). Stars total matches the new tree's possible spend.
+3. **Spell Mastery refund**: an existing save with `"spell_mastery"` in `purchased_upgrades` → next boot prints `[SaveManager] purged retired upgrade 'spell_mastery' (3★ refunded)`. Available stars increase by 3.
+4. **Save round-trip**: open `user://save.json` after the boot → no `spell_mastery` in `purchased_upgrades`. Re-open game → no log line (idempotent).
+5. **Shop**: ShopScreen still loads. No SPELL products exist; if a future product .tres referenced UnlockType.SPELL it would fail to load — caught at content authoring time, not runtime.
+6. **Hero skills still work**: Mage Fireball still flashes the FireballVFX. Warrior Summon + Bless unaffected.
+
+### Risks / known follow-ups
+- **`_RETIRED_SPELL_COOLDOWN` enum placeholder**: kept for stable integer indexing of `STARTING_GOLD_BONUS` and `SOLDIER_HEALTH_MULT`. If a future content addition needs effect_type 5, repurpose the slot rather than appending to the end (keeping the existing serialized integer footprint stable). Otherwise just keep the placeholder forever.
+- **`heroes/skills/shield_bash_skill_data.gd` still named "shield_bash"** even though its only consumer is now `skill_fireball.tres`. Renaming would break the script's class_name + tres references; a follow-up rename pass could promote it to a generic `aoe_at_tap_skill_data.gd` if more skills follow this shape. Not urgent — script is structural, name is just a label.

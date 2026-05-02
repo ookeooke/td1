@@ -10,7 +10,10 @@ const MOD_TOWER_RANGE: int = 1
 const MOD_HERO_HEALTH: int = 2
 const MOD_HERO_DAMAGE: int = 3
 const MOD_HERO_XP: int = 4
-const MOD_SPELL_COOLDOWN: int = 5
+# 5 is `_RETIRED_SPELL_COOLDOWN` on UpgradeData.EffectType — slot kept so
+# STARTING_GOLD = 6 and SOLDIER_HEALTH = 7 stay at the values existing
+# .tres files serialize. Don't fill 5 with a new effect; pick the next
+# free integer (8) for additions.
 const MOD_STARTING_GOLD: int = 6
 const MOD_SOLDIER_HEALTH: int = 7
 
@@ -117,6 +120,11 @@ var level_endless_best_scores: Dictionary = {}   # level_id -> int
 # { "level": int, "xp": int }. Previously per-run on BaseHero — migrated here
 # so progression survives runs. SaveManager persists the whole dict.
 var hero_progress: Dictionary = {}
+# Phase 48 — per-hero equipped-skill loadout. Keyed by hero_id; each value
+# is Array[String] of length EQUIPPED_SKILL_SLOTS, with "" for empty slots.
+# Missing keys fall through to _default_equipped_for() (first N unlocked).
+const EQUIPPED_SKILL_SLOTS: int = 2
+var hero_equipped_skills: Dictionary = {}
 # Local leaderboard — top 20 entries, sorted descending. Each entry:
 # { "name": String, "score": int, "wave": int }
 # Phase 33 online: replace with HTTP fetch from a leaderboard service.
@@ -129,7 +137,6 @@ const LEADERBOARD_MAX_ENTRIES: int = 20
 var round_damage_towers: Dictionary = {}  # int(instance_id) → {"name": String, "total": float}
 var round_damage_hero: float = 0.0
 var round_damage_soldiers: float = 0.0
-var round_damage_spells: float = 0.0
 
 
 func record_round_damage(source: Node, amount: float) -> void:
@@ -149,8 +156,6 @@ func record_round_damage(source: Node, amount: float) -> void:
 		round_damage_hero += amount
 	elif source is BaseSoldier:
 		round_damage_soldiers += amount
-	elif source is SpellPanel:
-		round_damage_spells += amount
 	# Environmental damage (none today) would fall through without tallying.
 
 
@@ -336,7 +341,6 @@ func reset_for_level() -> void:
 	round_damage_towers.clear()
 	round_damage_hero = 0.0
 	round_damage_soldiers = 0.0
-	round_damage_spells = 0.0
 
 
 func _ready() -> void:
@@ -392,6 +396,7 @@ func reset() -> void:
 	tower_slot_cap = 4
 	reset_loadout_to_default()  # selected_tower_ids back to the four launch towers
 	hero_progress = {}
+	hero_equipped_skills = {}
 	level_best_times = {}
 	level_endless_best_scores = {}
 	reset_for_level()  # now reads zeroed caches → correct starting gold
@@ -444,7 +449,7 @@ func _on_enemy_reached_end(_enemy: Node, lives_lost: int) -> void:
 	lose_lives(lives_lost)
 
 
-# ── Safe area insets (shared by HUD, SkillBar, SpellPanel) ───────────────
+# ── Safe area insets (shared by HUD, SkillBar) ───────────────────────────
 
 # Phase 48 — persistent hero progression helpers. Level-up math lives here
 # (not on BaseHero) so XP survives runs. BaseHero reads level/XP on spawn
@@ -497,6 +502,155 @@ func add_hero_xp(hero_id: String, amount: int) -> int:
 	entry["level"] = lvl
 	entry["xp"] = xp
 	return lvl
+
+
+# Phase 48 — equipped-skills loadout. Skills with level_required > current
+# hero level are considered locked and never appear in the loadout.
+
+# Returns the ordered Array[String] of skill_ids slotted for this hero.
+# Length is always EQUIPPED_SKILL_SLOTS; "" entries mean empty slot.
+# Defaults to the first N unlocked skills in author order on first read.
+#
+# Self-heals stale entries: any saved skill_id that the hero no longer
+# authors (e.g. left over from before a skill rename / removal in a
+# content update) is silently dropped to "" on read AND persisted back
+# so the dict converges to a clean state. The previous version returned
+# the stale string verbatim, which surfaced in HeroesHub's Skills tab as
+# raw skill_id text ("rally", "shield_bash") for the equipped row.
+func get_equipped_skills(hero_id: String) -> Array[String]:
+	# Defense in depth — never cache a default for a malformed hero_id.
+	# Without this guard, `WorldMap._refresh_heroes_button_dot` looping
+	# over ContentRegistry.heroes could write a "" entry into the save
+	# dict if a hero with empty id slipped through.
+	if hero_id == "":
+		var empty: Array[String] = []
+		for _i in EQUIPPED_SKILL_SLOTS:
+			empty.append("")
+		return empty
+	if not hero_equipped_skills.has(hero_id):
+		hero_equipped_skills[hero_id] = _default_equipped_for(hero_id)
+	var raw: Array = hero_equipped_skills[hero_id]
+	var authored: Array[String] = _authored_skill_ids(hero_id)
+	var out: Array[String] = []
+	var any_purged: bool = false
+	for i in EQUIPPED_SKILL_SLOTS:
+		var sid: String = str(raw[i]) if i < raw.size() else ""
+		# Drop sids the hero no longer authors. Empty authored = ContentRegistry
+		# isn't ready yet (e.g. very early boot); skip the purge in that case
+		# so we don't wipe a valid loadout while waiting for the registry.
+		if sid != "" and not authored.is_empty() and not (sid in authored):
+			sid = ""
+			any_purged = true
+		out.append(sid)
+	# Persist the cleaned form so subsequent reads (and the next save)
+	# see the converged state rather than re-purging on every call.
+	if any_purged or raw.size() != EQUIPPED_SKILL_SLOTS:
+		var stored: Array = []
+		for s in out:
+			stored.append(s)
+		hero_equipped_skills[hero_id] = stored
+	return out
+
+
+# All skill_ids the hero authors today (regardless of level_required).
+# Used by get_equipped_skills to drop stale entries pointing at skills
+# that no longer exist on the hero.
+func _authored_skill_ids(hero_id: String) -> Array[String]:
+	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
+	var out: Array[String] = []
+	if hero_data == null or not ("skills" in hero_data):
+		return out
+	for skill in hero_data.skills:
+		if skill != null and skill.skill_id != "":
+			out.append(skill.skill_id)
+	return out
+
+
+# Returns all skill_ids on the hero with level_required <= current level.
+# Order matches HeroData.skills (author order).
+func get_unlocked_skill_ids(hero_id: String) -> Array[String]:
+	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
+	var out: Array[String] = []
+	if hero_data == null or not ("skills" in hero_data):
+		return out
+	var lvl: int = get_hero_level(hero_id)
+	for skill in hero_data.skills:
+		if skill == null:
+			continue
+		var lr: int = int(skill.level_required) if "level_required" in skill else 1
+		if lr <= lvl and skill.skill_id != "":
+			out.append(skill.skill_id)
+	return out
+
+
+# Same shape as get_unlocked_skill_ids but only the ones unlocked exactly
+# at `level` — used by BaseHero._level_up_apply() to fire the unlock toast.
+func get_skills_unlocked_at_level(hero_id: String, level: int) -> Array[String]:
+	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
+	var out: Array[String] = []
+	if hero_data == null or not ("skills" in hero_data):
+		return out
+	for skill in hero_data.skills:
+		if skill == null:
+			continue
+		var lr: int = int(skill.level_required) if "level_required" in skill else 1
+		if lr == level and skill.skill_id != "":
+			out.append(skill.skill_id)
+	return out
+
+
+# Set a single equipped slot. Mirrors set_loadout_slot's swap-on-duplicate
+# rule: if `skill_id` is already in another slot, the two slots SWAP so the
+# player doesn't lose a pick. Empty `skill_id` clears the slot. Returns
+# true if state actually changed (so the UI persists / redraws).
+func set_equipped_skill(hero_id: String, slot_idx: int, skill_id: String) -> bool:
+	if hero_id == "" or slot_idx < 0 or slot_idx >= EQUIPPED_SKILL_SLOTS:
+		return false
+	# Reject locked skills — defense in depth; the UI should never offer them.
+	if skill_id != "" and not (skill_id in get_unlocked_skill_ids(hero_id)):
+		return false
+	var current: Array[String] = get_equipped_skills(hero_id)
+	# Track the swap source so we can emit a second signal for it. Listeners
+	# that track per-slot state (vs full rebuilds) need to know BOTH slots
+	# changed when a swap happens.
+	var swap_from: int = -1
+	if skill_id != "":
+		var existing: int = current.find(skill_id)
+		if existing == slot_idx:
+			return false
+		if existing >= 0:
+			current[existing] = current[slot_idx]
+			swap_from = existing
+	current[slot_idx] = skill_id
+	# Store back as untyped Array (Godot Dictionary loses Array[String] typing
+	# on assignment anyway; get_equipped_skills coerces on read).
+	var stored: Array = []
+	for s in current:
+		stored.append(s)
+	hero_equipped_skills[hero_id] = stored
+	EventBus.hero_skill_equipped.emit(hero_id, slot_idx, skill_id)
+	if swap_from >= 0:
+		EventBus.hero_skill_equipped.emit(hero_id, swap_from, current[swap_from])
+	return true
+
+
+# Returns true if the hero has any unlocked skill that isn't currently in
+# their equipped loadout. Drives the WorldMap notification dot.
+func has_unequipped_skills(hero_id: String) -> bool:
+	var equipped: Array[String] = get_equipped_skills(hero_id)
+	for sid in get_unlocked_skill_ids(hero_id):
+		if not (sid in equipped):
+			return true
+	return false
+
+
+func _default_equipped_for(hero_id: String) -> Array:
+	# First EQUIPPED_SKILL_SLOTS unlocked skills (author order); pad with "".
+	var unlocked: Array[String] = get_unlocked_skill_ids(hero_id)
+	var out: Array = []
+	for i in EQUIPPED_SKILL_SLOTS:
+		out.append(unlocked[i] if i < unlocked.size() else "")
+	return out
 
 
 func get_safe_insets() -> Vector4:

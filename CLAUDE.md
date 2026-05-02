@@ -36,12 +36,12 @@ Entry point: `res://ui/MainMenu.tscn`. Design viewport: 1920x1080 (landscape). S
 4. **All stats live in .tres Resource files.** Never hardcode stats inside scripts.
 5. **State changes only through a change_state() function.** Never set state variables directly.
 6. **All damage through DamageCalculator.calculate_damage().** Never calculate damage inline.
-7. **All IAP-locked content checked through UnlockManager's type-specific methods.** `is_tower_unlocked(tid)` / `is_hero_unlocked(hid)` / `is_spell_unlocked(sid)`. No global `is_unlocked(id)` — type-scoped only. Never hardcode unlock states. (See SESSIONS.md Phase 46c for the collision bug that forced this.)
+7. **All IAP-locked content checked through UnlockManager's type-specific methods.** `is_tower_unlocked(tid)` / `is_hero_unlocked(hid)`. No global `is_unlocked(id)` — type-scoped only. Never hardcode unlock states. (See SESSIONS.md Phase 46c for the collision bug that forced this.)
 8. **All save/load through SaveManager only.** No other script touches the save file.
 9. **Before changing anything working, explain why the change is needed.** Then wait for approval.
-10. **New content is authored as data, not code.** Every new hero / soldier / enemy / skill / spell / ability / item is a `.tres` resource composed from existing base classes + AbilityData components. Only subclass when the variant needs genuinely new *structural* behavior (collision layer, multi-phase state machine, projectile vs. melee).
+10. **New content is authored as data, not code.** Every new hero / soldier / enemy / skill / ability / item is a `.tres` resource composed from existing base classes + AbilityData components. Only subclass when the variant needs genuinely new *structural* behavior (collision layer, multi-phase state machine, projectile vs. melee).
 11. **One primitive for mechanics: AbilityData.** Every "verb on a unit" — passives, on-hit effects, auras, items, talents, endless modifiers, status effects — is an `AbilityData` Resource with a `Trigger` and an `apply(owner, ctx)` override. `AbilityHost` dispatcher is owner-agnostic.
-12. **Stable content IDs, scoped by type, matching filename.** Every Resource has a `*_id: String` field. IDs are keys in save files, unlock checks, leaderboard payloads. **Never rename an ID after first release.** Convention: `snake_case`, scoped by type (`hero_warrior`, `tower_archer`, `spell_fireball`, `enemy_basic`), and **must equal the filename basename** (`tower_archer.tres` holds `tower_id = "tower_archer"`). Enforced at boot by `ContentRegistry._validate_ids()` — any drift prints `[ContentRegistry/DRIFT]` lines in the output panel.
+12. **Stable content IDs, scoped by type, matching filename.** Every Resource has a `*_id: String` field. IDs are keys in save files, unlock checks, leaderboard payloads. **Never rename an ID after first release.** Convention: `snake_case`, scoped by type (`hero_warrior`, `tower_archer`, `enemy_basic`), and **must equal the filename basename** (`tower_archer.tres` holds `tower_id = "tower_archer"`). Enforced at boot by `ContentRegistry._validate_ids()` — any drift prints `[ContentRegistry/DRIFT]` lines in the output panel.
 13. **Soldier rally positions are navmesh-snapped; soldier movement is direct straight-line.** Rally flag and every derived slot snapped via `NavigationServer2D.map_get_closest_point`. Movement is `velocity = (target - pos).normalized() * speed` — no `NavigationAgent2D`. Navmesh constrains **placement**, not **pathing**.
 14. **Tower UI reads accessors, never `tower.data.*`.** All range/stats/sell/upgrade display goes through the Tower Indicator Interface (below). No `has_method` fallbacks, no per-class branches. Each tower owns its own `get_stats_line()`. Carve-outs: static display strings like `tower.data.tower_name`; build-ring UI operating on `TowerData` before any tower instance exists. Reading `.data.attack_range` on an upgraded tower silently shows the L1 stat — the interface prevents that class of bug.
 15. **Tower scenes are bare chassis — never bake `data` into a tower `.tscn`.** Combat towers share `res://towers/TowerCombat.tscn`; Barracks use `res://towers/TowerBarracks.tscn`. `TowerData.tower_scene` references the chassis; `TowerPlacer._on_build_requested` assigns `tower.data = entry.data` after `instantiate()` and before `add_child()`. Baking `data = ExtResource(...)` creates a tres↔tscn circular reference that leaves `tower.data = null` at runtime. One chassis backs N towers. (See SESSIONS.md Phase 47d-7.)
@@ -89,13 +89,13 @@ All ring stroke widths multiply by `1.0 / camera.zoom.x` (zoom-scale rule) so ri
 |---|---|
 | Style | Kingdom Rush series (Ironhide Game Studio) |
 | Theme | Fantasy medieval — knights, mages, orcs, trolls |
-| Genre | Tower defense + hero unit + active skills + global spells |
+| Genre | Tower defense + hero unit + active per-hero skills |
 | Platform | Android, iOS (primary) + PC (secondary) |
 | Input | Touch + Mouse via "Emulate Touch From Mouse" |
 | Tower placement | Fixed pre-defined spots only, branching upgrade at level 3 |
 | Heroes | One at a time, chosen before level, gains XP from kills |
 | Soldiers | Barracks spawn soldiers that block ground enemies |
-| Global spells | Two spells deployable anywhere on map |
+| Hero skills | Per-hero loadout (2 active slots) chosen on WorldMap, cast via the in-level portrait cluster |
 | Game modes | Campaign, Heroic, Iron (per level), Endless |
 | Progression | Stars, permanent upgrades, hero unlocks, tower unlocks, talent tree |
 | Monetization | Heroes and towers as IAP (PurchaseManager is a stub) |
@@ -146,9 +146,9 @@ Level 1 → Level 2 → Level 3: BRANCH CHOICE (A or B, permanent)
 
 **Tactical pause** — TowerRadialMenu, TowerPlacer, SpotInputManager, HUD all use `PROCESS_MODE_ALWAYS`. Players can build/upgrade/sell while paused.
 
-**Unlock API** — `UnlockManager` type-scoped only: `is_hero_unlocked` / `is_tower_unlocked` / `is_spell_unlocked`, plus type-agnostic `unlock(id)`. `ProductData.unlock_type` dispatches in ShopScreen. Three unlock paths: explicit (IAP → `GameState.unlocked_content`), free (`requires_unlock == false`), star-threshold (`UnlockManager._star_thresholds`).
+**Unlock API** — `UnlockManager` type-scoped only: `is_hero_unlocked` / `is_tower_unlocked`, plus type-agnostic `unlock(id)`. `ProductData.unlock_type` dispatches in ShopScreen. Three unlock paths: explicit (IAP → `GameState.unlocked_content`), free (`requires_unlock == false`), star-threshold (`UnlockManager._star_thresholds`).
 
-**Damage attribution** — `BaseEnemy.take_damage(amount, type, source)` routes the overkill-capped `actual` into `GameState.record_round_damage(source, amount)`. Dispatched by `source is BaseTower / BaseHero / BaseSoldier / SpellPanel` into `round_damage_towers` (keyed by stable run-scoped `_damage_key`, survives sell) + `round_damage_hero` / `_soldiers` / `_spells`. Cleared in `reset_for_level()`. `GameOverScreen` renders the top-5 tower leaderboard + aggregate rows on victory, defeat, and endless Game Over.
+**Damage attribution** — `BaseEnemy.take_damage(amount, type, source)` routes the overkill-capped `actual` into `GameState.record_round_damage(source, amount)`. Dispatched by `source is BaseTower / BaseHero / BaseSoldier` into `round_damage_towers` (keyed by stable run-scoped `_damage_key`, survives sell) + `round_damage_hero` / `_soldiers`. Cleared in `reset_for_level()`. `GameOverScreen` renders the top-5 tower leaderboard + aggregate rows on victory, defeat, and endless Game Over.
 
 ---
 
@@ -202,8 +202,7 @@ Touch events flow through the camera's gesture classifier. Phases 1–3 fire BEF
 ```
 1. _input (top-down) — claims event before camera
    ├── TowerBarracks._input   — consumes if rally-placement active
-   ├── SkillBar._input        — consumes if skill targeting armed
-   └── SpellPanel._input      — consumes if spell targeting armed
+   └── SkillBar._input        — consumes if skill targeting armed
 
 2. GUI phase (Control._gui_input)
    ├── TowerRadialMenu Backdrop — consumes when menu visible
@@ -239,12 +238,11 @@ All UI is on CanvasLayers, independent of Camera2D. **Must set `follow_viewport_
 |---|---|
 | 0 | HUD (gold, lives, wave, speed, pause) |
 | 6 | SpawnIndicator (screen-edge spawn arrows) |
-| 7 | SpellPanel (bottom-left) |
-| 8 | SkillBar (bottom-right) |
+| 8 | SkillBar (bottom-right portrait cluster + 2 skill slots) |
 | 10 | TowerRadialMenu (radial ring at spot: build / upgrade / sell / target / rally) |
 | 20 | PauseMenu, GameOverScreen |
 
-**Safe area:** `SafeAreaMargin.gd` (extends MarginContainer) sits at the root of HUD, SkillBar, and SpellPanel CanvasLayers. Sets `theme_override_constants/margin_*` from `GameState.get_safe_insets()` — Godot's layout engine pushes all children inward. Recalculates on window resize. Safe area math uses `DisplayServer.screen_get_size()` (NOT `window_get_size()`) because `get_display_safe_area()` returns screen-space coordinates.
+**Safe area:** `SafeAreaMargin.gd` (extends MarginContainer) sits at the root of HUD and SkillBar CanvasLayers. Sets `theme_override_constants/margin_*` from `GameState.get_safe_insets()` — Godot's layout engine pushes all children inward. Recalculates on window resize. Safe area math uses `DisplayServer.screen_get_size()` (NOT `window_get_size()`) because `get_display_safe_area()` returns screen-space coordinates.
 
 **SpawnIndicator:** Replaces world-space SpawnMarkers. Projects spawn world positions to screen coordinates via `get_canvas_transform()`, draws arrows at screen edges when off-screen.
 

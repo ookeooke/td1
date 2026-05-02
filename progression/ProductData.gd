@@ -8,7 +8,9 @@ class_name ProductData
 # Phase 46c: unlock_type tells ShopScreen which type-specific unlock
 # check to run. Required so the shop can't fall into the hero/tower id
 # collision class of bug that UnlockManager's type-aware API prevents.
-enum UnlockType { HERO, TOWER, SPELL }
+# (SPELL was removed in the 2026-05-01 spell-system retirement; no shop
+# product authored a SPELL unlock so dropping the enum value is safe.)
+enum UnlockType { HERO, TOWER }
 
 @export var product_id: String = ""
 @export var display_name: String = ""

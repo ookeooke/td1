@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" uid="uid://b1td1boss1scn" path="res://enemies/bosses/Boss1.tscn" id="7_boss"]
 [ext_resource type="PackedScene" uid="uid://b1td1armorsc1" path="res://enemies/EnemyArmored.tscn" id="8_armor"]
 [ext_resource type="PackedScene" uid="uid://b1td1scoutsc1" path="res://enemies/EnemyScout.tscn" id="9_scout"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyBrute.tscn" id="10_brute"]
 
 ; ============================================================================
 ; Level 1 — interleaved staggered emitters per wave so the merged spawn
@@ -91,9 +92,14 @@ count = 3
 interval = 7.0
 start_delay = 9.0
 
+[sub_resource type="Resource" id="Spawn_W3_Brute"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("10_brute")
+start_delay = 18.0
+
 [sub_resource type="Resource" id="Wave3"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W3_BasicL"), SubResource("Spawn_W3_BasicR"), SubResource("Spawn_W3_Armor"), SubResource("Spawn_W3_Fly")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W3_BasicL"), SubResource("Spawn_W3_BasicR"), SubResource("Spawn_W3_Armor"), SubResource("Spawn_W3_Fly"), SubResource("Spawn_W3_Brute")])
 countdown = 25.0
 bounty = 30
 
@@ -133,9 +139,16 @@ count = 3
 interval = 9.0
 start_delay = 14.0
 
+[sub_resource type="Resource" id="Spawn_W4_Brute"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("10_brute")
+count = 2
+interval = 12.0
+start_delay = 22.0
+
 [sub_resource type="Resource" id="Wave4"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W4_Boss"), SubResource("Spawn_W4_BasicL"), SubResource("Spawn_W4_BasicR"), SubResource("Spawn_W4_Fly"), SubResource("Spawn_W4_Armor")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W4_Boss"), SubResource("Spawn_W4_BasicL"), SubResource("Spawn_W4_BasicR"), SubResource("Spawn_W4_Fly"), SubResource("Spawn_W4_Armor"), SubResource("Spawn_W4_Brute")])
 countdown = 29.0
 bounty = 20
 
@@ -198,9 +211,16 @@ script = ExtResource("3_spawn")
 enemy_scene = ExtResource("7_boss")
 start_delay = 30.0
 
+[sub_resource type="Resource" id="Spawn_W5_Brute"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("10_brute")
+count = 3
+interval = 10.0
+start_delay = 12.0
+
 [sub_resource type="Resource" id="Wave5"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W5_BasicL"), SubResource("Spawn_W5_BasicR"), SubResource("Spawn_W5_Fly"), SubResource("Spawn_W5_ArmorL"), SubResource("Spawn_W5_Healer"), SubResource("Spawn_W5_Scouts"), SubResource("Spawn_W5_ArmorR"), SubResource("Spawn_W5_Boss")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("Spawn_W5_BasicL"), SubResource("Spawn_W5_BasicR"), SubResource("Spawn_W5_Fly"), SubResource("Spawn_W5_ArmorL"), SubResource("Spawn_W5_Healer"), SubResource("Spawn_W5_Scouts"), SubResource("Spawn_W5_ArmorR"), SubResource("Spawn_W5_Boss"), SubResource("Spawn_W5_Brute")])
 countdown = 35.0
 bounty = 10
 

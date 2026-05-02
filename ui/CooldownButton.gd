@@ -1,13 +1,13 @@
 extends Control
 
-# Phase 20 cooldown button (Phase 22: generalized for spells too).
+# Phase 20 cooldown button.
 # Draws a colored placeholder tile with the provider's display name, plus
 # a radial cooldown overlay that shrinks a dark pie-slice over the button
 # as the cooldown counts down. Per CLAUDE.md: radial fill, not text.
 #
-# Emits `triggered(idx)` when tapped. The owning panel (SkillBar / SpellPanel)
-# handles turning that into targeting mode and ultimately a cast. Driven by
-# a duck-typed provider Node with:
+# Emits `triggered(idx)` when tapped. SkillBar handles turning that into
+# targeting mode and ultimately a cast. Driven by a duck-typed provider
+# Node (BaseHero today) with:
 #   cooldown_fraction(idx) -> float   (0 = ready, 1 = just fired)
 #   display_name(idx) -> String
 #
@@ -20,7 +20,7 @@ const MIN_SIZE: Vector2 = Vector2(80.0, 80.0)
 
 # Provider-agnostic: anything with `cooldown_fraction(idx) -> float` and
 # `display_name(idx) -> String` can drive this button. Hero uses it for
-# skills; SpellPanel uses it for spells.
+# skills today.
 var _provider: Node = null
 var _idx: int = -1
 var _last_fraction: float = -1.0
@@ -76,7 +76,13 @@ func _draw() -> void:
 	var frac: float = _cooldown_fraction()
 	if frac > 0.0:
 		var center: Vector2 = size * 0.5
-		var radius: float = maxf(size.x, size.y)
+		# Corner-distance from center: the polygon reaches exactly to the
+		# button's corners and never spills past the rect. The previous
+		# `maxf(size.x, size.y)` was twice this, which painted ~40px past
+		# every edge — invisible in the old VBox layout (clipped by adjacent
+		# tiles), but the new arc cluster has gaps so the spillover bled
+		# onto the portrait.
+		var radius: float = (size * 0.5).length()
 		var start: float = -PI * 0.5  # 12 o'clock
 		var end: float = start + TAU * frac
 		var points: PackedVector2Array = PackedVector2Array()

@@ -40,7 +40,7 @@ const WATER_LIGHT := Color(0.30, 0.50, 0.70)
 
 # Camera reads this to set pan/zoom bounds.
 # Slightly larger than the actual content (375x812) so edge content
-# (soldiers, spell effects, enemy spawn points) isn't clipped.
+# (soldiers, hero VFX, enemy spawn points) isn't clipped.
 @export var map_bounds: Rect2 = Rect2(-40, -40, 2000, 1160)
 
 @onready var paths_node: Node2D = $Paths

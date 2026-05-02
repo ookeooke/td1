@@ -42,10 +42,6 @@ RunStats="*res://autoloads/RunStats.gd"
 
 gdscript/warnings/unused_signal=0
 
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/gut/plugin.cfg")
-
 [display]
 
 window/size/viewport_width=1920
@@ -54,6 +50,10 @@ window/size/window_width_override=1280
 window/size/window_height_override=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="keep_height"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/gut/plugin.cfg")
 
 [input_devices]
 

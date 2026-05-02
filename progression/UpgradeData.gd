@@ -1,9 +1,9 @@
-extends Resource
+﻿extends Resource
 class_name UpgradeData
 
 # One node in the permanent upgrade tree. Each upgrade grants a global
 # multiplier/bonus identified by `effect_type`. Game systems query
-# GameState.get_upgrade_multiplier(type) at the relevant moment
+# MetaProgression.get_upgrade_multiplier(type) at the relevant moment
 # (tower creation, hero spawn, level start).
 
 # Position 5 (`_RETIRED_SPELL_COOLDOWN`) is a legacy slot — was

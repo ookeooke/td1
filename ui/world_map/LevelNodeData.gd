@@ -3,7 +3,7 @@ class_name LevelNodeData
 
 # One entry on the WorldMap. Data-driven: add more levels by creating more
 # LevelNodeData .tres files and appending to the level_list.tres array.
-# Stars + unlock state are read from GameState at runtime, not baked here.
+# Stars + unlock state are read from MetaProgression at runtime, not baked here.
 
 @export var level_id: String = ""
 @export var display_name: String = "Level"

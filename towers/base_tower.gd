@@ -1,4 +1,4 @@
-extends Node2D
+﻿extends Node2D
 class_name BaseTower
 
 # DEBUG: every 3–6 shots, attach a random SlowEffect/StunEffect to the arrow
@@ -30,7 +30,7 @@ var total_damage_dealt: float = 0.0
 var targeting_mode: int = TargetingMode.FIRST
 
 # Stable run-scoped key for the end-of-run damage leaderboard. Assigned
-# lazily by GameState.record_round_damage on the tower's first hit.
+# lazily by RunState.record_round_damage on the tower's first hit.
 # Using get_instance_id() as the key would be unsafe because Godot reuses
 # freed IDs — a new tower could inherit a sold tower's tally.
 @warning_ignore("unused_private_class_variable")
@@ -125,13 +125,13 @@ func upgrade_to_branch(idx: int) -> bool:
 
 func get_effective_damage() -> float:
 	var base: float = _level_override().damage if _level_override() != null else data.damage
-	base *= GameState.get_upgrade_multiplier(GameState.MOD_ARCHER_DAMAGE)
+	base *= MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_ARCHER_DAMAGE)
 	return base
 
 
 func get_effective_range() -> float:
 	var base: float = _level_override().attack_range if _level_override() != null else data.attack_range
-	base *= GameState.get_upgrade_multiplier(GameState.MOD_TOWER_RANGE)
+	base *= MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_TOWER_RANGE)
 	return base
 
 
@@ -155,7 +155,7 @@ func get_upgrade_range() -> float:
 	var next: Resource = data.level_upgrades[next_idx]
 	if next == null or next.attack_range <= 0.0:
 		return 0.0
-	return next.attack_range * GameState.get_upgrade_multiplier(GameState.MOD_TOWER_RANGE)
+	return next.attack_range * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_TOWER_RANGE)
 
 
 func get_effective_attack_speed() -> float:

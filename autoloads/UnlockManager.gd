@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 # Phase 36: content unlock gate. Every system that shows/hides/enables
 # locked content calls one of the type-specific is_*_unlocked methods below —
@@ -15,7 +15,7 @@ extends Node
 #
 # Three unlock paths (identical across types):
 #   1. Free content — `requires_unlock == false` on the Data → always available.
-#   2. Explicitly unlocked — ID in GameState.unlocked_content (IAP / star / event).
+#   2. Explicitly unlocked — ID in MetaProgression.unlocked_content (IAP / star / event).
 #   3. Star-threshold auto-unlock — defined in _star_thresholds. Checked on
 #      every call so progress auto-grants access.
 
@@ -28,7 +28,7 @@ var _star_thresholds: Dictionary = {
 
 
 func _ready() -> void:
-	print("[UnlockManager] loaded — %d explicit unlocks" % GameState.unlocked_content.size())
+	print("[UnlockManager] loaded — %d explicit unlocks" % MetaProgression.unlocked_content.size())
 
 
 func is_hero_unlocked(hero_id: String) -> bool:
@@ -44,7 +44,7 @@ func _is_unlocked_in(id: String, data: Resource) -> bool:
 	if id == "":
 		return true
 	# 1. Explicitly unlocked (IAP, event, etc.)
-	if id in GameState.unlocked_content:
+	if id in MetaProgression.unlocked_content:
 		return true
 	# 2. Free content — the Data's requires_unlock says it's always available.
 	#    Enemies don't have requires_unlock today; a missing field means
@@ -56,7 +56,7 @@ func _is_unlocked_in(id: String, data: Resource) -> bool:
 			return true
 	# 3. Star-threshold auto-unlock.
 	if id in _star_thresholds:
-		return GameState.get_total_stars() >= _star_thresholds[id]
+		return MetaProgression.get_total_stars() >= _star_thresholds[id]
 	return false
 
 
@@ -65,8 +65,8 @@ func _is_unlocked_in(id: String, data: Resource) -> bool:
 # Type-agnostic because `unlocked_content` is a flat list and IDs are
 # scoped (hero_*, tower_*) so collisions can't happen.
 func unlock(id: String) -> void:
-	if id in GameState.unlocked_content:
+	if id in MetaProgression.unlocked_content:
 		return
-	GameState.unlocked_content.append(id)
+	MetaProgression.unlocked_content.append(id)
 	SaveManager.save_game()
 	print("[UnlockManager] unlocked '%s'" % id)

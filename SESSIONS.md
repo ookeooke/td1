@@ -1930,3 +1930,72 @@ After Stage 3 swapped the warrior + mage skill arrays, the old skill resources w
 ### Risks / known follow-ups
 - **`_RETIRED_SPELL_COOLDOWN` enum placeholder**: kept for stable integer indexing of `STARTING_GOLD_BONUS` and `SOLDIER_HEALTH_MULT`. If a future content addition needs effect_type 5, repurpose the slot rather than appending to the end (keeping the existing serialized integer footprint stable). Otherwise just keep the placeholder forever.
 - **`heroes/skills/shield_bash_skill_data.gd` still named "shield_bash"** even though its only consumer is now `skill_fireball.tres`. Renaming would break the script's class_name + tres references; a follow-up rename pass could promote it to a generic `aoe_at_tap_skill_data.gd` if more skills follow this shape. Not urgent — script is structural, name is just a label.
+
+
+## 2026-05-01 — GameState split
+
+### Why
+
+`autoloads/GameState.gd` had grown to 673 LOC across 14 micro-domains (gold/lives, loadout, encyclopedia, leaderboard, hero XP, talents, best times, damage attribution, modifier cache, …). Every phase since Phase 1 added one or two vars to it — asymmetric cost: 5 minutes to add to an existing autoload vs. 30 minutes to invent a new one. The file accreted naturally, never refactored.
+
+The pain wasn't acute (EventBus already de-coupled most consumers via signals), but the chronic friction was real: any task that crossed loadout / progression / run boundaries forced reading 673 LOC. With many more heroes / items / towers planned, leaving it would only get worse — and it blocked clean unit tests for the planned hardening week.
+
+### What changed
+
+Split `GameState` into four focused autoloads. Save format unchanged — keys remain flat at JSON top level; only SaveManager's read/write paths fan out.
+
+| New autoload | Holds | LOC |
+|---|---|---|
+| `RunState` | gold, lives, score, wave_number, current_mode, current_level_id, stars_earned, round_damage_*, add_gold/spend_gold/lose_lives, record_round_damage, compute_endless_score, calculate_stars, reset_for_level | ~120 |
+| `LoadoutState` | selected_hero_id, selected_tower_ids, tower_slot_cap, hero_equipped_skills + 7 helpers (get_loadout_towers, set_loadout_slot, get/set_equipped_skill, get_unlocked_skill_ids, has_unequipped_skills, …) | ~200 |
+| `MetaProgression` | level_stars, levels_unlocked, heroic_complete, iron_complete, purchased_upgrades + modifier cache, hero_talents, hero_progress, level_best_times, level_endless_best_scores, endless_best_score, endless_leaderboard, meta_gold, encyclopedia_unlocked, unlocked_content + record_stars, get_hero_level/xp, add_hero_xp, try_record_best_time, submit_endless_score, get_total/spent/available_stars, … | ~270 |
+| `DisplayUtils` | get_safe_insets() — orphan rescued from GameState (had nothing to do with game state) | ~25 |
+
+### Cross-domain reads (intentional, non-cyclic)
+
+- `RunState.reset_for_level()` reads `MetaProgression.get_upgrade_bonus(MOD_STARTING_GOLD)` for the meta-upgrade gold start bonus.
+- `LoadoutState.get_unlocked_skill_ids()` reads `MetaProgression.get_hero_level()` to filter level-gated skills.
+- `MetaProgression.submit_endless_score(name, score, wave)` takes wave as a parameter (caller passes `RunState.wave_number`) — avoids a back-edge.
+- `MetaProgression.record_stars(mode, level_id, stars)` takes all three as parameters — same reason.
+
+No bidirectional dependency. Boot order in `project.godot`: DisplayUtils → MetaProgression → RunState → LoadoutState (script-load var defaults make any actual ordering safe; this order documents intent).
+
+### Sweep
+
+- 245 substitutions across 30 consumer files via PowerShell regex with `\b` word boundaries (member names are unique across the three autoloads, so the dispatch is unambiguous).
+- 4 files needed manual signature changes: GameOverScreen.gd (record_stars / submit_endless_score / compute_endless_score callers), SaveManager.gd (the 60-ref hotspot, written from scratch against the new homes), TowerRadialMenu.gd (`has_method("get_safe_insets")` defensive guard removed — DisplayUtils always has it), and 4 stale comment fixes.
+- `autoloads/GameState.gd` + `.gd.uid` deleted. Final grep audit: 0 `GameState.` references in `.gd` (3 remaining matches are intentional historical anchors in `DisplayUtils.gd`, `LoadoutState.gd`, `SaveManager.gd` that document the split origin).
+- Save format **unchanged**. SAVE_VERSION still 4. SaveManager.delete_save() now calls `RunState.reset()`, `LoadoutState.reset()`, `MetaProgression.reset()`, `InventoryManager.reset()`.
+
+### CORE RULE 20 added
+
+Locks in the per-content-id pattern that lets the autoloads stop growing as content grows:
+- Per-content-id dicts, never per-content vars (`hero_progress: Dictionary[hero_id]`, never `warrior_xp: int`).
+- Self-healing reads (drop entries pointing at content the catalog no longer authors; persist the cleaned form).
+- Defaults from `ContentRegistry`, not hardcoded enumeration.
+- Save additions append (new top-level key) — never reshape existing keys.
+- One EventBus signal per state change.
+
+Includes a state assignment table mapping each future content type (heroes, towers, items, levels, encyclopedia, future pets/mounts) to the right autoload + key. Adding a 10th hero or 6th tower now requires zero autoload changes — only `.tres` + `ContentRegistry`.
+
+### Files touched
+
+- New: `autoloads/RunState.gd`, `autoloads/LoadoutState.gd`, `autoloads/MetaProgression.gd`, `autoloads/DisplayUtils.gd`
+- Modified: `autoloads/SaveManager.gd` (rewritten read/write paths), `project.godot` (autoload block: 1 entry → 4), `ui/GameOverScreen.gd` (signature-changing callers), `ui/TowerRadialMenu.gd` (removed dead has_method guard), `CLAUDE.md` (autoload table + state-assignment block + CORE RULE 20), `STATUS.md` (god-object item resolved), 30 consumer .gd files (mechanical sweep)
+- Deleted: `autoloads/GameState.gd` + `.gd.uid`
+
+### Verification
+
+1. **Boot**: open in Godot editor — output panel shows `[MetaProgression] loaded`, `[RunState] loaded`, `[LoadoutState] loaded`, `[SaveManager] loaded` in order. No errors. No `[ContentRegistry/DRIFT]` lines.
+2. **Save round-trip**: load a save written before the refactor (off the prior commit) — state restores identically. Restart, re-load, verify state still matches.
+3. **Smoke run**: WorldMap → Loadout → Main.tscn → place tower → upgrade → branch-pick → win → GameOverScreen shows top-5 damage leaderboard → return to WorldMap → state persists.
+4. **All three modes**: short Campaign / Heroic / Iron / Endless run each, verify mode-completion + endless leaderboard write paths.
+5. **TestRange**: open balance/test_range/TestRange.tscn — tower damage tallies match pre-refactor numbers (validates `MetaProgression.get_upgrade_multiplier` cache wired correctly).
+6. **Reset Progress**: Settings → Reset Progress → all three persistent autoloads + RunState clear; meta_gold, level_stars, hero_progress, selected_tower_ids return to defaults.
+7. **Grep audit**: `grep -r "GameState\." --include="*.gd" c:/td1` returns only the 3 intentional historical anchor comments.
+
+### Risks / known follow-ups
+
+- **LSP staleness during the refactor**: VSCode's GDScript LSP showed dozens of "Identifier RunState not declared" errors until Godot itself was reloaded — autoload registration is parsed at editor boot, not on file save. Reload the editor once after pulling this commit; the errors clear instantly. Not a code bug.
+- **Single cross-domain touch point**: `RunState.reset_for_level()` reads `MetaProgression.get_upgrade_bonus()`. Defensible (one one-way read, no cycle), but resist adding more cross-reads; new state should pick a single home or be parameterized.
+- **Tests still unwritten**: STATUS.md item #1 (engineering hardening week) is now unblocked. The split surface is much friendlier to unit tests — DamageCalculator, RunState (gold/lives mutators), LoadoutState (slot swap), MetaProgression (record_stars dispatch, upgrade cache rebuild), SaveManager (round-trip per autoload).

@@ -1,10 +1,10 @@
-extends CanvasLayer
+﻿extends CanvasLayer
 
 # Phase 20 / 48 — in-level skill cluster.
 #
 # Bottom-right corner of the screen. The HeroHudPortrait lives at the
 # corner; two skill slots arc up-and-left from it (DI-style thumb
-# cluster). Each slot reads from `GameState.hero_equipped_skills[hero_id]`;
+# cluster). Each slot reads from `LoadoutState.hero_equipped_skills[hero_id]`;
 # unequipped slots render an EmptySkillSlot placeholder ("+" tile).
 #
 # Tap a slot → enter targeting mode (range circle drawn around the hero,
@@ -42,7 +42,7 @@ func _ready() -> void:
 	EventBus.hero_spawned.connect(_on_hero_spawned)
 	EventBus.hero_died.connect(_on_hero_died)
 	# Loadout changes happen on the WorldMap (Heroes → Skills tab) — the
-	# in-level bar is a passive read of GameState.hero_equipped_skills.
+	# in-level bar is a passive read of LoadoutState.hero_equipped_skills.
 	# Listening here is defensive: if a future feature ever flips a slot
 	# mid-run, the bar reflects it without a manual rebuild.
 	EventBus.hero_skill_equipped.connect(_on_loadout_changed)
@@ -90,7 +90,7 @@ func _rebuild_buttons() -> void:
 	# data.skills so the hero's parallel _skill_cooldowns / get_skill_data
 	# accessors keep working unchanged. Empty slots get an EmptySkillSlot
 	# placeholder so the cluster always reads as 3 tiles.
-	var equipped: Array[String] = GameState.get_equipped_skills(_hero.data.hero_id)
+	var equipped: Array[String] = LoadoutState.get_equipped_skills(_hero.data.hero_id)
 	for slot_idx in SLOT_POSITIONS.size():
 		var skill_id: String = equipped[slot_idx] if slot_idx < equipped.size() else ""
 		var slot: Control

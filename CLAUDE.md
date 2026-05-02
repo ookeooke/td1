@@ -49,6 +49,27 @@ Entry point: `res://ui/MainMenu.tscn`. Design viewport: 1920x1080 (landscape). S
 17. **Never purge `.godot/` while debugging.** The cache holds import metadata that Godot self-heals between boots — closing and reopening the editor a second time is the documented fix for transient loader races ([issue #97684](https://github.com/godotengine/godot/issues/97684)). Purging forces every boot to be a cold start, which re-triggers any races the cache was masking. Only purge when (1) migrating Godot versions, (2) `.godot/` is visibly corrupted (zero-size files, missing `uid_cache.bin`), or (3) working code is already committed so the nuke is reversible. Never purge as a debugging reflex.
 18. **Balance numbers reference [BALANCE.md](balance/BALANCE.md), not intuition.** All tuning targets (g/DPS bands, hardness curves, mode multipliers, the Naked Baseline floor) live in `balance/BALANCE.md`. Read targets before editing `.tres` files; update BALANCE.md after editing so the doc never lags the data. Verify changes via the Test Range (live damage tally) and Balance Report (cross-run aggregates) — both under `balance/`. Never invent a number from intuition — every change must reference a target band. The original audit-by-LLM produced phantom values (Archer L2 damage, Ice L2 damage); always read `.tres` files directly, never paraphrase them.
 19. **Early-call advances waves with overlap, not just gold.** Calling the next wave early starts it while the previous wave's enemies are still on the map. Bonus gold is the reward; concurrent-wave pressure is the cost. Send-Wave button is visible the *entire* countdown (KR-canonical) — bonus = `min(seconds_remaining, early_call_window_sec)` so unlimited gold isn't possible from long countdowns. The window caps *bonus magnitude*, NOT *button availability* — gating button visibility creates dead-time ("where's the button?") which is what we explicitly want to avoid. [WaveManager.gd](autoloads/WaveManager.gd) decouples *spawning complete* (triggers `_on_spawning_complete`, starts next countdown) from *wave cleared* (triggers `_maybe_pay_bounty`, fires `wave_completed`). Per-wave alive counts live in `_alive_per_wave: Dictionary` so the right bounty pays at the right moment when waves overlap. Each spawned enemy is meta-tagged with `wave_index` at spawn time. Never collapse the two gates back into one — overlap pressure is what makes the early-call decision interesting. Without it, calling early is free money and players cheese it every time.
+20. **Per-content-type state lives keyed by `<content>_id`, never one var per content instance.** Adding a 10th hero or 6th tower must require zero autoload changes — only a new `.tres` + `ContentRegistry` registration. State that varies by content (hero XP, hero talents, equipped skills, level stars, best times, encyclopedia discovery) lives in a `Dictionary` keyed by `hero_id` / `tower_id` / `level_id` / `content_id` on the appropriate state autoload. Subrules:
+    - **Per-content-id dicts, not per-content vars.** `MetaProgression.hero_progress: Dictionary[hero_id → {...}]`, never `warrior_xp: int`.
+    - **Self-healing reads.** Any read that resolves a content_id MUST drop entries pointing at content the catalog no longer authors (rename / removal). Pattern: `LoadoutState.get_equipped_skills` purges stale skill_ids on read AND persists the cleaned form so the dict converges. Skip the purge if `ContentRegistry` returns empty (early boot guard).
+    - **Defaults from `ContentRegistry`, not hardcoded.** `_default_equipped_for(hero_id)` reads the hero's authored skills. New defaults follow the same pattern — never enumerate hero_ids in code.
+    - **Save format additions append; never reshape.** A new content type → a new top-level key in the save JSON. Never restructure existing keys (that breaks saves and forces a `SAVE_VERSION` bump). Missing keys default at load time.
+    - **One EventBus signal per state change.** `hero_skill_equipped`, `gold_changed`, `meta_gold_changed`, etc. UI listens; UI doesn't poll. New state → new signal. Cheap to add, expensive to retrofit.
+
+    **State assignment table** (where to put what):
+
+    | Content type | State location | Key |
+    |---|---|---|
+    | Hero (XP, level) | `MetaProgression.hero_progress` | `hero_id` |
+    | Hero (equipped skills) | `LoadoutState.hero_equipped_skills` | `hero_id` |
+    | Hero (purchased talents) | `MetaProgression.hero_talents` | `hero_id` |
+    | Tower (loadout pick) | `LoadoutState.selected_tower_ids` | order-positional |
+    | Tower (unlocked) | `UnlockManager` (already type-scoped) | `tower_id` |
+    | Level (stars / best time / endless score) | `MetaProgression.{level_stars, level_best_times, level_endless_best_scores}` | `level_id` |
+    | Encyclopedia (discovered) | `MetaProgression.encyclopedia_unlocked` | `content_id` array |
+    | Item (instances in bag) | `InventoryManager` (already separate) | `ItemInstance.uid` |
+
+	Adding a new content type (pets, mounts, world-map flags) = one new dict on the appropriate autoload, three helpers (`get_*`, `set_*`, `_default_*_for`), one EventBus signal. Mirrors `LoadoutState.hero_equipped_skills` end-to-end. (See SESSIONS.md "2026-05-01 — GameState split" for the rationale.)
 
 ---
 
@@ -103,12 +124,15 @@ All ring stroke widths multiply by `1.0 / camera.zoom.x` (zoom-scale rule) so ri
 
 ---
 
-## Autoloads (17)
+## Autoloads (20)
 
 | Name | Purpose |
 |---|---|
 | EventBus | Signals only, zero logic |
-| GameState | Gold, lives, score, wave, progression |
+| DisplayUtils | Mobile screen safe-area math (`get_safe_insets()`) |
+| MetaProgression | Cross-run state — stars, upgrades, talents, hero XP, leaderboard, meta_gold, encyclopedia |
+| RunState | Per-run volatile — gold, lives, score, wave, current_mode/level_id, damage attribution |
+| LoadoutState | Pre-level picks — selected hero, tower loadout (4-of-6), per-hero equipped skills |
 | WaveManager | Multi-path spawn + endless generation |
 | DamageCalculator | All damage math: PHYSICAL (armor), MAGIC (magic_resist), TRUE |
 | InventoryManager | Equipped + unequipped items per hero, starter-gear bootstrap |
@@ -124,6 +148,13 @@ All ring stroke widths multiply by `1.0 / camera.zoom.x` (zoom-scale rule) so ri
 | SoundManager | SFX pool + music player (graceful missing files) |
 | Toast | Transient on-screen messages (`Toast.show_message("…")`) |
 | RunStats | Per-run telemetry → `user://run_stats.json` (last 50 runs, opt-in via Settings later) |
+
+**State autoloads — which holds what** (split from the old `GameState` on 2026-05-01 — see SESSIONS.md):
+
+- **`RunState`** is volatile and cleared by `reset_for_level()`. Holds gold/lives/score/wave/stars_earned, current_mode, current_level_id, round_damage_*. Reads `MetaProgression.get_upgrade_bonus(MOD_STARTING_GOLD)` to apply meta-upgrade gold on level start.
+- **`LoadoutState`** is the player's pre-level picks. Persisted, but distinct from progression. Holds selected_hero_id, selected_tower_ids, tower_slot_cap, hero_equipped_skills. Reads `MetaProgression.get_hero_level()` to filter level-gated skills.
+- **`MetaProgression`** is everything that survives a run: stars, mode-completion, purchased upgrades + cached modifiers, hero talents, hero XP/level, best times, endless leaderboards, meta_gold, encyclopedia, unlocked_content.
+- **`DisplayUtils`** is layout helpers — has nothing to do with game state.
 
 ---
 
@@ -146,9 +177,9 @@ Level 1 → Level 2 → Level 3: BRANCH CHOICE (A or B, permanent)
 
 **Tactical pause** — TowerRadialMenu, TowerPlacer, SpotInputManager, HUD all use `PROCESS_MODE_ALWAYS`. Players can build/upgrade/sell while paused.
 
-**Unlock API** — `UnlockManager` type-scoped only: `is_hero_unlocked` / `is_tower_unlocked`, plus type-agnostic `unlock(id)`. `ProductData.unlock_type` dispatches in ShopScreen. Three unlock paths: explicit (IAP → `GameState.unlocked_content`), free (`requires_unlock == false`), star-threshold (`UnlockManager._star_thresholds`).
+**Unlock API** — `UnlockManager` type-scoped only: `is_hero_unlocked` / `is_tower_unlocked`, plus type-agnostic `unlock(id)`. `ProductData.unlock_type` dispatches in ShopScreen. Three unlock paths: explicit (IAP → `MetaProgression.unlocked_content`), free (`requires_unlock == false`), star-threshold (`UnlockManager._star_thresholds`).
 
-**Damage attribution** — `BaseEnemy.take_damage(amount, type, source)` routes the overkill-capped `actual` into `GameState.record_round_damage(source, amount)`. Dispatched by `source is BaseTower / BaseHero / BaseSoldier` into `round_damage_towers` (keyed by stable run-scoped `_damage_key`, survives sell) + `round_damage_hero` / `_soldiers`. Cleared in `reset_for_level()`. `GameOverScreen` renders the top-5 tower leaderboard + aggregate rows on victory, defeat, and endless Game Over.
+**Damage attribution** — `BaseEnemy.take_damage(amount, type, source)` routes the overkill-capped `actual` into `RunState.record_round_damage(source, amount)`. Dispatched by `source is BaseTower / BaseHero / BaseSoldier` into `round_damage_towers` (keyed by stable run-scoped `_damage_key`, survives sell) + `round_damage_hero` / `_soldiers`. Cleared in `RunState.reset_for_level()`. `GameOverScreen` renders the top-5 tower leaderboard + aggregate rows on victory, defeat, and endless Game Over.
 
 ---
 
@@ -242,7 +273,7 @@ All UI is on CanvasLayers, independent of Camera2D. **Must set `follow_viewport_
 | 10 | TowerRadialMenu (radial ring at spot: build / upgrade / sell / target / rally) |
 | 20 | PauseMenu, GameOverScreen |
 
-**Safe area:** `SafeAreaMargin.gd` (extends MarginContainer) sits at the root of HUD and SkillBar CanvasLayers. Sets `theme_override_constants/margin_*` from `GameState.get_safe_insets()` — Godot's layout engine pushes all children inward. Recalculates on window resize. Safe area math uses `DisplayServer.screen_get_size()` (NOT `window_get_size()`) because `get_display_safe_area()` returns screen-space coordinates.
+**Safe area:** `SafeAreaMargin.gd` (extends MarginContainer) sits at the root of HUD and SkillBar CanvasLayers. Sets `theme_override_constants/margin_*` from `DisplayUtils.get_safe_insets()` — Godot's layout engine pushes all children inward. Recalculates on window resize. Safe area math uses `DisplayServer.screen_get_size()` (NOT `window_get_size()`) because `get_display_safe_area()` returns screen-space coordinates.
 
 **SpawnIndicator:** Replaces world-space SpawnMarkers. Projects spawn world positions to screen coordinates via `get_canvas_transform()`, draws arrows at screen edges when off-screen.
 

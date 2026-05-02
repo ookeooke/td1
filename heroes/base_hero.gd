@@ -1,4 +1,4 @@
-extends CharacterBody2D
+﻿extends CharacterBody2D
 class_name BaseHero
 
 # Phase 18+42: Kingdom Rush-style hero with NavigationAgent2D pathfinding.
@@ -156,11 +156,11 @@ func _ready() -> void:
 	if data == null:
 		push_warning("[BaseHero] missing HeroData")
 		return
-	# Phase 48 — persistent hero level/XP. GameState owns the dictionary;
+	# Phase 48 — persistent hero level/XP. MetaProgression owns the dictionary;
 	# BaseHero reads it on spawn and delegates gain_xp back. Level is read
 	# BEFORE _seed_base_stats so the level-growth multiplier is correct.
-	level = GameState.get_hero_level(data.hero_id)
-	current_xp = GameState.get_hero_xp(data.hero_id)
+	level = MetaProgression.get_hero_level(data.hero_id)
+	current_xp = MetaProgression.get_hero_xp(data.hero_id)
 	_seed_base_stats()
 	recompute_stats()
 	current_health = _effective_max_health()
@@ -178,8 +178,8 @@ func _ready() -> void:
 		for ability in data.abilities:
 			_ability_host.add_ability(ability)
 	# Phase 40: push purchased talents' abilities onto the hero.
-	if "talents" in data and data.hero_id in GameState.hero_talents:
-		var purchased_ids: Array = GameState.hero_talents[data.hero_id]
+	if "talents" in data and data.hero_id in MetaProgression.hero_talents:
+		var purchased_ids: Array = MetaProgression.hero_talents[data.hero_id]
 		for talent in data.talents:
 			if talent != null and talent.talent_id in purchased_ids and talent.ability != null:
 				_ability_host.add_ability(talent.ability.duplicate())
@@ -220,7 +220,7 @@ func _seed_base_stats() -> void:
 	var hp_mult: float = 1.0 + float(level - 1) * LEVEL_HEALTH_GROWTH
 	var dmg_mult: float = 1.0 + float(level - 1) * LEVEL_DAMAGE_GROWTH
 	base_stats["max_health"] = float(data.max_health) * hp_mult
-	base_stats["damage"] = data.attack_damage * dmg_mult * GameState.get_upgrade_multiplier(GameState.MOD_HERO_DAMAGE)
+	base_stats["damage"] = data.attack_damage * dmg_mult * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_HERO_DAMAGE)
 	base_stats["armor"] = data.armor
 	base_stats["attack_speed"] = data.attack_speed
 	base_stats["move_speed"] = data.move_speed
@@ -389,22 +389,22 @@ func gain_xp(amount: int) -> void:
 		return
 	if level >= data.max_level:
 		return
-	# Phase 48: delegate to GameState which owns the persistent dict + the
+	# Phase 48: delegate to MetaProgression which owns the persistent dict + the
 	# level-up math (+ xp multiplier + hero_leveled_up signal). Then mirror
-	# the results back so combat code doesn't re-read GameState each frame.
-	# GameState.add_hero_xp already emits hero_xp_gained and hero_leveled_up
+	# the results back so combat code doesn't re-read MetaProgression each frame.
+	# MetaProgression.add_hero_xp already emits hero_xp_gained and hero_leveled_up
 	# signals itself — don't re-emit them here.
 	var old_level: int = level
-	var new_level: int = GameState.add_hero_xp(data.hero_id, amount)
+	var new_level: int = MetaProgression.add_hero_xp(data.hero_id, amount)
 	level = new_level
-	current_xp = GameState.get_hero_xp(data.hero_id)
+	current_xp = MetaProgression.get_hero_xp(data.hero_id)
 	while old_level < new_level:
 		old_level += 1
 		_level_up_apply()
 
 
 func _level_up_apply() -> void:
-	# Runtime side of a level-up. GameState already emitted hero_leveled_up
+	# Runtime side of a level-up. MetaProgression already emitted hero_leveled_up
 	# and bumped the persistent entry; this method updates the live hero:
 	# re-seed base, recompute modifiers, heal to full.
 	_seed_base_stats()
@@ -418,7 +418,7 @@ func _level_up_apply() -> void:
 	# Toast.show_message kills the prior tween on every call, so multiple
 	# unlocks at the same level (or across levels in an XP-catchup) would
 	# only ever surface the LAST message. Combine into one toast.
-	var unlocked: Array[String] = GameState.get_skills_unlocked_at_level(data.hero_id, level)
+	var unlocked: Array[String] = LoadoutState.get_skills_unlocked_at_level(data.hero_id, level)
 	for skill_id in unlocked:
 		EventBus.hero_skill_unlocked.emit(data.hero_id, skill_id)
 	if unlocked.size() == 1:

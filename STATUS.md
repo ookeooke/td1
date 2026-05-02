@@ -1,6 +1,6 @@
 # STATUS
 
-**Last shipped**: Spell-purge cleanup pass. Caught and fixed 7 leftover threads from the spell removal: LoadoutScreen still showed `"Spells: Fireball, Recruit"`; the Spell Mastery upgrade was purchasable for no effect; dead enum values + stale comments scrubbed; 9 orphan skill files deleted (5 `.tres` + 2 `.gd` + uids). Added a one-shot save migration that auto-refunds Spell Mastery's 3★ for any save where it was already purchased. See SESSIONS.md "2026-05-01 — Spell-purge cleanup pass".
+**Last shipped**: GameState split. The 673-LOC god-object autoload was decomposed into four focused autoloads — `RunState` (volatile per-level), `LoadoutState` (pre-level picks), `MetaProgression` (cross-run progression), `DisplayUtils` (safe-area orphan rescued). 245 references swept across 30 files; save format unchanged (keys stay flat at JSON top level); SaveManager now reads/writes from three sources instead of one. New CORE RULE 20 in CLAUDE.md locks in the per-content-id pattern so future heroes / towers / items / spells slot into existing dicts without growing autoloads. See SESSIONS.md "2026-05-01 — GameState split".
 
 **Currently working on**:
 - WorldMap UI overhaul series (research doc: `~/.claude/plans/lets-make-deep-research-robust-sunbeam.md`). Phase A shipped; Phases B–F queued.
@@ -17,7 +17,7 @@
      - SaveManager (5): round-trip, missing file, corrupted JSON, version rejection, `hero_talents` preserved
      - UnlockManager (5): type-scoped separation, empty id, star threshold, explicit unlock, `requires_unlock=false`
      - ContentRegistry (4): `find_tower` / `find_hero` / `find_enemy` found+missing, `_validate_ids` drift
-     - GameState (5): `reset_for_level`, `record_round_damage` routing, `_next_damage_key` monotonic, `set_loadout_slot` swap, `get_loadout_towers` cap+lock
+     - State autoloads (5): `RunState.reset_for_level`, `RunState.record_round_damage` routing, `_next_damage_key` monotonic, `LoadoutState.set_loadout_slot` swap, `LoadoutState.get_loadout_towers` cap+lock
      - Regression locks (6): enemy double-emit guard (47d-20 fix), overkill cap, status-effect refresh, `TowerUpgradeData` cross-fallback (47d-9 fix), stats-card diff, unlock fallback
    - **Wed (~3h)** — Save migration scaffold in [autoloads/SaveManager.gd](autoloads/SaveManager.gd): `SAVE_VERSION` constant + `_MIGRATIONS: Array[Callable]` chain that runs per-version mutators forward until current. Add `content_hash` key for orphaned-content tolerance (unknown IDs in loadout → drop instead of crash). 3 migration tests in `tests/unit/test_save_migrations.gd`.
    - **Thu (~1h)** — `.github/workflows/ci.yml` using `barichello/godot-ci:4.6`. Runs GUT headless + exports Android APK as artifact on every push.
@@ -28,7 +28,7 @@
 3. **Production hardening round 2** (after content is authored): i18n via `tr()` wraps on every user-facing string, real IAP SDK (RevenueCat or Google Play Billing + receipt validation), analytics event bus (stub → Amplitude / GameAnalytics), crash reporting via [sentry-godot](https://github.com/getsentry/sentry-godot), accessibility (font scaler, color-blind palette, 80px min touch targets).
 
 ## Known issues / rough edges
-- `autoloads/GameState.gd` is ~500 lines and god-object-shaped. Refactor deferred — not painful yet.
+- ~~`autoloads/GameState.gd` is ~500 lines and god-object-shaped. Refactor deferred — not painful yet.~~ Shipped 2026-05-01. Split into RunState / LoadoutState / MetaProgression / DisplayUtils.
 - No test suite. All validation is manual via Godot editor.
 - [heroes/base_hero.gd:627](heroes/base_hero.gd) `_die()` connects `create_timer().timeout` without an `is_connected` guard — double-die in one frame could double-respawn. Low risk; fix next time you touch the file.
 - Soldier CHARGING→RETURNING state-machine loop risk with stacked enemies — needs live repro before touching.
@@ -36,7 +36,7 @@
 
 ## Open design questions
 - Spell `cast_range > 0` semantics: measured from hero? tower? map center? Current code toasts "not wired up" when encountered. Needs decision before authoring a ranged spell.
-- Tower slot cap progression (`GameState.tower_slot_cap`) — what gates slots 5 and 6? Star threshold? IAP? Quest? Wired up but not triggered.
+- Tower slot cap progression (`LoadoutState.tower_slot_cap`) — what gates slots 5 and 6? Star threshold? IAP? Quest? Wired up but not triggered.
 - Save-file migration framework — deferred since Phase 46c/46d. Next content rename that changes an `*_id` should ship with the migration scaffold.
 
 ## Deferred from prior audits (not scheduled, but noted)

@@ -1,4 +1,4 @@
-extends Area2D
+﻿extends Area2D
 class_name BaseEnemy
 
 enum State { WALKING, STUNNED, COMBAT, STEALTHED, DYING }
@@ -328,7 +328,7 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 	var actual: float = minf(final, float(current_health))
 	# Phase 46: attribute damage to the source for the victory-screen
 	# leaderboard. record_round_damage filters by class (tower/hero/soldier).
-	GameState.record_round_damage(source, actual)
+	RunState.record_round_damage(source, actual)
 	current_health -= int(ceil(final))
 	if final > 0.0:
 		_hit_flash_t = HIT_FLASH_DURATION

@@ -1,4 +1,4 @@
-extends Control
+﻿extends Control
 
 # Phase 48 D2 — Equipment screen. Shows the selected hero's 6 slots
 # (3 active: Weapon/Armor/Trinket; 3 locked: Helm/Gloves/Boots) on the
@@ -117,7 +117,7 @@ func _ready() -> void:
 	# and connect inventory signals — ensure_starter_gear emits
 	# inventory_changed, which would otherwise hit _refresh with an empty
 	# _slot_icons dict.
-	var hero_id: String = GameState.selected_hero_id
+	var hero_id: String = LoadoutState.selected_hero_id
 	if hero_id != "":
 		InventoryManager.ensure_starter_gear(hero_id)
 	_build_slots()
@@ -207,10 +207,10 @@ func _build_one_slot(slot_idx: int) -> void:
 
 
 func _refresh() -> void:
-	var hero_id: String = GameState.selected_hero_id
+	var hero_id: String = LoadoutState.selected_hero_id
 	_cached_hero_id = hero_id
 	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
-	var level: int = GameState.get_hero_level(hero_id)
+	var level: int = MetaProgression.get_hero_level(hero_id)
 	hero_label.text = "%s — Lv %d" % [hero_data.hero_name, level] if hero_data != null else hero_id
 	# Stats panel — mirrors BaseHero.recompute_stats formulas so the numbers
 	# shown here match what the hero will have on next spawn. The grouped /
@@ -343,7 +343,7 @@ func _on_inventory_item_pressed(inst) -> void:
 	if _sell_mode:
 		_handle_sell_tap(inst)
 		return
-	var hero_id: String = GameState.selected_hero_id
+	var hero_id: String = LoadoutState.selected_hero_id
 	var base: Resource = ContentRegistry.find_item_base(inst.base_id)
 	if base == null:
 		return
@@ -531,7 +531,7 @@ func _on_meta_gold_changed(new_amount: int) -> void:
 
 
 func _refresh_meta_gold_label() -> void:
-	_refresh_meta_gold_label_amount(GameState.meta_gold)
+	_refresh_meta_gold_label_amount(MetaProgression.meta_gold)
 
 
 func _refresh_meta_gold_label_amount(amount: int) -> void:
@@ -545,7 +545,7 @@ func _on_slot_pressed(_signal_arg, slot_idx: int) -> void:
 	if not ACTIVE_SLOTS.has(slot_idx):
 		Toast.show_message("%s slot is locked" % SLOT_NAMES[slot_idx])
 		return
-	var hero_id: String = GameState.selected_hero_id
+	var hero_id: String = LoadoutState.selected_hero_id
 	var current_uid: String = InventoryManager.get_equipped_uid(hero_id, slot_idx)
 	if current_uid == "":
 		Toast.show_message("Slot is empty")
@@ -830,12 +830,12 @@ func _append_diff_line(lines: Array[String], label: String, old_val: int, new_va
 # Shared stat-computation core; _refresh_stats_panel + _format_stat_diff are
 # the formatters over this dict.
 func _compute_stats_dict(hero_data: Resource, equipped: Array) -> Dictionary:
-	var level: int = GameState.get_hero_level(hero_data.hero_id)
+	var level: int = MetaProgression.get_hero_level(hero_data.hero_id)
 	var hp_mult: float = 1.0 + float(level - 1) * _LEVEL_HEALTH_GROWTH
 	var dmg_mult: float = 1.0 + float(level - 1) * _LEVEL_DAMAGE_GROWTH
 	var base_stats: Dictionary = {
 		"max_health": float(hero_data.max_health) * hp_mult,
-		"damage": hero_data.attack_damage * dmg_mult * GameState.get_upgrade_multiplier(GameState.MOD_HERO_DAMAGE),
+		"damage": hero_data.attack_damage * dmg_mult * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_HERO_DAMAGE),
 		"armor": hero_data.armor,
 		"attack_speed": hero_data.attack_speed,
 		"move_speed": hero_data.move_speed,

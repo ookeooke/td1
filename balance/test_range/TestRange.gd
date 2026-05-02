@@ -1,4 +1,4 @@
-extends Node2D
+﻿extends Node2D
 
 # Test Range — dev-only sandbox for measuring tower DPS / kit behavior in
 # isolation. Mirrors Main.gd's structure (hero spawn, tower system wiring)
@@ -29,7 +29,7 @@ const STREAM_INTERVAL: float = 0.4
 var _stream_timer: Timer
 var _refresh_timer: Timer
 
-# 2026-04-29 audit fix — capture-and-restore for the GameState fields this
+# 2026-04-29 audit fix — capture-and-restore for the LoadoutState/RunState fields this
 # scene mutates. Without this, exiting Test Range left the player with
 # tower_slot_cap = 6 and a 5-tower loadout permanently leaked into their
 # save (any subsequent save_game() call would persist it). See _exit_tree.
@@ -40,29 +40,29 @@ var _saved_current_level_id: String = "level_1"
 
 
 func _ready() -> void:
-	# Snapshot whatever the player had before we trash GameState for sandbox
+	# Snapshot whatever the player had before we trash LoadoutState/RunState for sandbox
 	# convenience. _exit_tree restores; sandbox state never reaches the save.
-	_saved_tower_slot_cap = GameState.tower_slot_cap
-	_saved_selected_tower_ids = GameState.selected_tower_ids.duplicate()
-	_saved_current_mode = GameState.current_mode
-	_saved_current_level_id = GameState.current_level_id
+	_saved_tower_slot_cap = LoadoutState.tower_slot_cap
+	_saved_selected_tower_ids = LoadoutState.selected_tower_ids.duplicate()
+	_saved_current_mode = RunState.current_mode
+	_saved_current_level_id = RunState.current_level_id
 
 	# Signal current_mode so other systems (RunStats, GameOverScreen) don't
 	# treat this run as a campaign attempt.
-	GameState.current_mode = "test_range"
-	GameState.current_level_id = "test_range"
-	GameState.gold = 9999
-	GameState.lives = 999
-	EventBus.gold_changed.emit(GameState.gold)
-	EventBus.lives_changed.emit(GameState.lives)
+	RunState.current_mode = "test_range"
+	RunState.current_level_id = "test_range"
+	RunState.gold = 9999
+	RunState.lives = 999
+	EventBus.gold_changed.emit(RunState.gold)
+	EventBus.lives_changed.emit(RunState.lives)
 	# Round-damage tally is the source of truth for the stats overlay.
-	GameState.round_damage_towers.clear()
-	GameState.round_damage_hero = 0.0
-	GameState.round_damage_soldiers = 0.0
+	RunState.round_damage_towers.clear()
+	RunState.round_damage_hero = 0.0
+	RunState.round_damage_soldiers = 0.0
 	# Test Range gets all 5 towers in the build ring so the tester can probe
 	# any combination. Restored by _exit_tree on scene exit.
-	GameState.tower_slot_cap = 6
-	GameState.selected_tower_ids = [
+	LoadoutState.tower_slot_cap = 6
+	LoadoutState.selected_tower_ids = [
 		"tower_archer", "tower_barracks", "tower_mage",
 		"tower_artillery", "tower_ice", "",
 	]
@@ -71,10 +71,10 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	# Restore everything we mutated in _ready. Any save_game() called after
 	# this point sees the original loadout, so the sandbox never leaks.
-	GameState.tower_slot_cap = _saved_tower_slot_cap
-	GameState.selected_tower_ids = _saved_selected_tower_ids
-	GameState.current_mode = _saved_current_mode
-	GameState.current_level_id = _saved_current_level_id
+	LoadoutState.tower_slot_cap = _saved_tower_slot_cap
+	LoadoutState.selected_tower_ids = _saved_selected_tower_ids
+	RunState.current_mode = _saved_current_mode
+	RunState.current_level_id = _saved_current_level_id
 
 	_spawn_hero()
 	_setup_dev_panel()
@@ -92,7 +92,7 @@ func _exit_tree() -> void:
 
 
 func _spawn_hero() -> void:
-	var hero_data: Resource = ContentRegistry.find_hero(GameState.selected_hero_id)
+	var hero_data: Resource = ContentRegistry.find_hero(LoadoutState.selected_hero_id)
 	if hero_data == null and ContentRegistry.heroes.size() > 0:
 		hero_data = ContentRegistry.heroes[0]
 	if hero_data == null:
@@ -163,9 +163,9 @@ func _on_stream_tick() -> void:
 
 
 func _on_reset_stats() -> void:
-	GameState.round_damage_towers.clear()
-	GameState.round_damage_hero = 0.0
-	GameState.round_damage_soldiers = 0.0
+	RunState.round_damage_towers.clear()
+	RunState.round_damage_hero = 0.0
+	RunState.round_damage_soldiers = 0.0
 	_refresh_stats()
 
 
@@ -174,14 +174,14 @@ func _refresh_stats() -> void:
 		return
 	var lines: PackedStringArray = PackedStringArray()
 	lines.append("[per-tower damage]")
-	if GameState.round_damage_towers.is_empty():
+	if RunState.round_damage_towers.is_empty():
 		lines.append("  (none yet — place a tower & spawn enemies)")
 	else:
-		for key in GameState.round_damage_towers:
-			var e: Dictionary = GameState.round_damage_towers[key]
+		for key in RunState.round_damage_towers:
+			var e: Dictionary = RunState.round_damage_towers[key]
 			lines.append("  %s: %d" % [e.get("name", "?"), int(e.get("total", 0.0))])
-	if GameState.round_damage_hero > 0.0:
-		lines.append("  Hero: %d" % int(GameState.round_damage_hero))
-	if GameState.round_damage_soldiers > 0.0:
-		lines.append("  Soldiers: %d" % int(GameState.round_damage_soldiers))
+	if RunState.round_damage_hero > 0.0:
+		lines.append("  Hero: %d" % int(RunState.round_damage_hero))
+	if RunState.round_damage_soldiers > 0.0:
+		lines.append("  Soldiers: %d" % int(RunState.round_damage_soldiers))
 	stats_label.text = "\n".join(lines)

@@ -1,4 +1,4 @@
-extends CanvasLayer
+﻿extends CanvasLayer
 
 # Phase 45a + 45b: radial menu anchored at the tapped tower spot.
 #   Empty spot    → build ring (tower icons fan around the spot).
@@ -89,9 +89,7 @@ func _project_to_screen(world_pos: Vector2) -> Vector2:
 
 func _compute_anchor(screen_pos: Vector2) -> Vector2:
 	var vp: Vector2 = get_viewport().get_visible_rect().size
-	var insets: Vector4 = Vector4.ZERO
-	if GameState.has_method("get_safe_insets"):
-		insets = GameState.get_safe_insets()
+	var insets: Vector4 = DisplayUtils.get_safe_insets()
 	var pad: float = RING_RADIUS + ICON_SIZE * 0.5 + EDGE_PADDING
 	var min_x: float = pad + insets.z
 	var max_x: float = vp.x - pad - insets.w
@@ -124,8 +122,8 @@ func _open_build_ring(world_pos: Vector2) -> void:
 	# at the same index here instead of being filled by the next tower.
 	# Otherwise slot 1 cleared in the picker would pull Mage forward into
 	# slot 1 in-game and misalign every subsequent slot.
-	var n: int = GameState.TOWER_SLOT_MAX
-	var cap: int = mini(GameState.tower_slot_cap, n)
+	var n: int = LoadoutState.TOWER_SLOT_MAX
+	var cap: int = mini(LoadoutState.tower_slot_cap, n)
 	for i in range(n):
 		var angle: float = -PI * 0.5 + (TAU / float(n)) * float(i)
 		var slot: Control = TowerIconButton.new()
@@ -133,8 +131,8 @@ func _open_build_ring(world_pos: Vector2) -> void:
 		anchor_node.add_child(slot)
 		if i < cap:
 			var tid: String = ""
-			if i < GameState.selected_tower_ids.size():
-				tid = GameState.selected_tower_ids[i]
+			if i < LoadoutState.selected_tower_ids.size():
+				tid = LoadoutState.selected_tower_ids[i]
 			var data: Resource = ContentRegistry.find_tower(tid) if tid != "" else null
 			if data != null and not UnlockManager.is_tower_unlocked(tid):
 				data = null  # respect live unlock state
@@ -215,7 +213,7 @@ func _populate_action_slots() -> void:
 			_add_branch_slot(branches[1], 1, -PI / 3.0)
 	elif tower.has_method("can_upgrade") and tower.can_upgrade():
 		var cost: int = tower.get_upgrade_cost_to(tower.level + 1)
-		var enabled: bool = GameState.gold >= cost
+		var enabled: bool = RunState.gold >= cost
 		_add_action_slot(
 			"upgrade", null, "upgrade", 0,
 			COLOR_UPGRADE,
@@ -260,7 +258,7 @@ func _add_action_slot(
 
 func _add_branch_slot(branch: Resource, idx: int, angle: float) -> void:
 	var cost: int = int(branch.cost)
-	var enabled: bool = GameState.gold >= cost
+	var enabled: bool = RunState.gold >= cost
 	_add_action_slot(
 		"branch", idx, "branch", idx,
 		COLOR_UPGRADE,
@@ -320,7 +318,7 @@ func _arm_action_slot(slot: Control, action_id: String, payload) -> void:
 			var branch: Resource = branches[idx] if idx >= 0 and idx < branches.size() else null
 			_show_stats_card_upgrade_preview(branch, anchor_pos)
 			if branch != null and branch.attack_range > 0.0:
-				var gr: float = float(branch.attack_range) * GameState.get_upgrade_multiplier(GameState.MOD_TOWER_RANGE)
+				var gr: float = float(branch.attack_range) * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_TOWER_RANGE)
 				_show_upgrade_ring(gr)
 			else:
 				_hide_upgrade_ring()
@@ -529,7 +527,7 @@ func _refresh_action_affordability() -> void:
 		var cost: int = _gold_cost_for_slot(slot)
 		if cost <= 0:
 			continue  # not a gold-gated action — no refresh needed
-		var enabled: bool = GameState.gold >= cost
+		var enabled: bool = RunState.gold >= cost
 		slot.set_enabled(enabled)
 		if slot.has_method("set_badge_color"):
 			slot.set_badge_color(BADGE_GOLD if enabled else BADGE_DIMMED)

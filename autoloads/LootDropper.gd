@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 # Phase 48 C1 — listens to EventBus.enemy_died, rolls a drop via LootRoller,
 # and (in C2+) spawns an ItemPickup at the enemy's death position. For now
@@ -45,7 +45,7 @@ func _on_enemy_died(enemy: Node, _gold: int) -> void:
 		return
 	if randf() > table.drop_chance:
 		return
-	var wave: int = GameState.wave_number
+	var wave: int = RunState.wave_number
 	var base_id: String = table.pick_base_id(wave)
 	if base_id == "":
 		return

@@ -25,23 +25,23 @@ func _ready() -> void:
 func _on_game_over() -> void:
 	if _shown:
 		return
-	if GameState.current_mode == "endless":
-		var score: int = GameState.compute_endless_score()
-		var is_best: bool = score > GameState.endless_best_score
+	if RunState.current_mode == "endless":
+		var score: int = RunState.compute_endless_score()
+		var is_best: bool = score > MetaProgression.endless_best_score
 		if is_best:
-			GameState.endless_best_score = score
+			MetaProgression.endless_best_score = score
 		# Phase 48 — also track per-level endless score so each map has its
 		# own endless high score on the WorldMap card.
-		GameState.try_record_endless_score(GameState.current_level_id, score)
-		GameState.submit_endless_score("Player", score)
+		MetaProgression.try_record_endless_score(RunState.current_level_id, score)
+		MetaProgression.submit_endless_score("Player", score, RunState.wave_number)
 		EventBus.endless_score_updated.emit(score)
 		SaveManager.save_game()
 		continue_button.text = "World Map"
 		continue_button.visible = true
 		restart_button.text = "Restart"
 		restart_button.visible = true
-		var best_text: String = " NEW BEST!" if is_best else " (Best: %d)" % GameState.endless_best_score
-		_show("Game Over", "Wave reached: %d\nScore: %d%s%s" % [GameState.wave_number, score, best_text, _build_damage_breakdown()])
+		var best_text: String = " NEW BEST!" if is_best else " (Best: %d)" % MetaProgression.endless_best_score
+		_show("Game Over", "Wave reached: %d\nScore: %d%s%s" % [RunState.wave_number, score, best_text, _build_damage_breakdown()])
 		return
 	# Campaign/Heroic/Iron defeat — give the player BOTH actions: retry the
 	# level or bail out to the WorldMap. Previously the Continue button was
@@ -51,38 +51,38 @@ func _on_game_over() -> void:
 	continue_button.visible = true
 	restart_button.text = "Restart"
 	restart_button.visible = true
-	var mode_label: String = GameState.current_mode.capitalize() if GameState.current_mode != "" else "Campaign"
-	_show("Defeat", "You lost all your lives.\nMode: %s  \u2022  Wave reached: %d%s" % [
-		mode_label, GameState.wave_number, _build_damage_breakdown()
+	var mode_label: String = RunState.current_mode.capitalize() if RunState.current_mode != "" else "Campaign"
+	_show("Defeat", "You lost all your lives.\nMode: %s  •  Wave reached: %d%s" % [
+		mode_label, RunState.wave_number, _build_damage_breakdown()
 	])
 
 
 func _on_all_waves_completed() -> void:
 	if _shown:
 		return
-	if GameState.lives <= 0:
+	if RunState.lives <= 0:
 		return
-	var stars: int = GameState.calculate_stars()
-	GameState.stars_earned = stars
+	var stars: int = RunState.calculate_stars()
+	RunState.stars_earned = stars
 	# Build the summary based on mode.
 	var summary: String = ""
-	match GameState.current_mode:
+	match RunState.current_mode:
 		"campaign":
 			var star_text: String = "★".repeat(stars) + "☆".repeat(3 - stars)
-			summary = "Campaign cleared!\n%s\nLives: %d  Gold: %d" % [star_text, GameState.lives, GameState.gold]
+			summary = "Campaign cleared!\n%s\nLives: %d  Gold: %d" % [star_text, RunState.lives, RunState.gold]
 		"heroic":
-			summary = "Heroic cleared!\n+1 bonus star\nLives: %d  Gold: %d" % [GameState.lives, GameState.gold]
+			summary = "Heroic cleared!\n+1 bonus star\nLives: %d  Gold: %d" % [RunState.lives, RunState.gold]
 		"iron":
-			summary = "Iron cleared!\n+1 bonus star — flawless!\nLives: %d  Gold: %d" % [GameState.lives, GameState.gold]
+			summary = "Iron cleared!\n+1 bonus star — flawless!\nLives: %d  Gold: %d" % [RunState.lives, RunState.gold]
 		_:
-			summary = "All waves cleared.\nLives: %d  Gold: %d" % [GameState.lives, GameState.gold]
+			summary = "All waves cleared.\nLives: %d  Gold: %d" % [RunState.lives, RunState.gold]
 	summary += _build_damage_breakdown()
 	continue_button.text = "Continue"
 	continue_button.visible = true
 	restart_button.text = "Restart"
 	restart_button.visible = false
 	_show("Victory!", summary)
-	EventBus.level_completed.emit(GameState.current_level_id, stars, GameState.current_mode)
+	EventBus.level_completed.emit(RunState.current_level_id, stars, RunState.current_mode)
 
 
 # Phase 46: per-run damage attribution. Top-5 towers (by total damage dealt,
@@ -92,9 +92,9 @@ const _TOWER_LEADERBOARD_LIMIT: int = 5
 
 
 func _build_damage_breakdown() -> String:
-	var tower_entries: Array = GameState.round_damage_towers.values()
-	var hero: float = GameState.round_damage_hero
-	var sold: float = GameState.round_damage_soldiers
+	var tower_entries: Array = RunState.round_damage_towers.values()
+	var hero: float = RunState.round_damage_hero
+	var sold: float = RunState.round_damage_soldiers
 	if tower_entries.is_empty() and hero <= 0.0 and sold <= 0.0:
 		return ""
 	tower_entries.sort_custom(func(a, b): return float(a.get("total", 0.0)) > float(b.get("total", 0.0)))
@@ -149,15 +149,15 @@ func _show(title: String, summary: String) -> void:
 func _on_continue_pressed() -> void:
 	get_tree().paused = false
 	WaveManager.stop()
-	if GameState.current_mode != "endless":
-		GameState.record_stars()
+	if RunState.current_mode != "endless":
+		MetaProgression.record_stars(RunState.current_mode, RunState.current_level_id, RunState.stars_earned)
 	SceneManager.goto("res://ui/WorldMap.tscn")
 
 
 func _on_restart_pressed() -> void:
 	get_tree().paused = false
 	WaveManager.stop()
-	GameState.reset_for_level()
-	EventBus.gold_changed.emit(GameState.gold)
-	EventBus.lives_changed.emit(GameState.lives)
+	RunState.reset_for_level()
+	EventBus.gold_changed.emit(RunState.gold)
+	EventBus.lives_changed.emit(RunState.lives)
 	SceneManager.goto("res://main/Main.tscn")

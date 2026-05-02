@@ -1,9 +1,9 @@
-extends Control
+﻿extends Control
 
 # World Map — level select screen. Shows one panel per level with name,
 # stars earned, and locked/unlocked state. Tap unlocked → gameplay.
 # Data-driven via `levels: Array[LevelNodeData]` set in the .tscn.
-# Stars + unlock state read from GameState (populated by SaveManager later).
+# Stars + unlock state read from MetaProgression (populated by SaveManager later).
 
 @export var levels: Array[Resource] = []
 
@@ -54,12 +54,12 @@ func _ready() -> void:
 
 func _refresh_stars_label() -> void:
 	# KR-style top-bar resource counter — shows available (unspent) stars.
-	stars_button.text = "★ %d" % GameState.get_available_stars()
+	stars_button.text = "★ %d" % MetaProgression.get_available_stars()
 
 
 func _refresh_meta_gold_label() -> void:
 	# Persistent inventory-sell currency (distinct from per-run gold).
-	meta_gold_button.text = "💰 %d" % GameState.meta_gold
+	meta_gold_button.text = "💰 %d" % MetaProgression.meta_gold
 
 
 # Phase 48 — red dot in the corner of the Heroes button when ANY unlocked
@@ -77,7 +77,7 @@ func _refresh_heroes_button_dot() -> void:
 			continue
 		if not UnlockManager.is_hero_unlocked(h.hero_id):
 			continue
-		if GameState.has_unequipped_skills(h.hero_id):
+		if LoadoutState.has_unequipped_skills(h.hero_id):
 			any_pending = true
 			break
 	if not any_pending:
@@ -178,7 +178,7 @@ func _make_level_panel(data: Resource) -> PanelContainer:
 	info_vbox.add_child(name_label)
 
 	# Composite stars: campaign (0–3) + heroic (+1) + iron (+1) = max 5.
-	var total_stars: int = GameState.calculate_total_stars_for_level(data.level_id)
+	var total_stars: int = MetaProgression.calculate_total_stars_for_level(data.level_id)
 	var star_text: String = "★".repeat(total_stars) + "☆".repeat(5 - total_stars)
 	var stars_label := Label.new()
 	stars_label.text = star_text
@@ -210,7 +210,7 @@ func _make_level_panel(data: Resource) -> PanelContainer:
 	# Phase F — Endless promoted to a sibling pill alongside the other three
 	# modes, replacing the prior Play + Endless button pair. Mode picker
 	# happens here on the level card; LoadoutScreen no longer needs to ask.
-	var is_unlocked: bool = GameState.levels_unlocked.get(data.level_id, false)
+	var is_unlocked: bool = MetaProgression.levels_unlocked.get(data.level_id, false)
 	if is_unlocked:
 		var pill_row := HBoxContainer.new()
 		pill_row.set("theme_override_constants/separation", 8)
@@ -241,13 +241,13 @@ func _add_mode_pill(row: HBoxContainer, data: Resource, mode: String) -> void:
 	var lid: String = data.level_id
 	match mode:
 		"campaign":
-			var campaign_stars: int = GameState.level_stars.get(lid, 0)
+			var campaign_stars: int = MetaProgression.level_stars.get(lid, 0)
 			var stars_str: String = "★".repeat(campaign_stars) + "☆".repeat(3 - campaign_stars)
 			btn.text = "Campaign\n%s" % stars_str
 			btn.disabled = false
 		"heroic":
-			var heroic_done: bool = GameState.heroic_complete.get(lid, false)
-			var heroic_unlocked: bool = GameState.is_heroic_unlocked(lid)
+			var heroic_done: bool = MetaProgression.heroic_complete.get(lid, false)
+			var heroic_unlocked: bool = MetaProgression.is_heroic_unlocked(lid)
 			if heroic_done:
 				btn.text = "Heroic\nDone ✓"
 				btn.disabled = false
@@ -258,8 +258,8 @@ func _add_mode_pill(row: HBoxContainer, data: Resource, mode: String) -> void:
 				btn.text = "Heroic\nNeed 3★"
 				btn.disabled = true
 		"iron":
-			var iron_done: bool = GameState.iron_complete.get(lid, false)
-			var iron_unlocked: bool = GameState.is_iron_unlocked(lid)
+			var iron_done: bool = MetaProgression.iron_complete.get(lid, false)
+			var iron_unlocked: bool = MetaProgression.is_iron_unlocked(lid)
 			if iron_done:
 				btn.text = "Iron\nDone ✓"
 				btn.disabled = false
@@ -270,7 +270,7 @@ func _add_mode_pill(row: HBoxContainer, data: Resource, mode: String) -> void:
 				btn.text = "Iron\nNeed Heroic"
 				btn.disabled = true
 		"endless":
-			var best: int = GameState.get_endless_best_score(lid)
+			var best: int = MetaProgression.get_endless_best_score(lid)
 			# Score, not a wave count — "Best %d" matches LoadoutScreen and
 			# LeaderboardScreen wording; "W%d" was misleading.
 			if best > 0:
@@ -284,8 +284,8 @@ func _add_mode_pill(row: HBoxContainer, data: Resource, mode: String) -> void:
 
 
 func _on_mode_pill_pressed(data: Resource, mode: String) -> void:
-	GameState.current_level_id = data.level_id
-	GameState.current_mode = mode
+	RunState.current_level_id = data.level_id
+	RunState.current_mode = mode
 	# LoadoutScreen reads current_mode to pre-select the matching pill in its
 	# own mode row (which becomes redundant after this phase but stays as a
 	# pre-battle confirmation). Endless flow: LoadoutScreen hides the
@@ -295,10 +295,10 @@ func _on_mode_pill_pressed(data: Resource, mode: String) -> void:
 
 func _format_level_metrics(level_id: String) -> String:
 	var parts: PackedStringArray = []
-	var best: float = GameState.get_best_time(level_id)
+	var best: float = MetaProgression.get_best_time(level_id)
 	if best > 0.0:
 		parts.append("Best: %s" % _format_seconds(best))
-	var endless: int = GameState.get_endless_best_score(level_id)
+	var endless: int = MetaProgression.get_endless_best_score(level_id)
 	if endless > 0:
 		parts.append("Endless: %d" % endless)
 	return "   ".join(parts)
@@ -326,6 +326,6 @@ func _format_hardness(level_id: String) -> String:
 	var bc: GDScript = load("res://balance/BalanceCalculator.gd")
 	if bc == null:
 		return "—"
-	return "%d" % int(bc.score_level(wl, GameState.STARTING_GOLD))
+	return "%d" % int(bc.score_level(wl, RunState.STARTING_GOLD))
 
 

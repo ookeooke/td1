@@ -1,4 +1,4 @@
-extends Control
+﻿extends Control
 
 # Phase B — Heroes hub with five tabs:
 #   - Loadout   : hero picker (built inline below)
@@ -150,22 +150,22 @@ func _set_active_segment(id: String) -> void:
 func _refresh_context_group() -> void:
 	if hero_name_label == null:
 		return
-	var hero_data: Resource = ContentRegistry.find_hero(GameState.selected_hero_id)
+	var hero_data: Resource = ContentRegistry.find_hero(LoadoutState.selected_hero_id)
 	if hero_data == null:
 		hero_name_label.text = "No hero"
 		hero_level_label.text = ""
-		hero_gold_label.text = "💰 %d" % GameState.meta_gold
+		hero_gold_label.text = "💰 %d" % MetaProgression.meta_gold
 		return
 	var hid: String = hero_data.hero_id
-	var lvl: int = GameState.get_hero_level(hid)
-	var xp: int = GameState.get_hero_xp(hid)
+	var lvl: int = MetaProgression.get_hero_level(hid)
+	var xp: int = MetaProgression.get_hero_xp(hid)
 	var need: int = 0
 	if lvl - 1 >= 0 and lvl - 1 < hero_data.xp_per_level.size():
 		need = hero_data.xp_per_level[lvl - 1]
 	var xp_str: String = "MAX" if lvl >= int(hero_data.max_level) else "XP %d/%d" % [xp, need]
 	hero_name_label.text = hero_data.hero_name
 	hero_level_label.text = "Lv %d   %s" % [lvl, xp_str]
-	hero_gold_label.text = "💰 %d" % GameState.meta_gold
+	hero_gold_label.text = "💰 %d" % MetaProgression.meta_gold
 
 
 # --- Loadout tab (inline) ---------------------------------------------------
@@ -203,7 +203,7 @@ func _refresh_loadout() -> void:
 		return
 	var selected: Resource = null
 	for h in heroes:
-		if h.hero_id == GameState.selected_hero_id and UnlockManager.is_hero_unlocked(h.hero_id):
+		if h.hero_id == LoadoutState.selected_hero_id and UnlockManager.is_hero_unlocked(h.hero_id):
 			selected = h
 			break
 	if selected == null:
@@ -213,7 +213,7 @@ func _refresh_loadout() -> void:
 				break
 	if selected == null:
 		selected = heroes[0]
-	GameState.selected_hero_id = selected.hero_id
+	LoadoutState.selected_hero_id = selected.hero_id
 
 	var dmg_type: String = "Magic" if selected.damage_type == 1 else "Physical"
 	var skill_names: PackedStringArray = []
@@ -238,14 +238,14 @@ func _on_switch_hero() -> void:
 		return
 	var current_idx: int = 0
 	for i in heroes.size():
-		if heroes[i].hero_id == GameState.selected_hero_id:
+		if heroes[i].hero_id == LoadoutState.selected_hero_id:
 			current_idx = i
 			break
 	for offset in range(1, heroes.size()):
 		var try_idx: int = (current_idx + offset) % heroes.size()
 		var candidate: Resource = heroes[try_idx]
 		if UnlockManager.is_hero_unlocked(candidate.hero_id):
-			GameState.selected_hero_id = candidate.hero_id
+			LoadoutState.selected_hero_id = candidate.hero_id
 			EventBus.hero_selected.emit(candidate.hero_id)
 			_refresh_loadout()
 			return
@@ -345,7 +345,7 @@ func _build_skills_tab(tab: Control) -> void:
 func _refresh_skills_tab() -> void:
 	if _skills_header_label == null:
 		return
-	var hero_data: Resource = ContentRegistry.find_hero(GameState.selected_hero_id)
+	var hero_data: Resource = ContentRegistry.find_hero(LoadoutState.selected_hero_id)
 	if hero_data == null:
 		_skills_header_label.text = "No hero selected"
 		_clear_children(_skills_equipped_row)
@@ -353,8 +353,8 @@ func _refresh_skills_tab() -> void:
 		_clear_children(_skills_locked_grid)
 		return
 	var hid: String = hero_data.hero_id
-	var lvl: int = GameState.get_hero_level(hid)
-	var xp: int = GameState.get_hero_xp(hid)
+	var lvl: int = MetaProgression.get_hero_level(hid)
+	var xp: int = MetaProgression.get_hero_xp(hid)
 	var need: int = 0
 	if lvl - 1 >= 0 and lvl - 1 < hero_data.xp_per_level.size():
 		need = hero_data.xp_per_level[lvl - 1]
@@ -362,8 +362,8 @@ func _refresh_skills_tab() -> void:
 	_skills_header_label.text = "%s   Lv %d   %s" % [hero_data.hero_name, lvl, xp_str]
 
 	_clear_children(_skills_equipped_row)
-	var equipped: Array[String] = GameState.get_equipped_skills(hid)
-	for slot_idx in GameState.EQUIPPED_SKILL_SLOTS:
+	var equipped: Array[String] = LoadoutState.get_equipped_skills(hid)
+	for slot_idx in LoadoutState.EQUIPPED_SKILL_SLOTS:
 		var sid: String = equipped[slot_idx] if slot_idx < equipped.size() else ""
 		var tile: Button = _make_skill_button(_skill_name(hero_data, sid) if sid != "" else "(empty)",
 			"", false, sid != "")
@@ -371,7 +371,7 @@ func _refresh_skills_tab() -> void:
 		_skills_equipped_row.add_child(tile)
 
 	_clear_children(_skills_available_grid)
-	var unlocked: Array[String] = GameState.get_unlocked_skill_ids(hid)
+	var unlocked: Array[String] = LoadoutState.get_unlocked_skill_ids(hid)
 	for sid in unlocked:
 		var name_str: String = _skill_name(hero_data, sid)
 		var armed: bool = (_skills_armed == sid)
@@ -401,14 +401,14 @@ func _make_skill_button(title: String, sub: String, armed: bool, enabled: bool) 
 
 
 func _on_skills_equipped_slot_pressed(slot_idx: int) -> void:
-	var hid: String = GameState.selected_hero_id
+	var hid: String = LoadoutState.selected_hero_id
 	if _skills_armed != "":
 		var sid: String = _skills_armed
 		_skills_armed = ""
-		GameState.set_equipped_skill(hid, slot_idx, sid)
+		LoadoutState.set_equipped_skill(hid, slot_idx, sid)
 		SaveManager.save_game()
 	else:
-		GameState.set_equipped_skill(hid, slot_idx, "")
+		LoadoutState.set_equipped_skill(hid, slot_idx, "")
 		SaveManager.save_game()
 
 

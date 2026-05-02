@@ -1,7 +1,7 @@
-extends Control
+﻿extends Control
 
 # Phase 28: permanent upgrade tree. Spend campaign stars on global bonuses.
-# Reads purchased state from GameState.purchased_upgrades; writes on
+# Reads purchased state from MetaProgression.purchased_upgrades; writes on
 # purchase → SaveManager.save_game() for persistence.
 
 @export var upgrades: Array[Resource] = []
@@ -15,7 +15,7 @@ var _buttons: Dictionary = {}  # upgrade_id → Button
 
 func _ready() -> void:
 	back_button.pressed.connect(_on_back)
-	GameState.rebuild_upgrade_cache(upgrades)
+	MetaProgression.rebuild_upgrade_cache(upgrades)
 	_build_ui()
 
 
@@ -66,9 +66,9 @@ func _make_upgrade_panel(data: Resource) -> PanelContainer:
 	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD
 	info.add_child(desc_label)
 
-	var is_purchased: bool = data.upgrade_id in GameState.purchased_upgrades
-	var prereq_met: bool = data.prerequisite_id == "" or data.prerequisite_id in GameState.purchased_upgrades
-	var can_afford: bool = GameState.get_available_stars() >= data.star_cost
+	var is_purchased: bool = data.upgrade_id in MetaProgression.purchased_upgrades
+	var prereq_met: bool = data.prerequisite_id == "" or data.prerequisite_id in MetaProgression.purchased_upgrades
+	var can_afford: bool = MetaProgression.get_available_stars() >= data.star_cost
 
 	var btn := Button.new()
 	btn.custom_minimum_size = Vector2(100, 60)
@@ -89,12 +89,12 @@ func _make_upgrade_panel(data: Resource) -> PanelContainer:
 
 
 func _on_purchase(data: Resource) -> void:
-	if data.upgrade_id in GameState.purchased_upgrades:
+	if data.upgrade_id in MetaProgression.purchased_upgrades:
 		return
-	if GameState.get_available_stars() < data.star_cost:
+	if MetaProgression.get_available_stars() < data.star_cost:
 		return
-	GameState.purchased_upgrades.append(data.upgrade_id)
-	GameState.rebuild_upgrade_cache(upgrades)
+	MetaProgression.purchased_upgrades.append(data.upgrade_id)
+	MetaProgression.rebuild_upgrade_cache(upgrades)
 	EventBus.permanent_upgrade_purchased.emit(data.upgrade_id)
 	SaveManager.save_game()
 	# Rebuild the full UI so prereq chains + afford states refresh.
@@ -102,6 +102,6 @@ func _on_purchase(data: Resource) -> void:
 
 
 func _refresh_stars_label() -> void:
-	var total: int = GameState.get_total_stars()
-	var available: int = GameState.get_available_stars()
+	var total: int = MetaProgression.get_total_stars()
+	var available: int = MetaProgression.get_available_stars()
 	stars_label.text = "★ %d / %d available" % [available, total]

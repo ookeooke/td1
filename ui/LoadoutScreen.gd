@@ -1,4 +1,4 @@
-extends Control
+﻿extends Control
 
 # Phase 30 + 31: pre-level loadout + mode selection. Shows hero + tower
 # roster and 3 mode buttons (Campaign / Heroic / Iron) with unlock status.
@@ -36,7 +36,7 @@ func _ready() -> void:
 	# Inherit the mode the caller set (level-card pill, prior Endless button,
 	# legacy default "campaign"). Hardcoding "campaign" here was silently
 	# downgrading every non-campaign pick at _on_start time.
-	_selected_mode = GameState.current_mode
+	_selected_mode = RunState.current_mode
 	_refresh()
 
 
@@ -47,7 +47,7 @@ func _on_change_towers() -> void:
 func _rebuild_towers_row() -> void:
 	for child in towers_row.get_children():
 		child.queue_free()
-	var loadout: Array = GameState.get_loadout_towers()
+	var loadout: Array = LoadoutState.get_loadout_towers()
 	for data in loadout:
 		# TowerIconButton locks its own 90x90 in _ready; no size override here.
 		var icon: Control = TowerIconButton.new()
@@ -56,8 +56,8 @@ func _rebuild_towers_row() -> void:
 
 
 func _refresh() -> void:
-	var lid: String = GameState.current_level_id
-	var is_endless: bool = GameState.current_mode == "endless"
+	var lid: String = RunState.current_level_id
+	var is_endless: bool = RunState.current_mode == "endless"
 	level_label.text = "Endless Mode" if is_endless else lid.replace("_", " ").capitalize()
 	_refresh_hero_info()
 	_rebuild_towers_row()
@@ -66,18 +66,18 @@ func _refresh() -> void:
 	heroic_button.visible = not is_endless
 	iron_button.visible = not is_endless
 	if is_endless:
-		mode_info_label.text = "Infinite waves. Difficulty scales each wave.\nBest score: %d" % GameState.endless_best_score
+		mode_info_label.text = "Infinite waves. Difficulty scales each wave.\nBest score: %d" % MetaProgression.endless_best_score
 	else:
 		_refresh_mode_buttons()
 
 
 func _refresh_mode_buttons() -> void:
-	var lid: String = GameState.current_level_id
-	var campaign_stars: int = GameState.level_stars.get(lid, 0)
-	var heroic_done: bool = GameState.heroic_complete.get(lid, false)
-	var iron_done: bool = GameState.iron_complete.get(lid, false)
-	var heroic_unlocked: bool = GameState.is_heroic_unlocked(lid)
-	var iron_unlocked: bool = GameState.is_iron_unlocked(lid)
+	var lid: String = RunState.current_level_id
+	var campaign_stars: int = MetaProgression.level_stars.get(lid, 0)
+	var heroic_done: bool = MetaProgression.heroic_complete.get(lid, false)
+	var iron_done: bool = MetaProgression.iron_complete.get(lid, false)
+	var heroic_unlocked: bool = MetaProgression.is_heroic_unlocked(lid)
+	var iron_unlocked: bool = MetaProgression.is_iron_unlocked(lid)
 
 	# Campaign — always available.
 	var c_stars: String = "★".repeat(campaign_stars) + "☆".repeat(3 - campaign_stars)
@@ -149,7 +149,7 @@ func _refresh_hero_info() -> void:
 	# by a progress reset). Fall back to first unlocked hero.
 	var selected: Resource = null
 	for h in heroes:
-		if h.hero_id == GameState.selected_hero_id and UnlockManager.is_hero_unlocked(h.hero_id):
+		if h.hero_id == LoadoutState.selected_hero_id and UnlockManager.is_hero_unlocked(h.hero_id):
 			selected = h
 			break
 	if selected == null:
@@ -161,8 +161,8 @@ func _refresh_hero_info() -> void:
 		selected = heroes[0]  # absolute fallback
 	# Only emit on actual change — _refresh_hero_info runs on every _refresh,
 	# and we don't want to spam hero_selected with no-op signals.
-	var changed: bool = GameState.selected_hero_id != selected.hero_id
-	GameState.selected_hero_id = selected.hero_id
+	var changed: bool = LoadoutState.selected_hero_id != selected.hero_id
+	LoadoutState.selected_hero_id = selected.hero_id
 	if changed:
 		EventBus.hero_selected.emit(selected.hero_id)
 	# Build hero info text with tap-to-switch hint.
@@ -187,7 +187,7 @@ func _on_hero_title_tapped() -> void:
 		return
 	var current_idx: int = 0
 	for i in heroes.size():
-		if heroes[i].hero_id == GameState.selected_hero_id:
+		if heroes[i].hero_id == LoadoutState.selected_hero_id:
 			current_idx = i
 			break
 	# Find next unlocked hero after current.
@@ -195,7 +195,7 @@ func _on_hero_title_tapped() -> void:
 		var try_idx: int = (current_idx + offset) % heroes.size()
 		var candidate: Resource = heroes[try_idx]
 		if UnlockManager.is_hero_unlocked(candidate.hero_id):
-			GameState.selected_hero_id = candidate.hero_id
+			LoadoutState.selected_hero_id = candidate.hero_id
 			# Symmetric with HeroesHub: notify any listening screens. The
 			# offset starts at 1 so candidate is always different — no
 			# conditional needed here.
@@ -205,8 +205,8 @@ func _on_hero_title_tapped() -> void:
 
 
 func _on_start() -> void:
-	GameState.current_mode = _selected_mode
-	GameState.reset_for_level()
-	EventBus.gold_changed.emit(GameState.gold)
-	EventBus.lives_changed.emit(GameState.lives)
+	RunState.current_mode = _selected_mode
+	RunState.reset_for_level()
+	EventBus.gold_changed.emit(RunState.gold)
+	EventBus.lives_changed.emit(RunState.lives)
 	SceneManager.goto("res://main/Main.tscn")

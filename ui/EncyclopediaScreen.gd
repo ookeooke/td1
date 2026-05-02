@@ -1,4 +1,4 @@
-extends Control
+﻿extends Control
 
 # Phase 34: Encyclopedia / Codex. Three tabs (Enemies, Towers, Heroes).
 # Auto-generates stat tables from the actual Resource fields so they
@@ -71,7 +71,7 @@ func _enemy_id(data: Resource) -> String:
 
 
 func _is_unlocked(content_id: String) -> bool:
-	return content_id in GameState.encyclopedia_unlocked
+	return content_id in MetaProgression.encyclopedia_unlocked
 
 
 func _add_entry(content_id: String, formatted: Dictionary, _data: Resource) -> void:

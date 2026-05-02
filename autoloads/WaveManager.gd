@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 # Wave runner — supports KR-style overlap (CORE RULE 19).
 #   start(wave_list, level) kicks off the wave loop.
@@ -84,7 +84,7 @@ func start(wave_list: Resource, level: Node, early_call_window: float = 0.0) -> 
 	_alive_per_wave.clear()
 	_pending_bounties.clear()
 	_all_waves_launched = false
-	GameState.wave_number = 0
+	RunState.wave_number = 0
 	_begin_next_wave()
 
 
@@ -109,7 +109,7 @@ func start_endless(level: Node) -> void:
 	_alive_per_wave.clear()
 	_pending_bounties.clear()
 	_all_waves_launched = false
-	GameState.wave_number = 0
+	RunState.wave_number = 0
 	_begin_next_wave()
 
 
@@ -136,7 +136,7 @@ func _begin_next_wave() -> void:
 		_maybe_all_waves_complete()
 		return
 	var path_ids := _unique_path_ids(wave)
-	GameState.wave_number = _wave_index + 1
+	RunState.wave_number = _wave_index + 1
 	for pid in path_ids:
 		EventBus.spawn_direction_changed.emit(pid, Vector2.ZERO)
 	# Tick-based countdown — interruptible via call_early_wave().
@@ -188,7 +188,7 @@ func call_early_wave() -> void:
 		var raw: float = maxf(0.0, _countdown_remaining)
 		bonus = int(ceil(minf(raw, _early_call_window)))
 	if bonus > 0:
-		GameState.add_gold(bonus)
+		RunState.add_gold(bonus)
 	EventBus.early_wave_triggered.emit(bonus)
 	_finish_countdown()
 
@@ -224,7 +224,7 @@ func _run_spawner(spawn: Resource) -> void:
 	# Phase 31: Heroic + Iron scale enemy count up and interval down.
 	var count: int = spawn.count
 	var interval: float = spawn.interval
-	if GameState.current_mode == "heroic" or GameState.current_mode == "iron":
+	if RunState.current_mode == "heroic" or RunState.current_mode == "iron":
 		count = int(ceil(count * 1.5))
 		interval *= 0.85
 	# Capture wave_index at spawn-time. _wave_index advances when the next
@@ -275,7 +275,7 @@ func _maybe_pay_bounty(wave_index: int) -> void:
 		return  # already paid or never queued
 	var bounty: int = int(_pending_bounties[wave_index])
 	if bounty > 0:
-		GameState.add_gold(bounty)
+		RunState.add_gold(bounty)
 	EventBus.wave_completed.emit(wave_index + 1)
 	print("[WaveManager] wave %d cleared (+%dg)" % [wave_index + 1, bounty])
 	_pending_bounties.erase(wave_index)

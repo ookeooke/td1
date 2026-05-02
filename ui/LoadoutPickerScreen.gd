@@ -1,4 +1,4 @@
-extends Control
+﻿extends Control
 
 # Phase 47d-4: tower loadout picker — reached from the WorldMap "Loadout"
 # button. Visual vocabulary mirrors the in-game build ring (same RING_RADIUS
@@ -48,7 +48,7 @@ func _on_back() -> void:
 
 
 func _on_reset() -> void:
-	GameState.reset_loadout_to_default()
+	LoadoutState.reset_loadout_to_default()
 	SaveManager.save_game()
 	_rebuild_ring()
 	_refresh_equipped_badges()
@@ -67,8 +67,8 @@ func _rebuild_ring() -> void:
 			slot.queue_free()
 	_ring_slots.clear()
 	_armed_slot_idx = -1
-	var n: int = GameState.TOWER_SLOT_MAX
-	var cap: int = mini(GameState.tower_slot_cap, n)
+	var n: int = LoadoutState.TOWER_SLOT_MAX
+	var cap: int = mini(LoadoutState.tower_slot_cap, n)
 	for i in range(n):
 		var angle: float = -PI * 0.5 + (TAU / float(n)) * float(i)
 		var slot: Control = TowerIconButton.new()
@@ -78,12 +78,12 @@ func _rebuild_ring() -> void:
 		ring_anchor.add_child(slot)
 		if i < cap:
 			var tid: String = ""
-			if i < GameState.selected_tower_ids.size():
-				tid = GameState.selected_tower_ids[i]
+			if i < LoadoutState.selected_tower_ids.size():
+				tid = LoadoutState.selected_tower_ids[i]
 			var data: Resource = ContentRegistry.find_tower(tid) if tid != "" else null
 			if data != null:
 				# setup_pool instead of setup: ring slots in the picker must
-				# not gate on GameState.gold (which may be 0 on first boot or
+				# not gate on RunState.gold (which may be 0 on first boot or
 				# leftover from a prior run). Affordability is a runtime
 				# concept, not a loadout concept.
 				slot.setup_pool(data)
@@ -161,8 +161,8 @@ func _build_pool() -> void:
 
 func _on_pool_tower_pressed(tower_id: String) -> void:
 	# If the tower is already in the loadout and no slot is armed, unequip it.
-	var existing: int = GameState.selected_tower_ids.find(tower_id)
-	if _armed_slot_idx < 0 and existing >= 0 and existing < GameState.tower_slot_cap:
+	var existing: int = LoadoutState.selected_tower_ids.find(tower_id)
+	if _armed_slot_idx < 0 and existing >= 0 and existing < LoadoutState.tower_slot_cap:
 		_clear_slot(existing)
 		return
 	# Place into the armed slot, or the first empty unlocked slot.
@@ -172,32 +172,32 @@ func _on_pool_tower_pressed(tower_id: String) -> void:
 	if target < 0:
 		Toast.show_message("All slots full — tap a slot to replace")
 		return
-	if GameState.set_loadout_slot(target, tower_id):
+	if LoadoutState.set_loadout_slot(target, tower_id):
 		SaveManager.save_game()
 		_rebuild_ring()
 		_refresh_equipped_badges()
 
 
 func _clear_slot(slot_idx: int) -> void:
-	if GameState.set_loadout_slot(slot_idx, ""):
+	if LoadoutState.set_loadout_slot(slot_idx, ""):
 		SaveManager.save_game()
 		_rebuild_ring()
 		_refresh_equipped_badges()
 
 
 func _first_empty_unlocked_slot() -> int:
-	var cap: int = mini(GameState.tower_slot_cap, GameState.TOWER_SLOT_MAX)
+	var cap: int = mini(LoadoutState.tower_slot_cap, LoadoutState.TOWER_SLOT_MAX)
 	for i in range(cap):
-		if i >= GameState.selected_tower_ids.size() or GameState.selected_tower_ids[i] == "":
+		if i >= LoadoutState.selected_tower_ids.size() or LoadoutState.selected_tower_ids[i] == "":
 			return i
 	return -1
 
 
 func _refresh_equipped_badges() -> void:
-	var cap: int = mini(GameState.tower_slot_cap, GameState.selected_tower_ids.size())
+	var cap: int = mini(LoadoutState.tower_slot_cap, LoadoutState.selected_tower_ids.size())
 	var equipped: Dictionary = {}
 	for i in range(cap):
-		var tid: String = GameState.selected_tower_ids[i]
+		var tid: String = LoadoutState.selected_tower_ids[i]
 		if tid != "":
 			equipped[tid] = true
 	for i in range(_pool_icons.size()):

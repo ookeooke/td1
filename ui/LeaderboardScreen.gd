@@ -1,7 +1,7 @@
-extends Control
+﻿extends Control
 
 # Phase 33: endless leaderboard display. Reads from
-# GameState.endless_leaderboard (local top-20 for now). Future online
+# MetaProgression.endless_leaderboard (local top-20 for now). Future online
 # integration: swap the data source to an HTTP fetch from LootLocker /
 # GameJolt / custom REST API — UI stays unchanged.
 
@@ -22,7 +22,7 @@ func _build_list() -> void:
 	for child in scores_list.get_children():
 		child.queue_free()
 
-	if GameState.endless_leaderboard.is_empty():
+	if MetaProgression.endless_leaderboard.is_empty():
 		var empty_label := Label.new()
 		empty_label.text = "No scores yet.\nPlay Endless mode to set a record!"
 		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -35,7 +35,7 @@ func _build_list() -> void:
 	scores_list.add_child(header)
 
 	var rank: int = 0
-	for entry in GameState.endless_leaderboard:
+	for entry in MetaProgression.endless_leaderboard:
 		rank += 1
 		var name_str: String = str(entry.get("name", "???"))
 		var score_str: String = str(int(entry.get("score", 0)))

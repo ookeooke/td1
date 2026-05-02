@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 # Per-run telemetry. Listens to EventBus signals during a level, finalizes
 # on victory/defeat, appends a JSON record to user://run_stats.json (capped
@@ -40,7 +40,7 @@ func _ensure_run() -> void:
 	# Test Range sets current_mode = "test_range" so we skip there.
 	if not _current.is_empty():
 		return
-	if GameState.current_mode == "test_range":
+	if RunState.current_mode == "test_range":
 		return
 	_start_new_run()
 
@@ -58,11 +58,11 @@ func _start_new_run() -> void:
 	_current = {
 		"run_id": _make_id(),
 		"timestamp": Time.get_datetime_string_from_system(),
-		"level_id": GameState.current_level_id,
-		"mode": GameState.current_mode,
-		"hero_id": GameState.selected_hero_id,
-		"starting_gold": GameState.gold,
-		"starting_lives": GameState.lives,
+		"level_id": RunState.current_level_id,
+		"mode": RunState.current_mode,
+		"hero_id": LoadoutState.selected_hero_id,
+		"starting_gold": RunState.gold,
+		"starting_lives": RunState.lives,
 		"lives_lost_per_wave": [],
 		"_pending_wave_leak": 0,
 		"tower_placements": [],
@@ -86,7 +86,7 @@ func _on_wave_started(wave_num: int, _path_ids) -> void:
 	var timeline: Array = _current["gold_timeline"]
 	timeline.append({
 		"wave": wave_num,
-		"start_gold": GameState.gold,
+		"start_gold": RunState.gold,
 		"start_ms": Time.get_ticks_msec() - _start_time_msec,
 	})
 	_current["gold_timeline"] = timeline
@@ -103,7 +103,7 @@ func _on_wave_completed(wave_num: int) -> void:
 	var timeline: Array = _current["gold_timeline"]
 	for entry in timeline:
 		if int(entry.get("wave", -1)) == wave_num:
-			entry["end_gold"] = GameState.gold
+			entry["end_gold"] = RunState.gold
 			entry["end_ms"] = Time.get_ticks_msec() - _start_time_msec
 			entry["leak"] = leak
 			break
@@ -174,17 +174,17 @@ func _finalize(outcome: String, stars: int) -> void:
 		return
 	_current["outcome"] = outcome
 	_current["stars_earned"] = stars
-	_current["lives_remaining"] = GameState.lives
+	_current["lives_remaining"] = RunState.lives
 	_current["duration_s"] = (Time.get_ticks_msec() - _start_time_msec) / 1000.0
-	_current["final_gold"] = GameState.gold
-	# Damage attribution snapshot — sourced from GameState.round_damage_*
+	_current["final_gold"] = RunState.gold
+	# Damage attribution snapshot — sourced from RunState.round_damage_*
 	# which is populated by BaseEnemy.take_damage routing. See CLAUDE.md
 	# "Damage attribution". Tower entries keyed by run-scoped damage_key so
 	# sold-and-rebuilt towers don't double-merge.
 	var towers_total: float = 0.0
 	var per_tower: Array = []
-	for key in GameState.round_damage_towers.keys():
-		var ent: Dictionary = GameState.round_damage_towers[key]
+	for key in RunState.round_damage_towers.keys():
+		var ent: Dictionary = RunState.round_damage_towers[key]
 		var tot: float = float(ent.get("total", 0.0))
 		towers_total += tot
 		per_tower.append({
@@ -193,14 +193,14 @@ func _finalize(outcome: String, stars: int) -> void:
 		})
 	per_tower.sort_custom(func(a, b): return float(a.damage) > float(b.damage))
 	_current["damage_by_source"] = {
-		"hero": GameState.round_damage_hero,
-		"soldiers": GameState.round_damage_soldiers,
+		"hero": RunState.round_damage_hero,
+		"soldiers": RunState.round_damage_soldiers,
 		"towers_total": towers_total,
 	}
 	_current["damage_by_tower"] = per_tower
 	# Hero progression at end of run — XP earned this run + level achieved.
-	_current["hero_level_end"] = GameState.get_hero_level(GameState.selected_hero_id)
-	_current["hero_xp_end"] = GameState.get_hero_xp(GameState.selected_hero_id)
+	_current["hero_level_end"] = MetaProgression.get_hero_level(LoadoutState.selected_hero_id)
+	_current["hero_xp_end"] = MetaProgression.get_hero_xp(LoadoutState.selected_hero_id)
 	_current.erase("_pending_wave_leak")
 	_append_to_history(_current)
 	_current = {}

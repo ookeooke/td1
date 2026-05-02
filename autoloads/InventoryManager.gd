@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 # Phase 48 — Persistent loot ledger. Pure bookkeeping; stats flow through the
 # hero's modifier stack via AbilityHost.equip_ability (see BaseHero._ready
@@ -108,9 +108,9 @@ func add_to_round(instance) -> void:
 		return
 	round_pickups.append(instance)
 	# Phase E4 — first-time encounter unlocks the encyclopedia entry.
-	# GameState.try_unlock_encyclopedia is idempotent (skips if already in).
+	# MetaProgression.try_unlock_encyclopedia is idempotent (skips if already in).
 	if instance.base_id != "":
-		GameState.try_unlock_encyclopedia(instance.base_id)
+		MetaProgression.try_unlock_encyclopedia(instance.base_id)
 	EventBus.item_picked_up.emit(instance)
 	EventBus.inventory_changed.emit()
 
@@ -426,7 +426,7 @@ func equip(hero_id: String, uid: String) -> bool:
 		return false
 	# IA-1 — enforce level_requirement. Skipped when set to 1 (the default
 	# value for items with no level gate).
-	if base.level_requirement > 1 and GameState.get_hero_level(hero_id) < base.level_requirement:
+	if base.level_requirement > 1 and MetaProgression.get_hero_level(hero_id) < base.level_requirement:
 		Toast.show_message("Requires Lv %d" % base.level_requirement)
 		return false
 	# 2026-04-29 audit fix — IA-2's "shared in-use" semantic was broken: the
@@ -474,7 +474,7 @@ func _can_hero_equip(hero_id: String, base: Resource) -> bool:
 		return false
 	if base.hero_restriction.size() > 0 and not base.hero_restriction.has(hero_id):
 		return false
-	if base.level_requirement > 1 and GameState.get_hero_level(hero_id) < base.level_requirement:
+	if base.level_requirement > 1 and MetaProgression.get_hero_level(hero_id) < base.level_requirement:
 		return false
 	return true
 
@@ -550,7 +550,7 @@ func sell(uid: String) -> int:
 	# if the destroy fails so the player can't accidentally print free gold.
 	if not destroy(uid):
 		return 0
-	GameState.add_meta_gold(reward)
+	MetaProgression.add_meta_gold(reward)
 	EventBus.item_sold.emit(inst, reward)
 	SaveManager.save_game()
 	return reward

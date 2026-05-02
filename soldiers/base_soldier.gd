@@ -1,4 +1,4 @@
-extends CharacterBody2D
+﻿extends CharacterBody2D
 class_name BaseSoldier
 
 # Phase 16+42: ground blocker with NavigationAgent2D pathfinding.
@@ -86,7 +86,7 @@ var _ability_host: RefCounted = null
 func _ready() -> void:
 	if data:
 		# Phase 28: permanent upgrade (Reinforced Walls / Soldier HP = type 7).
-		_effective_max_hp = int(ceil(float(data.max_health) * GameState.get_upgrade_multiplier(GameState.MOD_SOLDIER_HEALTH)))
+		_effective_max_hp = int(ceil(float(data.max_health) * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_SOLDIER_HEALTH)))
 		current_health = _effective_max_hp
 		var circle := CircleShape2D.new()
 		circle.radius = data.melee_range

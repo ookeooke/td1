@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 # Enemy
 signal enemy_spawned(enemy, path_id)
@@ -66,7 +66,7 @@ signal hero_selected(hero_id)
 # reached. WorldMap badge + Toast listen. Equipping is still manual — the
 # player picks from Heroes → Skills.
 signal hero_skill_unlocked(hero_id, skill_id)
-# Fired by GameState.set_equipped_skill() when the loadout changes.
+# Fired by LoadoutState.set_equipped_skill() when the loadout changes.
 # SkillBar listens to rebuild the in-level slot cluster.
 signal hero_skill_equipped(hero_id, slot, skill_id)
 

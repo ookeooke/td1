@@ -1,4 +1,4 @@
-extends Control
+﻿extends Control
 
 # Phase 40: per-hero talent tree. Spend stars on passive abilities that
 # get pushed onto the hero at gameplay start. Mirrors UpgradeTree but
@@ -18,7 +18,7 @@ func _ready() -> void:
 	switch_button.pressed.connect(_on_switch_hero)
 	# Refresh when the active hero changes (e.g. HeroesHub Loadout-tab switch).
 	EventBus.hero_selected.connect(_select_hero)
-	_select_hero(GameState.selected_hero_id)
+	_select_hero(LoadoutState.selected_hero_id)
 
 
 func _on_back() -> void:
@@ -31,12 +31,12 @@ func _on_switch_hero() -> void:
 		return
 	var idx: int = 0
 	for i in heroes.size():
-		if heroes[i].hero_id == GameState.selected_hero_id:
+		if heroes[i].hero_id == LoadoutState.selected_hero_id:
 			idx = i
 			break
 	idx = (idx + 1) % heroes.size()
-	GameState.selected_hero_id = heroes[idx].hero_id
-	_select_hero(GameState.selected_hero_id)
+	LoadoutState.selected_hero_id = heroes[idx].hero_id
+	_select_hero(LoadoutState.selected_hero_id)
 
 
 func _select_hero(hero_id: String) -> void:
@@ -53,7 +53,7 @@ func _build_ui() -> void:
 		hero_label.text = "No hero"
 		return
 	hero_label.text = "%s Talents" % _hero_data.hero_name
-	stars_label.text = "★ %d available" % GameState.get_available_stars()
+	stars_label.text = "★ %d available" % MetaProgression.get_available_stars()
 	if not ("talents" in _hero_data) or _hero_data.talents.is_empty():
 		var empty := Label.new()
 		empty.text = "No talents available for this hero."
@@ -61,7 +61,7 @@ func _build_ui() -> void:
 		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		talent_list.add_child(empty)
 		return
-	var purchased: Array = GameState.hero_talents.get(_hero_data.hero_id, [])
+	var purchased: Array = MetaProgression.hero_talents.get(_hero_data.hero_id, [])
 	for talent in _hero_data.talents:
 		if talent == null:
 			continue
@@ -95,7 +95,7 @@ func _add_talent_panel(talent: Resource, purchased: Array) -> void:
 
 	var is_purchased: bool = talent.talent_id in purchased
 	var prereq_met: bool = talent.prerequisite_id == "" or talent.prerequisite_id in purchased
-	var can_afford: bool = GameState.get_available_stars() >= talent.star_cost
+	var can_afford: bool = MetaProgression.get_available_stars() >= talent.star_cost
 
 	var btn := Button.new()
 	btn.custom_minimum_size = Vector2(90, 50)
@@ -116,13 +116,13 @@ func _add_talent_panel(talent: Resource, purchased: Array) -> void:
 
 func _on_purchase(talent: Resource) -> void:
 	var hero_id: String = _hero_data.hero_id
-	if hero_id not in GameState.hero_talents:
-		GameState.hero_talents[hero_id] = []
-	if talent.talent_id in GameState.hero_talents[hero_id]:
+	if hero_id not in MetaProgression.hero_talents:
+		MetaProgression.hero_talents[hero_id] = []
+	if talent.talent_id in MetaProgression.hero_talents[hero_id]:
 		return
-	if GameState.get_available_stars() < talent.star_cost:
+	if MetaProgression.get_available_stars() < talent.star_cost:
 		return
-	GameState.hero_talents[hero_id].append(talent.talent_id)
+	MetaProgression.hero_talents[hero_id].append(talent.talent_id)
 	EventBus.skill_point_spent.emit(talent.talent_id)
 	SaveManager.save_game()
 	_build_ui()

@@ -1,4 +1,4 @@
-extends MarginContainer
+﻿extends MarginContainer
 
 # MarginContainer that automatically sets its margins to the display safe
 # area. Place as the root Control inside a CanvasLayer — all children are
@@ -14,7 +14,7 @@ func _ready() -> void:
 
 
 func _apply() -> void:
-	var insets: Vector4 = GameState.get_safe_insets()  # top, bottom, left, right
+	var insets: Vector4 = DisplayUtils.get_safe_insets()  # top, bottom, left, right
 	add_theme_constant_override("margin_top", int(insets.x))
 	add_theme_constant_override("margin_bottom", int(insets.y))
 	add_theme_constant_override("margin_left", int(insets.z))

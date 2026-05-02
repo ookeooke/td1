@@ -1,4 +1,4 @@
-extends CanvasLayer
+﻿extends CanvasLayer
 
 # In-game pause overlay. Resume / Restart / Quit to Map. Mirrors
 # GameOverScreen's CanvasLayer + dim + centered card pattern.
@@ -37,9 +37,9 @@ func _on_resume() -> void:
 func _on_restart() -> void:
 	get_tree().paused = false
 	WaveManager.stop()
-	GameState.reset_for_level()
-	EventBus.gold_changed.emit(GameState.gold)
-	EventBus.lives_changed.emit(GameState.lives)
+	RunState.reset_for_level()
+	EventBus.gold_changed.emit(RunState.gold)
+	EventBus.lives_changed.emit(RunState.lives)
 	SceneManager.goto("res://main/Main.tscn")
 
 

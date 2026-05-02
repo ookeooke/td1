@@ -1,7 +1,7 @@
-extends Node2D
+﻿extends Node2D
 
 # Gameplay scene. Spawns the hero dynamically from ContentRegistry +
-# GameState.selected_hero_id, then starts waves (campaign or endless).
+# LoadoutState.selected_hero_id, then starts waves (campaign or endless).
 
 const LEVEL1_WAVES: Resource = preload("res://levels/level1_waves.tres")
 const HERO_TEMPLATE: PackedScene = preload("res://heroes/HeroWarrior.tscn")
@@ -25,7 +25,7 @@ func _ready() -> void:
 
 	_spawn_hero()
 
-	if GameState.current_mode == "endless":
+	if RunState.current_mode == "endless":
 		WaveManager.start_endless(level)
 	else:
 		# Look up early_call_window for this level from level_list.tres so the
@@ -42,7 +42,7 @@ func _resolve_early_call_window() -> float:
 	# `.levels` resolves via the LevelList script attached to the resource.
 	var levels: Array = registry.levels
 	for entry in levels:
-		if entry is LevelNodeData and entry.level_id == GameState.current_level_id:
+		if entry is LevelNodeData and entry.level_id == RunState.current_level_id:
 			return entry.early_call_window_sec
 	return 10.0
 
@@ -58,11 +58,11 @@ func _process(delta: float) -> void:
 func _spawn_hero() -> void:
 	# Look up the selected hero data from ContentRegistry. Fall back to
 	# first registered hero if the ID isn't found.
-	var hero_data: Resource = ContentRegistry.find_hero(GameState.selected_hero_id)
+	var hero_data: Resource = ContentRegistry.find_hero(LoadoutState.selected_hero_id)
 	if hero_data == null and ContentRegistry.heroes.size() > 0:
 		hero_data = ContentRegistry.heroes[0]
 	if hero_data == null:
-		push_warning("[Main] no hero data found for '%s'" % GameState.selected_hero_id)
+		push_warning("[Main] no hero data found for '%s'" % LoadoutState.selected_hero_id)
 		return
 	# Phase 48 — first-boot: grant + auto-equip starter gear before the hero
 	# node reads InventoryManager.get_all_equipped in _ready. No-op if this
@@ -107,15 +107,15 @@ func _on_all_waves_completed() -> void:
 	_level_done = true
 	# Campaign only — endless doesn't end this way, so best-time is
 	# meaningless there (score/wave is tracked instead).
-	if GameState.current_mode == "campaign":
-		var is_new_best: bool = GameState.try_record_best_time(
-			GameState.current_level_id, _level_elapsed
+	if RunState.current_mode == "campaign":
+		var is_new_best: bool = MetaProgression.try_record_best_time(
+			RunState.current_level_id, _level_elapsed
 		)
 		if is_new_best:
-			print("[Main] new best time on %s: %.2fs" % [GameState.current_level_id, _level_elapsed])
+			print("[Main] new best time on %s: %.2fs" % [RunState.current_level_id, _level_elapsed])
 		else:
 			print("[Main] completed %s in %.2fs (prev best: %.2fs)" % [
-				GameState.current_level_id, _level_elapsed,
-				GameState.get_best_time(GameState.current_level_id),
+				RunState.current_level_id, _level_elapsed,
+				MetaProgression.get_best_time(RunState.current_level_id),
 			])
 	print("[Main] VICTORY — all waves cleared")

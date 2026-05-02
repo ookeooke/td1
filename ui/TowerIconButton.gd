@@ -1,4 +1,4 @@
-extends Control
+﻿extends Control
 
 # Phase 45a: radial slot button for TowerRadialMenu. Procedural _draw()
 # pictogram + cost badge + affordability state. Lives as a child of the
@@ -105,7 +105,7 @@ func set_equipped(on: bool) -> void:
 func refresh_affordability() -> void:
 	if _data == null:
 		return
-	_affordable = GameState.gold >= int(_data.cost)
+	_affordable = RunState.gold >= int(_data.cost)
 	queue_redraw()
 
 

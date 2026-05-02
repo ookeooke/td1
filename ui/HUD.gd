@@ -1,4 +1,4 @@
-extends CanvasLayer
+﻿extends CanvasLayer
 
 @onready var gold_label: Label = %GoldLabel
 @onready var lives_label: Label = %LivesLabel
@@ -33,8 +33,8 @@ func _ready() -> void:
 	pause_button.pressed.connect(func(): EventBus.pause_requested.emit())
 	speed_button.pressed.connect(_on_speed_pressed)
 	_refresh_speed_label()
-	_on_gold_changed(GameState.gold)
-	_on_lives_changed(GameState.lives)
+	_on_gold_changed(RunState.gold)
+	_on_lives_changed(RunState.lives)
 	_refresh_wave()
 	EventBus.gold_changed.connect(_on_gold_changed)
 	EventBus.lives_changed.connect(_on_lives_changed)
@@ -85,8 +85,8 @@ func _refresh_speed_label() -> void:
 
 func _refresh_wave() -> void:
 	var total: int = WaveManager.wave_count()
-	if total > 0 and GameState.wave_number > 0:
-		wave_label.text = "Wave: %d/%d" % [GameState.wave_number, total]
+	if total > 0 and RunState.wave_number > 0:
+		wave_label.text = "Wave: %d/%d" % [RunState.wave_number, total]
 	else:
 		wave_label.text = "Wave: --"
 

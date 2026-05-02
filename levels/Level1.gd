@@ -1,4 +1,4 @@
-@tool
+﻿@tool
 extends Node2D
 
 # Level1: first campaign map.
@@ -93,7 +93,7 @@ func _print_hardness_readout() -> void:
 	var bc: GDScript = load("res://balance/BalanceCalculator.gd")
 	if bc == null:
 		return
-	var b: Dictionary = bc.score_level_breakdown(wl, GameState.STARTING_GOLD)
+	var b: Dictionary = bc.score_level_breakdown(wl, RunState.STARTING_GOLD)
 	var per: String = ""
 	var pw: Array = b.per_wave
 	var pg: Array = b.per_wave_gold
@@ -173,7 +173,7 @@ func _print_hardness_readout() -> void:
 	var ld: LevelNodeData = _find_level_data("level_1")
 	if ld == null:
 		return
-	var rep: Dictionary = bc.level_pressure_report(wl, ld, GameState.STARTING_GOLD)
+	var rep: Dictionary = bc.level_pressure_report(wl, ld, RunState.STARTING_GOLD)
 	var pressure_line: String = ""
 	for entry in rep.per_wave:
 		pressure_line += "  W%d g=%d/%d p=%.2f/%.2f" % [

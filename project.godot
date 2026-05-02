@@ -18,7 +18,10 @@ config/icon="res://icon.svg"
 [autoload]
 
 EventBus="*res://autoloads/EventBus.gd"
-GameState="*res://autoloads/GameState.gd"
+DisplayUtils="*res://autoloads/DisplayUtils.gd"
+MetaProgression="*res://autoloads/MetaProgression.gd"
+RunState="*res://autoloads/RunState.gd"
+LoadoutState="*res://autoloads/LoadoutState.gd"
 WaveManager="*res://autoloads/WaveManager.gd"
 DamageCalculator="*res://autoloads/DamageCalculator.gd"
 InventoryManager="*res://autoloads/InventoryManager.gd"

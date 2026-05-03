@@ -2,10 +2,13 @@
 
 # World Map — level select screen. Shows one panel per level with name,
 # stars earned, and locked/unlocked state. Tap unlocked → gameplay.
-# Data-driven via `levels: Array[LevelNodeData]` set in the .tscn.
+# Data-driven via res://ui/world_map/level_list.tres loaded at runtime —
+# same source the audit screen, slider panel, and Main.gd's wave resolver
+# read from. Edit level_list.tres to add/remove levels; no .tscn edit needed.
 # Stars + unlock state read from MetaProgression (populated by SaveManager later).
 
-@export var levels: Array[Resource] = []
+# Populated in _ready() from level_list.tres. Iterated by _build_level_entries.
+var _levels: Array[Resource] = []
 
 # Wave path lookup retired 2026-05-03 — wave_list_path is now a first-class
 # field on LevelNodeData (used by the audit screen, slider panel, and
@@ -52,7 +55,20 @@ func _ready() -> void:
 	_refresh_stars_label()
 	_refresh_meta_gold_label()
 	_refresh_heroes_button_dot()
+	_load_levels()
 	_build_level_entries()
+
+
+# Reads res://ui/world_map/level_list.tres at runtime. Same pattern used by
+# BalanceSliders and LevelAudit — single source of truth for level data, so
+# adding a level is one edit to level_list.tres.
+func _load_levels() -> void:
+	var registry: Resource = load("res://ui/world_map/level_list.tres")
+	if registry == null or not ("levels" in registry):
+		push_warning("[WorldMap] level_list.tres failed to load or has no `levels` field")
+		_levels = []
+		return
+	_levels = registry.levels
 
 
 func _refresh_stars_label() -> void:
@@ -168,7 +184,7 @@ func _on_level_audit() -> void:
 func _build_level_entries() -> void:
 	for child in level_list_container.get_children():
 		child.queue_free()
-	for data in levels:
+	for data in _levels:
 		if data == null:
 			continue
 		var panel: PanelContainer = _make_level_panel(data)

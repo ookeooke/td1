@@ -2242,3 +2242,34 @@ Retired the hardcoded `_LEVEL_WAVES` dictionary that mapped level_id → wave pa
 - Wave count differs from L1 (3 vs 5 waves), so per-wave shares arrays in `level_list.tres` are length 3 for the new levels — `BalanceCalculator._normalized_shares` handles wave-count mismatch gracefully.
 - Enemy counts are eyeballed, not solver-tuned. Actual hardness scores will reveal in the audit on first open; iterate via the slider panel.
 - `levels_unlocked` default still `{level_1: true}` — debug-build auto-unlock-all not added (would be ~4 lines in MetaProgression._ready); skipped to avoid touching save logic.
+
+---
+
+## 2026-05-03 — WorldMap level rendering fix + S₁ recalibration
+
+User opened WorldMap after the PPT/Slider/Audit ship and saw two bugs: only L1 visible (not the 3 test stubs), and L1 hardness reading 14878 instead of BALANCE.md's 6,530. Both real, both small.
+
+### Bug 1 — only L1 on WorldMap
+
+Two disconnected sources of truth: `WorldMap.tscn` had `Level1_Data` baked as an inline `[sub_resource]` and the WorldMap node assigned `levels = Array[Resource]([SubResource("Level1_Data")])`. The script's `@export var levels` was populated FROM the .tscn, not from `level_list.tres`. Audit / Sliders / Main.gd all read level_list.tres correctly; only WorldMap was disconnected.
+
+Fix: dropped both the `Level1_Data` sub_resource block and the `levels = ...` assignment from the .tscn. Replaced `@export var levels` with a script-local `var _levels: Array[Resource]` populated by a new `_load_levels()` helper that mirrors the pattern in `BalanceSliders.gd::_load_levels` and `LevelAudit.gd::_refresh`. `_build_level_entries()` iterates `_levels`. WorldMap now shows all 4 cards (L1 unlocked, L2/L3/L4 locked). Single source of truth.
+
+### Bug 2 — hardness 14878 vs BALANCE.md's 6,530
+
+`git log -- enemies/data/` revealed commit f226988 (2026-04-30) substantially rebalanced enemy stats AFTER the 2026-04-28 baseline was measured: basic 0→18 HP (was using EnemyData default), armored 20→35 HP / armor 0.3→0.45, flying 8→14 HP, healer 18→30 HP, scout 6→10 HP, boss 200→320 HP / armor 0.3→0.45. Hardness scaled ~2.28× across L1.
+
+Recalibrated `PPT_TO_HARDNESS_FACTOR` from 3,000 → 7,500 (= 14,878 / 2 rounded). L1 (target_ppt=2) now reads ~-1% drift on the audit screen. Updated BALANCE.md "Current measured values" with the new baseline + a note that the historical table is preserved for comparison only.
+
+Side effect: L2/L3/L4 test stubs were authored against the old 3,000 factor, so they read under-tuned (red drift) on the audit. Documented in BALANCE.md as a worked example of "your stubs need a retune after a stat change." User retunes via Sliders panel as needed. Did NOT rebalance the stub wave files to chase the new factor.
+
+### What broke
+
+- IDE diagnostic flagged "levels not declared" briefly between edits — stale, resolved on next read.
+- IDE diagnostic flagged "_levels declared but never used" briefly — same cause.
+
+### Next
+
+- Strategic question deferred from the original conversation: keep stubs vs. author real L2 vs. full L2/L3/L4 content slice. User picks once they see the cleaned-up WorldMap.
+- Long-term: a CI test that compares `BalanceCalculator.score_level(level1_waves)` against a checked-in expected value, fails if drift > 5%. Would have caught f226988's impact at PR time.
+- WorldMap unlock state for stubs still defaults to locked. Slider panel "Play this level" bypasses unlock check.

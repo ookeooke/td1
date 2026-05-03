@@ -20,11 +20,17 @@ const W_SPEED: float = 0.02  # 2.0 / 100.0 — speed 140 contributes 2.8
 
 # Player Power Tier conversion — see balance/BALANCE.md "PPT". Each PPT
 # point a level is balanced for is worth this much in raw hardness score.
-# Calibration: L1 was authored at S₁ ≈ 6,530 with target_ppt = 2; the
-# constant comes out to ~3,265 to make drift ≈ 0% on the baseline. Round
-# to 3,000 for design-intent simplicity — actual L1 reads as slight under-
-# tune (~9% below target), which is the intended early-game gentleness.
-const PPT_TO_HARDNESS_FACTOR: float = 3000.0
+#
+# Recalibration history:
+#   2026-05-03  L1 measured at ~14,878 (audit screen, post enemy-stat
+#               rebalance commit f226988 on 2026-04-30). Factor bumped
+#               to 7,500 → L1 (target_ppt=2) drift ≈ -1% ✓ green.
+#   (initial)   3,000.0, calibrated against the stale 2026-04-28 baseline
+#               of 6,530 before the enemy HP/armor bump landed.
+#
+# When enemy stats move materially, re-measure L1 in the audit and update
+# this constant. Don't rebalance L1's wave file to chase the constant.
+const PPT_TO_HARDNESS_FACTOR: float = 7500.0
 
 # PackedScene → EnemyData lookup cache. Avoids re-instantiating the scene
 # on every score call; a 5-wave level resolves the same handful of scenes

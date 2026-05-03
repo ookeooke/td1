@@ -185,7 +185,11 @@ When authoring a new tower / hero / skill / item / upgrade:
 
 ## Current measured values (Phase 48, Level 1 baseline)
 
-**S₁ baseline ≈ 6,530** (post-tune 2026-04-28; was 7,411 before W5 was lightened). Use this as the multiplier base for future levels — printed live by Level1.gd's hardness readout, so re-read after every wave-data change.
+**S₁ baseline ≈ 14,878** (audit screen, 2026-05-03). The earlier post-tune number of 6,530 (2026-04-28) is stale — commit f226988 on 2026-04-30 substantially raised every enemy's HP and armor (basic 0→18 HP, armored 20→35 HP, armor 0.3→0.45, flying 8→14 HP, healer 18→30 HP, scout 6→10 HP, boss 200→320 HP / armor 0.3→0.45). Hardness scaled ~2.28× across the level.
+
+Recalibrated `PPT_TO_HARDNESS_FACTOR` from 3,000 → 7,500 so L1 (target_ppt=2) reads ~-1% drift on the audit. **Test stub levels L2/L3/L4 were authored against the old 3,000 factor**, so they currently read under-tuned (red drift) on the audit; that's expected and serves as a worked example of "your stubs need a retune pass after a stat change." Use the Sliders panel to refind right enemy counts.
+
+Below table preserved for historical comparison; numbers are the pre-2026-04-30 state, NOT current.
 
 ### Per-tower g/DPS (read directly from `towers/data/*.tres`)
 

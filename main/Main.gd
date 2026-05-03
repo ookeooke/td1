@@ -38,16 +38,10 @@ func _ready() -> void:
 
 
 # Find the LevelNodeData matching RunState.current_level_id. Returns null
-# if the registry can't be loaded (e.g. early-boot edge case).
+# if no entry matches. Routed through ContentRegistry — single source of
+# truth, future-proof against per-world file splits.
 func _resolve_level_entry() -> Resource:
-	var registry: Resource = load("res://ui/world_map/level_list.tres")
-	if registry == null:
-		return null
-	var levels: Array = registry.levels
-	for entry in levels:
-		if entry is LevelNodeData and entry.level_id == RunState.current_level_id:
-			return entry
-	return null
+	return ContentRegistry.find_level(RunState.current_level_id)
 
 
 # Load the wave_list resource for the current level. Falls back to L1's

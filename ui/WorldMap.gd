@@ -59,16 +59,10 @@ func _ready() -> void:
 	_build_level_entries()
 
 
-# Reads res://ui/world_map/level_list.tres at runtime. Same pattern used by
-# BalanceSliders and LevelAudit — single source of truth for level data, so
-# adding a level is one edit to level_list.tres.
+# Single source of truth: ContentRegistry.levels (loaded at boot from
+# level_list.tres). Adding a level is one .tres edit, no consumer changes.
 func _load_levels() -> void:
-	var registry: Resource = load("res://ui/world_map/level_list.tres")
-	if registry == null or not ("levels" in registry):
-		push_warning("[WorldMap] level_list.tres failed to load or has no `levels` field")
-		_levels = []
-		return
-	_levels = registry.levels
+	_levels = ContentRegistry.levels
 
 
 func _refresh_stars_label() -> void:
@@ -360,15 +354,12 @@ func _format_hardness(level_id: String) -> String:
 	return "%d" % int(bc.score_level(wl, RunState.STARTING_GOLD))
 
 
-# Resolves a level_id to its wave_list_path via level_list.tres. Returns
-# "" if the registry can't be loaded or the entry has no wave_list_path.
+# Resolves a level_id to its wave_list_path via ContentRegistry.
+# Returns "" if no entry matches or the entry has no wave_list_path.
 func _wave_path_for(level_id: String) -> String:
-	var registry: Resource = load("res://ui/world_map/level_list.tres")
-	if registry == null or not ("levels" in registry):
+	var entry: Resource = ContentRegistry.find_level(level_id)
+	if entry == null:
 		return ""
-	for entry in registry.levels:
-		if entry is LevelNodeData and entry.level_id == level_id:
-			return entry.wave_list_path
-	return ""
+	return entry.wave_list_path
 
 

@@ -2,10 +2,13 @@ extends Resource
 class_name LevelList
 
 # Container for the campaign's per-level metadata. Single .tres file
-# (level_list.tres) holds an Array[LevelNodeData] with one entry per
-# campaign level. Loaded by Main.gd (early-call window lookup) and
-# Level<N>.gd (drift/pressure readout). Kept as a typed Resource so
-# `.levels` is accessible via direct property access (a script_class=
-# "Resource" with no script attached drops unknown properties on load).
+# (level_list.tres) holds an Array of LevelNodeData with one entry per
+# campaign level. Loaded by ContentRegistry at boot; consumers iterate
+# `ContentRegistry.levels` or call `ContentRegistry.find_level(id)`.
+#
+# Type is Array[Resource] (not Array[LevelNodeData]) to match the rest of
+# ContentRegistry's catalog convention — Godot 4 typed arrays are invariant,
+# so consumers can't downcast Array[LevelNodeData] → Array[Resource]. Element
+# type is enforced at runtime by ContentRegistry._validate_ids.
 
-@export var levels: Array[LevelNodeData] = []
+@export var levels: Array[Resource] = []

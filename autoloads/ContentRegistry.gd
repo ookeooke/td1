@@ -83,6 +83,14 @@ var upgrades: Array[Resource] = []  # populated by UpgradeTree scene (inline sub
 var item_bases: Array[Resource] = []
 var affixes: Array[Resource] = []
 var affix_pools: Array[Resource] = []
+# Phase 49 — campaign levels. Loaded from level_list.tres (a LevelList
+# wrapper holding Array[Resource] of LevelNodeData). Single source of
+# truth for WorldMap, BalanceSliders, LevelAudit, and Main.gd. Future
+# multi-world support: extend _load_levels to concatenate per-world files;
+# consumers don't change.
+var levels: Array[Resource] = []
+
+const _LEVEL_LIST_PATH: String = "res://ui/world_map/level_list.tres"
 
 
 func _ready() -> void:
@@ -92,11 +100,32 @@ func _ready() -> void:
 	item_bases = _load_catalog(_ITEM_BASE_PATHS, "item_bases")
 	affixes = _load_catalog(_AFFIX_PATHS, "affixes")
 	affix_pools = _load_catalog(_AFFIX_POOL_PATHS, "affix_pools")
-	print("[ContentRegistry] loaded — %d enemies, %d towers, %d heroes, %d item_bases, %d affixes, %d pools" % [
+	levels = _load_levels()
+	print("[ContentRegistry] loaded — %d enemies, %d towers, %d heroes, %d item_bases, %d affixes, %d pools, %d levels" % [
 		enemies.size(), towers.size(), heroes.size(),
-		item_bases.size(), affixes.size(), affix_pools.size(),
+		item_bases.size(), affixes.size(), affix_pools.size(), levels.size(),
 	])
 	_validate_ids()
+
+
+# Levels live inside level_list.tres as a LevelList wrapper resource; we
+# unwrap the container and store the inner array. Future: extend to
+# concatenate multiple per-world files into one flat catalog.
+func _load_levels() -> Array[Resource]:
+	var out: Array[Resource] = []
+	var registry: Resource = load(_LEVEL_LIST_PATH)
+	if registry == null:
+		push_error("[ContentRegistry] failed to load levels: %s" % _LEVEL_LIST_PATH)
+		return out
+	if not ("levels" in registry):
+		push_error("[ContentRegistry] %s has no `levels` field" % _LEVEL_LIST_PATH)
+		return out
+	# Iterate element-wise into a fresh Array[Resource] so we don't pin to
+	# whatever container type LevelList's @export currently uses.
+	for entry in registry.levels:
+		if entry != null:
+			out.append(entry)
+	return out
 
 
 # Loads each path, drops nulls with an error. Missing files are fatal-visible
@@ -125,6 +154,28 @@ func _validate_ids() -> void:
 	_assert_ids(item_bases, "base_id")
 	_assert_ids(affixes, "affix_id")
 	_assert_ids(affix_pools, "pool_id")
+	_assert_level_ids()
+
+
+# Levels are sub_resources inside level_list.tres (not standalone files), so
+# the filename-matches-id rule from _assert_ids doesn't apply. Instead check
+# that every entry has a non-empty level_id and that ids are unique across
+# the catalog — id collisions would silently break find_level / save state.
+func _assert_level_ids() -> void:
+	var seen: Dictionary = {}
+	for r in levels:
+		if r == null:
+			continue
+		if not ("level_id" in r):
+			print("[ContentRegistry/DRIFT] level entry has no level_id field")
+			continue
+		var id: String = r.level_id
+		if id == "":
+			print("[ContentRegistry/DRIFT] level entry has empty level_id")
+			continue
+		if seen.has(id):
+			print("[ContentRegistry/DRIFT] duplicate level_id \"%s\"" % id)
+		seen[id] = true
 
 
 func _assert_ids(arr: Array, field: String) -> void:
@@ -183,4 +234,11 @@ func find_affix_pool(id: String) -> Resource:
 	for p in affix_pools:
 		if p != null and "pool_id" in p and p.pool_id == id:
 			return p
+	return null
+
+
+func find_level(id: String) -> Resource:
+	for lvl in levels:
+		if lvl != null and "level_id" in lvl and lvl.level_id == id:
+			return lvl
 	return null

@@ -2273,3 +2273,50 @@ Side effect: L2/L3/L4 test stubs were authored against the old 3,000 factor, so 
 - Strategic question deferred from the original conversation: keep stubs vs. author real L2 vs. full L2/L3/L4 content slice. User picks once they see the cleaned-up WorldMap.
 - Long-term: a CI test that compares `BalanceCalculator.score_level(level1_waves)` against a checked-in expected value, fails if drift > 5%. Would have caught f226988's impact at PR time.
 - WorldMap unlock state for stubs still defaults to locked. Slider panel "Play this level" bypasses unlock check.
+
+---
+
+## 2026-05-03 — Level lookups centralized through ContentRegistry
+
+User pointed at a real architectural failure on top of the WorldMap rendering bug fix: four separate places (`WorldMap.gd::_load_levels`, `BalanceSliders.gd::_load_levels`, `LevelAudit.gd::_refresh`, `Main.gd::_resolve_level_entry`) each independently called `load("res://ui/world_map/level_list.tres")` with three different type annotations. One of those — `Array[Resource]` in WorldMap — tripped Godot 4's typed-array invariance against `LevelList.levels: Array[LevelNodeData]`, throwing `_load_levels: Trying to assign an array of type "Array[LevelNodeData]" to a variable of type "Array[Resource]"` at runtime on the very first WorldMap load.
+
+User's feedback: "you understand right there will be many many levels etc. Structure needs to be highly flexible." Translation: don't patch the type annotation — fix the duplication.
+
+### Architectural fix
+
+Levels join the existing `ContentRegistry` pattern alongside heroes / towers / items / affixes:
+
+- `ContentRegistry.levels: Array[Resource]` populated at boot via new `_load_levels()` helper that unwraps `level_list.tres`'s LevelList wrapper into a flat array.
+- `ContentRegistry.find_level(id) -> Resource` — mirrors `find_tower` / `find_hero` etc.
+- `_validate_ids` extended with `_assert_level_ids` — checks every entry has non-empty `level_id` and that ids are unique. Skips the filename-matches-id rule (level entries are sub_resources inside `level_list.tres`, not standalone files).
+- Boot log now reports `…, %d levels` so loaded count is visible.
+
+`LevelList.gd::levels` relaxed from `Array[LevelNodeData]` to `Array[Resource]` to match ContentRegistry's catalog convention. Type tag drift is the cost; avoiding Godot's typed-array invariance gotcha is the gain. Element-type validation moved to `ContentRegistry._assert_level_ids`.
+
+### Consumer changes
+
+All four duplicate loads replaced with `ContentRegistry.levels` / `find_level`:
+
+- `WorldMap.gd::_load_levels` → 1 line: `_levels = ContentRegistry.levels`
+- `WorldMap.gd::_wave_path_for` → uses `find_level(level_id).wave_list_path`
+- `BalanceSliders.gd::_load_levels` → 1 line for the assignment
+- `LevelAudit.gd::_refresh` → 1 line for the assignment
+- `Main.gd::_resolve_level_entry` → collapsed to `return ContentRegistry.find_level(RunState.current_level_id)` (lost the manual iteration entirely)
+
+Future: per-world file split (forest_levels.tres + desert_levels.tres + …) only changes `ContentRegistry._load_levels` to concatenate. Consumers don't move.
+
+### What broke
+
+- IDE flagged a pre-existing `var snapped: int` shadowing the built-in `snapped()` function in `BalanceSliders._on_ppt_changed`. Renamed to `ppt_int`. CLAUDE.md "GDScript Conventions" already calls this class out — predictable miss on first author.
+
+### Process accountability (per the post-mortem the user asked for)
+
+The original `Array[Resource]` type bug shipped because:
+
+1. Copied the old `@export var levels: Array[Resource]` annotation when refactoring to runtime-loaded, without questioning whether the new source produced the same array type.
+2. Plan claimed to "mirror BalanceSliders.gd::_load_levels" but actual code didn't — siblings used untyped `Array`, my refactor used `Array[Resource]`.
+3. Trusted IDE diagnostics to catch errors that are runtime-only in Godot 4.
+4. Skipped the editor smoke-test before committing. CLAUDE.md says explicitly to test UI changes in the running game; ignored.
+5. Three sibling implementations existed with differing type annotations — should have been caught on review.
+
+Saved a feedback memory: when fixing duplicated content-load patterns, route through ContentRegistry instead of patching one site.

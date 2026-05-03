@@ -25,13 +25,9 @@ func _on_back() -> void:
 func _refresh() -> void:
 	for c in content_vbox.get_children():
 		c.queue_free()
-	var list_res: Resource = load("res://ui/world_map/level_list.tres")
-	if list_res == null or not ("levels" in list_res):
-		_add_section("No level_list.tres found")
-		return
-	var levels: Array = list_res.levels
+	var levels: Array = ContentRegistry.levels
 	if levels.is_empty():
-		_add_section("level_list.tres has no levels")
+		_add_section("ContentRegistry has no levels (check level_list.tres)")
 		return
 	_render_legend()
 	_render_levels_table(levels)

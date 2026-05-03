@@ -47,12 +47,11 @@ func _ready() -> void:
 
 
 func _load_levels() -> void:
-	var list_res: Resource = load("res://ui/world_map/level_list.tres")
-	if list_res == null or not ("levels" in list_res):
+	_levels = ContentRegistry.levels
+	if _levels.is_empty():
 		level_picker.add_item("(no levels)")
 		level_picker.disabled = true
 		return
-	_levels = list_res.levels
 	for lvl in _levels:
 		if lvl == null:
 			continue
@@ -119,8 +118,8 @@ func _on_gold_changed(v: float) -> void:
 
 func _on_ppt_changed(v: float) -> void:
 	# -1 = auto (use loadout PPT), >=1 = forced override
-	var snapped: int = int(round(v))
-	BalanceOverrides.set_value("ppt_override", snapped)
+	var ppt_int: int = int(round(v))
+	BalanceOverrides.set_value("ppt_override", ppt_int)
 	_update_value_labels()
 	_refresh_readout()
 

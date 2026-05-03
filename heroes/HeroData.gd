@@ -7,6 +7,11 @@ class_name HeroData
 @export var hero_name: String = "Hero"
 @export var hero_id: String = ""
 @export var requires_unlock: bool = false
+# Player Power Tier — see balance/BALANCE.md "Player Power Tier (PPT)".
+# 1 = baseline starter (warrior); 5 = legendary endgame hero. Summed by
+# LoadoutState.get_effective_ppt() to compute what the player loadout is
+# worth, which the balance audit compares against per-level target_ppt.
+@export_range(1, 10) var power_tier: int = 1
 
 @export var max_health: int = 100
 @export var attack_damage: float = 10.0

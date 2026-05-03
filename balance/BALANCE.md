@@ -35,6 +35,154 @@ Plus enemy-side:
 
 ---
 
+## Design intent — leaderboards reframe balance
+
+Online leaderboards per level are a planned feature. This changes what "balanced" means and which failure modes matter. Read this before tuning any number that affects player power.
+
+### The reframe
+
+Without leaderboards, balance means "every loadout clears every level at roughly the same difficulty." With leaderboards, balance means "many distinct loadouts can compete at the top." These are different goals, and the second is easier.
+
+- **Slightly over-tuned gear is intentional, not a bug.** The metagame *is* finding strong combos. Players grind for "broken" builds; that's the loop.
+- **Narrowness is the failure mode, not power.** If one combo dominates >60% of top-100 slots on any ladder, the meta has collapsed. If 20+ distinct combos can crack the top-100, the design is healthy *even if* each one is technically strong.
+- **Score discrimination is the new tuning metric.** The question stops being "can a Naked Baseline player clear L3?" (still required — see Naked Baseline invariant) and adds "does a PPT-5 loadout meaningfully out-score a PPT-3 loadout on L3?" If higher gear → higher score, gear matters. If not, the level is gear-irrelevant and ladder-dead.
+
+### Top-combo dominance bands
+
+| State | Top-combo share of top-100 | Action |
+|---|---|---|
+| Healthy | <40% | Ship — diverse meta, many viable builds |
+| Acceptable | 40–60% | One strong meta + counters; tolerable |
+| Stale | 60–80% | Meta collapsed; needs rebalance patch |
+| Broken | >80% | Ladder dead; emergency patch |
+
+Measurable from leaderboard data once shipped. Until then, slider-panel multi-build playtesting is the proxy.
+
+### Multi-ladder design
+
+Don't ship one leaderboard per level. Ship 4–5 ladders against the same play data — dramatic replayability win for ~one extra column on the leaderboard table:
+
+- **Overall** — highest raw score
+- **Naked Baseline** — PPT ≤ `min_ppt + 1` only (PoE SSF / Diablo HC pattern; fanatic following)
+- **Iron** — single-life mode only
+- **Speed** — fastest clear time
+- **Per hero** — best score per `hero_id`
+
+The genius move is multiple bonuses with different optimization paths: glass-cannon Mage maxes time + combo bonus, tanky low-PPT warrior maxes lives + low-PPT bonus, Iron-mode runner maxes difficulty mult. Same level, three top-100 builds — that's a healthy ladder.
+
+### Score formula sketch (not implemented yet)
+
+```
+score = base_clear_bonus
+      + time_bonus           // faster clear = more (rewards execution)
+      + lives_bonus          // fewer leaks = more (rewards consistency)
+      + combo_bonus          // multi-kills / perfect blocks (rewards skill)
+      + difficulty_mult      // Heroic ×1.5, Iron ×2.0 (rewards opt-in challenge)
+      + low_ppt_bonus        // PPT-bracketed bonus (rewards naked / low-gear runs)
+```
+
+Each bonus optimized by a different build → diverse meta naturally. Author score events now with this shape in mind to avoid retrofits later.
+
+### Power creep budget
+
+Leaderboards die when patches invalidate old scores. Two industry patterns:
+
+- **Seasonal reset** (Diablo / PoE) — wipe leaderboards every N months, fresh meta. Aligns with future live-IAP / events work; content commitment.
+- **Version-tagged scores** — record `game_version` on each entry, separate boards per major version. Cheap, less dramatic. **Recommended for solo dev.**
+
+Either way, every leaderboard entry must record the game version it was set under. Without that, a buff to one tower silently invalidates every prior score on every level it appears in.
+
+### What this means for the rest of this document
+
+- **Naked Baseline (§ Invariants below) becomes more important, not less** — it's the floor for the low-PPT challenge ladder, a real player demographic.
+- **Per-tower g/DPS bands (§ Target curves) tolerate more spread** — slight overshoots are acceptable if they enable a build niche, not just raw efficiency.
+- **The PPT framework** (next section) doubles as the axis players climb on, not only the designer's tuning aid.
+
+---
+
+## Player Power Tier (PPT)
+
+The single scalar that summarizes a player loadout's strength, used by the audit + slider tooling and (future) leaderboards. **Read this before tuning any level's enemy mix or any content's `power_tier` field.**
+
+### Why one scalar
+
+You can't balance combinations. With ~10 heroes × N skills × hundreds of gear × tower picks × mode multipliers, the combination space is in the millions. Diablo and Path of Exile solve this by collapsing player power into a single number: PoE has `monster_level` vs `character_level`; we have `target_ppt` vs `effective_ppt`. Levels are authored against PPT bands, not specific loadouts.
+
+### How content contributes
+
+Every authored asset has a `power_tier` field (1–10):
+
+| Resource | Field | Default | Notes |
+|---|---|---|---|
+| `HeroData.power_tier` | int 1–10 | 1 | 1 = warrior, 5 = legendary hero |
+| `SkillData.power_tier` | int 1–10 | 1 | 1 = basic ability, 5 = ult |
+| `ItemBase.power_tier` | int 0–10 | 0 (derive from rarity) | 0 → COMMON=1, MAGIC=2, RARE=3, EPIC=4, LEGENDARY=5 via `resolve_power_tier()` |
+| `UpgradeData.power_tier` | int 0–10 | 1 | per-upgrade contribution |
+| `TowerData.power_tier` | int 1–10 | 1 | loadout-pick PPT only; upgrade tiers not factored here |
+
+### Effective player PPT formula
+
+`LoadoutState.get_effective_ppt()` returns:
+
+```
+total = hero.power_tier        × 0.40
+      + avg(equipped_skills)   × 0.20
+      + avg(equipped_items)    × 0.30
+      + avg(loadout_towers)    × 0.10
+      + min(1.0, talent_count   × 0.10)   // capped bonus
+      + min(1.0, upgrade_count  × 0.10)   // capped bonus
+```
+
+Hero+gear bias is intentional — those move the most across a campaign. Towers contribute only 10% because they're a *pick* (everyone has access from level 1), not a power upgrade. Bonus contributions cap at +1.0 each so grinding upgrades can't inflate PPT past the design ceiling.
+
+**Calibration:** Naked Baseline (warrior, default skills, starter gear, no talents/upgrades, default 4 towers) computes to ~1.0. A mid-campaign loadout with rare gear + some talents trends 2–4. Endgame trends 5+. Numbers drift slightly with content; treat the formula coefficients as design knobs, document changes in SESSIONS.md.
+
+### Per-level PPT band
+
+Each `LevelNodeData` carries:
+
+- `min_ppt` — Naked Baseline floor (one-star achievable at this PPT or above)
+- `target_ppt` — designed-for sweet spot the audit screen compares hardness against
+
+### Audit drift formula
+
+```
+expected_hardness = target_ppt × PPT_TO_HARDNESS_FACTOR    // = 3000.0
+actual_hardness   = score_level(wave_list)
+drift_pct         = (actual - expected) / expected × 100
+```
+
+`PPT_TO_HARDNESS_FACTOR = 3000.0` is calibrated so L1 (target_ppt=2, actual hardness ≈ 6,530) lands at slight under-tune (~9% below target) — intended early-game gentleness. Re-calibrate the constant if Naked Baseline math shifts substantially; **do not** rebalance L1 to fit the constant.
+
+### PPT-banded target curve
+
+| Level | Target PPT | Implied target hardness | BALANCE.md prior multiplier |
+|---|---|---|---|
+| Level 1 | 2 | 6,000 | 1.00× S₁ ≈ 6,530 ✓ |
+| Level 2 | 3 | 9,000 | 1.30× ≈ 8,500 (slight overshoot — fine, keeps level interesting) |
+| Level 3 | 4 | 12,000 | 1.65× ≈ 10,800 |
+| Level 4 | 5 | 15,000 | 2.10× ≈ 13,700 |
+| Level 5 | 6 | 18,000 | 2.70× ≈ 17,600 |
+
+The PPT-banded curve is the canonical target going forward; the legacy multiplier-based curve lower in this doc is preserved for historical reference but defer to PPT.
+
+### Adding new content — PPT checklist
+
+When authoring a new tower / hero / skill / item / upgrade:
+
+1. Set `power_tier` on the new `.tres`. Match it to similar-feel content already authored (don't invent values).
+2. Open the audit screen — note which levels' drift changed (> ±5% shift = real impact).
+3. If a level fell out of band, retune that level (not the new content) unless the new content is genuinely overpowered for its rarity tier.
+4. Update [BALANCE.md](BALANCE.md) tower table if the new content is a tower.
+
+### Limits of the abstraction
+
+- **PPT is approximate, not exact.** A Mage build at PPT 4 doesn't play identically to a Knight build at PPT 4. PoE lives with this; so will we.
+- **PPT ignores synergies.** Combo X + Y might be worth 2× the sum of their tiers. The audit can't see this — only telemetry can. Flag combos that win >60% of any leaderboard for individual review.
+- **PPT is loadout-snapshot.** A player's PPT changes mid-run as they buy towers + level the hero. Audit is pre-level only; in-run scaling isn't tracked.
+
+---
+
 ## Current measured values (Phase 48, Level 1 baseline)
 
 **S₁ baseline ≈ 6,530** (post-tune 2026-04-28; was 7,411 before W5 was lightened). Use this as the multiplier base for future levels — printed live by Level1.gd's hardness readout, so re-read after every wave-data change.

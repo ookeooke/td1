@@ -28,23 +28,39 @@ func _ready() -> void:
 	if RunState.current_mode == "endless":
 		WaveManager.start_endless(level)
 	else:
-		# Look up early_call_window for this level from level_list.tres so the
-		# Send-Wave button is bounded per the level's authored design.
-		WaveManager.start(LEVEL1_WAVES, level, _resolve_early_call_window())
+		# Look up wave_list_path AND early_call_window for this level from
+		# level_list.tres so the Send-Wave button is bounded per the level's
+		# authored design and the right waves play.
+		var entry: Resource = _resolve_level_entry()
+		var wave_list: Resource = _resolve_wave_list(entry)
+		var early_call: float = entry.early_call_window_sec if entry != null else 10.0
+		WaveManager.start(wave_list, level, early_call)
 
 
-# Read early_call_window_sec from the LevelNodeData matching current_level_id.
-# Falls back to 10s default if the registry / level can't be found.
-func _resolve_early_call_window() -> float:
+# Find the LevelNodeData matching RunState.current_level_id. Returns null
+# if the registry can't be loaded (e.g. early-boot edge case).
+func _resolve_level_entry() -> Resource:
 	var registry: Resource = load("res://ui/world_map/level_list.tres")
 	if registry == null:
-		return 10.0
-	# `.levels` resolves via the LevelList script attached to the resource.
+		return null
 	var levels: Array = registry.levels
 	for entry in levels:
 		if entry is LevelNodeData and entry.level_id == RunState.current_level_id:
-			return entry.early_call_window_sec
-	return 10.0
+			return entry
+	return null
+
+
+# Load the wave_list resource for the current level. Falls back to L1's
+# baked-in waves if the entry has no wave_list_path or the load fails —
+# keeps existing behavior unchanged when LevelNodeData is partially authored.
+func _resolve_wave_list(entry: Resource) -> Resource:
+	if entry == null or entry.wave_list_path == "":
+		return LEVEL1_WAVES
+	var loaded: Resource = load(entry.wave_list_path)
+	if loaded == null:
+		push_warning("[Main] wave_list_path %s failed to load — falling back to L1" % entry.wave_list_path)
+		return LEVEL1_WAVES
+	return loaded
 
 
 func _process(delta: float) -> void:

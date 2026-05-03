@@ -31,3 +31,11 @@ class_name LevelNodeData
 # Send-Wave button visible only in the last N seconds of countdown.
 # Caps the early-call gold bonus per wave at this value.
 @export var early_call_window_sec: float = 10.0
+
+# Player Power Tier band — see balance/BALANCE.md "Player Power Tier (PPT)".
+# `min_ppt` is the Naked Baseline floor (one-star achievable at this PPT or
+# above). `target_ppt` is the designed-for sweet spot — the audit screen
+# compares actual hardness against `target_ppt × PPT_TO_HARDNESS_FACTOR` and
+# flags drift. New campaign levels should ramp target_ppt by ~+1 per slot.
+@export_range(1, 10) var min_ppt: int = 1
+@export_range(1, 10) var target_ppt: int = 2

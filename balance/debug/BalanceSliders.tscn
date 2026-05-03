@@ -1,0 +1,304 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://balance/debug/BalanceSliders.gd" id="1_sliders"]
+
+[node name="BalanceSliders" type="Control"]
+script = ExtResource("1_sliders")
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.10, 0.12, 0.14, 1)
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 24.0
+offset_top = 24.0
+offset_right = -24.0
+offset_bottom = 80.0
+theme_override_constants/separation = 16
+
+[node name="BackButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 56)
+layout_mode = 2
+text = "Back"
+theme_override_font_sizes/font_size = 18
+
+[node name="Title" type="Label" parent="TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Balance Sliders (debug)"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 26
+
+[node name="ResetButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 56)
+layout_mode = 2
+text = "Reset"
+theme_override_font_sizes/font_size = 18
+
+[node name="PlayButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 56)
+layout_mode = 2
+text = "Play this level"
+theme_override_font_sizes/font_size = 18
+
+[node name="Scroll" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = 96.0
+offset_right = -24.0
+offset_bottom = -24.0
+
+[node name="Content" type="VBoxContainer" parent="Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="LevelRow" type="HBoxContainer" parent="Scroll/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="LevelLabel" type="Label" parent="Scroll/Content/LevelRow"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+text = "Level"
+theme_override_font_sizes/font_size = 18
+
+[node name="LevelPicker" type="OptionButton" parent="Scroll/Content/LevelRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(360, 40)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+
+[node name="HpRow" type="HBoxContainer" parent="Scroll/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="HpLabel" type="Label" parent="Scroll/Content/HpRow"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+text = "Enemy HP %"
+theme_override_font_sizes/font_size = 18
+
+[node name="HpSlider" type="HSlider" parent="Scroll/Content/HpRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 32)
+layout_mode = 2
+min_value = 50.0
+max_value = 200.0
+step = 5.0
+value = 100.0
+
+[node name="HpValue" type="Label" parent="Scroll/Content/HpRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "100%"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
+
+[node name="ArmorRow" type="HBoxContainer" parent="Scroll/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ArmorLabel" type="Label" parent="Scroll/Content/ArmorRow"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+text = "Enemy armor +"
+theme_override_font_sizes/font_size = 18
+
+[node name="ArmorSlider" type="HSlider" parent="Scroll/Content/ArmorRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 32)
+layout_mode = 2
+min_value = -0.30
+max_value = 0.40
+step = 0.05
+value = 0.0
+
+[node name="ArmorValue" type="Label" parent="Scroll/Content/ArmorRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "+0.00"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
+
+[node name="MagResRow" type="HBoxContainer" parent="Scroll/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MagResLabel" type="Label" parent="Scroll/Content/MagResRow"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+text = "Enemy mag-res +"
+theme_override_font_sizes/font_size = 18
+
+[node name="MagResSlider" type="HSlider" parent="Scroll/Content/MagResRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 32)
+layout_mode = 2
+min_value = -0.30
+max_value = 0.40
+step = 0.05
+value = 0.0
+
+[node name="MagResValue" type="Label" parent="Scroll/Content/MagResRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "+0.00"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
+
+[node name="SpeedRow" type="HBoxContainer" parent="Scroll/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SpeedLabel" type="Label" parent="Scroll/Content/SpeedRow"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+text = "Enemy speed %"
+theme_override_font_sizes/font_size = 18
+
+[node name="SpeedSlider" type="HSlider" parent="Scroll/Content/SpeedRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 32)
+layout_mode = 2
+min_value = 50.0
+max_value = 200.0
+step = 5.0
+value = 100.0
+
+[node name="SpeedValue" type="Label" parent="Scroll/Content/SpeedRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "100%"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
+
+[node name="DamageRow" type="HBoxContainer" parent="Scroll/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="DamageLabel" type="Label" parent="Scroll/Content/DamageRow"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+text = "Enemy damage %"
+theme_override_font_sizes/font_size = 18
+
+[node name="DamageSlider" type="HSlider" parent="Scroll/Content/DamageRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 32)
+layout_mode = 2
+min_value = 50.0
+max_value = 200.0
+step = 5.0
+value = 100.0
+
+[node name="DamageValue" type="Label" parent="Scroll/Content/DamageRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "100%"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
+
+[node name="GoldRow" type="HBoxContainer" parent="Scroll/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="GoldLabel" type="Label" parent="Scroll/Content/GoldRow"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+text = "Starting gold +"
+theme_override_font_sizes/font_size = 18
+
+[node name="GoldSlider" type="HSlider" parent="Scroll/Content/GoldRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 32)
+layout_mode = 2
+min_value = -200.0
+max_value = 500.0
+step = 25.0
+value = 0.0
+
+[node name="GoldValue" type="Label" parent="Scroll/Content/GoldRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "+0"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
+
+[node name="PptRow" type="HBoxContainer" parent="Scroll/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PptLabel" type="Label" parent="Scroll/Content/PptRow"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+text = "PPT override"
+theme_override_font_sizes/font_size = 18
+
+[node name="PptSlider" type="HSlider" parent="Scroll/Content/PptRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 32)
+layout_mode = 2
+min_value = -1.0
+max_value = 10.0
+step = 1.0
+value = -1.0
+
+[node name="PptValue" type="Label" parent="Scroll/Content/PptRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "auto"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
+
+[node name="ReadoutSpacer" type="Control" parent="Scroll/Content"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+
+[node name="ReadoutTitle" type="Label" parent="Scroll/Content"]
+layout_mode = 2
+text = "Live readout"
+theme_override_font_sizes/font_size = 22
+modulate = Color(1.0, 0.9, 0.5, 1)
+
+[node name="ReadoutHardness" type="Label" parent="Scroll/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Hardness:  ?"
+theme_override_font_sizes/font_size = 18
+
+[node name="ReadoutGoldDmg" type="Label" parent="Scroll/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Gold/Dmg:  ?"
+theme_override_font_sizes/font_size = 18
+
+[node name="ReadoutPpt" type="Label" parent="Scroll/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "PPT:  ?"
+theme_override_font_sizes/font_size = 18

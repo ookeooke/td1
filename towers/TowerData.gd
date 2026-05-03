@@ -4,6 +4,11 @@ class_name TowerData
 @export var tower_name: String = "Tower"
 @export var tower_id: String = ""
 @export var requires_unlock: bool = false
+# Player Power Tier — see balance/BALANCE.md. Loadout-pick PPT (the slot is
+# L1 conceptually); upgrade tiers are NOT factored in here. 1 = baseline
+# starter tower, 5 = legendary unlock. LoadoutState.get_effective_ppt()
+# averages this across selected_tower_ids.
+@export_range(1, 10) var power_tier: int = 1
 # Phase 47d-1: scene + icon now live on TowerData so a new tower is a
 # single-file add (drop a .tres, register one preload in ContentRegistry).
 # `pictogram` is a string key dispatched by TowerIconButton._draw_pictogram;

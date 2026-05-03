@@ -1,9 +1,9 @@
 # STATUS
 
-**Last shipped**: CI workflow (Thu of engineering hardening week). Added `.github/workflows/ci.yml` using `barichello/godot-ci:4.6` — runs the 33-test GUT suite headless on every push and PR, then (on test pass) exports a debug Android APK as a build artifact retained for 14 days. Promoted `export_presets.cfg` from gitignored to tracked so CI can read the Android preset; tightened `.gitignore` to still exclude keystore / signing-key siblings. See SESSIONS.md "2026-05-01 — CI workflow (Thu)".
+**Last shipped**: Balance tooling — PPT framework + Slider debug panel + cross-level Audit screen (2026-05-03). Diablo/PoE-style Player Power Tier scalar collapses loadout strength into one number; level-side `min_ppt`/`target_ppt` bands replace per-level multiplier targets. Slider panel writes runtime overrides via `balance/debug/BalanceOverrides.gd` (preload-only, no autoload, debug-build gated) — drag HP/armor/mag-res/speed/damage/gold/PPT, click "Play this level," see effect. Audit screen renders all levels in a colored grid. WorldMap gained two debug-only buttons next to BalanceReport. See SESSIONS.md "2026-05-03 — Balance tooling: PPT + Sliders + Audit". BALANCE.md grew two big sections: "Design intent — leaderboards reframe balance" and "Player Power Tier (PPT)".
 
 **Currently working on**:
-- WorldMap UI overhaul series (research doc: `~/.claude/plans/lets-make-deep-research-robust-sunbeam.md`). Phase A shipped; Phases B–F queued.
+- Hand-authoring L2 onward against the new PPT-banded target curve (BALANCE.md). Wave generator deliberately skipped per Kingdom Rush precedent — hand-author + slider-validate is the workflow.
 
 **Next up** (in priority order):
 

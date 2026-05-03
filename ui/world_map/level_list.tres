@@ -16,7 +16,63 @@ wave_gold_shares = Array[float]([0.10, 0.11, 0.16, 0.23, 0.40])
 wave_time_shares = Array[float]([0.10, 0.18, 0.21, 0.21, 0.30])
 wave_pressure_targets = Array[float]([0.4, 0.5, 0.6, 0.8, 0.9])
 early_call_window_sec = 10.0
+min_ppt = 1
+target_ppt = 2
+
+; STUB FOR BALANCE TESTING — Levels 2/3/4 share L1's map (scene_path) but
+; load their own wave_list .tres at runtime via Main.gd's _resolve_wave_list.
+; They exist to populate the audit screen with multi-row drift visuals and
+; let the slider panel switch between hardness targets. Replace with proper
+; per-level scenes (own paths, spots, navmesh) before treating as content.
+
+[sub_resource type="Resource" id="Level2"]
+script = ExtResource("1_lnd")
+level_id = "level_2"
+display_name = "Stone Bridge (test stub)"
+scene_path = "res://main/Main.tscn"
+unlock_order = 2
+wave_list_path = "res://levels/level2_waves.tres"
+target_duration_sec = 240.0
+gold_budget_total = 900
+wave_gold_shares = Array[float]([0.20, 0.30, 0.50])
+wave_time_shares = Array[float]([0.20, 0.35, 0.45])
+wave_pressure_targets = Array[float]([0.5, 0.7, 0.9])
+early_call_window_sec = 10.0
+min_ppt = 2
+target_ppt = 3
+
+[sub_resource type="Resource" id="Level3"]
+script = ExtResource("1_lnd")
+level_id = "level_3"
+display_name = "Mountain Pass (test stub, over-tuned)"
+scene_path = "res://main/Main.tscn"
+unlock_order = 3
+wave_list_path = "res://levels/level3_waves.tres"
+target_duration_sec = 280.0
+gold_budget_total = 1200
+wave_gold_shares = Array[float]([0.20, 0.30, 0.50])
+wave_time_shares = Array[float]([0.20, 0.35, 0.45])
+wave_pressure_targets = Array[float]([0.6, 0.8, 1.0])
+early_call_window_sec = 10.0
+min_ppt = 3
+target_ppt = 4
+
+[sub_resource type="Resource" id="Level4"]
+script = ExtResource("1_lnd")
+level_id = "level_4"
+display_name = "Frost Vale (test stub, under-tuned)"
+scene_path = "res://main/Main.tscn"
+unlock_order = 4
+wave_list_path = "res://levels/level4_waves.tres"
+target_duration_sec = 300.0
+gold_budget_total = 1500
+wave_gold_shares = Array[float]([0.20, 0.30, 0.50])
+wave_time_shares = Array[float]([0.20, 0.35, 0.45])
+wave_pressure_targets = Array[float]([0.6, 0.8, 1.0])
+early_call_window_sec = 10.0
+min_ppt = 4
+target_ppt = 5
 
 [resource]
 script = ExtResource("2_list")
-levels = Array[Resource]([SubResource("Level1")])
+levels = Array[Resource]([SubResource("Level1"), SubResource("Level2"), SubResource("Level3"), SubResource("Level4")])

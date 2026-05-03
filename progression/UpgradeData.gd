@@ -24,6 +24,10 @@ enum EffectType {
 
 @export var upgrade_id: String = ""
 @export var upgrade_name: String = ""
+# Player Power Tier contribution — see balance/BALANCE.md. Each purchased
+# meta-upgrade adds this to the player's effective PPT. Default 1 ≈ +0.5
+# weighted in get_effective_ppt(); override for rare/expensive upgrades.
+@export_range(0, 10) var power_tier: int = 1
 @export_multiline var description: String = ""
 @export var star_cost: int = 1
 # Empty = no prerequisite. Otherwise the upgrade_id of the required node.

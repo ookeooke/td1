@@ -1,0 +1,145 @@
+[gd_resource type="Resource" script_class="WaveList" format=3 uid="uid://b1td1lv4waves"]
+
+[ext_resource type="Script" uid="uid://b20v3766p6m5g" path="res://waves/WaveList.gd" id="1_list"]
+[ext_resource type="Script" uid="uid://bi3tyyql6gp6g" path="res://waves/WaveData.gd" id="2_wave"]
+[ext_resource type="Script" uid="uid://bn01uqj5y40yv" path="res://waves/WaveSpawn.gd" id="3_spawn"]
+[ext_resource type="PackedScene" uid="uid://ct8yjsiicg7nj" path="res://enemies/EnemyBasic.tscn" id="4_basic"]
+[ext_resource type="PackedScene" uid="uid://b1td1flysc002" path="res://enemies/EnemyFlying.tscn" id="5_fly"]
+[ext_resource type="PackedScene" uid="uid://b1td1armorsc1" path="res://enemies/EnemyArmored.tscn" id="6_armor"]
+[ext_resource type="PackedScene" uid="uid://b1td1boss1scn" path="res://enemies/bosses/Boss1.tscn" id="7_boss"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyBrute.tscn" id="8_brute"]
+[ext_resource type="PackedScene" uid="uid://b1td1scoutsc1" path="res://enemies/EnemyScout.tscn" id="9_scout"]
+
+; ============================================================================
+; Level 4 — STUB FOR BALANCE TESTING. target_ppt=5 (expected ~15,000) but
+; INTENTIONALLY UNDER-TUNED to ~13,500. Exercises the audit's yellow drift
+; coloring (-15..-25%). Use as the "this level is too easy, beef it up" demo.
+; ============================================================================
+
+[sub_resource type="Resource" id="L4_W1_BasicL"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("4_basic")
+count = 12
+interval = 3.5
+
+[sub_resource type="Resource" id="L4_W1_BasicR"]
+script = ExtResource("3_spawn")
+path_id = "right"
+enemy_scene = ExtResource("4_basic")
+count = 10
+interval = 4.0
+start_delay = 2.0
+
+[sub_resource type="Resource" id="L4_W1_Scouts"]
+script = ExtResource("3_spawn")
+path_id = "right"
+enemy_scene = ExtResource("9_scout")
+count = 6
+interval = 4.0
+start_delay = 8.0
+
+[sub_resource type="Resource" id="L4_W1_Armor"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("6_armor")
+count = 4
+interval = 7.0
+start_delay = 6.0
+
+[sub_resource type="Resource" id="L4_Wave1"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W1_BasicL"), SubResource("L4_W1_BasicR"), SubResource("L4_W1_Scouts"), SubResource("L4_W1_Armor")])
+countdown = 0.0
+bounty = 80
+
+[sub_resource type="Resource" id="L4_W2_BasicL"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("4_basic")
+count = 14
+interval = 3.0
+
+[sub_resource type="Resource" id="L4_W2_BasicR"]
+script = ExtResource("3_spawn")
+path_id = "right"
+enemy_scene = ExtResource("4_basic")
+count = 12
+interval = 3.5
+start_delay = 2.0
+
+[sub_resource type="Resource" id="L4_W2_Fly"]
+script = ExtResource("3_spawn")
+path_id = "top"
+enemy_scene = ExtResource("5_fly")
+count = 6
+interval = 5.5
+start_delay = 6.0
+
+[sub_resource type="Resource" id="L4_W2_Armor"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("6_armor")
+count = 6
+interval = 7.0
+start_delay = 8.0
+
+[sub_resource type="Resource" id="L4_W2_Brute"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("8_brute")
+count = 2
+interval = 14.0
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L4_Wave2"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W2_BasicL"), SubResource("L4_W2_BasicR"), SubResource("L4_W2_Fly"), SubResource("L4_W2_Armor"), SubResource("L4_W2_Brute")])
+countdown = 26.0
+bounty = 60
+
+[sub_resource type="Resource" id="L4_W3_Boss"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("7_boss")
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L4_W3_BasicL"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("4_basic")
+count = 10
+interval = 4.0
+
+[sub_resource type="Resource" id="L4_W3_BasicR"]
+script = ExtResource("3_spawn")
+path_id = "right"
+enemy_scene = ExtResource("4_basic")
+count = 8
+interval = 4.5
+start_delay = 3.0
+
+[sub_resource type="Resource" id="L4_W3_Fly"]
+script = ExtResource("3_spawn")
+path_id = "top"
+enemy_scene = ExtResource("5_fly")
+count = 5
+interval = 6.0
+start_delay = 8.0
+
+[sub_resource type="Resource" id="L4_W3_Armor"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("6_armor")
+count = 5
+interval = 8.0
+start_delay = 11.0
+
+[sub_resource type="Resource" id="L4_W3_Brute"]
+script = ExtResource("3_spawn")
+enemy_scene = ExtResource("8_brute")
+count = 2
+interval = 14.0
+start_delay = 22.0
+
+[sub_resource type="Resource" id="L4_Wave3"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W3_Boss"), SubResource("L4_W3_BasicL"), SubResource("L4_W3_BasicR"), SubResource("L4_W3_Fly"), SubResource("L4_W3_Armor"), SubResource("L4_W3_Brute")])
+countdown = 30.0
+bounty = 40
+
+[resource]
+script = ExtResource("1_list")
+waves = Array[ExtResource("2_wave")]([SubResource("L4_Wave1"), SubResource("L4_Wave2"), SubResource("L4_Wave3")])

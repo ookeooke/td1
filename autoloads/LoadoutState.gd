@@ -250,3 +250,87 @@ func _default_equipped_for(hero_id: String) -> Array:
 	for i in EQUIPPED_SKILL_SLOTS:
 		out.append(unlocked[i] if i < unlocked.size() else "")
 	return out
+
+
+# ── Player Power Tier (PPT) ─────────────────────────────────────────────
+#
+# Single scalar summarizing the loadout's strength — see balance/BALANCE.md
+# "Player Power Tier (PPT)". The audit screen compares per-level
+# `target_ppt` against this. A Naked Baseline warrior (default everything,
+# starter gear only) should compute close to ~1.0; mid-campaign loadouts
+# trend toward 2–4; endgame toward 5+.
+#
+# Weights deliberately bias toward hero+gear (40%+30%) since those move the
+# most across a campaign. Tower loadout contributes only 10% — towers are a
+# *pick*, not a *power upgrade* (everyone has access from level 1).
+const _PPT_W_HERO: float = 0.4
+const _PPT_W_SKILLS: float = 0.2
+const _PPT_W_ITEMS: float = 0.3
+const _PPT_W_TOWERS: float = 0.1
+const _PPT_BONUS_PER_TALENT: float = 0.1
+const _PPT_BONUS_PER_UPGRADE: float = 0.1
+# Bonus contributions cap so a player can't grind upgrades to infinity.
+const _PPT_BONUS_CAP: float = 1.0
+
+
+func get_effective_ppt() -> float:
+	var total: float = 0.0
+	# Hero
+	var hero_data: Resource = ContentRegistry.find_hero(selected_hero_id)
+	var hero_ppt: float = float(hero_data.power_tier) if hero_data != null and "power_tier" in hero_data else 1.0
+	total += hero_ppt * _PPT_W_HERO
+	# Equipped skills — average over slots, treat empty as 0
+	var skills_total: float = 0.0
+	var skills_count: int = 0
+	if hero_data != null and "skills" in hero_data:
+		var equipped: Array[String] = get_equipped_skills(selected_hero_id)
+		for sid in equipped:
+			if sid == "":
+				continue
+			for skill in hero_data.skills:
+				if skill != null and skill.skill_id == sid:
+					skills_total += float(skill.power_tier) if "power_tier" in skill else 1.0
+					skills_count += 1
+					break
+	var skills_avg: float = (skills_total / float(skills_count)) if skills_count > 0 else 0.0
+	total += skills_avg * _PPT_W_SKILLS
+	# Equipped items — average over equipped instances, resolved via base
+	var items_total: float = 0.0
+	var items_count: int = 0
+	if Engine.has_singleton("InventoryManager") or has_node("/root/InventoryManager"):
+		var equipped_items: Array = InventoryManager.get_all_equipped(selected_hero_id)
+		for inst in equipped_items:
+			if inst == null:
+				continue
+			var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+			if base == null:
+				continue
+			items_total += float(base.resolve_power_tier()) if base.has_method("resolve_power_tier") else 1.0
+			items_count += 1
+	var items_avg: float = (items_total / float(items_count)) if items_count > 0 else 0.0
+	total += items_avg * _PPT_W_ITEMS
+	# Tower loadout — average power_tier across selected_tower_ids
+	var towers_total: float = 0.0
+	var towers_count: int = 0
+	for tid in selected_tower_ids:
+		if tid == "":
+			continue
+		var tower_data: Resource = ContentRegistry.find_tower(tid)
+		if tower_data == null:
+			continue
+		towers_total += float(tower_data.power_tier) if "power_tier" in tower_data else 1.0
+		towers_count += 1
+	var towers_avg: float = (towers_total / float(towers_count)) if towers_count > 0 else 0.0
+	total += towers_avg * _PPT_W_TOWERS
+	# Bonus contributions from talents + meta-upgrades, capped together
+	var talent_count: int = 0
+	var upgrade_count: int = 0
+	if has_node("/root/MetaProgression"):
+		for hid in MetaProgression.hero_talents.keys():
+			var arr: Array = MetaProgression.hero_talents[hid]
+			talent_count += arr.size()
+		upgrade_count = MetaProgression.purchased_upgrades.size()
+	var talent_bonus: float = minf(_PPT_BONUS_CAP, float(talent_count) * _PPT_BONUS_PER_TALENT)
+	var upgrade_bonus: float = minf(_PPT_BONUS_CAP, float(upgrade_count) * _PPT_BONUS_PER_UPGRADE)
+	total += talent_bonus + upgrade_bonus
+	return total

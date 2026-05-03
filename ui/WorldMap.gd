@@ -7,13 +7,10 @@
 
 @export var levels: Array[Resource] = []
 
-# Debug-only: maps level_id → its WaveList .tres path so the WorldMap card
-# can compute and display the level's hardness score. Hardcoded for now —
-# at ~5 levels we'd promote `waves_path: String` onto LevelNodeData and
-# read it from there.
-const _LEVEL_WAVES: Dictionary = {
-	"level_1": "res://levels/level1_waves.tres",
-}
+# Wave path lookup retired 2026-05-03 — wave_list_path is now a first-class
+# field on LevelNodeData (used by the audit screen, slider panel, and
+# Main.gd's _resolve_wave_list at level start). _format_hardness resolves
+# via level_list.tres directly.
 
 @onready var back_button: Button = %BackButton
 @onready var level_list_container: VBoxContainer = %LevelList
@@ -26,6 +23,8 @@ const _LEVEL_WAVES: Dictionary = {
 @onready var settings_button: Button = %SettingsButton
 @onready var test_range_button: Button = %TestRangeButton
 @onready var balance_report_button: Button = %BalanceReportButton
+@onready var balance_sliders_button: Button = %BalanceSlidersButton
+@onready var level_audit_button: Button = %LevelAuditButton
 
 
 func _ready() -> void:
@@ -43,9 +42,13 @@ func _ready() -> void:
 	if OS.is_debug_build():
 		test_range_button.pressed.connect(_on_test_range)
 		balance_report_button.pressed.connect(_on_balance_report)
+		balance_sliders_button.pressed.connect(_on_balance_sliders)
+		level_audit_button.pressed.connect(_on_level_audit)
 	else:
 		test_range_button.visible = false
 		balance_report_button.visible = false
+		balance_sliders_button.visible = false
+		level_audit_button.visible = false
 	_refresh_stars_label()
 	_refresh_meta_gold_label()
 	_refresh_heroes_button_dot()
@@ -148,6 +151,18 @@ func _on_balance_report() -> void:
 	# Debug-only — reads user://run_stats.json and shows aggregates.
 	# Same gating + string-path pattern as the Test Range button.
 	SceneManager.goto("res://balance/report/BalanceReport.tscn")
+
+
+func _on_balance_sliders() -> void:
+	# Debug-only — runtime overrides for HP / armor / speed / damage / gold
+	# / PPT. Persisted to user://debug_balance.json. See balance/BALANCE.md.
+	SceneManager.goto("res://balance/debug/BalanceSliders.tscn")
+
+
+func _on_level_audit() -> void:
+	# Debug-only — cross-level hardness + PPT-drift table. Reads authored
+	# level_list.tres + per-level wave_list .tres files.
+	SceneManager.goto("res://balance/audit/LevelAudit.tscn")
 
 
 func _build_level_entries() -> void:
@@ -312,12 +327,12 @@ func _format_seconds(s: float) -> String:
 	return "%d:%05.2f" % [minutes, rem]
 
 
-# Debug-only — looks up the level's WaveList and returns its hardness score
-# as a plain integer string. Returns "—" if the level isn't in _LEVEL_WAVES,
-# the file is missing, or BalanceCalculator was deleted with the balance/
-# folder. Caller is already gated by OS.is_debug_build().
+# Debug-only — looks up the level's WaveList via level_list.tres and returns
+# its hardness score as a plain integer string. Returns "—" if the entry
+# can't be found, the file is missing, or BalanceCalculator was deleted with
+# the balance/ folder. Caller is already gated by OS.is_debug_build().
 func _format_hardness(level_id: String) -> String:
-	var path: String = _LEVEL_WAVES.get(level_id, "")
+	var path: String = _wave_path_for(level_id)
 	if path == "":
 		return "—"
 	var wl: WaveList = load(path)
@@ -327,5 +342,17 @@ func _format_hardness(level_id: String) -> String:
 	if bc == null:
 		return "—"
 	return "%d" % int(bc.score_level(wl, RunState.STARTING_GOLD))
+
+
+# Resolves a level_id to its wave_list_path via level_list.tres. Returns
+# "" if the registry can't be loaded or the entry has no wave_list_path.
+func _wave_path_for(level_id: String) -> String:
+	var registry: Resource = load("res://ui/world_map/level_list.tres")
+	if registry == null or not ("levels" in registry):
+		return ""
+	for entry in registry.levels:
+		if entry is LevelNodeData and entry.level_id == level_id:
+			return entry.wave_list_path
+	return ""
 
 

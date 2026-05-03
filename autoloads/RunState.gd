@@ -1,5 +1,7 @@
 extends Node
 
+const BalanceOverrides = preload("res://balance/debug/BalanceOverrides.gd")
+
 # Per-run volatile state. Wiped by reset_for_level() on every level entry
 # and by SaveManager.delete_save() on Reset Progress.
 #
@@ -45,6 +47,8 @@ func reset_for_level() -> void:
 	# cross-level progression (stars, unlocks, level_id, mode). Use this
 	# when restarting a level or transitioning from WorldMap to gameplay.
 	gold = STARTING_GOLD + int(MetaProgression.get_upgrade_bonus(MetaProgression.MOD_STARTING_GOLD))
+	# Debug-only balance override (BalanceOverrides). No-op in production.
+	gold += BalanceOverrides.get_starting_gold_add()
 	lives = 1 if current_mode == "iron" else STARTING_LIVES
 	score = 0
 	wave_number = 0

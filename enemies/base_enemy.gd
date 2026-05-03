@@ -1,6 +1,8 @@
 ﻿extends Area2D
 class_name BaseEnemy
 
+const BalanceOverrides = preload("res://balance/debug/BalanceOverrides.gd")
+
 enum State { WALKING, STUNNED, COMBAT, STEALTHED, DYING }
 
 const HP_BAR_SIZE: Vector2 = Vector2(70.0, 10.0)
@@ -99,6 +101,10 @@ var _ability_host: RefCounted = null
 
 
 func _ready() -> void:
+	# Debug-only balance override (BalanceOverrides). Multiplies into
+	# _hp_scale BEFORE current_health is computed so per-enemy HP reflects
+	# the slider panel's HP %. No-op in production.
+	_hp_scale *= BalanceOverrides.get_hp_mult()
 	if data:
 		current_health = _effective_max_health()
 	# Phase 20: group membership so skill targeting can enumerate live
@@ -259,7 +265,7 @@ func _combat_tick(delta: float) -> void:
 	_start_strike(focus)
 	var splash_r: float = data.attack_splash_radius if "attack_splash_radius" in data else 0.0
 	if splash_r <= 0.0:
-		focus.take_damage(data.attack_damage, DamageCalculator.DamageType.PHYSICAL, self)
+		focus.take_damage(data.attack_damage * BalanceOverrides.get_damage_mult(), DamageCalculator.DamageType.PHYSICAL, self)
 		return
 	# AoE swing: every blocker whose body sits inside splash_r of the focus
 	# eats the full counter-attack. Designed counter to rally-stack surrounds.
@@ -269,7 +275,7 @@ func _combat_tick(delta: float) -> void:
 		if b == null or not is_instance_valid(b) or not b.has_method("take_damage"):
 			continue
 		if b.global_position.distance_squared_to(origin) <= r2:
-			b.take_damage(data.attack_damage, DamageCalculator.DamageType.PHYSICAL, self)
+			b.take_damage(data.attack_damage * BalanceOverrides.get_damage_mult(), DamageCalculator.DamageType.PHYSICAL, self)
 
 
 func _prune_blockers() -> void:
@@ -317,6 +323,8 @@ func _effective_speed() -> float:
 	var s: float = data.move_speed
 	if _effects.has("slow"):
 		s *= (1.0 - _effects["slow"].slow_factor)
+	# Debug-only balance override. No-op in production.
+	s *= BalanceOverrides.get_speed_mult()
 	return s
 
 

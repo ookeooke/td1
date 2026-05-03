@@ -13,6 +13,19 @@ enum Rarity { COMMON, MAGIC, RARE, EPIC, LEGENDARY }
 @export var base_name: String = "Item"
 @export var slot: int = Slot.WEAPON
 @export var rarity: int = Rarity.COMMON
+# Player Power Tier — see balance/BALANCE.md. Default 0 means "derive from
+# rarity at read time" (COMMON=1, MAGIC=2, RARE=3, EPIC=4, LEGENDARY=5).
+# Override (1–10) for items that punch above or below their rarity band.
+@export_range(0, 10) var power_tier: int = 0
+
+
+# Power tier resolution: explicit override wins, else derived from rarity.
+# Called from LoadoutState.get_effective_ppt() — keep cheap.
+func resolve_power_tier() -> int:
+	if power_tier > 0:
+		return power_tier
+	# Rarity enum values 0..4 map to PPT 1..5.
+	return clampi(int(rarity) + 1, 1, 5)
 @export var icon_glyph: String = "generic"             # key into ItemIcon._draw_glyph
 @export var icon_color: Color = Color.WHITE            # base tint; rarity halo drawn separately
 @export var hero_restriction: Array[String] = []       # empty = any hero

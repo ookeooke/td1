@@ -12,6 +12,9 @@ enum TargetType { SINGLE, AREA, SELF }
 
 @export var skill_name: String = "Skill"
 @export var skill_id: String = ""
+# Player Power Tier — see balance/BALANCE.md. 1 = basic; 5 = ult. Per-skill
+# contribution to LoadoutState.get_effective_ppt().
+@export_range(1, 10) var power_tier: int = 1
 # 0 = use hero.data.attack_range at cast time.
 @export var skill_range: float = 0.0
 @export var damage: float = 0.0

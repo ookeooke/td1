@@ -2148,3 +2148,97 @@ Triggers: push to `main` or any `phase-**` branch, PRs to `main`, plus a `workfl
 - **APK is debug-signed only.** Release signing requires a release keystore behind a secret + a separate `--export-release` job. Out of scope for the hardening week; ship a release pipeline alongside the IAP work in production hardening round 2.
 - **No caching of the Godot image / templates yet.** Each CI run pulls the image fresh; on a paid runner this matters less than on the free tier. If PR throughput grows, add an `actions/cache` step keyed on `GODOT_VERSION`.
 - **Friday's playtest depends on Thursday's APK pipeline working.** If the `build-android` job needs iteration, that gates Friday — flag it as the first thing to verify after the initial CI push.
+
+
+---
+
+## 2026-05-03 — Balance tooling: PPT + Sliders + Audit (Phase 49 piece 1+2+3)
+
+Shipped the full PPT/Slider/Audit foundation per the active plan (`~/.claude/plans/is-there-soem-addos-zesty-mitten.md`). Three pieces, each independently shippable, all merged together because the cost ratio favored one push.
+
+### Piece 1 — Player Power Tier (PPT) framework
+
+Diablo/PoE-style scalar collapsing player loadout strength into one number, so balance is against a band rather than against millions of (hero × skills × gear × towers) combinations. Added `power_tier` field to:
+
+- `HeroData` (default 1, range 1–10)
+- `SkillData` (default 1)
+- `ItemBase` (default 0 = derive from rarity via `resolve_power_tier()`; COMMON→1 … LEGENDARY→5)
+- `UpgradeData` (default 1)
+- `TowerData` (default 1; loadout-pick PPT only — upgrade tiers not factored)
+
+`LoadoutState.get_effective_ppt()` aggregates with weights 0.4 hero / 0.2 skills / 0.3 items / 0.1 towers + capped 0–1.0 talent + 0–1.0 upgrade bonuses. Calibrated so Naked Baseline (default warrior, starter gear) ≈ 1.0; mid-campaign 2–4; endgame 5+.
+
+`LevelNodeData` gained `min_ppt` (Naked floor) + `target_ppt` (designed-for sweet spot). L1 set to min=1, target=2.
+
+`BalanceCalculator` got three additions: `PPT_TO_HARDNESS_FACTOR = 3000.0`, `level_required_damage(wave_list)`, `score_for_ppt(wave_list, target_ppt)` returning drift %.
+
+### Piece 2 — Slider debug panel
+
+`balance/debug/BalanceOverrides.gd` — RefCounted utility (no class_name; `preload`-only to keep the global class registry clean) with all-static accessors backed by `user://debug_balance.json`. Identity returns in non-debug builds via `is_active()` short-circuit.
+
+`balance/debug/BalanceSliders.tscn/.gd` — Control scene reachable from WorldMap. Sliders for HP %, armor +, mag-res +, speed %, damage %, starting gold +, PPT override. Live readout: hardness baseline → effective, gold/dmg ratio, PPT drift. Auto-saves on every drag. "Play this level" launches the chosen level with overrides active; "Reset" wipes them.
+
+Runtime hooks (all guarded by `BalanceOverrides.is_active()` returning false in production):
+
+- `enemies/base_enemy.gd::_ready` — multiplies `_hp_scale` by `get_hp_mult()`
+- `enemies/base_enemy.gd::_effective_speed` — multiplies by `get_speed_mult()`
+- `enemies/base_enemy.gd` — added `get_effective_armor()` / `get_effective_magic_resist()` accessors that fold in armor/mag_res additive overrides; capped at 0.95 to prevent immortal enemies
+- `autoloads/DamageCalculator.gd::calculate_damage` — calls the new accessors via `has_method()` when present, falls back to `target.data.armor` for non-enemy targets (heroes / soldiers)
+- `enemies/base_enemy.gd` — counter-attack damage scales by `get_damage_mult()` (both single-target and AoE-splash branches)
+- `autoloads/RunState.gd::reset_for_level` — adds `get_starting_gold_add()` to starting gold
+
+### Piece 3 — Cross-level audit screen
+
+`balance/audit/LevelAudit.tscn/.gd` — single 8-column GridContainer (Level / Hardness / Tier / Target PPT / Min PPT / Drift / Gold/Dmg / Notes). Drift cell colored by ±15% / ±25% bands (green / yellow / red). Gold/Dmg cell colored by 0.10 / 0.15 / 0.25 / 0.30 thresholds. Loads `level_list.tres`, iterates each `LevelNodeData`, loads its `wave_list_path`, calls into `BalanceCalculator`. Pure read — no side effects on save / .tres files.
+
+WorldMap got two new debug-only buttons (mirroring the existing BalanceReport pattern): `BalanceSlidersButton` → `_on_balance_sliders` and `LevelAuditButton` → `_on_level_audit`.
+
+### What broke
+
+- IDE diagnostics flagged `class_name BalanceOverrides` as unresolved before the editor scanned the new file. Fixed by removing `class_name` from `BalanceOverrides.gd` and switching every caller to `const BalanceOverrides = preload("res://balance/debug/BalanceOverrides.gd")`. More robust pattern for dev utilities anyway — keeps the global class registry clean and avoids the editor-scan race.
+- Initial first edit to `base_enemy.gd::_send_attack` used `replace_all=true` and missed the AoE-splash branch (different surrounding context). Fixed with a second targeted edit.
+- One name shadow in LevelAudit.gd (`var name` shadows `Control.name`, `modulate` parameter shadows `CanvasItem.modulate`) — caught by the linter, renamed to `lvl_name` and `color`.
+
+### What did not change (deliberately)
+
+- Wave generator skipped entirely per plan — Kingdom Rush ran a five-game series without one, hand-authoring + slider tuning is the right floor for solo dev.
+- BalanceReport (run telemetry) untouched — different consumer, different question.
+- No autoload added — `BalanceOverrides` is a `preload`-only static utility, keeping the autoload count at 20 per CLAUDE.md.
+
+### Next
+
+- Hand-author L2 wave_list against `target_ppt = 3` (PPT-banded curve in BALANCE.md says ~9,000 hardness). Use the slider panel to validate, then commit the .tres.
+- After 3+ levels exist, revisit BALANCE.md "PPT-banded target curve" to confirm `PPT_TO_HARDNESS_FACTOR = 3000.0` still feels right.
+- If/when a per-enemy difficulty modifier system is wanted (KR Impossible-style — different enemies get different buffs), it slots cleanly under BalanceOverrides as a per-enemy_id dictionary.
+- GemCraft Battle Traits as player-facing customizable difficulty is a separate plan when content is solid.
+
+### Follow-up: 3 test stub levels for audit/sliders validation
+
+After the PPT/Slider/Audit foundation, added three stub wave files plus their `LevelNodeData` entries so the audit screen has more than one row to display and the slider panel has multiple targets to switch between.
+
+- [level2_waves.tres](levels/level2_waves.tres) — `target_ppt = 3`, ~9,000 hardness (clean tune → green drift)
+- [level3_waves.tres](levels/level3_waves.tres) — `target_ppt = 4`, ~16,000 hardness (intentionally over-tuned → red drift, demos "too hard")
+- [level4_waves.tres](levels/level4_waves.tres) — `target_ppt = 5`, ~13,500 hardness (intentionally under-tuned → yellow drift, demos "too easy")
+
+All three share `Main.tscn` as `scene_path` (no per-level map work). They populate `level_list.tres` with the full PPT-banded curve (1/2/3/4 min, 2/3/4/5 target).
+
+#### Main.gd refactor
+
+Replaced the hardcoded `LEVEL1_WAVES = preload(...)` with `_resolve_wave_list(entry)` reading `wave_list_path` from the matching `LevelNodeData`. Falls back to `LEVEL1_WAVES` if the entry has no path or the load fails — preserves existing behavior for partially-authored levels. Both `wave_list_path` and `early_call_window_sec` now share one lookup pass.
+
+#### WorldMap.gd cleanup
+
+Retired the hardcoded `_LEVEL_WAVES` dictionary that mapped level_id → wave path for the WorldMap card hardness display (only had `level_1`). `wave_list_path` is a first-class field on `LevelNodeData` now (used by audit, sliders, and Main); `_format_hardness` resolves through `level_list.tres` directly via a new `_wave_path_for(level_id)` helper. WorldMap cards for L2/L3/L4 now show their real hardness scores instead of "—".
+
+#### Test entry points
+
+- **WorldMap → Audit** — 4 rows with progressive drift colors. L3 red, L4 yellow, L1+L2 green.
+- **WorldMap → Sliders** — level dropdown lets you pick any of L2/L3/L4 and "Play this level" bypasses the WorldMap unlock check.
+- **WorldMap → level cards** — L2/L3/L4 appear as locked. Either hit Reset Progress (only `level_1` unlocked by default) or use the Sliders panel as the testing entry point.
+
+#### Known follow-ups
+
+- L2/L3/L4 share `Main.tscn` map. Authoring per-level maps (own paths, tower spots, navmesh) is a separate workstream.
+- Wave count differs from L1 (3 vs 5 waves), so per-wave shares arrays in `level_list.tres` are length 3 for the new levels — `BalanceCalculator._normalized_shares` handles wave-count mismatch gracefully.
+- Enemy counts are eyeballed, not solver-tuned. Actual hardness scores will reveal in the audit on first open; iterate via the slider panel.
+- `levels_unlocked` default still `{level_1: true}` — debug-build auto-unlock-all not added (would be ~4 lines in MetaProgression._ready); skipped to avoid touching save logic.

@@ -18,6 +18,14 @@ const W_EHP: float = 2.0
 const W_LIVES: float = 50.0
 const W_SPEED: float = 0.02  # 2.0 / 100.0 — speed 140 contributes 2.8
 
+# Player Power Tier conversion — see balance/BALANCE.md "PPT". Each PPT
+# point a level is balanced for is worth this much in raw hardness score.
+# Calibration: L1 was authored at S₁ ≈ 6,530 with target_ppt = 2; the
+# constant comes out to ~3,265 to make drift ≈ 0% on the baseline. Round
+# to 3,000 for design-intent simplicity — actual L1 reads as slight under-
+# tune (~9% below target), which is the intended early-game gentleness.
+const PPT_TO_HARDNESS_FACTOR: float = 3000.0
+
 # PackedScene → EnemyData lookup cache. Avoids re-instantiating the scene
 # on every score call; a 5-wave level resolves the same handful of scenes
 # repeatedly. Call clear_cache() when reloading content in editor.
@@ -52,6 +60,33 @@ static func score_level(wave_list: WaveList, starting_gold: int = 100) -> float:
 	for w in wave_list.waves:
 		total += score_wave(w)
 	return total - 0.5 * float(starting_gold)
+
+
+# Level-wide required damage — sum of wave_required_damage across the
+# whole wave list. Headline number for the "gold per damage" KPI in the
+# audit screen; lower than expected = stingy economy, higher = generous.
+static func level_required_damage(wave_list: WaveList) -> float:
+	if wave_list == null:
+		return 0.0
+	var total: float = 0.0
+	for w in wave_list.waves:
+		total += wave_required_damage(w)
+	return total
+
+
+# Drift % of actual hardness against PPT-implied expected hardness.
+# Returns positive values when the level is harder than its target PPT
+# expects (level over-tuned for the band), negative when easier. Audit
+# screen color-codes ±15% green / ±25% yellow / beyond red.
+static func score_for_ppt(wave_list: WaveList, target_ppt: int,
+		starting_gold: int = 100) -> float:
+	if wave_list == null or target_ppt <= 0:
+		return 0.0
+	var expected: float = float(target_ppt) * PPT_TO_HARDNESS_FACTOR
+	var actual: float = score_level(wave_list, starting_gold)
+	if expected <= 0.0:
+		return 0.0
+	return (actual - expected) / expected * 100.0
 
 # Verbose form — returns a dictionary with per-wave breakdown for editor
 # logging. Used by Level scripts in @tool mode to print authoring readouts.

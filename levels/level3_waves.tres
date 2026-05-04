@@ -11,20 +11,22 @@
 [ext_resource type="PackedScene" uid="uid://b1td1healsc02" path="res://enemies/EnemyHealer.tscn" id="9_heal"]
 
 ; ============================================================================
-; Level 3 — STUB FOR BALANCE TESTING. target_ppt=4 (expected ~12,000) but
-; INTENTIONALLY OVER-TUNED to ~16,000. Exercises the audit's red drift
-; coloring (>+25%). Use as the "this level is too hard, retune it" demo.
+; Level 3 — Mountain Pass (ring detour). target_ppt=4 (expected ~12,000) but
+; INTENTIONALLY OVER-TUNED to ~16,000 — exercises the audit's red drift
+; coloring (>+25%) as the "this level is too hard, retune it" demo.
+; All spawns funnel through path_id = "main" (the single ring path).
 ; ============================================================================
 
-[sub_resource type="Resource" id="L3_W1_BasicL"]
+[sub_resource type="Resource" id="L3_W1_BasicA"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 14
 interval = 3.0
 
-[sub_resource type="Resource" id="L3_W1_BasicR"]
+[sub_resource type="Resource" id="L3_W1_BasicB"]
 script = ExtResource("3_spawn")
-path_id = "right"
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 10
 interval = 3.5
@@ -32,6 +34,7 @@ start_delay = 2.0
 
 [sub_resource type="Resource" id="L3_W1_Armor"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("6_armor")
 count = 5
 interval = 7.0
@@ -39,19 +42,20 @@ start_delay = 6.0
 
 [sub_resource type="Resource" id="L3_Wave1"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("L3_W1_BasicL"), SubResource("L3_W1_BasicR"), SubResource("L3_W1_Armor")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("L3_W1_BasicA"), SubResource("L3_W1_BasicB"), SubResource("L3_W1_Armor")])
 countdown = 0.0
 bounty = 80
 
-[sub_resource type="Resource" id="L3_W2_BasicL"]
+[sub_resource type="Resource" id="L3_W2_BasicA"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 3.5
 
-[sub_resource type="Resource" id="L3_W2_BasicR"]
+[sub_resource type="Resource" id="L3_W2_BasicB"]
 script = ExtResource("3_spawn")
-path_id = "right"
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 3.5
@@ -59,7 +63,7 @@ start_delay = 2.0
 
 [sub_resource type="Resource" id="L3_W2_Fly"]
 script = ExtResource("3_spawn")
-path_id = "top"
+path_id = "main"
 enemy_scene = ExtResource("5_fly")
 count = 7
 interval = 5.0
@@ -67,6 +71,7 @@ start_delay = 6.0
 
 [sub_resource type="Resource" id="L3_W2_Armor"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("6_armor")
 count = 6
 interval = 7.0
@@ -74,6 +79,7 @@ start_delay = 8.0
 
 [sub_resource type="Resource" id="L3_W2_Brute"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("8_brute")
 count = 2
 interval = 14.0
@@ -81,24 +87,26 @@ start_delay = 16.0
 
 [sub_resource type="Resource" id="L3_Wave2"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("L3_W2_BasicL"), SubResource("L3_W2_BasicR"), SubResource("L3_W2_Fly"), SubResource("L3_W2_Armor"), SubResource("L3_W2_Brute")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("L3_W2_BasicA"), SubResource("L3_W2_BasicB"), SubResource("L3_W2_Fly"), SubResource("L3_W2_Armor"), SubResource("L3_W2_Brute")])
 countdown = 25.0
 bounty = 60
 
 [sub_resource type="Resource" id="L3_W3_Boss"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("7_boss")
 start_delay = 14.0
 
-[sub_resource type="Resource" id="L3_W3_BasicL"]
+[sub_resource type="Resource" id="L3_W3_BasicA"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 3.5
 
-[sub_resource type="Resource" id="L3_W3_BasicR"]
+[sub_resource type="Resource" id="L3_W3_BasicB"]
 script = ExtResource("3_spawn")
-path_id = "right"
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 10
 interval = 4.0
@@ -106,7 +114,7 @@ start_delay = 3.0
 
 [sub_resource type="Resource" id="L3_W3_Fly"]
 script = ExtResource("3_spawn")
-path_id = "top"
+path_id = "main"
 enemy_scene = ExtResource("5_fly")
 count = 6
 interval = 5.5
@@ -114,6 +122,7 @@ start_delay = 7.0
 
 [sub_resource type="Resource" id="L3_W3_Armor"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("6_armor")
 count = 6
 interval = 7.0
@@ -121,6 +130,7 @@ start_delay = 10.0
 
 [sub_resource type="Resource" id="L3_W3_Healer"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("9_heal")
 count = 2
 interval = 18.0
@@ -128,6 +138,7 @@ start_delay = 18.0
 
 [sub_resource type="Resource" id="L3_W3_Brute"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("8_brute")
 count = 3
 interval = 12.0
@@ -135,7 +146,7 @@ start_delay = 22.0
 
 [sub_resource type="Resource" id="L3_Wave3"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("L3_W3_Boss"), SubResource("L3_W3_BasicL"), SubResource("L3_W3_BasicR"), SubResource("L3_W3_Fly"), SubResource("L3_W3_Armor"), SubResource("L3_W3_Healer"), SubResource("L3_W3_Brute")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("L3_W3_Boss"), SubResource("L3_W3_BasicA"), SubResource("L3_W3_BasicB"), SubResource("L3_W3_Fly"), SubResource("L3_W3_Armor"), SubResource("L3_W3_Healer"), SubResource("L3_W3_Brute")])
 countdown = 30.0
 bounty = 40
 

@@ -404,10 +404,10 @@ Levels stay as editor-visible `.tscn` files (CORE RULE: human drags Curve2D hand
 2. **Pick the closest template** in `res://levels/templates/`:
     | Template | Topology |
     |---|---|
-    | `template_single_serpentine.tscn` | 1 spawn, 1 path "main" with 4 S-curves, 6 spots — focused gauntlet |
-    | `template_two_path_converge.tscn` | 2 spawns, 2 paths "north"/"south" converging at the right base, 8 spots |
-    | `template_three_path_classic.tscn` | 3 spawns, 3 paths "left"/"top"/"bottom", 8 spots — Kingdom Rush three-front |
-    | `template_ring_detour.tscn` | 1 spawn, 1 path "main" with 3/4 ring around map center, 8 spots |
+	| `template_single_serpentine.tscn` | 1 spawn, 1 path "main" with 4 S-curves, 6 spots — focused gauntlet |
+	| `template_two_path_converge.tscn` | 2 spawns, 2 paths "north"/"south" converging at the right base, 8 spots |
+	| `template_three_path_classic.tscn` | 3 spawns, 3 paths "left"/"top"/"bottom", 8 spots — Kingdom Rush three-front |
+	| `template_ring_detour.tscn` | 1 spawn, 1 path "main" with 3/4 ring around map center, 8 spots |
 
 3. **Copy and rename:**
     - `template_*.tscn` → `levels/Level<N>.tscn` — change root node name, change script ext_resource path from `BaseLevel.gd` to the new `Level<N>.gd`

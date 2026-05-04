@@ -10,23 +10,11 @@ vertices = PackedVector2Array(-40, -40, 1960, -40, 1960, 1120, -40, 1120)
 polygons = Array[PackedInt32Array]([PackedInt32Array(0, 1, 2, 3)])
 outlines = Array[PackedVector2Array]([PackedVector2Array(-40, -40, 1960, -40, 1960, 1120, -40, 1120)])
 
-[sub_resource type="Curve2D" id="Curve_Left"]
+[sub_resource type="Curve2D" id="Curve_Main"]
 _data = {
-"points": PackedVector2Array(0, 0, 0, 0, 0, 540, 0, 0, 0, 0, 160, 620, 0, 0, 0, 0, 320, 460, 0, 0, 0, 0, 520, 620, 0, 0, 0, 0, 720, 460, 0, 0, 0, 0, 920, 620, 0, 0, 0, 0, 1120, 460, 0, 0, 0, 0, 1320, 620, 0, 0, 0, 0, 1520, 460, 0, 0, 0, 0, 1720, 620, 0, 0, 0, 0, 1920, 540)
+"points": PackedVector2Array(0, 0, 0, 0, 40, 540, 0, 0, 0, 0, 240, 540, 0, 0, 0, 0, 380, 320, 0, 0, 0, 0, 560, 760, 0, 0, 0, 0, 740, 320, 0, 0, 0, 0, 920, 760, 0, 0, 0, 0, 1100, 320, 0, 0, 0, 0, 1280, 760, 0, 0, 0, 0, 1460, 320, 0, 0, 0, 0, 1640, 540, 0, 0, 0, 0, 1880, 540)
 }
 point_count = 11
-
-[sub_resource type="Curve2D" id="Curve_Right"]
-_data = {
-"points": PackedVector2Array(0, 0, 0, 0, 500, 0, 0, 0, 0, 0, 500, 150, 0, 0, 0, 0, 700, 280, 0, 0, 0, 0, 520, 420, 0, 0, 0, 0, 740, 540, 0, 0, 0, 0, 1020, 660, 0, 0, 0, 0, 1320, 580, 0, 0, 0, 0, 1620, 700, 0, 0, 0, 0, 1920, 600)
-}
-point_count = 9
-
-[sub_resource type="Curve2D" id="Curve_Top"]
-_data = {
-"points": PackedVector2Array(0, 0, 0, 0, 0, 900, 0, 0, 0, 0, 260, 850, 0, 0, 0, 0, 480, 940, 0, 0, 0, 0, 760, 820, 0, 0, 0, 0, 1040, 920, 0, 0, 0, 0, 1340, 800, 0, 0, 0, 0, 1640, 880, 0, 0, 0, 0, 1920, 820)
-}
-point_count = 8
 
 [node name="Level2" type="Node2D"]
 script = ExtResource("1_lvl")
@@ -36,58 +24,37 @@ navigation_polygon = SubResource("NavPoly_Level2")
 
 [node name="Paths" type="Node2D" parent="."]
 
-[node name="left" type="Path2D" parent="Paths"]
-curve = SubResource("Curve_Left")
-
-[node name="right" type="Path2D" parent="Paths"]
-curve = SubResource("Curve_Right")
-
-[node name="top" type="Path2D" parent="Paths"]
-curve = SubResource("Curve_Top")
+[node name="main" type="Path2D" parent="Paths"]
+curve = SubResource("Curve_Main")
 
 [node name="TowerSpots" type="Node2D" parent="."]
 
 [node name="Spot1" type="Marker2D" parent="TowerSpots"]
-position = Vector2(240, 540)
+position = Vector2(320, 540)
 
 [node name="Spot2" type="Marker2D" parent="TowerSpots"]
-position = Vector2(620, 540)
+position = Vector2(560, 540)
 
 [node name="Spot3" type="Marker2D" parent="TowerSpots"]
-position = Vector2(1020, 540)
+position = Vector2(820, 540)
 
 [node name="Spot4" type="Marker2D" parent="TowerSpots"]
-position = Vector2(1420, 540)
+position = Vector2(1080, 540)
 
 [node name="Spot5" type="Marker2D" parent="TowerSpots"]
-position = Vector2(640, 380)
+position = Vector2(1340, 540)
 
 [node name="Spot6" type="Marker2D" parent="TowerSpots"]
-position = Vector2(1180, 580)
-
-[node name="Spot7" type="Marker2D" parent="TowerSpots"]
-position = Vector2(1480, 880)
-
-[node name="Spot8" type="Marker2D" parent="TowerSpots"]
-position = Vector2(820, 880)
+position = Vector2(1580, 540)
 
 [node name="HeroSpawn" type="Marker2D" parent="."]
 position = Vector2(1700, 540)
 
 [node name="SpawnMarkers" type="Node2D" parent="."]
 
-[node name="SpawnMarkerLeft" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+[node name="SpawnMarkerMain" parent="SpawnMarkers" instance=ExtResource("3_sm")]
 position = Vector2(40, 540)
-path_id = "left"
-
-[node name="SpawnMarkerTop" parent="SpawnMarkers" instance=ExtResource("3_sm")]
-position = Vector2(500, 40)
-path_id = "right"
-direction_degrees = 90.0
-
-[node name="SpawnMarkerBottom" parent="SpawnMarkers" instance=ExtResource("3_sm")]
-position = Vector2(40, 900)
-path_id = "top"
+path_id = "main"
 
 [node name="GridManager" type="Node" parent="."]
 script = ExtResource("2_grid")

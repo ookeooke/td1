@@ -9,20 +9,20 @@
 [ext_resource type="PackedScene" uid="uid://b1td1boss1scn" path="res://enemies/bosses/Boss1.tscn" id="7_boss"]
 
 ; ============================================================================
-; Level 2 — STUB FOR BALANCE TESTING. target_ppt=3, target hardness ~9,000.
-; Audit-screen demo: drift should land near 0% (green). Shares L1's map.
-; Author proper waves with intent (KR-style W17→W18 strategy counters) before
-; treating this as real content. See balance/BALANCE.md "PPT-banded curve".
+; Level 2 — Single-path serpentine. target_ppt=3, target hardness ~9,000.
+; All spawns funnel through path_id="main" — one entry, one exit, lots of curves.
 ; ============================================================================
 
 [sub_resource type="Resource" id="L2_W1_Basic"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 3.5
 
 [sub_resource type="Resource" id="L2_W1_Armor"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("6_armor")
 count = 3
 interval = 8.0
@@ -34,15 +34,16 @@ spawns = Array[ExtResource("3_spawn")]([SubResource("L2_W1_Basic"), SubResource(
 countdown = 0.0
 bounty = 70
 
-[sub_resource type="Resource" id="L2_W2_BasicL"]
+[sub_resource type="Resource" id="L2_W2_BasicA"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 10
 interval = 4.0
 
-[sub_resource type="Resource" id="L2_W2_BasicR"]
+[sub_resource type="Resource" id="L2_W2_BasicB"]
 script = ExtResource("3_spawn")
-path_id = "right"
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 8
 interval = 4.5
@@ -50,7 +51,7 @@ start_delay = 2.0
 
 [sub_resource type="Resource" id="L2_W2_Fly"]
 script = ExtResource("3_spawn")
-path_id = "top"
+path_id = "main"
 enemy_scene = ExtResource("5_fly")
 count = 4
 interval = 6.0
@@ -58,6 +59,7 @@ start_delay = 8.0
 
 [sub_resource type="Resource" id="L2_W2_Armor"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("6_armor")
 count = 4
 interval = 7.0
@@ -65,24 +67,26 @@ start_delay = 10.0
 
 [sub_resource type="Resource" id="L2_Wave2"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("L2_W2_BasicL"), SubResource("L2_W2_BasicR"), SubResource("L2_W2_Fly"), SubResource("L2_W2_Armor")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("L2_W2_BasicA"), SubResource("L2_W2_BasicB"), SubResource("L2_W2_Fly"), SubResource("L2_W2_Armor")])
 countdown = 22.0
 bounty = 50
 
 [sub_resource type="Resource" id="L2_W3_Boss"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("7_boss")
 start_delay = 18.0
 
-[sub_resource type="Resource" id="L2_W3_BasicL"]
+[sub_resource type="Resource" id="L2_W3_BasicA"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 3.5
 
-[sub_resource type="Resource" id="L2_W3_BasicR"]
+[sub_resource type="Resource" id="L2_W3_BasicB"]
 script = ExtResource("3_spawn")
-path_id = "right"
+path_id = "main"
 enemy_scene = ExtResource("4_basic")
 count = 10
 interval = 4.0
@@ -90,7 +94,7 @@ start_delay = 4.0
 
 [sub_resource type="Resource" id="L2_W3_Fly"]
 script = ExtResource("3_spawn")
-path_id = "top"
+path_id = "main"
 enemy_scene = ExtResource("5_fly")
 count = 5
 interval = 5.5
@@ -98,6 +102,7 @@ start_delay = 8.0
 
 [sub_resource type="Resource" id="L2_W3_Armor"]
 script = ExtResource("3_spawn")
+path_id = "main"
 enemy_scene = ExtResource("6_armor")
 count = 5
 interval = 7.0
@@ -105,7 +110,7 @@ start_delay = 12.0
 
 [sub_resource type="Resource" id="L2_Wave3"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("L2_W3_Boss"), SubResource("L2_W3_BasicL"), SubResource("L2_W3_BasicR"), SubResource("L2_W3_Fly"), SubResource("L2_W3_Armor")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("L2_W3_Boss"), SubResource("L2_W3_BasicA"), SubResource("L2_W3_BasicB"), SubResource("L2_W3_Fly"), SubResource("L2_W3_Armor")])
 countdown = 28.0
 bounty = 40
 

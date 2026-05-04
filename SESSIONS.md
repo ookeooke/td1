@@ -2320,3 +2320,42 @@ The original `Array[Resource]` type bug shipped because:
 5. Three sibling implementations existed with differing type annotations — should have been caught on review.
 
 Saved a feedback memory: when fixing duplicated content-load patterns, route through ContentRegistry instead of patching one site.
+
+---
+
+## 2026-05-03 — @tool placeholder fix + Main.tscn level-agnostic refactor
+
+Two pieces:
+
+### Piece 1 — fix @tool flood
+
+`Level1.gd::_draw_tower_spot` (line 346) called `grid_manager.is_occupied(spot_id)` every editor frame. Level1.gd is `@tool`; GridManager.gd is not, so in the editor the GridManager Node loads as a placeholder and method calls fail with `Attempt to call a method on a placeholder instance`. ~5,250 redraw frames × 2 spots = ~10,500 errors flooding the output panel.
+
+Fix: guard the call with `Engine.is_editor_hint()`. In editor, every spot draws as empty (correct — no game running). Runtime behavior unchanged. One edit, ~5 lines.
+
+### Piece 2 — Main.tscn level-agnostic, dynamic level loading
+
+Previously `main/Main.tscn:22` baked `Level1.tscn` as a static instance, and `level_list.tres` had every entry (L1, L2, L3, L4) point `scene_path = "res://main/Main.tscn"` — so all 4 cards played L1's layout. Multi-level support was structurally impossible.
+
+Refactor:
+
+- `main/Main.tscn`: removed the `Level1` ext_resource + node instance. TowerPlacers and HeroInputManager\s `grid_manager_path` / `map_path` set to empty NodePath — Main.gd resolves them dynamically.
+- `main/Main.gd`: new `_enter_tree()` instances the level scene from the LevelNodeData entry's `scene_path` BEFORE children's `_ready` fires, then sets `TowerPlacer.grid_manager_path` and `HeroInputManager.grid_manager_path` / `map_path` via `get_path_to(grid_node)`. Falls back to `Level1.tscn` if the entry is missing or the load fails — partially-authored stub levels (L2/L3/L4 today) still play L1's layout safely.
+  - `_enter_tree` chosen over `_ready` because Godot calls children's `_ready` bottom-up after the parent's `_enter_tree` returns. By instancing the level + setting paths in `_enter_tree`, the children's `_ready` resolves correctly without needing post-hoc re-init methods.
+- `ui/world_map/level_list.tres`: every entry's `scene_path` updated from `res://main/Main.tscn` → `res://levels/Level1.tscn`. When L2/L3/L4 .tscn files are authored, just update the corresponding entry's scene_path.
+
+### Verification (manual, editor)
+
+- Open Level1.tscn in editor — output panel is clean, no placeholder flood.
+- Run game from MainMenu → WorldMap → Forest Path → Campaign → enters Main.tscn, dynamically loads Level1.tscn, gameplay works as before.
+- L2/L3/L4 cards still play L1 layout (because their scene_path falls back to Level1.tscn until their own .tscn ships).
+
+### What broke
+
+- Briefly added an unused `@onready var tower_placer: Node = $TowerPlacer` while working through the wiring — removed before commit.
+
+### Next
+
+- Piece 3: author Level2.tscn with more curves. Will pause here to ask user whether to author the Curve2D points programmatically (writing .tscn directly) or have user place them visually in the editor.
+- Piece 4: Level3.tscn ring topology. Same authoring question.
+- Piece 5 (deferred): L4 topology TBD after playtest.

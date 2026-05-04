@@ -2,11 +2,16 @@
 
 # Gameplay scene. Spawns the hero dynamically from ContentRegistry +
 # LoadoutState.selected_hero_id, then starts waves (campaign or endless).
+# Level scene is instanced dynamically in _enter_tree from
+# LevelNodeData.scene_path so multi-level support is one .tres edit.
 
 const LEVEL1_WAVES: Resource = preload("res://levels/level1_waves.tres")
+const _LEVEL1_SCENE: PackedScene = preload("res://levels/Level1.tscn")
 const HERO_TEMPLATE: PackedScene = preload("res://heroes/HeroWarrior.tscn")
 
-@onready var level: Node2D = $Level1
+# `level` set in _enter_tree; nullable until then. Kept untyped so the
+# Level1/Level2/Level3 root types can vary without rebinding.
+var level: Node2D = null
 @onready var towers: Node2D = $Towers
 @onready var hero_input: Node = $HeroInputManager
 
@@ -14,6 +19,42 @@ const HERO_TEMPLATE: PackedScene = preload("res://heroes/HeroWarrior.tscn")
 # delta so PAUSE_MODE_STOP (tactical pause) doesn't inflate the time.
 var _level_elapsed: float = 0.0
 var _level_done: bool = false
+
+
+func _enter_tree() -> void:
+	# Instance the level scene BEFORE children's _ready runs so TowerPlacer
+	# and HeroInputManager resolve their grid_manager / map paths to the
+	# right nodes on first lookup. Falls back to Level1.tscn if the
+	# LevelNodeData entry is missing scene_path or its load fails — keeps
+	# partially-authored stubs (L2/L3/L4) playable until their own .tscn ships.
+	var entry: Resource = ContentRegistry.find_level(RunState.current_level_id)
+	var scene_path: String = ""
+	if entry != null and "scene_path" in entry:
+		scene_path = entry.scene_path
+	var scene: PackedScene = null
+	if scene_path != "":
+		scene = load(scene_path)
+	if scene == null:
+		if scene_path != "":
+			push_warning("[Main] level scene_path %s failed to load — falling back to Level1" % scene_path)
+		scene = _LEVEL1_SCENE
+	level = scene.instantiate()
+	add_child(level)
+	# Level should be tree-order before TowerPlacer / HeroInputManager so
+	# any code paths iterating children (e.g. WaveManager spawn lookups)
+	# encounter the level first.
+	move_child(level, 0)
+	# Wire NodePath properties on TowerPlacer + HeroInputManager BEFORE
+	# their _ready fires (children's _ready runs after _enter_tree returns).
+	var grid_node: Node = level.get_node_or_null("GridManager")
+	if grid_node != null:
+		var placer: Node = $TowerPlacer
+		var input_mgr: Node = $HeroInputManager
+		placer.grid_manager_path = placer.get_path_to(grid_node)
+		input_mgr.grid_manager_path = input_mgr.get_path_to(grid_node)
+		input_mgr.map_path = input_mgr.get_path_to(level)
+	else:
+		push_error("[Main] level %s has no GridManager child" % level.name)
 
 
 func _ready() -> void:

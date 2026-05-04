@@ -343,7 +343,13 @@ func _draw_tower_spot(pos: Vector2, spot_id: String, pulse_t: float) -> void:
 	# 4. Build-ready marker — only shown when the spot is empty. Crossed
 	# wooden planks (X shape) plus a small hammer-head dot, gently pulsing
 	# in scale so the player's eye is drawn to buildable locations.
-	var occupied: bool = grid_manager != null and grid_manager.is_occupied(spot_id)
+	# In editor: skip the GridManager call — GridManager isn't @tool, so it
+	# loads as a placeholder Node and method calls fail with thousands of
+	# "Attempt to call a method on a placeholder instance" errors per second.
+	# Every spot is empty in editor anyway (no game running), so always draw.
+	var occupied: bool = false
+	if not Engine.is_editor_hint() and grid_manager != null:
+		occupied = grid_manager.is_occupied(spot_id)
 	if occupied:
 		return
 	var pulse_scale: float = 0.92 + pulse_t * 0.10

@@ -1,7 +1,6 @@
 [gd_scene format=3 uid="uid://b1td1main0000"]
 
 [ext_resource type="Script" uid="uid://dtevl1o7s1kmo" path="res://main/Main.gd" id="1_main"]
-[ext_resource type="PackedScene" uid="uid://ct8yqj3l40vnj" path="res://levels/Level1.tscn" id="2_level"]
 [ext_resource type="PackedScene" uid="uid://b1td1hud00000" path="res://ui/HUD.tscn" id="3_hud"]
 [ext_resource type="Script" uid="uid://cia00jfopb0ri" path="res://ui/TowerPlacer.gd" id="4_placer"]
 [ext_resource type="PackedScene" uid="uid://c70rgmgd86rq6" path="res://ui/RangePreview.tscn" id="6_range"]
@@ -19,22 +18,20 @@ script = ExtResource("1_main")
 [node name="GameCamera" type="Camera2D" parent="."]
 script = ExtResource("13_camera")
 
-[node name="Level1" parent="." unique_id=561473782 instance=ExtResource("2_level")]
-
 [node name="Towers" type="Node2D" parent="." unique_id=1148698084]
 
 [node name="TowerPlacer" type="Node" parent="." unique_id=1511043710]
 script = ExtResource("4_placer")
 towers_parent_path = NodePath("../Towers")
-grid_manager_path = NodePath("../Level1/GridManager")
+grid_manager_path = NodePath("")
 
 [node name="RangePreview" parent="." unique_id=2115949086 instance=ExtResource("6_range")]
 
 [node name="HeroInputManager" type="Node" parent="."]
 script = ExtResource("9_heroinput")
 hero_path = NodePath("")
-grid_manager_path = NodePath("../Level1/GridManager")
-map_path = NodePath("../Level1")
+grid_manager_path = NodePath("")
+map_path = NodePath("")
 
 [node name="HUD" parent="." unique_id=1889816095 instance=ExtResource("3_hud")]
 

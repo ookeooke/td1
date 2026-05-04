@@ -28,8 +28,8 @@ target_ppt = 2
 [sub_resource type="Resource" id="Level2"]
 script = ExtResource("1_lnd")
 level_id = "level_2"
-display_name = "Stone Bridge (test stub)"
-scene_path = "res://levels/Level1.tscn"
+display_name = "Stone Bridge"
+scene_path = "res://levels/Level2.tscn"
 unlock_order = 2
 wave_list_path = "res://levels/level2_waves.tres"
 target_duration_sec = 240.0

@@ -156,3 +156,11 @@ layout_mode = 2
 text = "Audit"
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)
+
+[node name="UnlockAllButton" type="Button" parent="BottomBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 80)
+layout_mode = 2
+text = "Unlock All"
+theme_override_font_sizes/font_size = 16
+modulate = Color(1, 0.8, 0.4, 1)

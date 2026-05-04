@@ -28,6 +28,7 @@ var _levels: Array[Resource] = []
 @onready var balance_report_button: Button = %BalanceReportButton
 @onready var balance_sliders_button: Button = %BalanceSlidersButton
 @onready var level_audit_button: Button = %LevelAuditButton
+@onready var unlock_all_button: Button = %UnlockAllButton
 
 
 func _ready() -> void:
@@ -47,11 +48,13 @@ func _ready() -> void:
 		balance_report_button.pressed.connect(_on_balance_report)
 		balance_sliders_button.pressed.connect(_on_balance_sliders)
 		level_audit_button.pressed.connect(_on_level_audit)
+		unlock_all_button.pressed.connect(_on_unlock_all)
 	else:
 		test_range_button.visible = false
 		balance_report_button.visible = false
 		balance_sliders_button.visible = false
 		level_audit_button.visible = false
+		unlock_all_button.visible = false
 	_refresh_stars_label()
 	_refresh_meta_gold_label()
 	_refresh_heroes_button_dot()
@@ -173,6 +176,19 @@ func _on_level_audit() -> void:
 	# Debug-only — cross-level hardness + PPT-drift table. Reads authored
 	# level_list.tres + per-level wave_list .tres files.
 	SceneManager.goto("res://balance/audit/LevelAudit.tscn")
+
+
+func _on_unlock_all() -> void:
+	# Debug-only — flips levels_unlocked[id] = true for every level in
+	# ContentRegistry. Persists via SaveManager. Campaign-mode only;
+	# Heroic/Iron still gate on stars / heroic_complete. Refreshes cards.
+	for lvl in ContentRegistry.levels:
+		if lvl == null or not ("level_id" in lvl) or lvl.level_id == "":
+			continue
+		MetaProgression.levels_unlocked[lvl.level_id] = true
+	SaveManager.save_game()
+	_build_level_entries()
+	print("[WorldMap] unlock-all (debug) — %d levels unlocked" % ContentRegistry.levels.size())
 
 
 func _build_level_entries() -> void:

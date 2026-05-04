@@ -395,6 +395,42 @@ Every new tower class MUST implement the full Tower Indicator Interface (CORE RU
 2. Override `apply(hero, target)`
 3. Create `heroes/data/skills/skill_foo.tres` and reference in hero `.tres` → `skills` array
 
+**New level (template-based, since Phase 48):**
+
+Levels stay as editor-visible `.tscn` files (CORE RULE: human drags Curve2D handles + Marker2D positions in the Godot 2D editor). Generation produces a draft from a topology template; the human hand-tunes everything else.
+
+1. **User specs the level in chat** — minimal: number of spawn points, number of paths, approximate spot count, optional topology hint, target hardness. Example: *"Generate L3 — 1 spawn, 1 path with central ring detour, 8 spots, target_ppt 4."*
+
+2. **Pick the closest template** in `res://levels/templates/`:
+    | Template | Topology |
+    |---|---|
+    | `template_single_serpentine.tscn` | 1 spawn, 1 path "main" with 4 S-curves, 6 spots — focused gauntlet |
+    | `template_two_path_converge.tscn` | 2 spawns, 2 paths "north"/"south" converging at the right base, 8 spots |
+    | `template_three_path_classic.tscn` | 3 spawns, 3 paths "left"/"top"/"bottom", 8 spots — Kingdom Rush three-front |
+    | `template_ring_detour.tscn` | 1 spawn, 1 path "main" with 3/4 ring around map center, 8 spots |
+
+3. **Copy and rename:**
+    - `template_*.tscn` → `levels/Level<N>.tscn` — change root node name, change script ext_resource path from `BaseLevel.gd` to the new `Level<N>.gd`
+    - `template_*_waves.tres` → `levels/level<N>_waves.tres`
+    - Create `levels/Level<N>.gd` (4-line subclass — `extends BaseLevel` + override `_level_id()` and `_wave_list_path()`)
+
+4. **Adjust the spec parameters** — curve waypoints, spot positions, hero spawn, spot count. Edit waypoint coordinates directly in the `.tscn`'s `Curve2D` `_data.points` array, OR open the scene in Godot and drag handles visually.
+
+5. **Register in `ui/world_map/level_list.tres`** — add a `level_<N>` entry pointing at the new `scene_path`, `wave_list_path`, with `min_ppt`, `target_ppt` matching the user's hardness target.
+
+6. **Author the wave file** — replace the placeholder waves with real content. Use the existing wave files (`level1_waves.tres`, `level2_waves.tres`) as references.
+
+**Template invariants** — every template `.tscn` MUST have:
+- Root node attached to `res://levels/BaseLevel.gd` (no per-template script)
+- `Paths` Node2D parent with named Path2D children (the names become wave `path_id` strings)
+- `TowerSpots` Node2D parent with Marker2D children (names = spot_ids)
+- `HeroSpawn` Marker2D directly under root
+- `SpawnMarkers` Node2D parent with `SpawnMarker.tscn` instances, each `path_id` matching a Path2D node name
+- `GridManager` Node + `SpotInputManager` Node — the runtime systems Main.tscn wires up
+- A NavigationPolygon covering `map_bounds`
+
+**Don't propose data-driven `.tres` levels (LevelBuilder + LevelData schema).** That refactor was explicitly rejected — it would take levels away from the visual editor, which is non-negotiable. Templates + BaseLevel + per-level subclass is the chosen path.
+
 ---
 
 ## Asset Strategy

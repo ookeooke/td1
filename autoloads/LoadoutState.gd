@@ -53,9 +53,11 @@ func reset() -> void:
 # - Elements beyond `tower_slot_cap` are never returned (player can't use them).
 # - Entries referencing a missing/locked tower are skipped (the slot will
 #   render empty in the ring).
-# - If the filtered list is empty (fresh save on a build with no defaults),
-#   falls back to the full set of unlocked towers so the player isn't stuck
-#   with a blank build ring.
+# - No fallback to "all unlocked towers" — that asymmetry made LoadoutScreen
+#   look populated while the build ring + LoadoutPickerScreen showed empty
+#   slots. SaveManager's load-time self-heal (in _apply_save_data) guarantees
+#   selected_tower_ids has the 4 defaults whenever the saved state has zero
+#   usable entries, so a fallback here is unnecessary.
 func get_loadout_towers() -> Array:
 	var out: Array = []
 	var limit: int = mini(tower_slot_cap, selected_tower_ids.size())
@@ -69,10 +71,6 @@ func get_loadout_towers() -> Array:
 		if not UnlockManager.is_tower_unlocked(tid):
 			continue
 		out.append(data)
-	if out.is_empty():
-		for data in ContentRegistry.towers:
-			if data != null and UnlockManager.is_tower_unlocked(data.tower_id):
-				out.append(data)
 	return out
 
 

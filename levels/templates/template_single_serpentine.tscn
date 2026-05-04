@@ -1,0 +1,69 @@
+[gd_scene format=3 uid="uid://b1td1tplsing"]
+
+; Template — single horizontal serpentine path. 1 spawn, 1 path "main", 6 spots.
+; Use case: levels where every wave funnels through one long curvy gauntlet.
+; Generate: copy this file → levels/Level<N>.tscn, swap script ext_resource
+; from BaseLevel.gd to a new Level<N>.gd (4-line subclass), adjust waypoints
+; + spot positions, add a level_<N> entry to ui/world_map/level_list.tres.
+
+[ext_resource type="Script" path="res://levels/BaseLevel.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dc37fqwyab2la" path="res://map/GridManager.gd" id="2_grid"]
+[ext_resource type="PackedScene" uid="uid://ct8yxr78jyvnj" path="res://map/SpawnMarker.tscn" id="3_sm"]
+[ext_resource type="Script" uid="uid://dfxik7tpohcj3" path="res://map/SpotInputManager.gd" id="4_sim"]
+
+[sub_resource type="NavigationPolygon" id="NavPoly"]
+vertices = PackedVector2Array(-40, -40, 1960, -40, 1960, 1120, -40, 1120)
+polygons = Array[PackedInt32Array]([PackedInt32Array(0, 1, 2, 3)])
+outlines = Array[PackedVector2Array]([PackedVector2Array(-40, -40, 1960, -40, 1960, 1120, -40, 1120)])
+
+[sub_resource type="Curve2D" id="Curve_Main"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 40, 540, 0, 0, 0, 0, 240, 540, 0, 0, 0, 0, 380, 320, 0, 0, 0, 0, 560, 760, 0, 0, 0, 0, 740, 320, 0, 0, 0, 0, 920, 760, 0, 0, 0, 0, 1100, 320, 0, 0, 0, 0, 1280, 760, 0, 0, 0, 0, 1460, 320, 0, 0, 0, 0, 1640, 540, 0, 0, 0, 0, 1880, 540)
+}
+point_count = 11
+
+[node name="LevelTemplate_SingleSerpentine" type="Node2D"]
+script = ExtResource("1_base")
+
+[node name="NavigationRegion2D" type="NavigationRegion2D" parent="."]
+navigation_polygon = SubResource("NavPoly")
+
+[node name="Paths" type="Node2D" parent="."]
+
+[node name="main" type="Path2D" parent="Paths"]
+curve = SubResource("Curve_Main")
+
+[node name="TowerSpots" type="Node2D" parent="."]
+
+[node name="Spot1" type="Marker2D" parent="TowerSpots"]
+position = Vector2(320, 540)
+
+[node name="Spot2" type="Marker2D" parent="TowerSpots"]
+position = Vector2(560, 540)
+
+[node name="Spot3" type="Marker2D" parent="TowerSpots"]
+position = Vector2(820, 540)
+
+[node name="Spot4" type="Marker2D" parent="TowerSpots"]
+position = Vector2(1080, 540)
+
+[node name="Spot5" type="Marker2D" parent="TowerSpots"]
+position = Vector2(1340, 540)
+
+[node name="Spot6" type="Marker2D" parent="TowerSpots"]
+position = Vector2(1580, 540)
+
+[node name="HeroSpawn" type="Marker2D" parent="."]
+position = Vector2(1700, 540)
+
+[node name="SpawnMarkers" type="Node2D" parent="."]
+
+[node name="SpawnMarkerMain" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+position = Vector2(40, 540)
+path_id = "main"
+
+[node name="GridManager" type="Node" parent="."]
+script = ExtResource("2_grid")
+
+[node name="SpotInputManager" type="Node" parent="."]
+script = ExtResource("4_sim")

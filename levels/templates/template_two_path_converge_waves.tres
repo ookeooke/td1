@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="WaveList" format=3 uid="uid://b1td1tpltwowv"]
+
+[ext_resource type="Script" uid="uid://b20v3766p6m5g" path="res://waves/WaveList.gd" id="1_list"]
+[ext_resource type="Script" uid="uid://bi3tyyql6gp6g" path="res://waves/WaveData.gd" id="2_wave"]
+[ext_resource type="Script" uid="uid://bn01uqj5y40yv" path="res://waves/WaveSpawn.gd" id="3_spawn"]
+[ext_resource type="PackedScene" uid="uid://ct8yjsiicg7nj" path="res://enemies/EnemyBasic.tscn" id="4_basic"]
+
+; ============================================================================
+; Template placeholder waves — single wave splitting basic enemies between
+; the two paths. path_ids match the template's Path2D node names ("north" /
+; "south"). Replace with authored content when generating a real level.
+; ============================================================================
+
+[sub_resource type="Resource" id="W1_North"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("4_basic")
+count = 6
+interval = 2.5
+
+[sub_resource type="Resource" id="W1_South"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("4_basic")
+count = 6
+interval = 2.5
+start_delay = 1.0
+
+[sub_resource type="Resource" id="Wave1"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("W1_North"), SubResource("W1_South")])
+countdown = 0.0
+bounty = 60
+
+[resource]
+script = ExtResource("1_list")
+waves = Array[ExtResource("2_wave")]([SubResource("Wave1")])

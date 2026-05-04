@@ -1,0 +1,102 @@
+[gd_scene format=3 uid="uid://b1td1tpl3path"]
+
+; Template — three paths from left/top/bottom converging at the right base.
+; Mirrors the Level1 pattern. Path "left" runs along the centerline; "top"
+; descends from the upper edge; "bottom" rises from the lower edge. 8 spots —
+; 4 along the centerline cluster + 2 covering the top approach + 2 covering
+; the bottom approach. Use case: classic three-front Kingdom-Rush layout.
+
+[ext_resource type="Script" path="res://levels/BaseLevel.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dc37fqwyab2la" path="res://map/GridManager.gd" id="2_grid"]
+[ext_resource type="PackedScene" uid="uid://ct8yxr78jyvnj" path="res://map/SpawnMarker.tscn" id="3_sm"]
+[ext_resource type="Script" uid="uid://dfxik7tpohcj3" path="res://map/SpotInputManager.gd" id="4_sim"]
+
+[sub_resource type="NavigationPolygon" id="NavPoly"]
+vertices = PackedVector2Array(-40, -40, 1960, -40, 1960, 1120, -40, 1120)
+polygons = Array[PackedInt32Array]([PackedInt32Array(0, 1, 2, 3)])
+outlines = Array[PackedVector2Array]([PackedVector2Array(-40, -40, 1960, -40, 1960, 1120, -40, 1120)])
+
+[sub_resource type="Curve2D" id="Curve_Left"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 40, 540, 0, 0, 0, 0, 300, 540, 0, 0, 0, 0, 700, 540, 0, 0, 0, 0, 1100, 540, 0, 0, 0, 0, 1500, 540, 0, 0, 0, 0, 1880, 540)
+}
+point_count = 6
+
+[sub_resource type="Curve2D" id="Curve_Top"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 960, 40, 0, 0, 0, 0, 1000, 220, 0, 0, 0, 0, 1100, 380, 0, 0, 0, 0, 1300, 480, 0, 0, 0, 0, 1500, 520, 0, 0, 0, 0, 1880, 540)
+}
+point_count = 6
+
+[sub_resource type="Curve2D" id="Curve_Bottom"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 40, 900, 0, 0, 0, 0, 400, 880, 0, 0, 0, 0, 800, 800, 0, 0, 0, 0, 1200, 700, 0, 0, 0, 0, 1500, 600, 0, 0, 0, 0, 1880, 540)
+}
+point_count = 6
+
+[node name="LevelTemplate_ThreePathClassic" type="Node2D"]
+script = ExtResource("1_base")
+
+[node name="NavigationRegion2D" type="NavigationRegion2D" parent="."]
+navigation_polygon = SubResource("NavPoly")
+
+[node name="Paths" type="Node2D" parent="."]
+
+[node name="left" type="Path2D" parent="Paths"]
+curve = SubResource("Curve_Left")
+
+[node name="top" type="Path2D" parent="Paths"]
+curve = SubResource("Curve_Top")
+
+[node name="bottom" type="Path2D" parent="Paths"]
+curve = SubResource("Curve_Bottom")
+
+[node name="TowerSpots" type="Node2D" parent="."]
+
+[node name="Spot1" type="Marker2D" parent="TowerSpots"]
+position = Vector2(300, 540)
+
+[node name="Spot2" type="Marker2D" parent="TowerSpots"]
+position = Vector2(600, 540)
+
+[node name="Spot3" type="Marker2D" parent="TowerSpots"]
+position = Vector2(900, 540)
+
+[node name="Spot4" type="Marker2D" parent="TowerSpots"]
+position = Vector2(1200, 540)
+
+[node name="Spot5" type="Marker2D" parent="TowerSpots"]
+position = Vector2(1100, 360)
+
+[node name="Spot6" type="Marker2D" parent="TowerSpots"]
+position = Vector2(1100, 720)
+
+[node name="Spot7" type="Marker2D" parent="TowerSpots"]
+position = Vector2(1500, 540)
+
+[node name="Spot8" type="Marker2D" parent="TowerSpots"]
+position = Vector2(1700, 540)
+
+[node name="HeroSpawn" type="Marker2D" parent="."]
+position = Vector2(1750, 540)
+
+[node name="SpawnMarkers" type="Node2D" parent="."]
+
+[node name="SpawnMarkerLeft" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+position = Vector2(40, 540)
+path_id = "left"
+
+[node name="SpawnMarkerTop" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+position = Vector2(960, 40)
+path_id = "top"
+direction_degrees = 90.0
+
+[node name="SpawnMarkerBottom" parent="SpawnMarkers" instance=ExtResource("3_sm")]
+position = Vector2(40, 900)
+path_id = "bottom"
+
+[node name="GridManager" type="Node" parent="."]
+script = ExtResource("2_grid")
+
+[node name="SpotInputManager" type="Node" parent="."]
+script = ExtResource("4_sim")

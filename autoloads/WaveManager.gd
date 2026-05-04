@@ -56,7 +56,10 @@ const _BOSS_SCENES: Array[PackedScene] = [
 # Phase 43: one Path2D per spawn direction. Non-boss enemies are assigned one
 # of 3 discrete lanes via PathFollow2D.v_offset so the swarm occupies three
 # visible tracks across horizontal paths. Bosses stay centered.
-const _BASE_PATH_IDS: Array[String] = ["left", "right", "top"]
+# Endless mode discovers the active level's path_ids via _level.get_path_ids()
+# at wave-generation time — no global path-id list, so any level topology
+# (1 path, 3 paths, ring, etc.) works without WaveManager edits.
+const _ENDLESS_PATH_FALLBACK: Array[String] = ["left"]
 const LANE_SPACING: float = 50.0  # ± pixels between adjacent lanes (v_offset on horizontal paths)
 
 
@@ -374,12 +377,20 @@ func _generate_endless_wave(wave_num: int) -> Resource:
 
 	# Base enemy count scales with wave number.
 	var base_count: int = 4 + wave_num * 2
-	# Pick paths — early waves use 1-2 paths, later use all 3.
+	# Discover the level's actual path_ids — works on L1 (3 paths), L2 (1 path),
+	# and any future level with arbitrary topology. Fallback to ["left"] only
+	# if the level doesn't implement get_path_ids() (legacy / partial).
+	var level_path_ids: Array[String] = _ENDLESS_PATH_FALLBACK
+	if _level != null and _level.has_method("get_path_ids"):
+		var queried: Array[String] = _level.get_path_ids()
+		if queried.size() > 0:
+			level_path_ids = queried
+	# Pick paths — early waves use 1-2 paths, later use all available.
 	@warning_ignore("integer_division")
-	var num_paths: int = mini(1 + wave_num / 3, _BASE_PATH_IDS.size())
+	var num_paths: int = mini(1 + wave_num / 3, level_path_ids.size())
 	var active_paths: Array[String] = []
 	for i in num_paths:
-		active_paths.append(_BASE_PATH_IDS[i % _BASE_PATH_IDS.size()])
+		active_paths.append(level_path_ids[i % level_path_ids.size()])
 
 	# Distribute enemies across paths with type mixing.
 	@warning_ignore("integer_division")

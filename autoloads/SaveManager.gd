@@ -276,18 +276,20 @@ func _load_from_path(path: String) -> void:
 		for tid in data.selected_tower_ids:
 			restored.append(str(tid))
 		LoadoutState.selected_tower_ids = restored
-	# 2026-04-29 audit fix — repair saves polluted by the prior TestRange leak
-	# (cap=6 + 5-tower loadout). Slots 5–6 aren't unlocked through any
-	# progression yet, so any cap > 4 is by definition stale state. Force back
-	# to 4; the player keeps their 4 chosen towers (truncates extras silently).
-	if LoadoutState.tower_slot_cap > 4:
-		print("[SaveManager] repairing polluted tower_slot_cap=%d → 4" % LoadoutState.tower_slot_cap)
-		LoadoutState.tower_slot_cap = 4
-		# Trim selected_tower_ids to the first 4 entries — the player's
-		# original picks come back; tower_ice / placeholder entries leaked
-		# from TestRange get dropped.
-		if LoadoutState.selected_tower_ids.size() > 4:
-			LoadoutState.selected_tower_ids = LoadoutState.selected_tower_ids.slice(0, 4)
+	# Self-heal: if every slot in the loaded loadout is empty/unresolvable,
+	# restore the 4 default tower_ids. Prevents the build ring from rendering
+	# all-padlocks (looks broken to the player) when the save was corrupted
+	# by content_hash mismatch, manual edit, or prior TestRange pollution.
+	# Conservative threshold — only reset when zero towers are usable; a
+	# partial loadout (player intentionally cleared some slots) is preserved.
+	var usable_towers: int = 0
+	for tid in LoadoutState.selected_tower_ids:
+		if tid != "" and ContentRegistry.find_tower(tid) != null and UnlockManager.is_tower_unlocked(tid):
+			usable_towers += 1
+			break
+	if usable_towers == 0:
+		print("[SaveManager] loadout has zero usable towers — restoring defaults")
+		LoadoutState.reset_loadout_to_default()
 	if data.has("hero_equipped_skills") and data.hero_equipped_skills is Dictionary:
 		LoadoutState.hero_equipped_skills = {}
 		for hero_id in data.hero_equipped_skills:

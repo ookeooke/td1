@@ -1,14 +1,13 @@
 @tool
 extends Node2D
 
-# Level2: second campaign map — same engine bones as Level1, more curves
-# in the path geometry so it visually escalates over L1. Wave content,
-# tower spots, hero spawn all level-specific. Uses the same procedural
-# decoration pipeline (rocks/grass/trees) until art direction differentiates.
+# Level2: second campaign map — more curves than Level1.
+# Near-byte-for-byte copy of Level1.gd; only level-id-bearing strings
+# differ. When L3 lands and the duplication is undeniable, extract a
+# BaseLevel.gd parent and have L1/L2/L3 subclass it.
 #
-# This is a near-clone of Level1.gd. When a third level lands and the
-# duplication is undeniable, extract a BaseLevel.gd parent and have L1/L2/L3
-# subclass it. Today the simpler-but-duplicated copy reads cleaner.
+# Shared systems (GridManager, SpotInputManager, SpawnMarker) live under
+# res://map/ and are instanced here.
 
 const MAP_SIZE := Vector2(1920, 1080)
 const BG_COLOR := Color(0.32, 0.52, 0.28, 1.0)
@@ -80,36 +79,89 @@ func _print_hardness_readout() -> void:
 	print("[Level2/Balance] %s net=%d (waves=%d, start=%dg)%s" % [
 		String(b.tier), int(b.net_score), int(b.wave_total), int(b.starting_gold), per
 	])
+	print("[Level2/Budget] natural=%dg  max_with_early_calls=%dg  swing=+%dg" % [
+		int(b.gold_natural), int(b.gold_max_with_early_calls), int(b.early_call_swing)
+	])
+	var ratio_line: String = ""
+	var total_req_dmg: float = 0.0
+	for i in range(wl.waves.size()):
+		var w: WaveData = wl.waves[i]
+		var req_dmg: float = bc.wave_required_damage(w)
+		var req_dps: float = bc.wave_required_dps(w)
+		var gpd: float = bc.wave_gold_per_damage(w)
+		ratio_line += "  W%d=%d req_dps=%.1f g/dmg=%.2f" % [i + 1, int(req_dmg), req_dps, gpd]
+		total_req_dmg += req_dmg
+	var level_gpd: float = 0.0
+	if total_req_dmg > 0.0:
+		level_gpd = float(b.gold_natural) / total_req_dmg
+	print("[Level2/Ratios] req_dmg=%d  natural_g/dmg=%.2f%s" % [
+		int(total_req_dmg), level_gpd, ratio_line
+	])
+	var towers: Array = ContentRegistry.towers if ContentRegistry != null else []
+	var window_sec: float = 60.0
+	print("[Level2/Towers] dmg per gold over %.0fs window:" % window_sec)
+	var best_l1: float = 0.0
+	for t in towers:
+		if not (t is TowerData) or t.damage <= 0.0:
+			continue
+		var l1: float = bc.tower_damage_per_gold(t, 0, window_sec)
+		var l2: float = bc.tower_damage_per_gold(t, 1, window_sec)
+		var l3: float = bc.tower_damage_per_gold(t, 2, window_sec)
+		print("  %s  L1=%.2f  L2=%.2f  L3=%.2f" % [String(t.tower_name), l1, l2, l3])
+		if l1 > best_l1:
+			best_l1 = l1
+	if best_l1 > 0.0:
+		var req_line: String = "  best_L1=%.2f dmg/g  →" % best_l1
+		for i in range(wl.waves.size()):
+			var w: WaveData = wl.waves[i]
+			var rg: int = bc.wave_required_gold(w, best_l1)
+			req_line += "  W%d_need=%dg/got=%dg" % [i + 1, rg, int(b.per_wave_gold[i])]
+		print("[Level2/GoldVsNeed]%s" % req_line)
+	var dead_line: String = ""
+	for i in range(wl.waves.size()):
+		var w: WaveData = wl.waves[i]
+		var t: Dictionary = bc.wave_spawn_timeline(w)
+		var flag: String = " ⚠" if float(t.max_gap) > 5.0 else ""
+		dead_line += "  W%d max=%.1fs dead=%.1fs%s" % [
+			i + 1, float(t.max_gap), float(t.dead_air), flag
+		]
+	print("[Level2/DeadAir]%s" % dead_line)
 	var ld: LevelNodeData = _find_level_data("level_2")
 	if ld == null:
 		return
 	var rep: Dictionary = bc.level_pressure_report(wl, ld, RunState.STARTING_GOLD)
-	var line: String = ""
+	var pressure_line: String = ""
 	for entry in rep.per_wave:
-		line += "  W%d g=%d/%d p=%.2f/%.2f" % [
-			entry.wave, int(entry.actual_gold), int(entry.target_gold),
-			entry.actual_pressure, entry.target_pressure,
+		pressure_line += "  W%d g=%d/%d p=%.2f/%.2f" % [
+			int(entry.wave),
+			int(entry.actual_gold), int(entry.target_gold),
+			float(entry.actual_pressure), float(entry.target_pressure),
 		]
 	print("[Level2/Pressure] total=%d/%dg (%+.0f%%)%s" % [
 		int(rep.total_actual_gold), int(rep.total_target_gold),
-		rep.total_drift_pct, line,
+		float(rep.total_drift_pct), pressure_line
 	])
 	for w in rep.warnings:
 		print("[Level2/DRIFT] WARN %s" % String(w))
 
 
 func _find_level_data(level_id: String) -> LevelNodeData:
-	return ContentRegistry.find_level(level_id)
+	var registry: Resource = load("res://ui/world_map/level_list.tres")
+	if registry == null:
+		return null
+	var levels: Array = registry.levels
+	for entry in levels:
+		if entry is LevelNodeData and entry.level_id == level_id:
+			return entry
+	return null
 
 
 func _configure_camera() -> void:
-	var cam: Camera2D = get_tree().root.find_child("GameCamera", true, false) as Camera2D
-	if cam == null:
-		return
-	if cam.has_method("set_map_bounds"):
-		cam.set_map_bounds(map_bounds)
-	elif "map_bounds" in cam:
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam != null and "map_bounds" in cam:
 		cam.map_bounds = map_bounds
+		if cam.has_method("configure_bounds"):
+			cam.configure_bounds(map_bounds)
 
 
 func _on_editor_tree_changed() -> void:
@@ -117,32 +169,36 @@ func _on_editor_tree_changed() -> void:
 	queue_redraw()
 
 
-func _process(_delta: float) -> void:
+var _spot_pulse_accum: float = 0.0
+
+
+func _process(delta: float) -> void:
 	if Engine.is_editor_hint():
+		queue_redraw()
+		return
+	_spot_pulse_accum += delta
+	if _spot_pulse_accum >= 0.05:
+		_spot_pulse_accum = 0.0
 		queue_redraw()
 
 
 func _cache_paths() -> void:
 	_paths_by_id.clear()
 	if paths_node == null:
-		paths_node = $Paths if has_node("Paths") else null
-	if paths_node == null:
 		return
 	for child in paths_node.get_children():
 		if child is Path2D:
-			_paths_by_id[child.name] = child
+			_paths_by_id[String(child.name)] = child
 
 
 func get_path_by_id(path_id: String) -> Path2D:
-	if _paths_by_id.is_empty():
-		_cache_paths()
-	return _paths_by_id.get(path_id, null)
+	return _paths_by_id.get(path_id)
 
 
 func get_hero_spawn_position() -> Vector2:
-	var marker: Node = get_node_or_null("HeroSpawn")
-	if marker is Marker2D:
-		return marker.global_position
+	var m: Marker2D = get_node_or_null("HeroSpawn")
+	if m != null:
+		return m.position
 	return Vector2(960, 540)
 
 
@@ -153,66 +209,45 @@ func _register_tower_spots() -> void:
 
 
 func _generate_decorations() -> void:
-	var scatter = _EnvironmentScatterScript.new()
-	_decorations = scatter.generate(map_bounds, _paths_by_id, tower_spots_node, 1234)
+	var path_pts: PackedVector2Array = PackedVector2Array()
+	if paths_node != null:
+		for child in paths_node.get_children():
+			if child is Path2D and child.curve != null:
+				path_pts.append_array(child.curve.get_baked_points())
+	var spot_positions: Array = []
+	if tower_spots_node != null:
+		for child in tower_spots_node.get_children():
+			if child is Marker2D:
+				spot_positions.append(child.position)
+	var hero_spawn: Vector2 = get_hero_spawn_position()
+	_decorations = _EnvironmentScatterScript.generate(
+		0xCAFEFACE, map_bounds, path_pts, spot_positions, hero_spawn, 80, 600
+	)
 
 
 func _draw() -> void:
+	draw_rect(Rect2(Vector2(-3000, -3000), Vector2(8000, 8000)), BG_COLOR)
 	_draw_borders()
-	_draw_paths()
-	_draw_decorations()
-	_draw_tower_spots()
-
-
-func _draw_paths() -> void:
-	if _paths_by_id.is_empty():
-		_cache_paths()
-	for path in _paths_by_id.values():
-		if path == null or path.curve == null:
-			continue
-		var pts: PackedVector2Array = path.curve.get_baked_points()
-		if pts.size() < 2:
-			continue
-		var transformed: PackedVector2Array = PackedVector2Array()
-		for p in pts:
-			transformed.append(path.position + p)
-		# Outline (slightly darker, slightly wider) under the road for contrast.
-		draw_polyline(transformed, Color(0.35, 0.25, 0.15), PATH_WIDTH + 8.0)
-		draw_polyline(transformed, PATH_COLOR, PATH_WIDTH)
-
-
-func _draw_decorations() -> void:
-	if _decorations.is_empty():
-		return
 	for d in _decorations:
-		if d == null:
-			continue
-		if d.has("kind") and d.kind == "tree":
-			draw_circle(d.pos + Vector2(0, 6), d.radius * 0.55, Color(0.18, 0.32, 0.16))
-			draw_circle(d.pos, d.radius, Color(0.30, 0.55, 0.28))
-			draw_circle(d.pos - Vector2(d.radius * 0.4, d.radius * 0.4), d.radius * 0.35, Color(0.45, 0.70, 0.40))
-		elif d.has("kind") and d.kind == "rock":
-			draw_circle(d.pos, d.radius, Color(0.45, 0.42, 0.38))
-			draw_circle(d.pos - Vector2(d.radius * 0.3, d.radius * 0.3), d.radius * 0.4, Color(0.62, 0.58, 0.52))
-		elif d.has("kind") and d.kind == "grass":
-			draw_line(d.pos, d.pos + Vector2(0, -d.radius * 0.7), Color(0.30, 0.50, 0.25), 2.0)
-			draw_line(d.pos + Vector2(2, 0), d.pos + Vector2(2, -d.radius * 0.5), Color(0.30, 0.50, 0.25), 2.0)
-			draw_line(d.pos + Vector2(-2, 0), d.pos + Vector2(-2, -d.radius * 0.5), Color(0.30, 0.50, 0.25), 2.0)
-
-
-func _draw_tower_spots() -> void:
-	var pulse_t: float = (Time.get_ticks_msec() % 1500) / 1500.0
-	if tower_spots_node == null:
-		return
-	for child in tower_spots_node.get_children():
-		if child is Marker2D:
+		_EnvironmentScatterScript.draw(self, d)
+	var source := paths_node if paths_node != null else get_node_or_null("Paths")
+	if source != null:
+		for child in source.get_children():
+			if child is Path2D and child.curve != null:
+				var pts: PackedVector2Array = child.curve.get_baked_points()
+				if pts.size() >= 2:
+					draw_polyline(pts, PATH_COLOR, PATH_WIDTH)
+	var spots := tower_spots_node if tower_spots_node != null else get_node_or_null("TowerSpots")
+	if spots != null:
+		var pulse_t: float = sin(Time.get_ticks_msec() / 480.0) * 0.5 + 0.5
+		for child in spots.get_children():
+			if not (child is Marker2D):
+				continue
 			_draw_tower_spot(child.position, child.name, pulse_t)
 
 
 func _draw_tower_spot(pos: Vector2, spot_id: String, pulse_t: float) -> void:
-	# Foundation circle.
 	draw_circle(pos, SPOT_RADIUS, SPOT_FILL)
-	# Cobbles.
 	for i in 8:
 		var ang: float = TAU * float(i) / 8.0 + 0.20
 		var p: Vector2 = pos + Vector2(cos(ang), sin(ang)) * (SPOT_RADIUS - 7.0)
@@ -220,8 +255,10 @@ func _draw_tower_spot(pos: Vector2, spot_id: String, pulse_t: float) -> void:
 		draw_circle(p + Vector2(-1.5, -1.5), 2.5, SPOT_COBBLE_HIGHLIGHT)
 	draw_arc(pos, SPOT_RADIUS, 0.0, TAU, 32, SPOT_OUTLINE, 3.0)
 
-	# Build-ready marker — only on empty spots. Editor mode treats every spot
-	# as empty (no game running) to dodge GridManager placeholder errors.
+	# In editor: skip the GridManager call — GridManager isn't @tool, so it
+	# loads as a placeholder Node and method calls fail with thousands of
+	# "Attempt to call a method on a placeholder instance" errors per second.
+	# Every spot is empty in editor anyway (no game running), so always draw.
 	var occupied: bool = false
 	if not Engine.is_editor_hint() and grid_manager != null:
 		occupied = grid_manager.is_occupied(spot_id)
@@ -238,15 +275,44 @@ func _draw_tower_spot(pos: Vector2, spot_id: String, pulse_t: float) -> void:
 
 
 func _draw_borders() -> void:
-	var top := map_bounds.position.y
-	var left := map_bounds.position.x
-	var right := map_bounds.position.x + map_bounds.size.x
-	var bottom := map_bounds.position.y + map_bounds.size.y
-	draw_rect(Rect2(left - BORDER_WIDTH * 8, top - BORDER_WIDTH * 8,
-		map_bounds.size.x + BORDER_WIDTH * 16, BORDER_WIDTH * 8 + 4), MOUNTAIN_COLOR)
-	draw_rect(Rect2(left - BORDER_WIDTH * 8, bottom - 4,
-		map_bounds.size.x + BORDER_WIDTH * 16, BORDER_WIDTH * 8), WATER_COLOR)
-	draw_rect(Rect2(left - BORDER_WIDTH * 8, top - 4,
-		BORDER_WIDTH * 8, map_bounds.size.y + 8), CLIFF_COLOR)
-	draw_rect(Rect2(right - 4, top - 4,
-		BORDER_WIDTH * 8, map_bounds.size.y + 8), CLIFF_COLOR)
+	var mb: Rect2 = map_bounds
+	var bw: float = BORDER_WIDTH
+
+	var mountain_base_y: float = mb.position.y
+	var peak_count: int = int(mb.size.x / 30.0) + 2
+	for i in peak_count:
+		var x: float = mb.position.x - 20.0 + i * 32.0
+		var peak_h: float = bw * 0.5 + fmod(float(i) * 17.3, bw * 0.6)
+		var tri: PackedVector2Array = PackedVector2Array([
+			Vector2(x - 18.0, mountain_base_y),
+			Vector2(x, mountain_base_y - peak_h),
+			Vector2(x + 18.0, mountain_base_y),
+		])
+		draw_colored_polygon(tri, MOUNTAIN_COLOR)
+		if peak_h > bw * 0.7:
+			var cap: PackedVector2Array = PackedVector2Array([
+				Vector2(x - 6.0, mountain_base_y - peak_h + 10.0),
+				Vector2(x, mountain_base_y - peak_h),
+				Vector2(x + 6.0, mountain_base_y - peak_h + 10.0),
+			])
+			draw_colored_polygon(cap, MOUNTAIN_PEAK_COLOR)
+	draw_rect(Rect2(mb.position.x - 100.0, mb.position.y - bw - 200.0, mb.size.x + 200.0, bw + 200.0), MOUNTAIN_COLOR)
+
+	var water_top_y: float = mb.end.y
+	draw_rect(Rect2(mb.position.x - 100.0, water_top_y, mb.size.x + 200.0, bw + 200.0), WATER_COLOR)
+	var wave_pts: PackedVector2Array = PackedVector2Array()
+	var wave_count: int = int(mb.size.x / 10.0) + 3
+	for i in wave_count:
+		var x: float = mb.position.x - 10.0 + i * 10.0
+		var y_off: float = sin(float(i) * 0.8) * 4.0
+		wave_pts.append(Vector2(x, water_top_y + y_off))
+	if wave_pts.size() >= 2:
+		draw_polyline(wave_pts, WATER_LIGHT, 3.0)
+
+	var cliff_x: float = mb.position.x
+	draw_rect(Rect2(cliff_x - bw - 100.0, mb.position.y - bw, bw + 100.0, mb.size.y + bw * 2.0), CLIFF_COLOR)
+	draw_line(Vector2(cliff_x, mb.position.y - bw), Vector2(cliff_x, mb.end.y + bw), CLIFF_DARK, 3.0)
+
+	var cliff_r: float = mb.end.x
+	draw_rect(Rect2(cliff_r, mb.position.y - bw, bw + 100.0, mb.size.y + bw * 2.0), CLIFF_COLOR)
+	draw_line(Vector2(cliff_r, mb.position.y - bw), Vector2(cliff_r, mb.end.y + bw), CLIFF_DARK, 3.0)

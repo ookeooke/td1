@@ -801,6 +801,11 @@ func take_damage(amount: float, type: int, source: Node = null) -> void:
 
 
 func _die() -> void:
+	# Idempotent: future ability/effect code paths may call _die() outside
+	# the take_damage guard; double-firing would emit hero_died twice and
+	# schedule two respawn timers.
+	if state == State.DEAD:
+		return
 	change_state(State.DEAD)
 	velocity = Vector2.ZERO
 	visible = false
@@ -823,10 +828,21 @@ func _respawn() -> void:
 	if not is_instance_valid(self) or data == null:
 		return
 	# Teleport back to the level's HeroSpawn marker (falls back if absent).
+	# Main.gd instantiates the level scene dynamically (Level1/Level2/...)
+	# and exposes it as `level`. Reading that property keeps respawn working
+	# on any level — never hardcode a per-level node name here.
 	var scene: Node = get_tree().current_scene
 	var spawn_pos: Vector2 = global_position
+	var lvl: Node = null
 	if scene != null:
-		var lvl: Node = scene.get_node_or_null("Level1")
+		if "level" in scene:
+			lvl = scene.level
+		if lvl == null or not lvl.has_method("get_hero_spawn_position"):
+			# Fallback for non-Main scene roots (tests, isolated runs).
+			for child in scene.get_children():
+				if child.has_method("get_hero_spawn_position"):
+					lvl = child
+					break
 		if lvl != null and lvl.has_method("get_hero_spawn_position"):
 			spawn_pos = lvl.get_hero_spawn_position()
 	global_position = spawn_pos

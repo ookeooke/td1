@@ -4,6 +4,10 @@
 
 [node name="IceShard" type="Node2D"]
 script = ExtResource("1_arrow")
+shape = 1
 speed = 850.0
 hit_radius = 20.0
 proj_color = Color(0.55, 0.85, 1.0, 1.0)
+glow_enabled = true
+glow_radius = 22.0
+spin_speed = 8.0

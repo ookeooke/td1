@@ -1,22 +1,18 @@
 ﻿extends Control
 
-# World Map — level select screen. Shows one panel per level with name,
-# stars earned, and locked/unlocked state. Tap unlocked → gameplay.
-# Data-driven via res://ui/world_map/level_list.tres loaded at runtime —
-# same source the audit screen, slider panel, and Main.gd's wave resolver
-# read from. Edit level_list.tres to add/remove levels; no .tscn edit needed.
-# Stars + unlock state read from MetaProgression (populated by SaveManager later).
+# World Map — Kingdom Rush-style level selector. Renders a procedural
+# parchment map (WorldMapView) with one banner-on-post marker per level.
+# Tapping an unlocked marker routes to LoadoutScreen, which hosts the
+# level info + mode picker. Locked markers toast a hint and stay put.
+# Data-driven via res://ui/world_map/level_list.tres — add levels there.
 
-# Populated in _ready() from level_list.tres. Iterated by _build_level_entries.
+# Populated in _ready() from ContentRegistry. Pushed into WorldMapView
+# in _build_level_entries.
 var _levels: Array[Resource] = []
 
-# Wave path lookup retired 2026-05-03 — wave_list_path is now a first-class
-# field on LevelNodeData (used by the audit screen, slider panel, and
-# Main.gd's _resolve_wave_list at level start). _format_hardness resolves
-# via level_list.tres directly.
-
 @onready var back_button: Button = %BackButton
-@onready var level_list_container: VBoxContainer = %LevelList
+@onready var world_map_view: WorldMapView = %WorldMapView
+@onready var scroll_container: ScrollContainer = %ScrollContainer
 @onready var heroes_button: Button = %HeroesButton
 @onready var towers_button: Button = %TowersButton
 @onready var codex_button: Button = %CodexButton
@@ -187,195 +183,64 @@ func _on_unlock_all() -> void:
 			continue
 		MetaProgression.levels_unlocked[lvl.level_id] = true
 	SaveManager.save_game()
-	_build_level_entries()
+	_refresh_level_states()
+	# Re-run the auto-scroll so the view jumps to the now-highest unlocked
+	# level (otherwise the camera stays parked over L1 and the player can't
+	# tell that L4 became reachable).
+	_on_markers_built()
 	print("[WorldMap] unlock-all (debug) — %d levels unlocked" % ContentRegistry.levels.size())
 
 
 func _build_level_entries() -> void:
-	for child in level_list_container.get_children():
-		child.queue_free()
-	for data in _levels:
-		if data == null:
-			continue
-		var panel: PanelContainer = _make_level_panel(data)
-		level_list_container.add_child(panel)
+	# Renders levels onto the WorldMap. Markers are children of WorldMapView,
+	# rebuilt from ContentRegistry. Tapping an unlocked marker routes to
+	# LoadoutScreen; locked taps toast a hint.
+	if world_map_view == null:
+		return
+	if not world_map_view.marker_pressed.is_connected(_on_marker_pressed):
+		world_map_view.marker_pressed.connect(_on_marker_pressed)
+	if not world_map_view.markers_built.is_connected(_on_markers_built):
+		world_map_view.markers_built.connect(_on_markers_built)
+	world_map_view.set_levels(_levels)
 
 
-func _make_level_panel(data: Resource) -> PanelContainer:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(320, 110)
-	var hbox := HBoxContainer.new()
-	hbox.set("theme_override_constants/separation", 16)
-	panel.add_child(hbox)
-
-	# Left side: level info
-	var info_vbox := VBoxContainer.new()
-	info_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hbox.add_child(info_vbox)
-
-	var name_label := Label.new()
-	name_label.text = data.display_name
-	name_label.set("theme_override_font_sizes/font_size", 24)
-	info_vbox.add_child(name_label)
-
-	# Composite stars: campaign (0–3) + heroic (+1) + iron (+1) = max 5.
-	var total_stars: int = MetaProgression.calculate_total_stars_for_level(data.level_id)
-	var star_text: String = "★".repeat(total_stars) + "☆".repeat(5 - total_stars)
-	var stars_label := Label.new()
-	stars_label.text = star_text
-	stars_label.set("theme_override_font_sizes/font_size", 20)
-	info_vbox.add_child(stars_label)
-
-	# Debug-only: per-level hardness score from BalanceCalculator. Players
-	# don't see this in shipped builds — it would read as gibberish without
-	# context. The whole balance/ folder is stripped at export anyway.
-	if OS.is_debug_build():
-		var hardness_label := Label.new()
-		hardness_label.text = "Hardness: %s" % _format_hardness(data.level_id)
-		hardness_label.set("theme_override_font_sizes/font_size", 12)
-		hardness_label.modulate = Color(1.0, 0.8, 0.4)
-		info_vbox.add_child(hardness_label)
-
-	# Phase 48 — best time + endless high score. Only show if the player
-	# has posted a run (otherwise the row would read "Best: —  Endless: —"
-	# which adds clutter with zero information).
-	var metrics_line: String = _format_level_metrics(data.level_id)
-	if metrics_line != "":
-		var metrics_label := Label.new()
-		metrics_label.text = metrics_line
-		metrics_label.set("theme_override_font_sizes/font_size", 14)
-		metrics_label.modulate = Color(0.7, 0.78, 0.9)
-		info_vbox.add_child(metrics_label)
-
-	# Right side: mode pill row (Campaign / Heroic / Iron / Endless) or lock.
-	# Phase F — Endless promoted to a sibling pill alongside the other three
-	# modes, replacing the prior Play + Endless button pair. Mode picker
-	# happens here on the level card; LoadoutScreen no longer needs to ask.
-	var is_unlocked: bool = MetaProgression.levels_unlocked.get(data.level_id, false)
-	if is_unlocked:
-		var pill_row := HBoxContainer.new()
-		pill_row.set("theme_override_constants/separation", 8)
-		hbox.add_child(pill_row)
-		_add_mode_pill(pill_row, data, "campaign")
-		_add_mode_pill(pill_row, data, "heroic")
-		_add_mode_pill(pill_row, data, "iron")
-		_add_mode_pill(pill_row, data, "endless")
-	else:
-		var lock_btn := Button.new()
-		lock_btn.text = "Locked"
-		lock_btn.custom_minimum_size = Vector2(100, 94)
-		lock_btn.set("theme_override_font_sizes/font_size", 20)
-		lock_btn.modulate = Color(0.7, 0.7, 0.7)
-		lock_btn.pressed.connect(func(): Toast.show_message("Clear prior levels to unlock"))
-		hbox.add_child(lock_btn)
-
-	return panel
+# Auto-scrolls the ScrollContainer to the highest-unlock_order level the
+# player has unlocked, so opening the WorldMap on a phone shows the player's
+# "next" content without manual panning. Deferred one frame because
+# ScrollContainer needs to finish layout before ensure_control_visible
+# computes against the right content size.
+func _on_markers_built() -> void:
+	var lid: String = MetaProgression.get_highest_unlocked_level_id()
+	if lid == "":
+		return
+	var marker: Control = world_map_view.get_marker_for_level(lid)
+	if marker == null:
+		return
+	await get_tree().process_frame
+	if scroll_container != null and is_instance_valid(marker):
+		scroll_container.ensure_control_visible(marker)
 
 
-func _add_mode_pill(row: HBoxContainer, data: Resource, mode: String) -> void:
-	# Mirrors LoadoutScreen._refresh_mode_buttons logic so the pills here
-	# show the same gating + status text the LoadoutScreen would have. Tap
-	# launches gameplay (via LoadoutScreen) directly.
-	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(100, 64)
-	btn.set("theme_override_font_sizes/font_size", 14)
-	var lid: String = data.level_id
-	match mode:
-		"campaign":
-			var campaign_stars: int = MetaProgression.level_stars.get(lid, 0)
-			var stars_str: String = "★".repeat(campaign_stars) + "☆".repeat(3 - campaign_stars)
-			btn.text = "Campaign\n%s" % stars_str
-			btn.disabled = false
-		"heroic":
-			var heroic_done: bool = MetaProgression.heroic_complete.get(lid, false)
-			var heroic_unlocked: bool = MetaProgression.is_heroic_unlocked(lid)
-			if heroic_done:
-				btn.text = "Heroic\nDone ✓"
-				btn.disabled = false
-			elif heroic_unlocked:
-				btn.text = "Heroic\nReady"
-				btn.disabled = false
-			else:
-				btn.text = "Heroic\nNeed 3★"
-				btn.disabled = true
-		"iron":
-			var iron_done: bool = MetaProgression.iron_complete.get(lid, false)
-			var iron_unlocked: bool = MetaProgression.is_iron_unlocked(lid)
-			if iron_done:
-				btn.text = "Iron\nDone ✓"
-				btn.disabled = false
-			elif iron_unlocked:
-				btn.text = "Iron\nReady"
-				btn.disabled = false
-			else:
-				btn.text = "Iron\nNeed Heroic"
-				btn.disabled = true
-		"endless":
-			var best: int = MetaProgression.get_endless_best_score(lid)
-			# Score, not a wave count — "Best %d" matches LoadoutScreen and
-			# LeaderboardScreen wording; "W%d" was misleading.
-			if best > 0:
-				btn.text = "Endless\nBest %d" % best
-			else:
-				btn.text = "Endless\n—"
-			btn.disabled = false
-	if not btn.disabled:
-		btn.pressed.connect(_on_mode_pill_pressed.bind(data, mode))
-	row.add_child(btn)
+# Refresh marker visuals (locked/star state) without rebuilding the marker
+# tree. Called by debug Unlock All; safe to call any time.
+func _refresh_level_states() -> void:
+	if world_map_view != null:
+		world_map_view.refresh_states()
 
 
-func _on_mode_pill_pressed(data: Resource, mode: String) -> void:
-	RunState.current_level_id = data.level_id
-	RunState.current_mode = mode
-	# LoadoutScreen reads current_mode to pre-select the matching pill in its
-	# own mode row (which becomes redundant after this phase but stays as a
-	# pre-battle confirmation). Endless flow: LoadoutScreen hides the
-	# Campaign/Heroic/Iron row when mode == "endless" — pre-existing logic.
+func _on_marker_pressed(level_id: String) -> void:
+	# Locked levels stay on the WorldMap with a hint toast — same UX as the
+	# pre-rework card list. Unlocked taps route directly to LoadoutScreen,
+	# which now hosts the level info + mode picker that used to live in the
+	# Phase 1 detail modal.
+	var is_unlocked: bool = MetaProgression.levels_unlocked.get(level_id, false)
+	if not is_unlocked:
+		Toast.show_message("Clear prior levels to unlock")
+		return
+	RunState.current_level_id = level_id
+	# Default to Campaign so a stale mode from a prior level can't silently
+	# downgrade or pre-select a locked option. Player picks Heroic/Iron/Endless
+	# on the LoadoutScreen pill row.
+	RunState.current_mode = "campaign"
 	SceneManager.goto("res://ui/LoadoutScreen.tscn")
-
-
-func _format_level_metrics(level_id: String) -> String:
-	var parts: PackedStringArray = []
-	var best: float = MetaProgression.get_best_time(level_id)
-	if best > 0.0:
-		parts.append("Best: %s" % _format_seconds(best))
-	var endless: int = MetaProgression.get_endless_best_score(level_id)
-	if endless > 0:
-		parts.append("Endless: %d" % endless)
-	return "   ".join(parts)
-
-
-func _format_seconds(s: float) -> String:
-	if s < 60.0:
-		return "%.1fs" % s
-	var minutes: int = int(s / 60.0)
-	var rem: float = s - float(minutes * 60)
-	return "%d:%05.2f" % [minutes, rem]
-
-
-# Debug-only — looks up the level's WaveList via level_list.tres and returns
-# its hardness score as a plain integer string. Returns "—" if the entry
-# can't be found, the file is missing, or BalanceCalculator was deleted with
-# the balance/ folder. Caller is already gated by OS.is_debug_build().
-func _format_hardness(level_id: String) -> String:
-	var path: String = _wave_path_for(level_id)
-	if path == "":
-		return "—"
-	var wl: WaveList = load(path)
-	if wl == null:
-		return "—"
-	var bc: GDScript = load("res://balance/BalanceCalculator.gd")
-	if bc == null:
-		return "—"
-	return "%d" % int(bc.score_level(wl, RunState.STARTING_GOLD))
-
-
-# Resolves a level_id to its wave_list_path via ContentRegistry.
-# Returns "" if no entry matches or the entry has no wave_list_path.
-func _wave_path_for(level_id: String) -> String:
-	var entry: Resource = ContentRegistry.find_level(level_id)
-	if entry == null:
-		return ""
-	return entry.wave_list_path
-
 

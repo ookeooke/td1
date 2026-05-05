@@ -200,6 +200,28 @@ func is_iron_unlocked(level_id: String) -> bool:
 	return heroic_complete.get(level_id, false)
 
 
+# Returns the level_id of the highest-unlock_order level the player has
+# unlocked. Empty string if no levels are unlocked (fresh save with the
+# default level_1 entry should still return "level_1"). Used by WorldMap
+# to auto-scroll to the player's "next" content on open. CORE RULE 16:
+# load() the registry, never preload — class_name shared resources race.
+func get_highest_unlocked_level_id() -> String:
+	var registry: Resource = load("res://ui/world_map/level_list.tres")
+	if registry == null:
+		return ""
+	var best_id: String = ""
+	var best_order: int = -1
+	for ld in registry.levels:
+		if ld == null:
+			continue
+		if not levels_unlocked.get(ld.level_id, false):
+			continue
+		if int(ld.unlock_order) > best_order:
+			best_order = int(ld.unlock_order)
+			best_id = String(ld.level_id)
+	return best_id
+
+
 func calculate_total_stars_for_level(level_id: String) -> int:
 	var total: int = level_stars.get(level_id, 0)  # 0–3 campaign
 	if heroic_complete.get(level_id, false):

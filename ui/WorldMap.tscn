@@ -1,7 +1,9 @@
-[gd_scene format=3 uid="uid://b1td1worldmap"]
+[gd_scene load_steps=5 format=3 uid="uid://b1td1worldmap"]
 
 [ext_resource type="Script" path="res://ui/WorldMap.gd" id="1_map"]
 [ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="3_theme"]
+[ext_resource type="PackedScene" path="res://ui/world_map/WorldMapView.tscn" id="4_view"]
+[ext_resource type="Script" path="res://ui/SafeAreaMargin.gd" id="5_safe"]
 
 [node name="WorldMap" type="Control"]
 layout_mode = 3
@@ -16,33 +18,47 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0.18, 0.28, 0.15, 1.0)
+color = Color(0.78, 0.66, 0.46, 1.0)
 
-[node name="TopBar" type="HBoxContainer" parent="."]
+[node name="SafeAreaMargin" type="MarginContainer" parent="."]
 layout_mode = 1
-anchors_preset = 10
+anchors_preset = 15
 anchor_right = 1.0
-offset_left = 16.0
-offset_top = 16.0
-offset_right = -16.0
-offset_bottom = 96.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("5_safe")
+
+[node name="ContentMargin" type="MarginContainer" parent="SafeAreaMargin"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="Layout" type="VBoxContainer" parent="SafeAreaMargin/ContentMargin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="TopBar" type="HBoxContainer" parent="SafeAreaMargin/ContentMargin/Layout"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="BackButton" type="Button" parent="TopBar"]
+[node name="BackButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(80, 80)
 layout_mode = 2
 text = "Back"
 theme_override_font_sizes/font_size = 20
 
-[node name="Title" type="Label" parent="TopBar"]
+[node name="Title" type="Label" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "World Map"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 28
 
-[node name="StarsButton" type="Button" parent="TopBar"]
+[node name="StarsButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 80)
 layout_mode = 2
@@ -50,7 +66,7 @@ text = "★ 0"
 theme_override_font_sizes/font_size = 22
 theme_override_colors/font_color = Color(1.0, 0.9, 0.4, 1.0)
 
-[node name="MetaGoldButton" type="Button" parent="TopBar"]
+[node name="MetaGoldButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
@@ -58,74 +74,62 @@ text = "💰 0"
 theme_override_font_sizes/font_size = 22
 theme_override_colors/font_color = Color(1.0, 0.85, 0.4, 1.0)
 
-[node name="SettingsButton" type="Button" parent="TopBar"]
+[node name="SettingsButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(80, 80)
 layout_mode = 2
 text = "⚙"
 theme_override_font_sizes/font_size = 28
 
-[node name="ScrollContainer" type="ScrollContainer" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 16.0
-offset_top = 112.0
-offset_right = -16.0
-offset_bottom = -120.0
-
-[node name="LevelList" type="VBoxContainer" parent="ScrollContainer"]
+[node name="ScrollContainer" type="ScrollContainer" parent="SafeAreaMargin/ContentMargin/Layout"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 1
+vertical_scroll_mode = 1
+
+[node name="WorldMapView" parent="SafeAreaMargin/ContentMargin/Layout/ScrollContainer" instance=ExtResource("4_view")]
+unique_name_in_owner = true
+
+[node name="BottomBar" type="HBoxContainer" parent="SafeAreaMargin/ContentMargin/Layout"]
+custom_minimum_size = Vector2(0, 84)
+layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="BottomBar" type="HBoxContainer" parent="."]
-layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 16.0
-offset_top = -100.0
-offset_right = -16.0
-offset_bottom = -16.0
-theme_override_constants/separation = 16
-
-[node name="HeroesButton" type="Button" parent="BottomBar"]
+[node name="HeroesButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
 text = "Heroes"
 theme_override_font_sizes/font_size = 20
 
-[node name="TowersButton" type="Button" parent="BottomBar"]
+[node name="TowersButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
 text = "Towers"
 theme_override_font_sizes/font_size = 20
 
-[node name="Spacer" type="Control" parent="BottomBar"]
+[node name="Spacer" type="Control" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="CodexButton" type="Button" parent="BottomBar"]
+[node name="CodexButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
 text = "Codex"
 theme_override_font_sizes/font_size = 20
 
-[node name="ShopButton" type="Button" parent="BottomBar"]
+[node name="ShopButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
 text = "Shop"
 theme_override_font_sizes/font_size = 20
 
-[node name="TestRangeButton" type="Button" parent="BottomBar"]
+[node name="TestRangeButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
@@ -133,7 +137,7 @@ text = "Test Range"
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)
 
-[node name="BalanceReportButton" type="Button" parent="BottomBar"]
+[node name="BalanceReportButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
@@ -141,7 +145,7 @@ text = "Balance Report"
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)
 
-[node name="BalanceSlidersButton" type="Button" parent="BottomBar"]
+[node name="BalanceSlidersButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
@@ -149,7 +153,7 @@ text = "Sliders"
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)
 
-[node name="LevelAuditButton" type="Button" parent="BottomBar"]
+[node name="LevelAuditButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
@@ -157,7 +161,7 @@ text = "Audit"
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)
 
-[node name="UnlockAllButton" type="Button" parent="BottomBar"]
+[node name="UnlockAllButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2

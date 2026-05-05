@@ -53,12 +53,16 @@ static func draw_swing_arc_trail(ci: CanvasItem, v: UnitVisualData, lunge_dir: V
 			continue
 		var angle_trail: float = -age * 0.25  # ~14° trail per ghost
 		var reach_factor: float = 1.0 - age * 0.15
-		_draw_weapon_shape(ci, v, center_angle + angle_trail, body_r, reach_factor, alpha)
+		_draw_weapon_shape(ci, v, center_angle + angle_trail, body_r, reach_factor, alpha * v.weapon_trail_strength)
 
 
 static func _draw_weapon_shape(ci: CanvasItem, v: UnitVisualData, angle: float, body_r: float, reach_factor: float, alpha: float) -> void:
 	var col: Color = v.accent_color
-	col.a = alpha
+	col.a = clampf(alpha, 0.0, 1.0)
+	if v.weapon_glow_strength > 0.0 and v.weapon_glow_color.a > 0.0:
+		var glow_col: Color = v.weapon_glow_color
+		glow_col.a *= clampf(alpha * v.weapon_glow_strength, 0.0, 1.0)
+		_draw_weapon_glow(ci, v, angle, body_r, reach_factor, glow_col)
 	match v.weapon_type:
 		UnitVisualData.WeaponType.SPEAR:
 			# Straight thrust — two-point line extending farther than the arc.
@@ -183,6 +187,13 @@ static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vecto
 	var leg_col: Color = v.leg_color * skin_tint
 	var arm_col: Color = v.arm_color * skin_tint
 
+	# Cape/back cloth draws first so all body parts paint over it. This gives
+	# hero silhouettes more readable depth without adding nodes or sprites.
+	if v.race != UnitVisualData.Race.NONE and v.cape_color.a > 0.0:
+		_draw_cape(ci, v, walk_t, walk_phase)
+	if v.race != UnitVisualData.Race.NONE and v.accent_type == UnitVisualData.Accent.WINGS:
+		_draw_wings(ci, v, walk_t, walk_phase)
+
 	# Legs draw first so the torso paints over the inner edge — gives a
 	# clean two-leg silhouette rooted under the body.
 	if v.race != UnitVisualData.Race.NONE:
@@ -201,6 +212,11 @@ static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vecto
 		if v.accent_band_color.a > 0.0:
 			var inset: float = v.outline_width
 			ci.draw_rect(Rect2(-half + Vector2(inset, inset), v.body_size - Vector2(inset * 2.0, inset * 2.0)), v.accent_band_color, false, 3.0)
+	_draw_body_polish(ci, v)
+	if v.armor_plate_color.a > 0.0:
+		_draw_armor_plates(ci, v)
+	if v.shoulder_pad_color.a > 0.0:
+		_draw_shoulder_pads(ci, v)
 
 	# Arms with held weapon — drawn over the torso so the weapon arm sits
 	# visibly in front of the body. Front arm raises during wind-up, then
@@ -216,6 +232,151 @@ static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vecto
 
 	if has_xform:
 		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+static func _draw_weapon_glow(ci: CanvasItem, v: UnitVisualData, angle: float, body_r: float, reach_factor: float, col: Color) -> void:
+	# Wider translucent under-stroke before the crisp weapon/trail shape. This
+	# reads as a tiny slash glow at gameplay zoom and is skipped by default.
+	match v.weapon_type:
+		UnitVisualData.WeaponType.SPEAR:
+			var inner: Vector2 = Vector2.from_angle(angle) * (body_r * 0.2) * reach_factor
+			var outer: Vector2 = Vector2.from_angle(angle) * (body_r + 25.0) * reach_factor
+			ci.draw_line(inner, outer, col, 9.0, true)
+		UnitVisualData.WeaponType.CLAWS:
+			var reach_c: float = (body_r + 14.0) * reach_factor
+			var forward: Vector2 = Vector2.from_angle(angle)
+			var side: Vector2 = Vector2.from_angle(angle + PI * 0.5)
+			for i in range(-1, 2):
+				var lateral: Vector2 = side * float(i) * 6.0
+				ci.draw_line(forward * (body_r * 0.45) + lateral, forward * reach_c + lateral, col, 6.0, true)
+		_:
+			var reach: float = (body_r + 16.0) * reach_factor
+			var half_span: float = PI / 3.0
+			var pts: PackedVector2Array = PackedVector2Array()
+			for i in 7:
+				var frac: float = float(i) / 6.0
+				var a: float = angle + lerp(-half_span, half_span, frac)
+				pts.append(Vector2(cos(a), sin(a)) * reach)
+			ci.draw_polyline(pts, col, 8.0, true)
+
+
+static func _draw_cape(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_phase: float) -> void:
+	var torso_r: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
+	var flutter: float = 0.0
+	if walk_t >= 0.0:
+		flutter = sin(walk_t * v.walk_bob_speed + walk_phase) * torso_r * 0.10
+	var top_y: float = -torso_r * 0.55
+	var bottom_y: float = torso_r * 1.35
+	var shoulder_w: float = torso_r * 1.15
+	var hem_w: float = torso_r * 1.55
+	var pts: PackedVector2Array = PackedVector2Array([
+		Vector2(-shoulder_w * 0.5, top_y),
+		Vector2(shoulder_w * 0.5, top_y),
+		Vector2(hem_w * 0.5 + flutter, bottom_y),
+		Vector2(0.0, bottom_y + torso_r * 0.20),
+		Vector2(-hem_w * 0.5 + flutter, bottom_y),
+	])
+	ci.draw_colored_polygon(pts, v.cape_color)
+	var shade: Color = v.outline_color
+	shade.a = minf(0.45, v.cape_color.a)
+	ci.draw_polyline(PackedVector2Array([
+		Vector2(-shoulder_w * 0.5, top_y),
+		Vector2(-hem_w * 0.5 + flutter, bottom_y),
+		Vector2(0.0, bottom_y + torso_r * 0.20),
+		Vector2(hem_w * 0.5 + flutter, bottom_y),
+		Vector2(shoulder_w * 0.5, top_y),
+	]), shade, maxf(1.5, v.outline_width * 0.35), true)
+
+
+static func _draw_wings(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_phase: float) -> void:
+	var torso_r: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
+	var flap: float = 0.0
+	if walk_t >= 0.0:
+		flap = sin(walk_t * maxf(8.0, v.walk_bob_speed * 1.6) + walk_phase) * torso_r * 0.25
+	var col: Color = v.accent_color
+	var shade: Color = v.outline_color
+	shade.a = minf(0.55, col.a)
+	var wing_w: float = torso_r * 1.15
+	var wing_h: float = torso_r * 0.55
+	var root_y: float = -torso_r * 0.10
+	for side in [-1.0, 1.0]:
+		var root: Vector2 = Vector2(side * torso_r * 0.58, root_y)
+		var tip: Vector2 = Vector2(side * (torso_r + wing_w), root_y - wing_h + flap)
+		var lower: Vector2 = Vector2(side * (torso_r + wing_w * 0.62), root_y + wing_h * 0.55 + flap * 0.30)
+		var inner: Vector2 = Vector2(side * torso_r * 0.78, root_y + wing_h * 0.35)
+		var pts: PackedVector2Array = PackedVector2Array([root, tip, lower, inner])
+		ci.draw_colored_polygon(pts, col)
+		ci.draw_polyline(PackedVector2Array([root, tip, lower, inner, root]), shade, maxf(1.5, v.outline_width * 0.35), true)
+		ci.draw_line(root, lower, shade, maxf(1.0, v.outline_width * 0.25), true)
+
+
+static func _draw_body_polish(ci: CanvasItem, v: UnitVisualData) -> void:
+	if v.highlight_strength <= 0.0 or v.highlight_color.a <= 0.0:
+		return
+	var col: Color = v.highlight_color
+	col.a *= clampf(v.highlight_strength, 0.0, 1.0)
+	if v.shape == UnitVisualData.Shape.CIRCLE:
+		var r: float = v.radius
+		ci.draw_arc(Vector2(-r * 0.12, -r * 0.10), r * 0.62, deg_to_rad(210.0), deg_to_rad(300.0), 8, col, maxf(2.0, v.outline_width * 0.45), true)
+		ci.draw_circle(Vector2(-r * 0.25, -r * 0.35), r * 0.10, col)
+		return
+	var half: Vector2 = v.body_size * 0.5
+	var shine_w: float = maxf(5.0, v.body_size.x * 0.16)
+	var shine_pts: PackedVector2Array = PackedVector2Array([
+		Vector2(-half.x + v.outline_width * 1.2, -half.y + v.outline_width * 1.2),
+		Vector2(-half.x + v.outline_width * 1.2 + shine_w, -half.y + v.outline_width * 1.2),
+		Vector2(half.x * 0.05, half.y - v.outline_width * 1.4),
+		Vector2(-half.x * 0.25, half.y - v.outline_width * 1.4),
+	])
+	ci.draw_colored_polygon(shine_pts, col)
+
+
+static func _draw_armor_plates(ci: CanvasItem, v: UnitVisualData) -> void:
+	var torso_r: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
+	var plate: Color = v.armor_plate_color
+	var outline_w: float = maxf(1.5, v.outline_width * 0.35)
+	var chest_w: float = torso_r * 0.82
+	var chest_h: float = torso_r * 0.72
+	var top_y: float = -torso_r * 0.32
+	var chest: PackedVector2Array = PackedVector2Array([
+		Vector2(-chest_w * 0.5, top_y),
+		Vector2(chest_w * 0.5, top_y),
+		Vector2(chest_w * 0.36, top_y + chest_h),
+		Vector2(0.0, top_y + chest_h + torso_r * 0.18),
+		Vector2(-chest_w * 0.36, top_y + chest_h),
+	])
+	ci.draw_colored_polygon(chest, plate)
+	ci.draw_polyline(PackedVector2Array([
+		chest[0], chest[1], chest[2], chest[3], chest[4], chest[0]
+	]), v.outline_color, outline_w, true)
+	# Center ridge + belt line make the tiny torso read as metal armor.
+	ci.draw_line(Vector2(0.0, top_y + 2.0), Vector2(0.0, top_y + chest_h + torso_r * 0.10), v.outline_color, outline_w, true)
+	ci.draw_line(Vector2(-chest_w * 0.34, top_y + chest_h * 0.70), Vector2(chest_w * 0.34, top_y + chest_h * 0.70), v.outline_color, outline_w, true)
+	if v.highlight_color.a > 0.0:
+		var shine: Color = v.highlight_color
+		shine.a *= clampf(maxf(v.highlight_strength, 0.25), 0.0, 1.0)
+		ci.draw_line(Vector2(-chest_w * 0.26, top_y + chest_h * 0.15), Vector2(-chest_w * 0.10, top_y + chest_h * 0.52), shine, outline_w, true)
+
+
+static func _draw_shoulder_pads(ci: CanvasItem, v: UnitVisualData) -> void:
+	var torso_r: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
+	var col: Color = v.shoulder_pad_color
+	var outline_w: float = maxf(1.5, v.outline_width * 0.40)
+	var shoulder_y: float = -torso_r * 0.12
+	var shoulder_x: float = torso_r * 0.78
+	var pad_w: float = torso_r * 0.46
+	var pad_h: float = torso_r * 0.32
+	for side in [-1.0, 1.0]:
+		var c: Vector2 = Vector2(shoulder_x * side, shoulder_y)
+		var pts: PackedVector2Array = PackedVector2Array([
+			c + Vector2(-pad_w * side, -pad_h * 0.30),
+			c + Vector2(0.0, -pad_h * 0.70),
+			c + Vector2(pad_w * 0.65 * side, -pad_h * 0.12),
+			c + Vector2(pad_w * 0.48 * side, pad_h * 0.55),
+			c + Vector2(-pad_w * 0.70 * side, pad_h * 0.42),
+		])
+		ci.draw_colored_polygon(pts, col)
+		ci.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[4], pts[0]]), v.outline_color, outline_w, true)
 
 
 # Soft dark ellipse under the body. Drawn at the enemy's local origin (not
@@ -591,6 +752,8 @@ static func _draw_accent(ci: CanvasItem, v: UnitVisualData) -> void:
 			ci.draw_line(Vector2(0, -r), Vector2(0, r), v.accent_color, 5.0)
 		UnitVisualData.Accent.WINGS:
 			# Horizontal bars extending from sides (flying)
+			if v.race != UnitVisualData.Race.NONE:
+				return
 			var r: float = v.radius
 			ci.draw_line(Vector2(-r - 15, -5), Vector2(-r, -5), v.accent_color, 5.0)
 			ci.draw_line(Vector2(-r - 10, 5), Vector2(-r, 5), v.accent_color, 5.0)

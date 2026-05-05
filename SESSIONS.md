@@ -2359,3 +2359,104 @@ Refactor:
 - Piece 3: author Level2.tscn with more curves. Will pause here to ask user whether to author the Curve2D points programmatically (writing .tscn directly) or have user place them visually in the editor.
 - Piece 4: Level3.tscn ring topology. Same authoring question.
 - Piece 5 (deferred): L4 topology TBD after playtest.
+
+---
+
+## 2026-05-04 — WorldMap visual rework + Marker2D layout
+
+WorldMap stopped being a vertical list of `PanelContainer` cards and became a Kingdom Rush–style procedural fantasy map. The work landed in three iterations across one session — each fixed something the previous one over-engineered.
+
+### Phase 1 — KR-style visual + detail modal
+
+Built the procedural map: parchment fill, deterministic seeded sand mottling + ~40 mountain glyph clusters (snow caps on ~20%), 3 italic region labels, banner-on-post markers, dotted Catmull-Rom path between `unlock_order`-sorted positions. All `_draw()`, no art assets — matches the project's "procedural-first" stance.
+
+- New: [ui/world_map/WorldMapView.gd](ui/world_map/WorldMapView.gd) + `.tscn` — pannable 2400×1400 Control inside a ScrollContainer.
+- New: [ui/world_map/LevelMarker.gd](ui/world_map/LevelMarker.gd) — banner-on-post Button with 4 visual states (locked / 0★ / 1–4★ / 5★+wings).
+- New (later removed): `LevelDetailModal.gd` + `.tscn` — popup over the map showing the per-level card (name, stars, metrics, 4 mode pills), built via a `Callable` so the existing `_make_level_panel` body wasn't duplicated.
+- WorldMapView's `_draw()` is deterministic via `RandomNumberGenerator.seed = 0x4D4150_5345_4544` — never seeded from time. Pixel-stable across reloads.
+- Pan via existing `ScrollContainer` (scrollbars hidden) — chosen over a custom GameCamera-style pan to avoid fighting with marker hit-testing. No zoom (KR mobile maps don't zoom; would force the 1/zoom stroke-width rule on every redraw for zero gameplay benefit).
+
+### Phase 2 — modal deleted, LoadoutScreen absorbed its info
+
+Realised the modal + LoadoutScreen had overlapping responsibilities (modal picks mode, LoadoutScreen confirms mode again). Folded the modal's content into LoadoutScreen and dropped the modal entirely.
+
+- Marker tap → directly to LoadoutScreen with `RunState.current_mode = "campaign"` as the default (avoids stale-mode silent downgrade across levels). Locked levels still toast.
+- LoadoutScreen gained a `LevelInfoLabel` (composite stars + best time / endless score) between TopBar and ModeRow, plus an `EndlessButton` 4th sibling pill. Endless became a peer mode — the prior `is_endless` branch that hid Campaign/Heroic/Iron and renamed the level to "Endless Mode" is gone.
+- `_format_seconds` + `_refresh_level_info_label` ported into LoadoutScreen.gd; the equivalent helpers in WorldMap.gd (`_format_level_metrics`, `_format_seconds`, `_format_hardness`, `_wave_path_for`) deleted as unused.
+
+### Phase 3 — marker positions: `.tres` → `.tscn` (Marker2D children)
+
+Phase 1 stored each level's position as `LevelNodeData.map_position`. Native Godot drag doesn't work on runtime-instanced markers, so an `addons/world_map_editor` EditorPlugin (`_forward_canvas_gui_input`) was added to bridge — but it needed a "click WorldMapView in Scene dock first" ritual and ~100 lines of glue. User pushed back: "why can't I just drag it like everything else?"
+
+The honest answer: every other authored position in this codebase lives in a `.tscn` as a Marker2D / Curve2D / Path2D, never on a Resource ([BaseLevel.gd:278-315](levels/BaseLevel.gd) reads tower spots, hero spawn, paths all by node name). `map_position` was the outlier.
+
+Refactor:
+
+- [ui/world_map/WorldMapView.tscn](ui/world_map/WorldMapView.tscn) gained a `LevelMarkers` `Node2D` with one `Marker2D` per level, named `level_1` … `level_4`. Native W-tool drag works. Adding a level = drop a Marker2D + add LevelNodeData entry.
+- [ui/world_map/WorldMapView.gd](ui/world_map/WorldMapView.gd): `_rebuild_markers` now resolves position via `level_markers_root.get_node_or_null(NodePath(level_id))`. `push_warning` if the Marker2D is missing (mirrors `BaseLevel._collect_paths` diagnostic discipline). New editor-only `_build_editor_preview_markers` iterates `LevelMarkers` directly so the designer sees banners while authoring positions in the WorldMapView scene standalone.
+- [ui/world_map/LevelNodeData.gd](ui/world_map/LevelNodeData.gd): `map_position`, `map_label`, `marker_label_offset` deleted. (`map_label` and `marker_label_offset` were never read — Phase 1 over-spec'd.)
+- [ui/world_map/level_list.tres](ui/world_map/level_list.tres): all four `map_position = Vector2(...)` lines removed.
+- `addons/world_map_editor/` folder deleted; reference removed from `project.godot` `[editor_plugins]`.
+
+### Architecture decisions worth remembering
+
+- **Node name == content_id**, position lives in the `.tscn`. Mirrors the established `TowerSpots → Spot1` and `Path2D → "left"/"right"` patterns from Level1.tscn. World map authoring is now consistent with level authoring.
+- **Mode default on marker tap is `"campaign"`**, not last-selected. Prevents a stale Iron/Heroic from a prior level pre-selecting a locked option that silently downgrades at Start.
+- **Modal hosting via `Callable`** (Phase 1, then deleted) was a clean way to reuse `_make_level_panel` verbatim — but the modal itself was the wrong UX. Worth remembering: when two screens render the same content, fold rather than abstract.
+- **EditorPlugin (Phase 3-precursor, then deleted) is the wrong tool when a vanilla scene-tree node achieves the same.** Plugins are for genuine canvas-editing capabilities the engine doesn't have (curve editors, gizmos), not for working around `owner=null` on runtime-instantiated children.
+
+### Verification
+
+- Headless boot clean (`godot --check-only --headless --quit`): all autoloads OK, ContentRegistry registers 4 levels.
+- `grep map_position` and `grep world_map_editor` return zero hits across the project — refactor is fully complete, no dead code.
+- Tap unlocked marker → LoadoutScreen opens with level name, composite stars, metrics line (when present), 4 mode pills. Endless pill toggles between "Best %d" and "—" based on per-level score history.
+- Tap locked marker → toast, no scene change.
+- @tool preview path: opening WorldMapView.tscn standalone shows parchment + mountains + path + 4 banners at the authored Marker2D positions. Dragging a Marker2D with the W tool moves the banner; saving the scene persists the new position.
+
+### What broke
+
+- WorldMapView.tscn picked up accidental offsets (`offset_left=-121, offset_top=-197, offset_right=2279, offset_bottom=1203`) from dragging the root Control during editor testing. Harmless at runtime (ScrollContainer overrides child layout) but confusing in standalone editor view. Reset to `(0, 0, 2400, 1400)` during the post-rework review.
+- Phase 1 added three exported fields to LevelNodeData (`map_position`, `map_label`, `marker_label_offset`); only one was ever read. The other two were spec-cruft. Deleted in Phase 3.
+- LevelDetailModal lived for one phase before deletion. The Callable-based content-builder pattern was clean code that was solving a problem we didn't actually have.
+- EditorPlugin lived for a few minutes before deletion. Built it before re-checking the codebase's existing position-authoring patterns; the `Marker2D-in-scene` pattern was the right answer all along and would have been visible from a 2-minute audit of Level1.tscn.
+
+### Process accountability
+
+Two over-engineering moves this session, both caught by the user pushing back ("why can't I just drag it?"). Pattern: when implementing a feature with a known gap, default to checking how the codebase already solves analogous problems before inventing new infrastructure. The Phase 1 `map_position` field on LevelNodeData was authored without first asking "where do tower spot / hero spawn / path positions live?" — they all live in `.tscn`, and a 2-minute grep would have surfaced that.
+
+Saved a feedback memory worth keeping: **before adding tooling to bridge an authoring gap, audit how analogous design data is authored elsewhere in the project.**
+
+### Next
+
+- Polish ideas (deferred, no concrete trigger yet): scroll-to-current-level on WorldMap entry; "next to play" highlight on the lowest-`unlock_order` non-perfected marker; per-chapter sub-maps when level count exceeds ~8.
+- Mode-on-marker-tap could preserve the previous selection if it's valid for the new level. Low priority — current always-`campaign` default is safe.
+
+---
+
+## 2026-05-05 — Warrior procedural visual polish
+
+- Scoped the art pass to the warrior hero only, per user request. No gameplay/balance/stat changes.
+- `systems/UnitVisualData.gd`: added optional cosmetic-only polish fields with disabled defaults (`highlight_*`, `armor_plate_color`, `shoulder_pad_color`, `cape_color`, `weapon_trail_strength`, `weapon_glow_*`). Existing visuals remain unchanged unless their `.tres` opts in.
+- `systems/UnitVisualDrawer.gd`: added cheap procedural polish layers: back cape/cloth, body highlights, chest armor plate/ridge/belt, shoulder pads, and a wider translucent weapon glow under the existing swing trail.
+- `heroes/data/visual_warrior.tres`: opted warrior into the new polish with darker gold armor, steel helmet/shoulders, red cape, brighter sword trail, and small metallic highlights.
+- Works: intended to make the warrior read more like a knight/paladin while preserving the current procedural `_draw()` asset strategy.
+- Broke: not yet visually playtested in editor during this session.
+
+---
+
+## 2026-05-05 — Enemy procedural visual + animation polish
+
+- Extended the procedural polish pass from the warrior to enemies, per user request. No enemy stats, waves, balance, collision, or AI changed.
+- `systems/UnitVisualDrawer.gd`: added multi-part procedural wings for `Accent.WINGS` visuals that already use `race != NONE`, with lightweight flap motion driven by the existing walk animation clock. Legacy wing bars remain as fallback for non-race visuals.
+- `enemies/base_enemy.gd`: enemy counter-attack animation feels heavier — strike commit lasts 0.18s, anticipation pull-back increased to 6px, push-through increased to 18px. Damage timing and cooldown math unchanged.
+- `vfx/EnemyDeathDrift.gd`: death snapshot now tips over toward the hit direction, squishes flatter, lingers 0.50s, and emits a small dust puff while fading. Still stays anchored near the kill point so dead enemies don't look like they continue walking.
+- Enemy visual `.tres` resources opted into the existing polish fields:
+  - Basic orc: leather/chest plates, small shoulder pads, greenish highlight, subtle weapon glow.
+  - Armored orc: brighter metal plate/shoulders and stronger sword trail.
+  - Brute: darker heavy armor, cape scrap, stronger heavy swing glow.
+  - Scout/goblin: claws, red bandana cape, brighter fast slash trail.
+  - Flying enemy: flapping procedural wings, stronger bob, purple highlights.
+  - Healer/shaman: staff, green magical glow, hood/cape read.
+  - Boss: red armor/cape, heavy shoulders, strong fiery weapon trail.
+- Works: intended to make orcs and other authored enemies more distinct while preserving the procedural `_draw()` asset strategy and mobile-cheap drawing.
+- Broke: not yet visually playtested in editor; `godot` is not available on PATH in the current shell.

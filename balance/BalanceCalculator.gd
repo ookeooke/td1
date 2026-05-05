@@ -46,6 +46,21 @@ static func enemy_score(data: EnemyData) -> float:
 	var ehp: float = float(data.max_health) / max(0.05, 1.0 - data.armor)
 	return W_EHP * ehp + W_LIVES * float(data.lives_worth) + W_SPEED * data.move_speed
 
+
+# Damage-type-specific EHP. Used for the dual-EHP readout — surfaces waves
+# that bias hard against magic builds (high magic_resist enemies clustered)
+# or physical builds (high armor clustered). Existing enemy_score folds
+# armor only and is the canonical hardness number; these are diagnostic.
+static func enemy_ehp_physical(data: EnemyData) -> float:
+	if data == null:
+		return 0.0
+	return float(data.max_health) / max(0.05, 1.0 - data.armor)
+
+static func enemy_ehp_magic(data: EnemyData) -> float:
+	if data == null:
+		return 0.0
+	return float(data.max_health) / max(0.05, 1.0 - data.magic_resist)
+
 static func score_wave(wave: WaveData) -> float:
 	if wave == null:
 		return 0.0
@@ -57,6 +72,36 @@ static func score_wave(wave: WaveData) -> float:
 		if ed == null:
 			continue
 		total += enemy_score(ed) * float(spawn.count)
+	return total
+
+
+# Total physical/magic damage required to clear a wave assuming zero leak.
+# Compare to wave_required_damage (which uses physical) — these isolate the
+# bias so a "5000 phys / 1500 mag" wave reads as "Mage build will struggle".
+static func wave_ehp_physical(wave: WaveData) -> float:
+	if wave == null:
+		return 0.0
+	var total: float = 0.0
+	for spawn in wave.spawns:
+		if spawn == null or spawn.count <= 0:
+			continue
+		var ed := _data_from_scene(spawn.enemy_scene)
+		if ed == null:
+			continue
+		total += enemy_ehp_physical(ed) * float(spawn.count)
+	return total
+
+static func wave_ehp_magic(wave: WaveData) -> float:
+	if wave == null:
+		return 0.0
+	var total: float = 0.0
+	for spawn in wave.spawns:
+		if spawn == null or spawn.count <= 0:
+			continue
+		var ed := _data_from_scene(spawn.enemy_scene)
+		if ed == null:
+			continue
+		total += enemy_ehp_magic(ed) * float(spawn.count)
 	return total
 
 static func score_level(wave_list: WaveList, starting_gold: int = 100) -> float:
@@ -160,6 +205,25 @@ static func wave_duration(wave: WaveData) -> float:
 		if t > longest:
 			longest = t
 	return longest
+
+
+# Authored floor time (seconds) for a wave list. Sum of countdowns + spawn
+# windows. Excludes the time enemies spend walking after their last spawn —
+# that overlaps with the next wave in practice and is hard to estimate
+# without the level's path geometry. The number lower-bounds how long an
+# unaccelerated, no-early-call run will take. Used by the 10-minute rule
+# (BALANCE.md): authored floor 800-900s ⇒ actual play near 600s after fast
+# kills + early calls. Returns 0 on null input.
+static func level_floor_time(wave_list: WaveList) -> float:
+	if wave_list == null:
+		return 0.0
+	var total: float = 0.0
+	for w in wave_list.waves:
+		if w == null:
+			continue
+		total += float(w.countdown)
+		total += wave_duration(w)
+	return total
 
 
 # Density = enemies per second of spawn window. Higher = more pressure on the

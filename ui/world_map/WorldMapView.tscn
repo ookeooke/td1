@@ -1,0 +1,25 @@
+[gd_scene format=3 uid="uid://clfvpx8wmxhma"]
+
+[ext_resource type="Script" uid="uid://da6o0it0x6oli" path="res://ui/world_map/WorldMapView.gd" id="1_wmv"]
+
+[node name="WorldMapView" type="Control" unique_id=1885087393]
+custom_minimum_size = Vector2(2400, 1400)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 2400.0
+offset_bottom = 1400.0
+script = ExtResource("1_wmv")
+
+[node name="LevelMarkers" type="Node2D" parent="."]
+
+[node name="level_1" type="Marker2D" parent="LevelMarkers"]
+position = Vector2(420, 1080)
+
+[node name="level_2" type="Marker2D" parent="LevelMarkers"]
+position = Vector2(960, 820)
+
+[node name="level_3" type="Marker2D" parent="LevelMarkers"]
+position = Vector2(1500, 540)
+
+[node name="level_4" type="Marker2D" parent="LevelMarkers"]
+position = Vector2(2020, 280)

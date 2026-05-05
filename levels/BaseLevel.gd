@@ -108,140 +108,14 @@ func _ready() -> void:
 	_print_hardness_readout()
 
 
-# Editor + runtime readout. Prints the level's BalanceCalculator hardness
-# score so authors can compare against the target curve in the balance plan.
-# Uses load() per CORE-RULE-16 to avoid the class_name preload race.
+# Editor + runtime readout. Delegates to balance/BalanceLogger.gd so the
+# debug-print bulk doesn't live in this file. Logger is loaded dynamically
+# (per CORE RULE 16) and gated to debug builds inside the logger itself.
 func _print_hardness_readout() -> void:
-	# Debug-only — BalanceCalculator lives under `balance/` which is excluded
-	# from production exports. Skip in release builds so a stripped folder
-	# doesn't trigger a load() warning at boot.
-	if not OS.is_debug_build():
+	var logger: GDScript = load("res://balance/BalanceLogger.gd")
+	if logger == null:
 		return
-	var wave_path: String = _wave_list_path()
-	if wave_path == "":
-		return
-	var wl: WaveList = load(wave_path)
-	if wl == null:
-		return
-	# load() the script rather than referencing class_name so this works even
-	# before Godot's class index has rescanned the new BalanceCalculator file.
-	# Static-method calls on a loaded GDScript are supported in Godot 4.
-	var bc: GDScript = load("res://balance/BalanceCalculator.gd")
-	if bc == null:
-		return
-	var tag: String = _display_tag()
-	var b: Dictionary = bc.score_level_breakdown(wl, RunState.STARTING_GOLD)
-	var per: String = ""
-	var pw: Array = b.per_wave
-	var pg: Array = b.per_wave_gold
-	var pd: Array = b.per_wave_density
-	for i in range(pw.size()):
-		per += "  W%d=%d (%dg, %.1fe/s)" % [i + 1, int(pw[i]), int(pg[i]), float(pd[i])]
-	print("[%s/Balance] %s net=%d (waves=%d, start=%dg)%s" % [
-		tag, String(b.tier), int(b.net_score), int(b.wave_total), int(b.starting_gold), per
-	])
-	print("[%s/Budget] natural=%dg  max_with_early_calls=%dg  swing=+%dg" % [
-		tag, int(b.gold_natural), int(b.gold_max_with_early_calls), int(b.early_call_swing)
-	])
-	# Damage/cost ratios — the load-bearing hardness diagnostic.
-	# req_dmg = total physical EHP to clear the wave with zero leak.
-	# req_dps = DPS floor over the spawn window.
-	# g/dmg   = gold-awarded ÷ damage-required (stinginess: <0.08 brutal,
-	#           0.10–0.25 healthy, >0.30 trivial).
-	var ratio_line: String = ""
-	var total_req_dmg: float = 0.0
-	for i in range(wl.waves.size()):
-		var w: WaveData = wl.waves[i]
-		var req_dmg: float = bc.wave_required_damage(w)
-		var req_dps: float = bc.wave_required_dps(w)
-		var gpd: float = bc.wave_gold_per_damage(w)
-		ratio_line += "  W%d=%d req_dps=%.1f g/dmg=%.2f" % [i + 1, int(req_dmg), req_dps, gpd]
-		total_req_dmg += req_dmg
-	# Level-wide ratio: gold-per-damage-required averaged over the level.
-	# Compare: a player wins by dealing total_req_dmg damage, funded by
-	# gold_natural. Ratio < 0.20 means the player must commit gold tightly;
-	# > 0.30 means the level is over-funded and trivially soluble.
-	var level_gpd: float = 0.0
-	if total_req_dmg > 0.0:
-		level_gpd = float(b.gold_natural) / total_req_dmg
-	print("[%s/Ratios] req_dmg=%d  natural_g/dmg=%.2f%s" % [
-		tag, int(total_req_dmg), level_gpd, ratio_line
-	])
-	# Tower damage-per-gold table — the load-bearing efficiency lookup.
-	# Each row: 1 gold buys X damage over a 60s wave window, by tier.
-	# Use the cheapest L1 row to size the next per-wave gold target.
-	var towers: Array = ContentRegistry.towers if ContentRegistry != null else []
-	var window_sec: float = 60.0  # canonical window for tower comparison
-	print("[%s/Towers] dmg per gold over %.0fs window:" % [tag, window_sec])
-	var best_l1: float = 0.0
-	for t in towers:
-		if not (t is TowerData) or t.damage <= 0.0:
-			continue
-		var l1: float = bc.tower_damage_per_gold(t, 0, window_sec)
-		var l2: float = bc.tower_damage_per_gold(t, 1, window_sec)
-		var l3: float = bc.tower_damage_per_gold(t, 2, window_sec)
-		print("  %s  L1=%.2f  L2=%.2f  L3=%.2f" % [String(t.tower_name), l1, l2, l3])
-		if l1 > best_l1:
-			best_l1 = l1
-	# Per-wave required gold based on best-L1 efficiency. Compare against
-	# per_wave_gold (above) — if required > earned, wave is gear-gated.
-	if best_l1 > 0.0:
-		var req_line: String = "  best_L1=%.2f dmg/g  →" % best_l1
-		for i in range(wl.waves.size()):
-			var w: WaveData = wl.waves[i]
-			var rg: int = bc.wave_required_gold(w, best_l1)
-			req_line += "  W%d_need=%dg/got=%dg" % [i + 1, rg, int(b.per_wave_gold[i])]
-		print("[%s/GoldVsNeed]%s" % [tag, req_line])
-	# Dead-air audit — flag spawn gaps >5s. KR rule of thumb: keep arrivals
-	# continuous so the player never sits idle. Big gap = re-stagger emitters
-	# (use parallel WaveSpawn entries with offset start_delays).
-	var dead_line: String = ""
-	for i in range(wl.waves.size()):
-		var w: WaveData = wl.waves[i]
-		var t: Dictionary = bc.wave_spawn_timeline(w)
-		var flag: String = " ⚠" if float(t.max_gap) > 5.0 else ""
-		dead_line += "  W%d max=%.1fs dead=%.1fs%s" % [
-			i + 1, float(t.max_gap), float(t.dead_air), flag
-		]
-	print("[%s/DeadAir]%s" % [tag, dead_line])
-	# Pressure block — the headline metric in the new authored-economy model.
-	# For each wave: actual gold vs target_gold, actual_pressure vs target_pressure
-	# where pressure = required_DPS / affordable_DPS. Drift > 15% triggers WARN.
-	var ld: LevelNodeData = _find_level_data(_level_id())
-	if ld == null:
-		return
-	var rep: Dictionary = bc.level_pressure_report(wl, ld, RunState.STARTING_GOLD)
-	var pressure_line: String = ""
-	for entry in rep.per_wave:
-		pressure_line += "  W%d g=%d/%d p=%.2f/%.2f" % [
-			int(entry.wave),
-			int(entry.actual_gold), int(entry.target_gold),
-			float(entry.actual_pressure), float(entry.target_pressure),
-		]
-	print("[%s/Pressure] total=%d/%dg (%+.0f%%)%s" % [
-		tag, int(rep.total_actual_gold), int(rep.total_target_gold),
-		float(rep.total_drift_pct), pressure_line
-	])
-	for w in rep.warnings:
-		print("[%s/DRIFT] WARN %s" % [tag, String(w)])
-
-
-# Look up this level's authored targets from level_list.tres. Returns null if
-# the registry is missing or the level_id isn't found — drift warnings just
-# silently skip in that case.
-func _find_level_data(level_id: String) -> LevelNodeData:
-	# Avoid `as LevelList` cast — class_name registration may race with the
-	# editor's class index (CORE RULE 16). Untyped Resource access works
-	# because the loaded resource has the LevelList script attached, and
-	# Godot resolves `.levels` dynamically on the instance.
-	var registry: Resource = load("res://ui/world_map/level_list.tres")
-	if registry == null:
-		return null
-	var levels: Array = registry.levels
-	for entry in levels:
-		if entry is LevelNodeData and entry.level_id == level_id:
-			return entry
-	return null
+	logger.print_hardness_readout(self, _level_id(), _wave_list_path(), _display_tag())
 
 
 func _configure_camera() -> void:
@@ -259,12 +133,21 @@ func _on_editor_tree_changed() -> void:
 
 
 var _spot_pulse_accum: float = 0.0
+# Editor-side accumulator. Marker2D position drags don't fire any tree
+# signal, so we still need a polling redraw to keep the preview live —
+# but at 60 FPS the full _draw (background + borders + paths + spot
+# cobbles + planks) pinned a CPU core when multiple level scenes were
+# open as tabs. 10 Hz feels indistinguishable while dragging and costs
+# 6× less. Don't unthrottle this without measuring.
+var _editor_redraw_accum: float = 0.0
 
 
 func _process(delta: float) -> void:
-	# Editor-only: keep the preview in sync with live Marker2D / Path2D drags.
 	if Engine.is_editor_hint():
-		queue_redraw()
+		_editor_redraw_accum += delta
+		if _editor_redraw_accum >= 0.1:
+			_editor_redraw_accum = 0.0
+			queue_redraw()
 		return
 	# Runtime: drive the empty-spot pulse at ~20 Hz so unoccupied build pads
 	# breathe gently. Throttled so we don't redraw the whole level every

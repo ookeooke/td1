@@ -69,14 +69,21 @@ func _on_level_completed(level_id: String, stars: int, _mode: String) -> void:
 	save_game()
 
 
-func _try_unlock_next_level(_completed_level_id: String) -> void:
-	# Simple sequential unlock: find the level with the next unlock_order
-	# and mark it unlocked. WorldMap's LevelNodeData carries unlock_order
-	# but we don't have that data here at runtime. For now, do nothing
-	# extra — only Level1 exists. Phase 29+ will implement the chain by
-	# reading a level registry. The save file stores whatever is in
-	# levels_unlocked so the data persists regardless.
-	pass
+func _try_unlock_next_level(completed_level_id: String) -> void:
+	# Sequential unlock by unlock_order: find the LevelNodeData whose order
+	# is one higher than the completed level's, and flip its levels_unlocked
+	# entry. ContentRegistry.levels is the registry the original stub was
+	# waiting for — it carries unlock_order on every LevelNodeData.
+	var completed: Resource = ContentRegistry.find_level(completed_level_id)
+	if completed == null:
+		return
+	var next_order: int = int(completed.unlock_order) + 1
+	for entry in ContentRegistry.levels:
+		if entry == null:
+			continue
+		if int(entry.unlock_order) == next_order:
+			MetaProgression.levels_unlocked[entry.level_id] = true
+			return
 
 
 func save_game() -> void:

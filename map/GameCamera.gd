@@ -181,6 +181,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Touch events.
 	if event is InputEventScreenTouch:
 		if event.pressed:
+			# Ghost-touch defense: if this index is already tracked, the prior
+			# release was consumed by a phase 1-3 handler (TowerRadialMenu
+			# Backdrop, SkillBar, etc.) and never reached _unhandled_input.
+			# Drop the stale state so the new press starts a clean gesture.
+			# Without this, _resolve_pending reads ancient _touch_start_time
+			# and panning replays from a stale _last_touch_pos.
+			if _finger_positions.has(event.index):
+				_reset_gesture_state()
 			_finger_positions[event.index] = event.position
 		else:
 			_finger_positions.erase(event.index)
@@ -228,6 +236,18 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 # ── Gesture states ───────────────────────────────────────────────────────
+
+# Force the camera back to IDLE and drop all tracked fingers. Used by the
+# ghost-touch defense in _unhandled_input — if a press arrives for an index
+# already tracked, the prior release was eaten by a UI handler and we must
+# discard the stale per-gesture data (_touch_start_*, _last_touch_pos,
+# pinch baseline) before treating the new press as a fresh tap.
+func _reset_gesture_state() -> void:
+	_state = GestureState.IDLE
+	_finger_positions.clear()
+	_momentum_active = false
+	_velocity = Vector2.ZERO
+
 
 func _start_pending(screen_pos: Vector2) -> void:
 	_state = GestureState.PENDING

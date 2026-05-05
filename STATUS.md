@@ -1,9 +1,14 @@
 # STATUS
 
-**Last shipped**: Balance tooling — PPT framework + Slider debug panel + cross-level Audit screen (2026-05-03). Diablo/PoE-style Player Power Tier scalar collapses loadout strength into one number; level-side `min_ppt`/`target_ppt` bands replace per-level multiplier targets. Slider panel writes runtime overrides via `balance/debug/BalanceOverrides.gd` (preload-only, no autoload, debug-build gated) — drag HP/armor/mag-res/speed/damage/gold/PPT, click "Play this level," see effect. Audit screen renders all levels in a colored grid. WorldMap gained two debug-only buttons next to BalanceReport. See SESSIONS.md "2026-05-03 — Balance tooling: PPT + Sliders + Audit". BALANCE.md grew two big sections: "Design intent — leaderboards reframe balance" and "Player Power Tier (PPT)".
+**Last shipped**: WorldMap Kingdom Rush–style visual rework (2026-05-04). Vertical card list replaced by a pannable procedural parchment map (2400×1400, ScrollContainer-pan) with banner-on-post markers per level, Catmull-Rom dotted path between them, mountain glyphs + region labels. Marker tap routes straight to LoadoutScreen (no intermediate modal); LoadoutScreen absorbed the level-info header (composite stars + best time / endless score) and gained a 4th Endless pill — Endless is now a peer mode, not an override. Marker positions live as `Marker2D` children of `WorldMapView/LevelMarkers` (node name == level_id), mirroring the `TowerSpots` → `Spot1` pattern in Level1.tscn — drag with the W tool. `LevelNodeData.map_position` retired. See SESSIONS.md "2026-05-04 — WorldMap visual rework + Marker2D layout".
+
+**Previously**: Balance tooling — PPT framework + Slider debug panel + cross-level Audit screen (2026-05-03). Diablo/PoE-style Player Power Tier scalar collapses loadout strength into one number; level-side `min_ppt`/`target_ppt` bands replace per-level multiplier targets. Slider panel writes runtime overrides via `balance/debug/BalanceOverrides.gd` (preload-only, no autoload, debug-build gated) — drag HP/armor/mag-res/speed/damage/gold/PPT, click "Play this level," see effect. Audit screen renders all levels in a colored grid. BALANCE.md grew two big sections: "Design intent — leaderboards reframe balance" and "Player Power Tier (PPT)".
 
 **Currently working on**:
 - Hand-authoring L2 onward against the new PPT-banded target curve (BALANCE.md). Wave generator deliberately skipped per Kingdom Rush precedent — hand-author + slider-validate is the workflow.
+- **10-minute level duration rule shipped (2026-05-04, L4+ only).** `BalanceCalculator.level_floor_time`, `[LevelN/Duration]` readout line, `Avg dur` column + L4-only flag in BalanceReport, `LevelNodeData.target_duration_sec` default 360→600. L1-L3 grandfathered. See plan `~/.claude/plans/i-would-like-to-wobbly-thompson.md` and BALANCE.md "Level duration — 10-minute target".
+
+**Next content task — author L4 against the 10-min rule.** L4 in [level_list.tres:47-60](ui/world_map/level_list.tres) is currently a "test stub, under-tuned" reusing L1's scene. Replace with a real Level4.tscn (copy a template under `levels/templates/`), author 8-12 waves targeting ~600s actual play, verify `[Level4/Duration]` floor lands 800-900s, play 5+ runs to confirm `Avg dur` reads in the 480-720s band before shipping.
 
 **Next up** (in priority order):
 
@@ -18,6 +23,15 @@
    - **Fri (~2–4h)** — Playtest the APK CI built. Put it in front of 3–5 humans. Watch silently, don't explain. Write the first 5 things that confused or bored them into this file.
 
 2. **Content sprint** (4–8 weeks, after hardening): 4 more levels, 2 more heroes (ranger / paladin), 2 more towers (support or AoE-slow variant), 4 more enemies (shielded, fast-swarm, self-heal, boss #2), 1 more spell. Architecture already supports one-file adds.
+
+   **BLOCKER for content sprint past ~10 levels — WorldMap chapter hub.** Current single 2400×1400 canvas with auto-scroll handles 4-5 levels comfortably; cramps badly past 12-15; unworkable at 40. Ship a `WorldChapters.tscn` hub (4-6 chapter cards → existing `WorldMap.tscn` filtered by chapter_id) BEFORE authoring level 11. Reuses existing `WorldMapView` + `LevelMarker` infrastructure ~95%. Migration steps:
+   - Add `chapter_id: String` to `LevelNodeData` (`ui/world_map/LevelNodeData.gd`); tag L1-L4 retroactively via `level_list.tres`
+   - Build `ui/WorldChapters.tscn` + `WorldChapters.gd` (banner cards reusing LevelMarker styling, `(complete/total)★` per region)
+   - Filter `WorldMap._load_levels` by `LoadoutState.current_chapter_id`
+   - Repoint MainMenu → WorldChapters (instead of MainMenu → WorldMap)
+   - Estimated 2-3 dev sessions. Existing REGION_LABELS in `WorldMapView.gd:42` ("The Dunes" / "Iron Pass" / "Frostpeak" / "Foul Bay") are the natural 4 chapters.
+
+   Pinch-zoom on WorldMap (port `GameCamera`'s pinch logic) is a deferred polish pass — only needed if a chapter exceeds ~12 levels OR if playtesters complain about scroll-bar friction. Do not pre-build.
 
 3. **Production hardening round 2** (after content is authored): i18n via `tr()` wraps on every user-facing string, real IAP SDK (RevenueCat or Google Play Billing + receipt validation), analytics event bus (stub → Amplitude / GameAnalytics), crash reporting via [sentry-godot](https://github.com/getsentry/sentry-godot), accessibility (font scaler, color-blind palette, 80px min touch targets).
 

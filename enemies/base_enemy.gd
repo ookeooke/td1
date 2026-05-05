@@ -3,7 +3,7 @@ class_name BaseEnemy
 
 const BalanceOverrides = preload("res://balance/debug/BalanceOverrides.gd")
 
-enum State { WALKING, STUNNED, COMBAT, STEALTHED, DYING }
+enum State { WALKING, COMBAT, STEALTHED, DYING }
 
 const HP_BAR_SIZE: Vector2 = Vector2(70.0, 10.0)
 const HP_BAR_Y_OFFSET: float = -65.0
@@ -16,9 +16,9 @@ const ATTACK_TELEGRAPH_DURATION: float = 0.15
 # Strike animation — ticks AFTER damage applies. Enemy lunges forward then
 # eases back, mirroring the hero lunge so counter-attacks have visible
 # follow-through, not just an invisible damage event.
-const STRIKE_ANIM_DURATION: float = 0.12
-const STRIKE_BACK_DIST: float = 4.0   # pulled back during anticipation
-const STRIKE_PUSH_DIST: float = 14.0  # forward at peak commit
+const STRIKE_ANIM_DURATION: float = 0.18
+const STRIKE_BACK_DIST: float = 6.0   # pulled back during anticipation
+const STRIKE_PUSH_DIST: float = 18.0  # forward at peak commit
 # Hit-stop — both attacker and defender freeze for a few frames on every
 # successful hit. Applies to BaseEnemy._physics_process and BaseHero
 # (mirrored there). Universal action-game readability device.
@@ -74,9 +74,10 @@ const FLINCH_DURATION: float = 0.0
 const FLINCH_DISTANCE: float = 0.0
 var _flinch_t: float = 0.0
 var _flinch_dir: Vector2 = Vector2.ZERO
-# Idle breathing: stationary enemies (COMBAT / STUNNED) torso pulses ~3% so
+# Idle breathing: stationary enemies (COMBAT / stunned) torso pulses ~3% so
 # they don't look frozen when not walking. Not used during WALKING (walk-bob
-# already provides aliveness) or DYING.
+# already provides aliveness) or DYING. Stun is a behavior gate, not a state
+# (see apply_status_effect) — engaged enemies stay in COMBAT through stun.
 var _breath_t: float = 0.0
 # Direction the enemy is facing along its path. Sampled from PathFollow2D
 # position deltas in _physics_process. Used for direction-aware eye shift.
@@ -172,8 +173,9 @@ func _physics_process(delta: float) -> void:
 	_prev_pos = global_position
 	# Slow-ghost trail history: only sampled while the slow effect is active
 	# so we don't burn memory on every enemy. Records {pos, time}; older than
-	# SLOW_GHOST_LAG seconds get trimmed.
-	if _effects.has("slow") and state == State.WALKING:
+	# SLOW_GHOST_LAG seconds get trimmed. Skip while stunned — position is
+	# frozen so the trail would just stack identical samples.
+	if _effects.has("slow") and state == State.WALKING and not _effects.has("stun"):
 		var now: float = Time.get_ticks_msec() / 1000.0
 		_slow_pos_history.append(global_position)
 		_slow_time_history.append(now)
@@ -184,6 +186,13 @@ func _physics_process(delta: float) -> void:
 	elif not _slow_pos_history.is_empty():
 		_slow_pos_history.clear()
 		_slow_time_history.clear()
+	# Stun gate: frozen for the duration, but the underlying state (WALKING /
+	# COMBAT) is preserved. Lets blockers stay engaged through the stun and
+	# resume hitting the moment it expires — no change_state ping-pong.
+	if _effects.has("stun"):
+		_breath_t += delta
+		queue_redraw()
+		return
 	match state:
 		State.WALKING:
 			_path_follow.progress += _effective_speed() * delta
@@ -198,9 +207,6 @@ func _physics_process(delta: float) -> void:
 			_combat_tick(delta)
 			# Idle breathing while engaged — small scale pulse so the enemy
 			# reads as alive while standing still.
-			_breath_t += delta
-			queue_redraw()
-		State.STUNNED:
 			_breath_t += delta
 			queue_redraw()
 		State.STEALTHED, State.DYING:
@@ -292,10 +298,15 @@ func apply_status_effect(effect) -> void:
 	# Untyped param so this compiles before Godot indexes systems/*.gd class_names.
 	if effect == null or state == State.DYING:
 		return
+	# If the same id is already active, give the old instance a chance to
+	# clean up (visuals, stat modifiers) before the replacement takes over.
+	# remove() is currently empty for slow/stun, but future effects may not be.
+	if _effects.has(effect.id):
+		_effects[effect.id].remove(self)
 	_effects[effect.id] = effect
 	effect.apply(self)
-	if effect.id == "stun" and state != State.STUNNED:
-		change_state(State.STUNNED)
+	# Stun is a behavior gate (see _physics_process), not a state transition.
+	# Keeps enemies in COMBAT through stun so blockers remain engaged.
 	queue_redraw()
 
 
@@ -314,8 +325,6 @@ func _tick_effects(delta: float) -> void:
 		var e = _effects[id]
 		e.remove(self)
 		_effects.erase(id)
-		if id == "stun" and state == State.STUNNED:
-			change_state(State.WALKING)
 	queue_redraw()
 
 
@@ -458,7 +467,7 @@ func _draw() -> void:
 		var fa: float = _flinch_t / FLINCH_DURATION
 		body_offset += _flinch_dir * FLINCH_DISTANCE * fa
 	# Idle breathing — small Y squish pulse while stationary.
-	if state == State.COMBAT or state == State.STUNNED:
+	if state == State.COMBAT or _effects.has("stun"):
 		var breath: float = sin(_breath_t * 2.5) * 0.025
 		body_scale.x *= 1.0 + breath
 		body_scale.y *= 1.0 - breath

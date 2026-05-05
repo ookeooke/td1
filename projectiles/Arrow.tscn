@@ -4,3 +4,5 @@
 
 [node name="Arrow" type="Node2D"]
 script = ExtResource("1_arrow")
+hit_radius = 22.0
+arc_height = 45.0

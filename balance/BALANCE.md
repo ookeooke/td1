@@ -290,7 +290,7 @@ Each new campaign level should target a multiple of S₁ ≈ 6,530 (post-tune):
 | Campaign | 1.00× | baseline |
 | Heroic | 1.30× | +30% enemy HP — tests defensive depth |
 | Iron | 1.30× + 1 life | +30% enemy speed, 1 life — tests perfect play |
-| Endless wave N | × (1 + 0.08 × N) | compounding HP per wave |
+| Endless wave N | × (1 + 0.08 × N) | linear additive HP per wave (W10 = 1.8×, W30 = 3.4×) |
 
 ---
 
@@ -418,9 +418,25 @@ The **swing** is the design lever — it's how much extra gold an aggressive pla
 
 Rule of thumb: density should ramp gently across waves (e.g. 0.6 → 0.8 → 1.0 → 1.2 → 1.5 e/s). A density jump of >2× wave-over-wave is a pacing cliff even if the hardness ratio looks fine.
 
-### Min playing time
+### Level duration — 10-minute target (rule, L4+)
 
-There is no authored minimum. Total floor time = Σ wave_duration + max(enemy travel time on slowest path). The level can't end faster than enemies physically walk. If a level feels too short, add waves or stretch spawn intervals — don't add a clock.
+Every campaign level authored from L4 onward targets **~600s of actual play time** on normal speed for a typical winning Naked Baseline run. Wave count is the primary variety knob — pick 5–14 waves to fit the level's theme; long-haul attrition levels run more waves, sprint-finale levels run fewer. Authored floor time (countdowns + spawn windows) should land around **800–900s** so that a player who calls early and speed-kills still lands near 600s actual.
+
+**Levels predating this rule (L1–L3) are grandfathered.** Their `target_duration_sec` reflects the original 4-5 min design and should not be retuned.
+
+**Verify before shipping a new level:**
+1. Run the level once in-editor — `[LevelN/Duration] floor=Xs target=Ys gap=Z%` should read floor between 800-900s.
+2. Play it 5+ times in campaign mode. After three completed runs, BalanceReport's per-level health table shows `Avg dur` per level with a `dur ±X%` flag firing on L4+ when actual drifts >25% from `target_duration_sec`.
+3. If avg < 480s (under target by >20%): add a wave or stretch a spawn interval.
+4. If avg > 720s (over target by >20%): cut a wave or shorten the longest spawn window.
+
+The rule applies to **campaign / heroic / iron**. Endless duration is unbounded by definition; mode multipliers (Heroic 1.30× HP, Iron 1.30× speed + 1 life) shift actual play time by ±15% within band — flag as drift, not failure.
+
+Implementation: `BalanceCalculator.level_floor_time(wave_list)` returns the authored sum (countdowns + spawn windows). `RunStats.duration_s` captures actual play time per run; `BalanceReport._render_per_level_health` averages it and gates the drift flag on `LevelNodeData.unlock_order >= 4`.
+
+### Min playing time (legacy, applies to L1–L3 only)
+
+For grandfathered levels there is no authored minimum. Total floor time = Σ wave_duration + max(enemy travel time on slowest path). The level can't end faster than enemies physically walk. If a grandfathered level feels too short, add waves or stretch spawn intervals — don't add a clock. **For new levels, defer to the 10-minute target rule above.**
 
 ### Hardness tiers
 

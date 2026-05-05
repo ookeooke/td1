@@ -28,8 +28,10 @@ var _alive_per_wave: Dictionary = {}    # wave_index → int
 var _pending_bounties: Dictionary = {}  # wave_index → int (bounty paid when alive→0)
 var _all_waves_launched: bool = false   # true after the last campaign wave begins spawning
 # Per-instance HP multiplier applied to enemies spawned during endless mode.
-# 8% compounding per wave (≈ 2× by wave 10, 10× by wave 30) — see BALANCE.md
-# "Mode multipliers" → Endless. Reset to 1.0 in start() / start_endless().
+# 8% additive per wave: scale = 1 + 0.08 × wave_num (W10 = 1.8×, W30 = 3.4×).
+# Linear was a deliberate choice — exponential makes leaderboard scores
+# incomparable across runs and rebalances every endless session. See
+# BALANCE.md "Mode multipliers" → Endless. Reset to 1.0 in start() / start_endless().
 var _endless_hp_scale: float = 1.0
 # Tick-based countdown state (replaces await-based timer for interruptibility).
 var _in_countdown: bool = false
@@ -98,6 +100,20 @@ func start(wave_list: Resource, level: Node, early_call_window: float = 0.0) -> 
 # dead-time the window-gating used to cause.
 func early_call_available() -> bool:
 	return _in_countdown and _running
+
+
+# Countdown state accessors. HUD/etc. should never reach into the _-prefixed
+# fields directly — keeps the private state replaceable (signal-based, etc.).
+func is_countdown_active() -> bool:
+	return _in_countdown
+
+
+func countdown_total() -> float:
+	return _countdown_total
+
+
+func countdown_remaining() -> float:
+	return _countdown_remaining
 
 
 func start_endless(level: Node) -> void:
@@ -316,18 +332,30 @@ func _on_enemy_spawned(enemy: Node, _path_id: String) -> void:
 
 
 func _on_enemy_died(enemy: Node, _gold: int) -> void:
-	_alive_count = maxi(0, _alive_count - 1)
-	_decrement_wave_alive(enemy)
+	_count_enemy_exit(enemy)
 
 
 func _on_enemy_reached_end(enemy: Node, _lives: int) -> void:
-	_alive_count = maxi(0, _alive_count - 1)
-	_decrement_wave_alive(enemy)
+	_count_enemy_exit(enemy)
 
 
-func _decrement_wave_alive(enemy: Node) -> void:
+# Defensive backstop: fires whenever an enemy leaves the scene tree, even
+# when neither enemy_died nor enemy_reached_end was emitted. Without this,
+# a stray queue_free() (future spell effect, debug nuke, scene reload race)
+# would leave _alive_per_wave above zero and the wave would never clear,
+# soft-locking the level. _count_enemy_exit is idempotent via meta so the
+# normal die/leak path still pays bounty exactly once.
+func _on_enemy_tree_exiting(enemy: Node) -> void:
+	_count_enemy_exit(enemy)
+
+
+func _count_enemy_exit(enemy: Node) -> void:
 	if enemy == null:
 		return
+	if enemy.get_meta("_wave_counted_exit", false):
+		return
+	enemy.set_meta("_wave_counted_exit", true)
+	_alive_count = maxi(0, _alive_count - 1)
 	var wi: int = enemy.get_meta("wave_index", -1)
 	if wi < 0:
 		return  # untracked spawn (Test Range, etc.) — no bounty owed
@@ -371,8 +399,8 @@ func _generate_endless_wave(wave_num: int) -> Resource:
 	var spawn_script := preload("res://waves/WaveSpawn.gd")
 	wave_data.countdown = maxf(1.5, 3.0 - wave_num * 0.1)
 	wave_data.bounty = 10 + wave_num * 5
-	# 8% HP per wave compounding — reapplied here every wave so the value
-	# stays fresh as _wave_index advances. See BALANCE.md endless multiplier.
+	# 8% additive HP per wave — reapplied every wave so the value stays
+	# fresh as _wave_index advances. See BALANCE.md endless multiplier.
 	_endless_hp_scale = 1.0 + 0.08 * float(wave_num)
 
 	# Base enemy count scales with wave number.
@@ -468,6 +496,7 @@ func spawn_enemy(path: Path2D, path_id: String, scene: PackedScene, wave_index: 
 	path.add_child(follow)
 	var enemy: Node = scene.instantiate()
 	enemy.set_meta("wave_index", wave_index)
+	enemy.set_meta("_wave_counted_exit", false)
 	# Endless-mode HP scaling — set BEFORE add_child so base_enemy._ready()
 	# initializes current_health from the scaled max. Skip in campaign /
 	# heroic / iron / Test Range — those keep authored values (scale = 1.0).
@@ -476,5 +505,8 @@ func spawn_enemy(path: Path2D, path_id: String, scene: PackedScene, wave_index: 
 	follow.add_child(enemy)
 	if enemy.has_method("setup"):
 		enemy.setup(follow, path_id)
+	# Backstop against soft-lock: any path that frees the enemy without
+	# emitting enemy_died / enemy_reached_end still hits _on_enemy_tree_exiting.
+	enemy.tree_exiting.connect(_on_enemy_tree_exiting.bind(enemy))
 	EventBus.enemy_spawned.emit(enemy, path_id)
 	return enemy

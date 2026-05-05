@@ -31,6 +31,7 @@ func _ready() -> void:
 	EventBus.tower_branch_chosen.connect(_on_tower_branch_chosen)
 	EventBus.tower_sold.connect(_on_tower_sold)
 	EventBus.hero_died.connect(_on_hero_died)
+	EventBus.early_wave_triggered.connect(_on_early_wave_triggered)
 	EventBus.level_completed.connect(_on_level_completed)
 	EventBus.game_over.connect(_on_game_over)
 
@@ -70,6 +71,8 @@ func _start_new_run() -> void:
 		"tower_sells": 0,
 		"hero_deaths": 0,
 		"gold_timeline": [],   # one entry per wave: start/end gold + duration
+		"early_call_count": 0,
+		"early_call_gold_earned": 0,
 		"outcome": "in_progress",
 	}
 
@@ -159,6 +162,17 @@ func _on_hero_died() -> void:
 	if _current.is_empty():
 		return
 	_current["hero_deaths"] = int(_current.get("hero_deaths", 0)) + 1
+
+
+# Early-call attribution. KR-overlap mechanic (CORE RULE 19) trades bonus
+# gold for concurrent-wave pressure. Tracking the bonus separately lets us
+# answer "are players using the mechanic?" — without this, kill gold and
+# early-call gold are indistinguishable in the post-run economy roll-up.
+func _on_early_wave_triggered(bonus_gold: int) -> void:
+	if _current.is_empty():
+		return
+	_current["early_call_count"] = int(_current.get("early_call_count", 0)) + 1
+	_current["early_call_gold_earned"] = int(_current.get("early_call_gold_earned", 0)) + maxi(0, bonus_gold)
 
 
 func _on_level_completed(_level_id: String, stars_earned: int, _mode: String) -> void:

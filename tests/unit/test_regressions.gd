@@ -152,3 +152,58 @@ func test_unlock_unknown_id_returns_false_safely() -> void:
 
 	MetaProgression.unlocked_content = saved
 	UnlockManager._star_thresholds = saved_thresholds
+
+
+# Bundle B: stun is a behavior gate, not a state. An enemy in COMBAT with a
+# blocker, stunned and then un-stunned, must remain in COMBAT — the old
+# implementation forced State.STUNNED on apply and State.WALKING on expiry,
+# silently dropping the engagement while blockers were still in _blockers.
+func test_stunned_blocked_enemy_stays_in_combat() -> void:
+	var enemy: BaseEnemy = _track(BaseEnemy.new())
+	enemy.data = ContentRegistry.find_enemy("enemy_basic")
+	assert_not_null(enemy.data, "fixture: enemy_basic must be in registry")
+	add_child_autofree(enemy)
+
+	# Stand-in blocker — engage_combat only checks instance validity, not type.
+	var blocker: Node = _track(Node.new())
+	add_child_autofree(blocker)
+	assert_true(enemy.engage_combat(blocker), "fixture: blocker must engage")
+	assert_eq(enemy.state, BaseEnemy.State.COMBAT, "fixture: enemy enters COMBAT")
+
+	var stun: StunEffect = StunEffect.new(0.05)
+	enemy.apply_status_effect(stun)
+	assert_eq(enemy.state, BaseEnemy.State.COMBAT,
+		"applying stun must NOT swap COMBAT for a stun state")
+	assert_true(enemy._effects.has("stun"), "stun effect tracked in _effects")
+
+	# Force the effect past its duration and tick — stun should clear,
+	# blocker should still be engaged, state stays COMBAT.
+	enemy._effects["stun"].duration = -0.01
+	enemy._tick_effects(0.0)
+	assert_false(enemy._effects.has("stun"), "stun expired and removed")
+	assert_eq(enemy.state, BaseEnemy.State.COMBAT,
+		"stun expiry must NOT downgrade COMBAT to WALKING")
+	assert_true(enemy._blockers.has(blocker), "blocker must still be engaged")
+
+
+# Bundle A: BaseHero._die() must be idempotent. Without the State.DEAD
+# short-circuit, a second call (from an ability ON_DEATH path, an effect
+# tick, etc.) would emit hero_died twice and schedule two respawn timers.
+# Mirror of test_enemy_die_double_call_emits_once.
+func test_hero_die_double_call_emits_once() -> void:
+	var hero: BaseHero = _track(BaseHero.new())
+	hero.data = ContentRegistry.find_hero("hero_warrior")
+	assert_not_null(hero.data, "fixture: hero_warrior must be in registry")
+	hero.current_health = 1
+	add_child_autofree(hero)
+
+	var emit_count: Array[int] = [0]
+	var listener: Callable = func() -> void:
+		emit_count[0] += 1
+	EventBus.hero_died.connect(listener)
+
+	hero._die()
+	hero._die()  # second call must be a no-op (state == DEAD)
+
+	EventBus.hero_died.disconnect(listener)
+	assert_eq(emit_count[0], 1, "hero_died must fire exactly once across two _die() calls")

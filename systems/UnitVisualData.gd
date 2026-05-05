@@ -61,3 +61,16 @@ enum Hat { NONE, HORNS, HELMET, HOOD, BANDANA, CROWN_BIG }
 @export var hat_color: Color = Color(0.3, 0.3, 0.3)
 @export var leg_color: Color = Color(0.25, 0.18, 0.12)
 @export var arm_color: Color = Color(0.42, 0.55, 0.25)
+
+# Optional procedural polish layers. Defaults are disabled so existing visual
+# resources render exactly as before until a .tres opts in. These are cosmetic
+# only: no gameplay stats, no collision changes, and no extra nodes.
+@export_group("Polish")
+@export var highlight_color: Color = Color(1.0, 1.0, 1.0, 0.0)
+@export_range(0.0, 1.0, 0.01) var highlight_strength: float = 0.0
+@export var armor_plate_color: Color = Color(0.0, 0.0, 0.0, 0.0)
+@export var shoulder_pad_color: Color = Color(0.0, 0.0, 0.0, 0.0)
+@export var cape_color: Color = Color(0.0, 0.0, 0.0, 0.0)
+@export_range(0.5, 2.0, 0.05) var weapon_trail_strength: float = 1.0
+@export var weapon_glow_color: Color = Color(0.0, 0.0, 0.0, 0.0)
+@export_range(0.0, 1.0, 0.01) var weapon_glow_strength: float = 0.0

@@ -10,6 +10,10 @@ class_name LevelNodeData
 @export var scene_path: String = "res://main/Main.tscn"
 @export var unlock_order: int = 1
 
+# WorldMap layout: marker positions are authored as Marker2D children of
+# LevelMarkers in WorldMapView.tscn — the Marker2D node name must match
+# this `level_id`. Mirrors the TowerSpots → Spot1 pattern from Level1.tscn.
+
 # Authored economy + pressure curve — see balance/BALANCE.md
 # "Authored economy + pressure curve".
 #
@@ -21,7 +25,10 @@ class_name LevelNodeData
 # Per-wave shapes (gold + time) are arrays that sum to 1.0. The system
 # derives wave-by-wave gold targets and time slices from them.
 @export var wave_list_path: String = ""
-@export var target_duration_sec: float = 360.0
+# 600s = 10-minute rule for new levels (BALANCE.md, L4+). L1-L3 override
+# this in level_list.tres with their original 4-5 min values and are
+# grandfathered. Only applies to fresh LevelNodeData sub-resources.
+@export var target_duration_sec: float = 600.0
 @export var gold_budget_total: int = 700
 # One entry per wave; each array sums to 1.0 (validated at editor open).
 # Empty array = uniform distribution.

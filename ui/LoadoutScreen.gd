@@ -17,9 +17,11 @@ const TowerIconButton := preload("res://ui/TowerIconButton.gd")
 @onready var towers_row: HBoxContainer = %TowersRow
 @onready var change_towers_button: Button = %ChangeTowersButton
 @onready var level_label: Label = %LevelLabel
+@onready var level_info_label: Label = %LevelInfoLabel
 @onready var campaign_button: Button = %CampaignButton
 @onready var heroic_button: Button = %HeroicButton
 @onready var iron_button: Button = %IronButton
+@onready var endless_button: Button = %EndlessButton
 @onready var mode_info_label: Label = %ModeInfoLabel
 
 var _selected_mode: String = "campaign"
@@ -33,6 +35,7 @@ func _ready() -> void:
 	campaign_button.pressed.connect(_on_mode_selected.bind("campaign"))
 	heroic_button.pressed.connect(_on_mode_selected.bind("heroic"))
 	iron_button.pressed.connect(_on_mode_selected.bind("iron"))
+	endless_button.pressed.connect(_on_mode_selected.bind("endless"))
 	# Inherit the mode the caller set (level-card pill, prior Endless button,
 	# legacy default "campaign"). Hardcoding "campaign" here was silently
 	# downgrading every non-campaign pick at _on_start time.
@@ -57,18 +60,14 @@ func _rebuild_towers_row() -> void:
 
 func _refresh() -> void:
 	var lid: String = RunState.current_level_id
-	var is_endless: bool = RunState.current_mode == "endless"
-	level_label.text = "Endless Mode" if is_endless else lid.replace("_", " ").capitalize()
+	var data: Resource = ContentRegistry.find_level(lid)
+	level_label.text = data.display_name if data != null else lid.replace("_", " ").capitalize()
+	_refresh_level_info_label(lid)
 	_refresh_hero_info()
 	_rebuild_towers_row()
-	# Endless skips the mode selector — it IS the mode.
-	campaign_button.visible = not is_endless
-	heroic_button.visible = not is_endless
-	iron_button.visible = not is_endless
-	if is_endless:
-		mode_info_label.text = "Infinite waves. Difficulty scales each wave.\nBest score: %d" % MetaProgression.endless_best_score
-	else:
-		_refresh_mode_buttons()
+	# All four pills are always visible — Endless is a peer mode now, not
+	# an override. _refresh_mode_buttons handles per-pill gating + label.
+	_refresh_mode_buttons()
 
 
 func _refresh_mode_buttons() -> void:
@@ -106,8 +105,44 @@ func _refresh_mode_buttons() -> void:
 		iron_button.text = "Iron\nNeed Heroic"
 		iron_button.disabled = true
 
+	# Endless — always available; label shows per-level best score (or — when
+	# the player hasn't posted one yet).
+	var endless_best: int = MetaProgression.get_endless_best_score(lid)
+	endless_button.text = "Endless\nBest %d" % endless_best if endless_best > 0 else "Endless\n—"
+	endless_button.disabled = false
+
 	_highlight_selected()
 	_update_mode_info()
+
+
+# Composite-stars + best-time / endless-score line, sourced from
+# MetaProgression. Star line is always present; metrics line is suppressed
+# until the player has actually posted a time or endless score (otherwise
+# every fresh-save level reads "Best: —  Endless: —" — clutter, no info).
+func _refresh_level_info_label(level_id: String) -> void:
+	if level_info_label == null:
+		return
+	var total_stars: int = MetaProgression.calculate_total_stars_for_level(level_id)
+	var star_line: String = "★".repeat(total_stars) + "☆".repeat(5 - total_stars)
+	var metric_parts: PackedStringArray = []
+	var best_time: float = MetaProgression.get_best_time(level_id)
+	if best_time > 0.0:
+		metric_parts.append("Best: %s" % _format_seconds(best_time))
+	var endless_best: int = MetaProgression.get_endless_best_score(level_id)
+	if endless_best > 0:
+		metric_parts.append("Endless: %d" % endless_best)
+	var lines: PackedStringArray = [star_line]
+	if metric_parts.size() > 0:
+		lines.append("   ".join(metric_parts))
+	level_info_label.text = "\n".join(lines)
+
+
+func _format_seconds(s: float) -> String:
+	if s < 60.0:
+		return "%.1fs" % s
+	var minutes: int = int(s / 60.0)
+	var rem: float = s - float(minutes * 60)
+	return "%d:%05.2f" % [minutes, rem]
 
 
 func _on_mode_selected(mode: String) -> void:
@@ -121,6 +156,7 @@ func _highlight_selected() -> void:
 	campaign_button.modulate = Color.WHITE if _selected_mode == "campaign" else Color(0.6, 0.6, 0.6)
 	heroic_button.modulate = Color.WHITE if _selected_mode == "heroic" else Color(0.6, 0.6, 0.6)
 	iron_button.modulate = Color.WHITE if _selected_mode == "iron" else Color(0.6, 0.6, 0.6)
+	endless_button.modulate = Color.WHITE if _selected_mode == "endless" else Color(0.6, 0.6, 0.6)
 
 
 func _update_mode_info() -> void:
@@ -131,6 +167,8 @@ func _update_mode_info() -> void:
 			mode_info_label.text = "Harder waves: 1.5x enemies, faster spawns. +1 bonus star on completion."
 		"iron":
 			mode_info_label.text = "1 life only. Any enemy leak = instant defeat. +1 bonus star on completion."
+		"endless":
+			mode_info_label.text = "Infinite waves. Difficulty scales each wave."
 		_:
 			mode_info_label.text = ""
 

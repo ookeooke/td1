@@ -133,9 +133,11 @@ func _stop_send_wave_blink() -> void:
 func _on_enemy_spawned_for_rate(enemy: Node, _path_id: String) -> void:
 	# Push (now_ms, max_health) into the rolling window. Old entries are
 	# pruned in _process so the displayed sum reflects the last 5s of spawns.
+	# Use _effective_max_health() so endless _hp_scale and slider overrides
+	# are reflected in the "Incoming HP/5s" diagnostic.
 	if enemy == null or enemy.data == null:
 		return
-	var hp: int = int(enemy.data.max_health)
+	var hp: int = enemy._effective_max_health() if enemy.has_method("_effective_max_health") else int(enemy.data.max_health)
 	if hp <= 0:
 		return
 	_spawn_rate_events.append([Time.get_ticks_msec(), hp])
@@ -156,13 +158,13 @@ func _refresh_spawn_rate() -> void:
 func _process(_delta: float) -> void:
 	_refresh_spawn_rate()
 	# Tick the countdown label from WaveManager state.
-	if countdown_label.visible and WaveManager._in_countdown:
+	if countdown_label.visible and WaveManager.is_countdown_active():
 		# Button-only mode (W1) keeps the "Ready when you are" label set by
 		# _on_countdown_started. Other waves tick down the seconds remaining.
-		if WaveManager._countdown_total > 0.0:
-			countdown_label.text = "Next wave: %.1fs" % maxf(0.0, WaveManager._countdown_remaining)
-		# Window-gate the Send-Wave button: only visible in the last
-		# early_call_window_sec of countdown (or always, in button-only mode).
+		if WaveManager.countdown_total() > 0.0:
+			countdown_label.text = "Next wave: %.1fs" % maxf(0.0, WaveManager.countdown_remaining())
+		# Send-Wave button is visible the entire countdown (CORE RULE 19) —
+		# the window only caps bonus magnitude, never button availability.
 		# Lazy-start blink the moment the button first appears in this countdown.
 		var should_show: bool = WaveManager.early_call_available()
 		if should_show != send_wave_button.visible:

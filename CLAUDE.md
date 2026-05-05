@@ -418,7 +418,9 @@ Levels stay as editor-visible `.tscn` files (CORE RULE: human drags Curve2D hand
 
 5. **Register in `ui/world_map/level_list.tres`** — add a `level_<N>` entry pointing at the new `scene_path`, `wave_list_path`, with `min_ppt`, `target_ppt` matching the user's hardness target.
 
-6. **Author the wave file** — replace the placeholder waves with real content. Use the existing wave files (`level1_waves.tres`, `level2_waves.tres`) as references.
+6. **Place the marker on the WorldMap** — open `ui/world_map/WorldMapView.tscn`, add a `Marker2D` named exactly `level_<N>` (must match the `level_id` from step 5) under the `LevelMarkers` Node2D, and drag it to the desired position. Mirrors the `TowerSpots → Spot1` pattern: node name == content_id, position lives in the scene. WorldMapView reads it at runtime; missing marker = `push_warning` and the level is skipped.
+
+7. **Author the wave file** — replace the placeholder waves with real content. Use the existing wave files (`level1_waves.tres`, `level2_waves.tres`) as references.
 
 **Template invariants** — every template `.tscn` MUST have:
 - Root node attached to `res://levels/BaseLevel.gd` (no per-template script)

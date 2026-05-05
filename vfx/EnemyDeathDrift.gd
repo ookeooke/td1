@@ -1,29 +1,29 @@
 class_name EnemyDeathDrift
 extends Node2D
 
-# Snapshot of a dying enemy that stays at the death point and squishes flat
-# while fading. Player feedback: a kill produces a clear "drop and fade"
-# silhouette instead of an instant despawn. No drift, no rotation — the body
-# stays exactly where it died (kills shouldn't look like the enemy is still
-# moving along the path).
+# Snapshot of a dying enemy that stays near the death point, tips over, squishes
+# flat, and fades. Kill feedback should read as a collapsed body, not an instant
+# despawn or a still-moving enemy.
 
 const _UnitVisualDrawer := preload("res://systems/UnitVisualDrawer.gd")
 
-const LIFETIME: float = 0.35
+const LIFETIME: float = 0.50
 
 var _visual: Resource = null  # UnitVisualData
 var _t: float = LIFETIME
+var _fall_dir: float = 1.0
 
 
-# Signature kept compatible with the previous drift-based version so
-# VFXSpawner doesn't need a matching change. hit_dir is ignored — kills no
-# longer push the body along the hit direction.
-static func spawn(parent: Node, visual: Resource, pos: Vector2, _hit_dir: Vector2) -> void:
+# Signature kept compatible with the previous drift-based version. hit_dir now
+# chooses which side the body tips toward, but the corpse stays anchored at the
+# kill point.
+static func spawn(parent: Node, visual: Resource, pos: Vector2, hit_dir: Vector2) -> void:
 	if parent == null or visual == null:
 		return
 	var inst := EnemyDeathDrift.new()
 	inst.global_position = pos
 	inst._visual = visual
+	inst._fall_dir = -1.0 if hit_dir.x < 0.0 else 1.0
 	parent.add_child(inst)
 
 
@@ -39,18 +39,25 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if _visual == null:
 		return
-	# Squish in-place. Body flattens (Y → 0.3) and widens slightly (X → 1.25)
-	# so the silhouette reads as "collapsed on the ground". Pivot at the feet
-	# so the bottom edge stays anchored at the spawn point — the body sinks
-	# down rather than shrinking around its center.
+	# Tip + squish in-place. Body falls toward the killing blow direction, then
+	# flattens (Y → 0.22) and widens slightly (X → 1.35). Pivot compensation
+	# keeps feet near the original kill point.
 	var progress: float = clampf(1.0 - _t / LIFETIME, 0.0, 1.0)
-	var sx: float = 1.0 + progress * 0.25
-	var sy: float = 1.0 - progress * 0.7
+	var eased: float = 1.0 - pow(1.0 - progress, 2.0)
+	var sx: float = 1.0 + eased * 0.35
+	var sy: float = 1.0 - eased * 0.78
 	var torso_r: float = _visual.radius if "radius" in _visual else 32.0
 	var feet_y: float = torso_r * 0.85
 	# Offset compensation: with scale sy applied to local Y, a point at
 	# local (0, feet_y) ends up at offset.y + feet_y * sy. Setting
 	# offset.y = feet_y * (1 - sy) keeps the feet pinned at the original
 	# world Y regardless of squish.
-	var off_y: float = feet_y * (1.0 - sy)
-	_UnitVisualDrawer.draw_unit(self, _visual, Vector2(0.0, off_y), Vector2(sx, sy))
+	var off_y: float = feet_y * (1.0 - sy) + eased * torso_r * 0.18
+	var off_x: float = _fall_dir * eased * torso_r * 0.18
+	var rot: float = _fall_dir * deg_to_rad(38.0) * minf(1.0, progress * 1.8)
+	draw_set_transform(Vector2(off_x, off_y), rot, Vector2(sx, sy))
+	_UnitVisualDrawer.draw_unit(self, _visual)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	var dust_alpha: float = clampf((1.0 - progress) * 0.28, 0.0, 0.28)
+	if dust_alpha > 0.0:
+		draw_circle(Vector2(0.0, feet_y * 0.85), torso_r * (0.35 + progress * 0.75), Color(0.35, 0.27, 0.18, dust_alpha))

@@ -480,6 +480,45 @@ Gear, talents, and upgrades are *bonuses* that ease a level or unlock 3-star run
 
 ---
 
+## Loot drop curve
+
+Drops should be rare and exciting. Target **1–3 pickups per typical level**, with bosses guaranteed as the predictable celebration anchor. A flooded inventory makes every drop noise; the dopamine loop is "ooh, what is it?", which only works when drops are infrequent.
+
+### Knobs
+
+| Source | File | Value | Why |
+|---|---|---|---|
+| Trash drop chance | [items/data/loot_table_default.tres](../items/data/loot_table_default.tres) | `drop_chance = 0.015` | Flat rate. Levels of 48–206 enemies → expected 0.7–3.1 drops. Variance is intentional: short levels are usually dry, long levels reward grinding. |
+| Boss drop chance | [items/data/loot_table_boss_orc.tres](../items/data/loot_table_boss_orc.tres) | `drop_chance = 1.0` | Every boss kill = guaranteed drop. The KR-canonical "you cleared the wave, here's your prize" moment. |
+| Wooden Sword weight | default table entry | `1.0` (was `2.0`) | 0-affix common stays in pool but no longer dominates. Per user direction: "small improvement is still improvement," don't yank it. |
+| Demon Core weight | default table entry | `0.08` | ≈0.02% per kill. ~1 in 5000 kills, true mythic. Bosses bias higher (`0.25`). |
+
+### Per-rarity affix value scaling
+
+Without scaling, a Demon Core's 4 affix slots roll the same value range as an Iron Sword's 1 slot. Rarity changes *how many* affixes, not *how good*. Scaling fixes that — applied in [autoloads/LootRoller.gd](../autoloads/LootRoller.gd) `_rarity_value_multiplier()`:
+
+| Rarity | ItemBase enum | Multiplier | Example: damage_flat 5 base roll |
+|---|---|---|---|
+| 0 | COMMON | 1.0× | 5 (irrelevant — Wooden has 0 affix slots) |
+| 1 | MAGIC | 1.0× | 5 (Iron Sword baseline) |
+| 2 | RARE | 1.25× | 6 |
+| 3 | EPIC | 1.5× | 8 |
+| 4 | LEGENDARY | 2.0× | 10 |
+
+Re-rounded to int when `AffixData.value_is_int = true` so display stays clean.
+
+### Why flat rate, not per-level
+
+Authoring per-level loot tables (with calibrated `drop_chance` per level length) was considered and rejected. The flat-variance choice means *each level naturally tunes itself by length* with zero authoring overhead. If playtesting shows L1/L2 dry-spell frustration, the next lever is a **pity counter** (force-drop on a level that ended with zero trash drops), not per-level tables.
+
+### Verification
+
+- Run L1–L4 in editor; expected 0–2 drops on L1/L2, 1–2 on L3, 2–4 on L4 (incl. boss).
+- Force-roll a Demon Core in Test Range; affix values should be ~2× an Iron Sword roll of the same affix.
+- Inventory shouldn't fill up over a campaign — that's the regression to watch for if `drop_chance` creeps back up.
+
+---
+
 ## Future direction — Two-Brain Stat Architecture
 
 **Status: Phase 49+. Not implemented. Design captured here so it doesn't get lost.**

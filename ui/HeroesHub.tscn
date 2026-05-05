@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://ct8ymjyvwrdht"]
+[gd_scene load_steps=4 format=3 uid="uid://ct8ymjyvwrdht"]
 
 [ext_resource type="Script" path="res://ui/HeroesHub.gd" id="1_hub"]
 [ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
+[ext_resource type="Script" path="res://ui/SafeAreaMargin.gd" id="3_safe"]
 
 [node name="HeroesHub" type="Control"]
 layout_mode = 3
@@ -18,118 +19,100 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 color = Color(0.1, 0.14, 0.18, 1.0)
 
-[node name="HubBar" type="HBoxContainer" parent="."]
-unique_name_in_owner = true
+[node name="SafeAreaMargin" type="MarginContainer" parent="."]
 layout_mode = 1
-anchors_preset = 10
+anchors_preset = 15
 anchor_right = 1.0
-offset_left = 16.0
-offset_top = 8.0
-offset_right = -16.0
-offset_bottom = 80.0
-theme_override_constants/separation = 8
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("3_safe")
 
-[node name="BackButton" type="Button" parent="HubBar"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(96, 64)
+[node name="ContentMargin" type="MarginContainer" parent="SafeAreaMargin"]
 layout_mode = 2
-size_flags_vertical = 4
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="Layout" type="VBoxContainer" parent="SafeAreaMargin/ContentMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TopBar" type="HBoxContainer" parent="SafeAreaMargin/ContentMargin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="BackButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 80)
+layout_mode = 2
 text = "← Back"
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
 
-[node name="LeftSpacer" type="Control" parent="HubBar"]
-custom_minimum_size = Vector2(24, 0)
-layout_mode = 2
-
-[node name="SegmentGroup" type="HBoxContainer" parent="HubBar"]
+[node name="TitleLabel" type="Label" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_constants/separation = 8
-
-[node name="FlexSpacer" type="Control" parent="HubBar"]
 layout_mode = 2
 size_flags_horizontal = 3
-
-[node name="ContextGroup" type="VBoxContainer" parent="HubBar"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(220, 64)
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_constants/separation = 0
-alignment = 1
-
-[node name="HeroNameLabel" type="Label" parent="HubBar/ContextGroup"]
-unique_name_in_owner = true
-layout_mode = 2
-horizontal_alignment = 2
-text = "Hero"
-theme_override_font_sizes/font_size = 16
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "HERO HALL"
+theme_override_font_sizes/font_size = 26
 theme_override_colors/font_color = Color(1.0, 1.0, 1.0, 1.0)
 
-[node name="HeroLevelLabel" type="Label" parent="HubBar/ContextGroup"]
+[node name="MetaGoldLabel" type="Label" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 80)
 layout_mode = 2
 horizontal_alignment = 2
-text = "Lv 1   XP 0/0"
-theme_override_font_sizes/font_size = 13
-theme_override_colors/font_color = Color(0.6, 0.66, 0.78, 1.0)
-
-[node name="HeroGoldLabel" type="Label" parent="HubBar/ContextGroup"]
-unique_name_in_owner = true
-layout_mode = 2
-horizontal_alignment = 2
+vertical_alignment = 1
 text = "💰 0"
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 20
 theme_override_colors/font_color = Color(1.0, 0.85, 0.4, 1.0)
 
-[node name="ContentArea" type="Control" parent="."]
+[node name="Body" type="HBoxContainer" parent="SafeAreaMargin/ContentMargin/Layout"]
 unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 16.0
-offset_top = 88.0
-offset_right = -16.0
-offset_bottom = -16.0
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 16
+
+[node name="RosterRail" type="ScrollContainer" parent="SafeAreaMargin/ContentMargin/Layout/Body"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(304, 0)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="RosterList" type="VBoxContainer" parent="SafeAreaMargin/ContentMargin/Layout/Body/RosterRail"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="MainStack" type="Control" parent="SafeAreaMargin/ContentMargin/Layout/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 mouse_filter = 1
 
-[node name="Loadout" type="Control" parent="ContentArea"]
+[node name="HeroHallView" type="VBoxContainer" parent="SafeAreaMargin/ContentMargin/Layout/Body/MainStack"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 1
+theme_override_constants/separation = 12
 
-[node name="Stats" type="Control" parent="ContentArea"]
+[node name="SubView" type="Control" parent="SafeAreaMargin/ContentMargin/Layout/Body/MainStack"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 visible = false
-
-[node name="Equipment" type="Control" parent="ContentArea"]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-visible = false
-
-[node name="Skills" type="Control" parent="ContentArea"]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-visible = false
-
-[node name="Talents" type="Control" parent="ContentArea"]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-visible = false
+mouse_filter = 1

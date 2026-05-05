@@ -47,8 +47,25 @@ func _roll_affixes_for(base) -> Array:
 			break   # no more affixes available (all de-duped or pools empty)
 		used_ids[picked.affix_id] = true
 		var v: float = picked.roll_value()
+		var rarity_mult: float = _rarity_value_multiplier(int(base.rarity))
+		v *= rarity_mult
+		if picked.value_is_int:
+			v = float(roundi(v))
 		out.append({"affix_id": picked.affix_id, "value": v})
 	return out
+
+
+# Scales rolled affix magnitudes by base rarity so high-rarity items feel
+# legendary, not just "more affix slots". Mapping mirrors ItemBase.Rarity:
+# 0=COMMON, 1=MAGIC, 2=RARE, 3=EPIC, 4=LEGENDARY.
+func _rarity_value_multiplier(rarity: int) -> float:
+	match rarity:
+		0: return 1.0
+		1: return 1.0
+		2: return 1.25
+		3: return 1.5
+		4: return 2.0
+		_: return 1.0
 
 
 # Combine all pool affixes into one weighted list (excluding already-used

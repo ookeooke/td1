@@ -1,16 +1,16 @@
-[gd_resource type="Resource" script_class="LootTableData" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="LootTableData" format=3 uid="uid://dl2sepr85i6yp"]
 
-[ext_resource type="Script" path="res://items/LootTableData.gd" id="1_loot"]
+[ext_resource type="Script" uid="uid://cyyo6qkayb3ra" path="res://items/LootTableData.gd" id="1_loot"]
 
 [resource]
 script = ExtResource("1_loot")
 drop_chance = 1.0
 entries = {
-"base_iron_sword": 0.5,
-"base_chain_mail": 0.5,
-"base_steel_sword": 1.0,
-"base_plate_armor": 1.0,
 "base_amulet_wisdom": 1.0,
-"base_elven_blade": 0.4,
-"base_demon_core": 0.15,
+"base_chain_mail": 0.3,
+"base_demon_core": 0.25,
+"base_elven_blade": 0.6,
+"base_iron_sword": 0.3,
+"base_plate_armor": 1.0,
+"base_steel_sword": 1.0
 }

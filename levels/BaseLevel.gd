@@ -21,6 +21,10 @@ extends Node2D
 const MAP_SIZE := Vector2(1920, 1080)
 const BG_COLOR := Color(0.32, 0.52, 0.28, 1.0)
 const PATH_COLOR := Color(0.55, 0.40, 0.25)
+# Darker outer stroke drawn under the main road — gives the path a defined
+# edge against the grass instead of a flat mud band that bleeds into BG.
+const PATH_EDGE_COLOR := Color(0.32, 0.22, 0.12)
+const PATH_EDGE_PADDING := 10.0
 # Road visual must cover the 3-lane swarm band — non-boss enemies get a
 # PathFollow2D v_offset picked from {-LANE_SPACING, 0, +LANE_SPACING} (50px),
 # and their body draws at roughly ±35px around their center. So the road
@@ -237,12 +241,15 @@ func _draw() -> void:
 		_EnvironmentScatterScript.draw(self, d)
 
 	# Paths come from children so the Godot Path2D curve editor works.
+	# Two-pass draw: a wider darker stroke beneath the main road gives the
+	# path a defined edge against the grass instead of fading into the BG.
 	var source := paths_node if paths_node != null else get_node_or_null("Paths")
 	if source != null:
 		for child in source.get_children():
 			if child is Path2D and child.curve != null:
 				var pts: PackedVector2Array = child.curve.get_baked_points()
 				if pts.size() >= 2:
+					draw_polyline(pts, PATH_EDGE_COLOR, PATH_WIDTH + PATH_EDGE_PADDING)
 					draw_polyline(pts, PATH_COLOR, PATH_WIDTH)
 
 	var spots := tower_spots_node if tower_spots_node != null else get_node_or_null("TowerSpots")

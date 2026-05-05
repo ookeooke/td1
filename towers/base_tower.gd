@@ -45,10 +45,16 @@ var _next_buff_threshold: int = 0
 # _aim_angle lerps toward the current target so the barrel tracks smoothly.
 const _TowerAnimScript := preload("res://systems/TowerAnim.gd")
 const _TowerSilhouetteScript := preload("res://systems/TowerSilhouette.gd")
+const _MuzzleFlashScript := preload("res://vfx/MuzzleFlashVFX.gd")
 const AIM_LERP_SPEED: float = 12.0
+# Multiplier applied to silhouette draws — keep in sync with _draw().
+const _SILHOUETTE_BASE_SIZE: float = 1.08
 var _construct_t: float = 0.0
 var _upgrade_t: float = 0.0
 var _aim_angle: float = -PI / 2.0
+# Continuous accumulator for the idle Y-breath sway. Random phase so a row
+# of identical towers doesn't pulse in lockstep.
+var _idle_t: float = randf() * TAU
 
 @onready var range_area: Area2D = $RangeArea
 @onready var range_shape: CollisionShape2D = $RangeArea/CollisionShape2D
@@ -297,6 +303,10 @@ func _physics_process(delta: float) -> void:
 	if _recoil_t > 0.0:
 		_recoil_t -= delta
 		queue_redraw()
+	# Idle sway — drives the breath in _draw(). Always tick + redraw post-
+	# construction so stationary towers don't read as frozen between shots.
+	_idle_t += delta
+	queue_redraw()
 	if data == null:
 		return
 	if _attack_cooldown > 0.0:
@@ -390,6 +400,13 @@ func _fire_projectile(target: Node) -> void:
 	var aoe: float = data.aoe_radius if data != null else 0.0
 	if proj.has_method("setup"):
 		proj.setup(target, get_effective_damage(), data.damage_type, self, effect, aoe)
+	# Muzzle flash at the silhouette's barrel/tip, tinted by tower type.
+	# Skipped on clean_view and on towers without a defined muzzle (barracks).
+	if not VFXSpawner.clean_view:
+		var muzzle_local: Vector2 = _TowerSilhouetteScript.muzzle_offset(data.tower_id, level, _aim_angle)
+		if muzzle_local != Vector2.ZERO:
+			var muzzle_world: Vector2 = global_position + muzzle_local * _SILHOUETTE_BASE_SIZE
+			_MuzzleFlashScript.spawn(get_tree().current_scene, muzzle_world, _aim_angle, _TowerSilhouetteScript.muzzle_color(data.tower_id))
 	_recoil_t = 0.08
 	queue_redraw()
 
@@ -444,19 +461,26 @@ func _draw() -> void:
 	_TowerAnimScript.draw_construct_ring(self, _construct_t)
 
 	# Combined uniform scale — construction grow × upgrade pulse × recoil.
-	# Base size bump: silhouette art reads better at +18 % vs the legacy
-	# 55 px circle the old draw used. Build / upgrade / recoil multiply on top.
-	const BASE_SIZE: float = 1.18
+	# Map-fit scale: silhouettes stay readable on mobile while fitting inside
+	# the ~90 px spot tap radius and leaving road/enemy space around the pad.
 	var s_construct: float = _TowerAnimScript.construct_scale(_construct_t)
 	var s_upgrade: float = _TowerAnimScript.upgrade_scale(_upgrade_t)
 	var s_recoil: float = 1.0 - (0.12 * clampf(_recoil_t / 0.08, 0.0, 1.0))
-	var s: float = s_construct * s_upgrade * s_recoil * BASE_SIZE
+	var s: float = s_construct * s_upgrade * s_recoil * _SILHOUETTE_BASE_SIZE
+	# Idle breath — gentle Y-squish + X-stretch. Suppressed during
+	# construction / upgrade / recoil so it doesn't fight those tweens.
+	var breath_x: float = 1.0
+	var breath_y: float = 1.0
+	if _construct_t <= 0.0 and _recoil_t <= 0.0 and _upgrade_t <= 0.0:
+		var b: float = sin(_idle_t * 1.6) * 0.012
+		breath_x = 1.0 + b
+		breath_y = 1.0 - b
 
 	# Tower silhouette — per-type procedural identity (archer / mage / ice /
 	# artillery / barracks fall-back). Owns the entire body + aimable part
 	# so the player can read tower type at a glance instead of seeing a
 	# generic colored circle.
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s * breath_x, s * breath_y))
 	var ov: Resource = _level_override()
 	var tint: Color = ov.tint if ov != null else Color.WHITE
 	var tower_id: String = data.tower_id if data != null else ""

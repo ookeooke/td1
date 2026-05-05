@@ -46,4 +46,20 @@ class_name HeroData
 # creates a zero-affix ItemInstance and slots it into the matching slot.
 # Only applied once per hero_id (tracked via starter_gear_granted).
 @export var starter_items: Array[Resource] = []
+
+# Phase 50 — Per-hero equipment-slot configuration. Slot ints reference
+# ItemBase.slot (0=Weapon, 1=Armor, 2=Helm, 3=Gloves, 4=Boots, 5=Trinket).
+# - equipment_slots: which slot indices THIS hero exposes. Empty array =
+#   default humanoid layout (all 6).
+# - slot_label_overrides: per-slot rename (e.g. Dragon's "Weapon" → "Breath
+#   Sigil"). Missing keys fall back to the default SLOT_NAMES.
+# - slot_anchors: paperdoll-relative position for each slot (Vector2 in
+#   0..1 space; (0.5, 0.1) = top-center). Missing keys fall back to the
+#   default humanoid anchors.
+# - paperdoll_alpha: backdrop silhouette translucency (0..1). Default 0.35.
+@export var equipment_slots: Array[int] = []
+@export var slot_label_overrides: Dictionary = {}
+@export var slot_anchors: Dictionary = {}
+@export_range(0.0, 1.0) var paperdoll_alpha: float = 0.35
+
 @export_multiline var encyclopedia_entry: String = ""

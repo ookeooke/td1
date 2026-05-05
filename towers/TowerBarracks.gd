@@ -404,9 +404,9 @@ func _draw() -> void:
 	_TowerAnimScript.draw_construct_ring(self, _construct_t, 40.0)
 	# Build + upgrade scale stack. Applied to the body only — flag sits at its
 	# own world offset so scaling it would drift it outward from the barracks.
-	# Base size bump matches base_tower so all tower types read at the same
-	# scale relative to the spot footprint.
-	const BASE_SIZE: float = 1.18
+	# Map-fit scale matches BaseTower: readable on mobile, but contained inside
+	# the spot footprint so the barracks does not dominate roads or soldiers.
+	const BASE_SIZE: float = 1.08
 	var s_construct: float = _TowerAnimScript.construct_scale(_construct_t)
 	var s_upgrade: float = _TowerAnimScript.upgrade_scale(_upgrade_t)
 	var s: float = s_construct * s_upgrade * BASE_SIZE

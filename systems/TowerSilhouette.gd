@@ -11,6 +11,34 @@ class_name TowerSilhouette
 # Falls back to draw_default when an id has no entry.
 
 
+static func _ellipse_points(center: Vector2, radius_x: float, radius_y: float, segments: int = 28) -> PackedVector2Array:
+	var pts: PackedVector2Array = PackedVector2Array()
+	for i in segments:
+		var a: float = TAU * float(i) / float(segments)
+		pts.append(center + Vector2(cos(a) * radius_x, sin(a) * radius_y))
+	return pts
+
+
+static func _draw_ellipse(ci: CanvasItem, center: Vector2, radius_x: float, radius_y: float, fill: Color, outline: Color = Color(0, 0, 0, 0), outline_width: float = 0.0) -> void:
+	var pts: PackedVector2Array = _ellipse_points(center, radius_x, radius_y)
+	ci.draw_colored_polygon(pts, fill)
+	if outline_width > 0.0:
+		ci.draw_polyline(pts + PackedVector2Array([pts[0]]), outline, outline_width, true)
+
+
+static func _draw_ground_pad(ci: CanvasItem, center: Vector2, radius_x: float, radius_y: float, accent: Color) -> void:
+	# Cheap procedural footprint: a soft shadow plus a small stone/earth pad.
+	# This helps towers read as anchored to the authored Marker2D spot without
+	# increasing their collision/tap footprint or changing placement logic.
+	_draw_ellipse(ci, center + Vector2(0.0, 4.0), radius_x * 1.05, radius_y * 1.15, Color(0.0, 0.0, 0.0, 0.20))
+	_draw_ellipse(ci, center, radius_x, radius_y, Color(0.24, 0.20, 0.14, 0.82) * accent, Color(0.10, 0.08, 0.05, 0.70), 1.5)
+	_draw_ellipse(ci, center + Vector2(0.0, -1.5), radius_x * 0.72, radius_y * 0.48, Color(0.55, 0.48, 0.33, 0.16) * accent)
+
+
+static func _draw_highlight_line(ci: CanvasItem, a: Vector2, b: Vector2, tint: Color, width: float = 1.3) -> void:
+	ci.draw_line(a, b, Color(1.0, 0.92, 0.70, 0.22) * tint, width, true)
+
+
 static func draw(ci: CanvasItem, tower_id: String, level: int, branch_idx: int, tint: Color, aim_angle: float) -> void:
 	match tower_id:
 		"tower_archer":
@@ -27,12 +55,64 @@ static func draw(ci: CanvasItem, tower_id: String, level: int, branch_idx: int, 
 			draw_default(ci, level, tint)
 
 
+# Local-space muzzle tip per tower type, used by base_tower to spawn the
+# muzzle-flash VFX at the actual barrel/tip rather than the tower center.
+# Geometry mirrors the silhouette draws above — keep these in sync if the
+# silhouette anatomy moves. Returns Vector2.ZERO for non-firing towers
+# (barracks) and unknowns; caller skips spawning when so.
+static func muzzle_offset(tower_id: String, level: int, aim_angle: float) -> Vector2:
+	var dir: Vector2 = Vector2.from_angle(aim_angle)
+	match tower_id:
+		"tower_archer":
+			# Bow center at (0, deck_y - 28 - 5) with deck_y = -10. Arrow tip
+			# extends along aim by bow_size * 1.05 (matches draw_archer).
+			var bow_anchor: Vector2 = Vector2(0.0, -43.0)
+			var bow_size: float = 18.0 + level * 4.0
+			if level >= 3:
+				bow_size += 4.0
+			return bow_anchor + dir * bow_size * 1.05
+		"tower_mage":
+			# Orb center sits atop the spire; magic streams from the orb edge
+			# in aim direction. spire_top_y = -32 - level*6, orb_r = 9 + level*2.5.
+			var spire_top_y: float = -32.0 - level * 6.0
+			var orb_r: float = 9.0 + level * 2.5
+			var orb_pos: Vector2 = Vector2(0.0, spire_top_y - orb_r * 0.6)
+			return orb_pos + dir * orb_r
+		"tower_ice":
+			# Crystal apex at (0, 30 - crystal_h), crystal_h = 50 + level*8.
+			var crystal_tip: Vector2 = Vector2(0.0, -20.0 - level * 8.0)
+			return crystal_tip + dir * 8.0
+		"tower_artillery":
+			# Trunnion at (0, -2). Barrel extends barrel_len = 36 + level*6
+			# along aim_angle to the muzzle hole.
+			var trunnion: Vector2 = Vector2(0.0, -2.0)
+			var barrel_len: float = 36.0 + level * 6.0
+			return trunnion + dir * barrel_len
+	return Vector2.ZERO
+
+
+# Element tint for the muzzle flash — orange-yellow archer/artillery, cyan
+# ice, purple mage. Falls back to a neutral warm white for unknowns.
+static func muzzle_color(tower_id: String) -> Color:
+	match tower_id:
+		"tower_archer":
+			return Color(1.0, 0.85, 0.40)
+		"tower_mage":
+			return Color(0.65, 0.45, 1.00)
+		"tower_ice":
+			return Color(0.55, 0.90, 1.00)
+		"tower_artillery":
+			return Color(1.0, 0.55, 0.15)
+	return Color(1.0, 0.95, 0.60)
+
+
 # Wooden / stone platform with an archer's bow on top. Bow rotates with
 # aim_angle. Higher levels = stone base, larger bow, fletching detail.
 static func draw_archer(ci: CanvasItem, level: int, branch_idx: int, tint: Color, aim_angle: float) -> void:
 	var stone_base: bool = level >= 2
 	var base_w: float = 70.0 if level >= 2 else 60.0
 	var base_h: float = 22.0
+	_draw_ground_pad(ci, Vector2(0.0, 39.0), 43.0, 14.0, tint)
 	# Branch tints: ranger = green wash, musketeer = orange.
 	var wood_col: Color = Color(0.55, 0.40, 0.22) * tint
 	var stone_col: Color = Color(0.62, 0.60, 0.55) * tint
@@ -46,6 +126,7 @@ static func draw_archer(ci: CanvasItem, level: int, branch_idx: int, tint: Color
 	var base_rect: Rect2 = Rect2(Vector2(-base_w * 0.5, base_y - base_h), Vector2(base_w, base_h))
 	ci.draw_rect(base_rect, stone_col if stone_base else wood_col)
 	ci.draw_rect(base_rect, outline, false, 3.0)
+	_highlight_stone_or_wood(ci, base_rect, stone_base, tint)
 	# Vertical posts (frame).
 	var post_x: float = base_w * 0.36
 	var post_top_y: float = -10.0
@@ -57,6 +138,12 @@ static func draw_archer(ci: CanvasItem, level: int, branch_idx: int, tint: Color
 	var deck_rect: Rect2 = Rect2(Vector2(-deck_w * 0.5, deck_y - 6.0), Vector2(deck_w, 12.0))
 	ci.draw_rect(deck_rect, wood_col)
 	ci.draw_rect(deck_rect, outline, false, 2.5)
+	_highlight_line_for_rect(ci, deck_rect, tint)
+	if level >= 3:
+		# Small side shields make the upgraded archer silhouette wider without
+		# turning it into a large circle that covers the road.
+		ci.draw_circle(Vector2(-deck_w * 0.38, deck_y - 14.0), 6.0, Color(0.26, 0.48, 0.24) * tint)
+		ci.draw_circle(Vector2(deck_w * 0.38, deck_y - 14.0), 6.0, Color(0.26, 0.48, 0.24) * tint)
 	# Archer figure (small orc-killer dude on the deck).
 	var arch_y: float = deck_y - 28.0
 	ci.draw_circle(Vector2(0.0, arch_y - 12.0), 7.0, Color(0.95, 0.78, 0.62) * tint)  # head
@@ -96,6 +183,7 @@ static func draw_mage(ci: CanvasItem, level: int, branch_idx: int, tint: Color, 
 	var stone_a: Color = Color(0.55, 0.55, 0.62) * tint
 	var stone_b: Color = Color(0.42, 0.42, 0.50) * tint
 	var orb_col: Color = Color(0.55, 0.45, 0.95)
+	_draw_ground_pad(ci, Vector2(0.0, 39.0), 38.0, 13.0, tint)
 	if branch_idx == 0:
 		orb_col = Color(1.0, 0.45, 0.20)  # fire variant
 	elif branch_idx == 1:
@@ -107,6 +195,7 @@ static func draw_mage(ci: CanvasItem, level: int, branch_idx: int, tint: Color, 
 	var base_y: float = 36.0
 	ci.draw_rect(Rect2(Vector2(-base_w * 0.5, base_y - base_h), Vector2(base_w, base_h)), stone_b)
 	ci.draw_rect(Rect2(Vector2(-base_w * 0.5, base_y - base_h), Vector2(base_w, base_h)), outline, false, 3.0)
+	_highlight_line_for_rect(ci, Rect2(Vector2(-base_w * 0.5, base_y - base_h), Vector2(base_w, base_h)), tint)
 	# Spire — trapezoid narrowing toward the top.
 	var spire_h: float = 50.0 + level * 6.0
 	var spire_top_y: float = base_y - base_h - spire_h
@@ -120,6 +209,12 @@ static func draw_mage(ci: CanvasItem, level: int, branch_idx: int, tint: Color, 
 	])
 	ci.draw_colored_polygon(spire_pts, stone_a)
 	ci.draw_polyline(spire_pts + PackedVector2Array([spire_pts[0]]), outline, 2.5, true)
+	# Side buttresses improve map readability: mage reads as a tall stone tower,
+	# not just a thin triangle under a glowing orb.
+	var buttress_y: float = base_y - base_h - 4.0
+	ci.draw_line(Vector2(-spire_bot_w * 0.47, buttress_y), Vector2(-spire_top_w * 0.62, spire_top_y + 12.0), stone_b.darkened(0.10), 4.0, true)
+	ci.draw_line(Vector2(spire_bot_w * 0.47, buttress_y), Vector2(spire_top_w * 0.62, spire_top_y + 12.0), stone_b.darkened(0.10), 4.0, true)
+	_draw_highlight_line(ci, Vector2(-spire_top_w * 0.20, spire_top_y + 6.0), Vector2(-spire_bot_w * 0.22, base_y - base_h - 6.0), tint)
 	# Brick rows — drawn as horizontal lines crossing the spire.
 	var rows: int = 3 + level
 	for i in rows:
@@ -157,9 +252,11 @@ static func draw_ice(ci: CanvasItem, level: int, _branch_idx: int, tint: Color, 
 	var ice_a: Color = Color(0.65, 0.85, 1.0) * tint
 	var ice_b: Color = Color(0.45, 0.70, 0.95) * tint
 	var outline: Color = Color(0.20, 0.30, 0.50)
+	_draw_ground_pad(ci, Vector2(0.0, 36.0), 42.0, 14.0, Color(0.85, 0.94, 1.0) * tint)
 	# Snow base / mound.
 	ci.draw_circle(Vector2(0.0, 30.0), 38.0, Color(0.85, 0.92, 1.0) * tint)
 	ci.draw_arc(Vector2(0.0, 30.0), 38.0, PI, TAU, 16, outline, 2.0)
+	ci.draw_arc(Vector2(0.0, 25.0), 28.0, PI * 0.08, PI * 0.92, 14, Color(1.0, 1.0, 1.0, 0.45), 2.0)
 	# Central crystal — diamond shape, scales with level.
 	var crystal_h: float = 50.0 + level * 8.0
 	var crystal_w: float = 22.0 + level * 3.0
@@ -171,6 +268,7 @@ static func draw_ice(ci: CanvasItem, level: int, _branch_idx: int, tint: Color, 
 	])
 	ci.draw_colored_polygon(pts_main, ice_a)
 	ci.draw_polyline(pts_main + PackedVector2Array([pts_main[0]]), outline, 2.5, true)
+	ci.draw_line(Vector2(0.0, 30.0 - crystal_h + 4.0), Vector2(0.0, 28.0), Color(1.0, 1.0, 1.0, 0.42), 1.6, true)
 	# Inner highlight.
 	var pts_hl: PackedVector2Array = PackedVector2Array([
 		Vector2(0.0, 30.0 - crystal_h + 4.0),
@@ -208,12 +306,14 @@ static func draw_artillery(ci: CanvasItem, level: int, _branch_idx: int, tint: C
 	var wood_col: Color = Color(0.45, 0.30, 0.18) * tint
 	var iron_col: Color = Color(0.25, 0.25, 0.28)
 	var outline: Color = Color(0.10, 0.10, 0.14)
+	_draw_ground_pad(ci, Vector2(0.0, 39.0), 45.0, 14.0, tint)
 	# Stone base/platform — wider at L2/L3.
 	var base_w: float = 60.0 + (level - 1) * 10.0
 	var base_h: float = 24.0
 	var base_y: float = 36.0
 	ci.draw_rect(Rect2(Vector2(-base_w * 0.5, base_y - base_h), Vector2(base_w, base_h)), stone_col)
 	ci.draw_rect(Rect2(Vector2(-base_w * 0.5, base_y - base_h), Vector2(base_w, base_h)), outline, false, 3.0)
+	_highlight_line_for_rect(ci, Rect2(Vector2(-base_w * 0.5, base_y - base_h), Vector2(base_w, base_h)), tint)
 	# Brickwork lines.
 	for i in 3:
 		var ry: float = base_y - base_h + (i + 1) * (base_h / 4.0)
@@ -224,6 +324,7 @@ static func draw_artillery(ci: CanvasItem, level: int, _branch_idx: int, tint: C
 	var carriage_y: float = base_y - base_h - carriage_h
 	ci.draw_rect(Rect2(Vector2(-carriage_w * 0.5, carriage_y), Vector2(carriage_w, carriage_h)), wood_col)
 	ci.draw_rect(Rect2(Vector2(-carriage_w * 0.5, carriage_y), Vector2(carriage_w, carriage_h)), outline, false, 2.0)
+	_highlight_line_for_rect(ci, Rect2(Vector2(-carriage_w * 0.5, carriage_y), Vector2(carriage_w, carriage_h)), tint, 1.0)
 	if level >= 2:
 		var wheel_y: float = carriage_y + carriage_h - 4.0
 		ci.draw_circle(Vector2(-carriage_w * 0.4, wheel_y), 7.0, iron_col)
@@ -236,6 +337,7 @@ static func draw_artillery(ci: CanvasItem, level: int, _branch_idx: int, tint: C
 	# Barrel rectangle extending forward.
 	ci.draw_rect(Rect2(Vector2(0.0, -barrel_w * 0.5), Vector2(barrel_len, barrel_w)), iron_col)
 	ci.draw_rect(Rect2(Vector2(0.0, -barrel_w * 0.5), Vector2(barrel_len, barrel_w)), outline, false, 2.0)
+	ci.draw_line(Vector2(4.0, -barrel_w * 0.22), Vector2(barrel_len - 5.0, -barrel_w * 0.22), Color(0.58, 0.58, 0.62, 0.42), 1.2, true)
 	# Reinforcement bands.
 	var bands: int = 2 + (1 if level >= 3 else 0)
 	for i in bands:
@@ -253,6 +355,7 @@ static func draw_barracks(ci: CanvasItem, level: int, _branch_idx: int, tint: Co
 	var wall_b: Color = Color(0.62, 0.60, 0.55) * tint  # stone at L2/L3
 	var roof_col: Color = Color(0.55, 0.20, 0.18) * tint
 	var outline: Color = Color(0.14, 0.10, 0.06)
+	_draw_ground_pad(ci, Vector2(0.0, 39.0), 47.0, 15.0, tint)
 	var stone: bool = level >= 2
 	var wall_col: Color = wall_b if stone else wall_a
 	# Building body — wider at higher levels.
@@ -262,6 +365,7 @@ static func draw_barracks(ci: CanvasItem, level: int, _branch_idx: int, tint: Co
 	var body_rect: Rect2 = Rect2(Vector2(-b_w * 0.5, b_y - b_h), Vector2(b_w, b_h))
 	ci.draw_rect(body_rect, wall_col)
 	ci.draw_rect(body_rect, outline, false, 3.0)
+	_highlight_stone_or_wood(ci, body_rect, stone, tint)
 	# Brick / plank lines.
 	if stone:
 		for i in 3:
@@ -281,6 +385,7 @@ static func draw_barracks(ci: CanvasItem, level: int, _branch_idx: int, tint: Co
 		var win_y: float = b_y - b_h * 0.55
 		ci.draw_rect(Rect2(Vector2(-b_w * 0.35, win_y), Vector2(8.0, 10.0)), Color(0.12, 0.18, 0.30))
 		ci.draw_rect(Rect2(Vector2(b_w * 0.35 - 8.0, win_y), Vector2(8.0, 10.0)), Color(0.12, 0.18, 0.30))
+		ci.draw_line(Vector2(-b_w * 0.5 + 5.0, b_y - b_h + 5.0), Vector2(-b_w * 0.5 + 5.0, b_y - 5.0), Color(1.0, 0.95, 0.75, 0.16) * tint, 1.2, true)
 	# Roof / battlements. L1 = simple peaked roof; L2 = flat with merlons;
 	# L3 = battlements + watchtower.
 	var roof_top_y: float = b_y - b_h
@@ -330,8 +435,23 @@ static func draw_barracks(ci: CanvasItem, level: int, _branch_idx: int, tint: Co
 # Generic fallback for unknown tower_id — keeps the legacy circle so any new
 # tower added without a silhouette entry still renders.
 static func draw_default(ci: CanvasItem, level: int, tint: Color) -> void:
+	_draw_ground_pad(ci, Vector2(0.0, 39.0), 44.0, 14.0, tint)
 	var col: Color = Color(0.35, 0.45, 0.75) * tint
 	ci.draw_circle(Vector2.ZERO, 55.0, col)
 	ci.draw_arc(Vector2.ZERO, 55.0, 0, TAU, 28, Color(0.08, 0.1, 0.25), 6.25)
 	for i in level:
 		ci.draw_circle(Vector2(-15.0 + i * 15.0, -70.0), 5.5, Color(1.0, 0.85, 0.2))
+
+
+static func _highlight_line_for_rect(ci: CanvasItem, rect: Rect2, tint: Color, width: float = 1.4) -> void:
+	_draw_highlight_line(ci, rect.position + Vector2(4.0, 3.0), rect.position + Vector2(rect.size.x - 4.0, 3.0), tint, width)
+
+
+static func _highlight_stone_or_wood(ci: CanvasItem, rect: Rect2, stone: bool, tint: Color) -> void:
+	_highlight_line_for_rect(ci, rect, tint)
+	if stone:
+		var chip_col: Color = Color(0.18, 0.16, 0.14, 0.28)
+		ci.draw_line(rect.position + Vector2(rect.size.x * 0.28, rect.size.y * 0.15), rect.position + Vector2(rect.size.x * 0.28, rect.size.y * 0.85), chip_col, 1.0, true)
+		ci.draw_line(rect.position + Vector2(rect.size.x * 0.62, rect.size.y * 0.15), rect.position + Vector2(rect.size.x * 0.62, rect.size.y * 0.85), chip_col, 1.0, true)
+	else:
+		ci.draw_line(rect.position + Vector2(6.0, rect.size.y - 5.0), rect.position + Vector2(rect.size.x - 6.0, rect.size.y - 5.0), Color(0.10, 0.07, 0.04, 0.25), 1.0, true)

@@ -2460,3 +2460,150 @@ Saved a feedback memory worth keeping: **before adding tooling to bridge an auth
   - Boss: red armor/cape, heavy shoulders, strong fiery weapon trail.
 - Works: intended to make orcs and other authored enemies more distinct while preserving the procedural `_draw()` asset strategy and mobile-cheap drawing.
 - Broke: not yet visually playtested in editor; `godot` is not available on PATH in the current shell.
+
+---
+
+## 2026-05-05 — Loot drop tuning pass
+
+Drop rate was way too high. `drop_chance = 0.2` × 48–206 enemies/level meant 10–40+ pickups per run — drops were background noise, not celebrations. Wooden Sword (0-affix, no roll variance) dominated the table at ~30%. High-rarity bases (Demon Core, Elven) had more affix slots but each slot rolled from the same flat ranges as Iron Sword, so legendaries felt like "common × 4" rather than legendary.
+
+User direction: drops should be rare enough that finding something good is celebrated. Keep Wooden Sword in the pool. Researched community references first (PoE ~8% but with 200+ enemies/map; The Tower idle TD 0.5% boss rare; Universal TD 0.1–0.8% rares).
+
+Changes:
+
+- [items/data/loot_table_default.tres](items/data/loot_table_default.tres): `drop_chance 0.2 → 0.015`. Wooden de-throned `2.0 → 1.0`. Higher-rarity weights bumped slightly (Steel/Plate/Amulet `0.5 → 0.6`, Elven `0.15 → 0.2`, Demon Core `0.05 → 0.08`) since each drop now matters more.
+- [items/data/loot_table_boss_orc.tres](items/data/loot_table_boss_orc.tres): boss table biased harder toward legendary (Iron/Chain `0.5 → 0.3`, Elven `0.4 → 0.6`, Demon Core `0.15 → 0.25`). Boss `drop_chance` stays `1.0` — predictable celebration anchor.
+- [autoloads/LootRoller.gd](autoloads/LootRoller.gd): added `_rarity_value_multiplier(rarity)` returning 1.0/1.0/1.25/1.5/2.0 for COMMON…LEGENDARY. Applied in `_roll_affixes_for` after `picked.roll_value()`. Re-rounds to int when `picked.value_is_int` so display stays clean. AffixData itself untouched — shared resource discipline preserved.
+- [balance/BALANCE.md](balance/BALANCE.md): added "Loot drop curve" section documenting the targets, knobs, and rarity scaling table per CORE RULE 18.
+
+Resulting per-kill drop distribution: Wooden/Leather/Iron/Chain ~0.25% each, Steel/Plate/Amulet ~0.15% each, Elven ~0.05%, Demon Core ~0.02% (≈1 in 5000 kills, true mythic). Expected drops per level: L1/L2 0–2 (often 0), L3 1–2, L4 2–4 (incl. boss).
+
+Deferred (with concrete triggers, per saved feedback):
+- **Pity counter** (force-drop on a dry level) — revisit if L1/L2 dry-spell feedback appears in playtesting.
+- **Per-level loot tables** — revisit if flat-variance produces too much spread between short and long levels.
+- **Tier-gated affix pools** (`pool_weapon_offensive_t3`) — separate refactor; the value multiplier already gives the "feels legendary" effect cheaply.
+
+Verification: not yet playtested (`godot` not on shell PATH). Headless boot left as a follow-up; LootRoller change is small and surgical.
+
+---
+
+## 2026-05-05 — Phase 50: Hero Hall + Paperdoll Equipment
+
+Replaced the 5-tab HeroesHub (Loadout/Stats/Equipment/Skills/Talents with a text-only `◄ Switch Hero ►` cycle button as the Loadout tab) with a portrait-centric **Hero Hall** layout. Roster rail on the left, big procedural portrait + name/level/XP/stats card in the middle, four large action tiles (Stats / Equipment / Skills / Talents) at the bottom that swap in sub-views without leaving the hub. Roster stays visible inside sub-views so the player can switch hero without backing out. KR / mobile-RPG references guided the design (game designers consistently recommend visual hierarchy: portrait + headline stats front-and-center, roster grid for selection, ≥80px touch targets, reduced tab count, immediate feedback).
+
+**Equipment** got a paperdoll redesign: the prior 3-active-of-6 grid is gone; all slots a hero exposes now render as 1×1 anchors arranged around a faded silhouette of the hero (drawn via `UnitVisualDrawer` with `skin_tint` alpha so the figure reads as a backdrop, not a foreground portrait). Per-hero variable slot configuration is data-driven: `HeroData.equipment_slots: Array[int]` is the subset of the 6 ItemBase.slot indices this hero exposes (empty = all 6 = humanoid default), `HeroData.slot_label_overrides: Dictionary[int → String]` lets non-humanoids rename slots (Dragon's "Weapon" → "Breath Sigil"), and `HeroData.slot_anchors: Dictionary[int → Vector2]` overrides paperdoll anchor positions (0..1 normalized) so a dragon's slots arrange around its body rather than a humanoid frame.
+
+**Skills sub-view** moved from tap-to-arm + tap-to-slot to native Godot drag-and-drop. `_SkillTile._get_drag_data` returns `{skill_id, source, from_slot}`; `_SkillSlot._can_drop_data / _drop_data` accept any unlocked skill and route through `LoadoutState.set_equipped_skill` (which already swaps on duplicate per the existing API). Tap on a filled equipped slot clears it; locked tiles return null from `_get_drag_data` so they can't be picked up. Works on touch (`InputEventScreenDrag`) and mouse without separate code paths.
+
+Files changed:
+- [ui/HeroesHub.tscn](ui/HeroesHub.tscn) — restructured to TopBar + RosterRail + MainStack(HeroHallView, SubView).
+- [ui/HeroesHub.gd](ui/HeroesHub.gd) — rewrite. New: `_build_roster_rail`, `_build_hero_hall`, `_open_sub_view / _close_sub_view`, inline `_build_skills_subview` with drag-and-drop inner classes (`_SkillTile`, `_SkillSlot`, `HallPortrait`, `_BorderOverlay`). Removed: SegmentButton class, segment bar, tap-arm Skills logic, ContextGroup.
+- [ui/HeroCard.gd](ui/HeroCard.gd) (new) — roster card with procedural sprite, name, level, XP bar; lock overlay + dim-tint for locked heroes via `UnitVisualDrawer` `skin_tint` ctx.
+- [ui/ActionTile.gd](ui/ActionTile.gd) (new) — bottom-row deep-link tile with `HubTabIcon` glyph + label + live subtitle.
+- [ui/Paperdoll.gd](ui/Paperdoll.gd) (new) — backdrop Control attached to EquipmentScreen's `EquipmentGrid`. `setup(hero_data)` swaps silhouette; `anchor_for_slot(slot_idx)` returns absolute pixel position for a slot, honoring `HeroData.slot_anchors` with `DEFAULT_HUMANOID_ANCHORS` as fallback.
+- [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) — `HeroPortrait` node removed; `EquipmentGrid` now scripted with Paperdoll.gd and resized 240×600 → 540×600 to fit slot arrangement around silhouette.
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) — dropped `SLOT_LAYOUT` / `ACTIVE_SLOTS` / `SLOT_NAMES` constants. New helpers: `_active_slot_indices_for(hero_id)`, `_resolve_slot_label(slot_idx)`. Slots rebuild on `hero_selected` (so Dragon → Warrior swaps the slot count). All slots now interactive (no more "Slot locked" toast); items refused for slots the hero doesn't expose toast `"<HeroName> has no <Slot> slot"`.
+- [heroes/HeroData.gd](heroes/HeroData.gd) — added `equipment_slots: Array[int]`, `slot_label_overrides: Dictionary`, `slot_anchors: Dictionary`, `paperdoll_alpha: float` (additive; existing hero `.tres` files keep working).
+
+**Plan deviations (intentional simplifications)** — the originally-approved plan called for an `EquipmentSlotDef` Resource, `default_humanoid_slots.tres` / `dragon_slots.tres` shared sub-resources, `ItemData.compatible_slot_types` + InventoryManager save-format migration. Reading the existing equipment system (Phase 48–49 InventoryManager has v2→v3 migration, hero_restriction enforcement, level_requirement gating, sell-mode pinning + batch-sell, stats panel with flash-on-equip) made it clear those changes would invasively rewrite a heavily-used system to deliver the same user-visible result. The chosen approach uses HeroData fields keyed by the existing 0..5 slot ints — same data semantics, no save migration, no ItemData changes, no InventoryManager touch. CORE RULE 1 (don't modify working scripts) preserved for InventoryManager / ItemBase / save format. Item-to-hero compatibility for non-humanoid heroes still works via the existing `ItemBase.hero_restriction` field (no new infra needed).
+
+**Verification status** — `godot --headless --path . --quit` boots clean; all autoloads + scripts parse. `--import` shows three pre-existing `ContentRegistry.towers` access errors (in SaveManager / BalanceLogger / EncyclopediaScreen / LoadoutPickerScreen / TowerPlacer — autoload-order timing during import phase, not session-introduced). Manual playtest in editor pending — needs to verify roster card draw, Hero Hall portrait scale, sub-view embed offsets, drag-and-drop on touch, and Dragon slot layout once a Dragon hero is authored.
+
+**Deferred (concrete triggers per saved feedback):**
+- **Authoring a Dragon hero** — revisit when the user adds a non-humanoid hero `.tres`. The infra is in place; just author `equipment_slots = [0, 1, 5]`, `slot_label_overrides = {0: "Breath Sigil", 1: "Scales", 5: "Claw Rune"}`, `slot_anchors = {0: Vector2(0.20, 0.50), 1: Vector2(0.50, 0.50), 5: Vector2(0.80, 0.50)}` and the Equipment screen reflows automatically.
+- **Stats sub-view content** — revisit when `Strength / Stamina / Dexterity` (or whatever the future system is) lands. Inline stub renders today.
+- **Tile subtitle accuracy** — Equipment subtitle reads "N equipped" via `InventoryManager.get_all_equipped`. If item count UX feels stale, swap to "M / N slots filled".
+
+---
+
+## 2026-05-05 — Phase 50 follow-up: layout hardening (priorities 1–3 from external review)
+
+External UI review flagged three structural concerns (separate from the bugs found earlier in the same day's pass): no safe-area wrapper, fragile absolute-anchor layout in `HeroHallView`, and embedded `EquipmentScreen` width starvation when the hub's roster rail eats 320 px. Implemented the three priorities the review actually fixes (vs. the polish items, which were deferred per the user's "go" scope).
+
+**1. Safe-area wrapper** — [ui/HeroesHub.tscn](ui/HeroesHub.tscn) restructured to mirror [ui/WorldMap.tscn](ui/WorldMap.tscn):
+
+```
+HeroesHub (Control, FULL_RECT)
+└── Background (ColorRect)
+└── SafeAreaMargin (MarginContainer + SafeAreaMargin.gd)
+    └── ContentMargin (margins 16/12/16/12)
+        └── Layout (VBoxContainer, separation=12)
+            ├── TopBar (HBoxContainer, h=64)
+            └── Body (HBoxContainer, expand)
+                ├── RosterRail (ScrollContainer, min w=304)
+                └── MainStack (Control, expand)
+                    ├── HeroHallView (VBoxContainer)
+                    └── SubView (Control)
+```
+
+iOS notch / Android system bar insets now come from `DisplayUtils.get_safe_insets()` via `SafeAreaMargin`, not hardcoded 8/88/16 offsets. PC inset = 0 so layout is unchanged on desktop; mobile gets correct inset behavior.
+
+**2. Container-driven HeroHallView** — [ui/HeroesHub.gd](ui/HeroesHub.gd) `_build_hero_hall` rewrite. The prior absolute-offset bento (`Vector2(-380, -160)` etc.) is gone; HeroHallView is now a VBoxContainer with three section children:
+
+- **HeroHeader** (HBox, h=80) — Name (expand) + Level/XP block (360 wide) on a single row, replacing the prior tucked-under-portrait label cluster. The reviewer's "Selected Hero Header at top" pattern is cleaner — the player reads name + level + XP at a glance instead of hunting for it under the portrait.
+- **HeroBody** (HBox, expand) — PortraitPanel (expand) + SummaryPanel (360 min). Portrait fills whatever's left, summary stays a fixed-width card on the right. No more 559-px dead gap from the prior `0.55*W - 220` math; portrait simply expands.
+- **ActionRow** (HBox, h=128) — 4 ActionTiles centered. Same as before.
+
+`_make_panel()` simplified — sizing now comes from `size_flags` / `custom_minimum_size` on the caller, not anchor/offset args. This makes the layout survive non-1920×1080 aspect ratios (different mobile devices, ultrawide PC) without per-panel arithmetic.
+
+**3. Embedded Equipment width fix** — [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) `LeftPanel` `custom_minimum_size` reduced from `Vector2(620, 0)` → `Vector2(540, 0)` (the paperdoll slot panel only needs 540, the prior 620 was leftover from the side-by-side portrait era). [ui/HeroesHub.gd](ui/HeroesHub.gd) `_embed_screen` also drops the embedded `Body.offset_left` / `offset_right` from ±16 to 0 — the hub's `ContentMargin` already provides outer padding, so the screen's own 16-px side margins were redundant and stealing 32 px of inventory width.
+
+Math at 1920×1080 PC:
+- ContentMargin → 1888 wide
+- RosterRail (304) + sep (16) + MainStack = 1568
+- SubView fills MainStack → 1568
+- EquipmentScreen embedded: Body inner = 1568 (no horizontal margins)
+- LeftPanel (540) + sep (20) + RightPanel = 1568 → RightPanel = 1008
+- InventoryGrid hard-coded at 1200 → ScrollContainer activates a 192-px horizontal scroll for the full 10×5 grid
+
+Acceptable: the inventory ScrollContainer was already there, and the player can horizontally swipe the inventory area when needed. A true "compact embed mode" with a narrower CELL_PX or column count would require InventoryManager `GRID_COLS` changes (save-format breaking) — explicitly out of scope.
+
+**Deferred from the review (with concrete triggers):**
+- **Action tile attention badges** (gold for unspent talents, dot for empty skills) — revisit after a UX playtest pass; current subtitle text already conveys the same info at a glance.
+- **Power Summary + Ready Check polish** — current stats label reads `HP 300 / DMG 18 / RNG 150 / SPD 1.00 / ARM 15%` which is functional but plain. Revisit when adding the real Stats sub-view content.
+- **Skills tap-to-arm fallback alongside drag-and-drop** — user explicitly chose drag-only (the "alt" option); revisit only if mobile playtest confirms drag is awkward in practice.
+- **Visual theme polish** (parchment frames, gold borders, fantasy treatment) — last on the list, matches WorldMap convention rework when that happens.
+
+**Verification:** headless `--quit` boot is clean — all autoloads load, all scripts parse, no warnings. Manual editor playtest still pending.
+
+---
+
+## 2026-05-05 — Phase 50 follow-up: layout safety pass (priorities 1–4 from second review)
+
+Second-round external review flagged real CLAUDE.md violations and one overflow-class bug I'd missed. Implemented the four prioritized fixes; deferred the contradictory "increase header but decrease body" suggestions and the out-of-scope TalentScreen-standalone tweaks.
+
+**1. Action row → `HFlowContainer`** — [ui/HeroesHub.gd](ui/HeroesHub.gd) `_build_hero_hall`. The `4 × 200 + 3 × 12 = 836 px` action tiles previously sat in an `HBoxContainer` that doesn't wrap. At 1920×1080 that's fine, but at any narrower aspect (16:10, mobile portrait letterboxed, ultrawide-with-large-roster) the tiles would clip/overlap. `HFlowContainer` with `ALIGNMENT_CENTER` + `h_separation`/`v_separation = 12` lets the row wrap onto two lines instead. One-line preventive fix; cost is the action_row container can grow taller when it wraps, which the parent VBox accommodates.
+
+**2. Hide roster rail when Equipment is open** — [ui/HeroesHub.gd](ui/HeroesHub.gd) `_open_sub_view` / `_close_sub_view`. Added `@onready var roster_rail: ScrollContainer = %RosterRail` and toggle `roster_rail.visible = (kind != "equipment")` on open. Equipment is inventory-heavy (paperdoll + 10×5 grid at 1200 px wide); hiding the 304-px roster rail recovers `304 + 16 sep = 320 px`, which moves the inventory grid from 192-px H-scroll to flush. Stats / Skills / Talents keep the rail visible — they don't benefit from the extra width and the player still wants to switch hero from those views. `_close_sub_view` restores `roster_rail.visible = true` so backing out leaves no orphan state.
+
+**3. CLAUDE.md 80×80 touch target compliance** — [ui/HeroesHub.tscn](ui/HeroesHub.tscn). `TopBar` `64 → 80`, `BackButton` `120×64 → 120×80`, `MetaGoldLabel` `160×64 → 160×80`. Project rule is "Minimum touch target: 80×80 pixels" — the 64-px heights I'd used violated it. Also matches [WorldMap.tscn](ui/WorldMap.tscn) which uses 80-px nav buttons throughout, so HeroesHub now reads as part of the same screen family.
+
+**4. Equipment Sell Mode / Lock / Sell All buttons** — [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn). `44 → 72 high`, widths bumped to 160 / 140 / 160 to balance. These are pre-existing buttons (Phase 48–49) but live in the equipment screen which is now part of the mobile-primary HeroesHub flow. 44 px was way under the 80×80 floor; 72 is a reasonable compromise that fits in the inventory header row without forcing it to two lines, and clears the 7-mm physical touch target floor on most modern phones (≈63 px at typical DPI). Could go to 80 if cramping isn't an issue in playtest.
+
+**Skipped (with reasoning):**
+- **HeroHallView Header 80→72 / ActionRow 128→144** — reviewer's recommendation contradicted itself (TopBar bigger, Header smaller, ActionRow bigger) and was based on a vertical-budget concern that doesn't exist at 1920×1080 (current budget has ~748 px for HeroBody, plenty).
+- **TalentScreen standalone button sizes (BackButton 80×60, SwitchButton 60×60)** — TalentScreen is reachable only via embed in the new flow, where its TopBar is hidden. Standalone path is legacy; bundling it with HeroesHub work expands scope. Revisit if the standalone path stays alive.
+- **"Compact embedded Equipment mode"** (reviewer's Option B) — Option A (hide roster) gives the same width benefit with no code refactor. Skip B unless playtest shows a real need.
+
+**Verification:** headless `--quit` boot is clean. Manual editor playtest still pending.
+
+---
+
+## 2026-05-05 — Phase 50 follow-up: Equipment subview back-nav discoverability
+
+User screenshot of the Equipment subview reported "how to get back?". Diagnosed: the HeroesHub TopBar IS rendering correctly (SubView correctly stacked below it via Layout VBoxContainer), but two issues made the back affordance unclear:
+
+1. **Regression in `_embed_screen`** — earlier versions of the embed flow explicitly hid the EquipmentScreen's internal section headers (`LeftTitle "Equipped"`, `StatsTitle "Stats"`, `DetailsTitle "Details"`, and `TopBar/HeroLabel`). Several refactors lost those hides, leaving redundant labels that visually competed with the hub's own TopBar and obscured the back button.
+2. **Back chip text was ambiguous** — `"← Hall"` at font 18 in a 120-px button. The word "Hall" alone doesn't read as a destination; user didn't connect it with "go back to Hero Hall".
+
+Changes:
+
+- **[ui/HeroesHub.gd](ui/HeroesHub.gd) `_embed_screen`** — re-added the per-header hides. Loop over `["TopBar/HeroLabel", "Body/LeftPanel/LeftTitle", "Body/LeftPanel/StatsTitle", "Body/LeftPanel/DetailsTitle"]` and set each `visible = false`. Same shape as the existing `TopBar` / `Background` hides. The values themselves (paperdoll, stat rows, details panel content, hint label, inventory header, sell-mode buttons) all stay visible — only the redundant section title labels are hidden. `RightTitle` ("Inventory N / 50") kept visible because it shows real cap/used info the hub doesn't.
+- **[ui/HeroesHub.gd](ui/HeroesHub.gd) `_open_sub_view`** — Back button text changed `"← Hall"` → `"← Hero Hall"`. Reads as a destination, not an ambiguous label.
+- **[ui/HeroesHub.tscn](ui/HeroesHub.tscn) BackButton** — `custom_minimum_size` `120×80 → 180×80` (accommodates the longer label without truncation), `font_size` `18 → 20` (matches WorldMap convention, more legible at smaller window scales).
+
+Hero-name title rendering verification deferred to manual playtest — likely just a clipping artifact at the user's smaller 1228×691 window. If `EQUIPMENT — Warrior` still shows blank after the dash at full 1920×1080 design, that's a separate `_title_for_sub` / `LoadoutState.selected_hero_id` bug for a different pass.
+
+**Out of scope (deferred):** EquipmentScreen.gd `_on_back` standalone routing (dead path in embed mode), compact embed mode refactor, Stats sub-view content.
+
+**Verification:** headless `--quit` boot is clean. Manual editor playtest pending.

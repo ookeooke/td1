@@ -8,6 +8,8 @@ class_name Arrow
 # without breaking the on-target-arrival timing.
 enum Shape { ARROW, CRYSTAL, ORB, SHELL }
 
+const _ShellImpactScript := preload("res://vfx/ShellImpactVFX.gd")
+
 @export var shape: Shape = Shape.ARROW
 @export var speed: float = 1250.0
 @export var hit_radius: float = 62.5
@@ -117,6 +119,10 @@ func _on_hit() -> void:
 				continue
 			if impact_pos.distance_squared_to(enemy.global_position) <= r2:
 				total_dealt += enemy.take_damage(_damage * 0.5, _damage_type, _source)
+		# Splash VFX — scorch + radius ring at the impact. Visualizes the AoE
+		# the player just paid for. Skipped on clean_view.
+		if not VFXSpawner.clean_view:
+			_ShellImpactScript.spawn(get_tree().current_scene, impact_pos, _aoe_radius)
 	if total_dealt > 0.0 and _source != null and is_instance_valid(_source) and _source.has_method("record_damage"):
 		_source.record_damage(total_dealt)
 

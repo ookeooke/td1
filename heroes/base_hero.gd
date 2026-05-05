@@ -808,7 +808,6 @@ func _die() -> void:
 		return
 	change_state(State.DEAD)
 	velocity = Vector2.ZERO
-	visible = false
 	set_selected(false)
 	_release_block()
 	_target_enemy = null
@@ -816,11 +815,28 @@ func _die() -> void:
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_DEATH, {})
 	EventBus.hero_died.emit()
+	# Death drift — rotate to a side, drop, fade, then hide. _physics_process
+	# bails on State.DEAD so move_and_slide won't fight the position tween.
+	# TWEEN_PAUSE_PROCESS so a death that triggers game_over still finishes
+	# the animation past the pause.
+	var drift_dir: float = 1.0 if randf() > 0.5 else -1.0
+	var tween: Tween = create_tween().set_parallel(true)
+	tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tween.tween_property(self, "rotation", drift_dir * deg_to_rad(75.0), 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "position:y", position.y + 28.0, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.tween_property(self, "modulate:a", 0.0, 0.30).set_delay(0.10)
+	tween.chain().tween_callback(_on_death_drift_done)
 	# Schedule respawn. HeroData.respawn_time (default 30s). Timer honors
 	# the paused SceneTree (process_always defaults to false), so tactical
 	# pause freezes the countdown — fair to the player.
 	var wait: float = data.respawn_time if data != null and data.respawn_time > 0.0 else 30.0
 	get_tree().create_timer(wait).timeout.connect(_respawn)
+
+
+func _on_death_drift_done() -> void:
+	visible = false
+	rotation = 0.0
+	modulate.a = 1.0
 
 
 func _respawn() -> void:
@@ -848,6 +864,10 @@ func _respawn() -> void:
 	global_position = spawn_pos
 	_rally_position = spawn_pos
 	current_health = _effective_max_health()
+	# Reset any leftover state from the death-drift tween in case respawn
+	# fires before the drift's 0.4s completion (short respawn_time edge case).
+	rotation = 0.0
+	modulate.a = 1.0
 	visible = true
 	_attack_cooldown = 0.0
 	change_state(State.IDLE)

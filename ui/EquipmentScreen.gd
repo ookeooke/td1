@@ -1,49 +1,21 @@
 ﻿extends Control
 
-# Phase 48 D2 — Equipment screen. Shows the selected hero's 6 slots
-# (3 active: Weapon/Armor/Trinket; 3 locked: Helm/Gloves/Boots) on the
-# left, and the full owned-item inventory on the right.
+# Phase 50 — Equipment screen with paperdoll backdrop + per-hero variable
+# slots. The 6 ItemBase.slot indices are unchanged (0=Weapon, 1=Armor,
+# 2=Helm, 3=Gloves, 4=Boots, 5=Trinket); a hero exposes only the subset
+# listed in HeroData.equipment_slots. Default empty array = all 6.
 #
-# D2 = read-only: clicking items does nothing. D3 adds the equip/unequip
-# two-step-commit interaction.
+# Slots position via Paperdoll.anchor_for_slot — humanoid heroes use the
+# default anchors; non-humanoid (Dragon) overrides via HeroData.slot_anchors.
+# Slot labels can be renamed per hero via HeroData.slot_label_overrides
+# (e.g. Dragon shows "Breath Sigil" instead of "Weapon").
 #
-# Reached from WorldMap via an "Equipment" button (wired in D4).
+# Reached either standalone (legacy WorldMap path) or embedded in HeroesHub.
 
 const _ItemIconScript := preload("res://ui/ItemIcon.gd")
 const SLOT_COUNT: int = 6
-const SLOT_NAMES: Array[String] = ["Weapon", "Armor", "Helm", "Gloves", "Boots", "Trinket"]
-# Phase 49 — Each slot has a footprint matching its item type; the slot
-# claims (col, row, w, h) cells in the EquipmentGrid Control at the same
-# CELL_PX (120) the inventory uses, so a sword renders 120×240 and chest
-# armor renders 240×240 whether equipped or sitting in inventory. Layout
-# is 2 cols × 5 rows = 240×600.
-#
-# Visual:
-#   col0  col1
-# +-----+-----+
-# | HEL | TRI |   row 0  — 1×1 each
-# +-----+-----+
-# | ARMOR     |   rows 1-2 — 2×2 spans both cols
-# |   2×2     |
-# |           |
-# |           |
-# +-----+-----+
-# | WPN | GLV |   row 3  — WEAPON top + GLOVES (1×1)
-# |     +-----+
-# | 1×2 | BTS |   row 4  — WEAPON bottom + BOOTS (1×1)
-# +-----+-----+
-const SLOT_LAYOUT: Dictionary = {
-	# slot_idx: {col, row, w, h}
-	2: {"col": 0, "row": 0, "w": 1, "h": 1},   # HELM
-	5: {"col": 1, "row": 0, "w": 1, "h": 1},   # TRINKET
-	1: {"col": 0, "row": 1, "w": 2, "h": 2},   # ARMOR
-	0: {"col": 0, "row": 3, "w": 1, "h": 2},   # WEAPON
-	3: {"col": 1, "row": 3, "w": 1, "h": 1},   # GLOVES
-	4: {"col": 1, "row": 4, "w": 1, "h": 1},   # BOOTS
-}
-# Slots the player can equip into today. Others render locked until Phase F
-# activates them.
-const ACTIVE_SLOTS: Array[int] = [0, 1, 5]
+const DEFAULT_SLOT_NAMES: Array[String] = ["Weapon", "Armor", "Helm", "Gloves", "Boots", "Trinket"]
+const ALL_SLOT_INDICES: Array[int] = [0, 1, 2, 3, 4, 5]
 
 # Phase 49 — fixed spatial grid. CELL_PX matches ItemIcon.SIZE_PX so 1×1
 # tiles look identical to the prior reflow layout; multi-cell items extend
@@ -51,12 +23,16 @@ const ACTIVE_SLOTS: Array[int] = [0, 1, 5]
 # Bumped 92→120 in the mobile-fit pass so tiles clear Material Design's
 # 7 mm touch-target floor on a typical 6.1″ phone.
 const CELL_PX: float = 120.0
+# Phase 50 — paperdoll slots use a uniform 1×1 footprint regardless of item
+# size, so they arrange around the silhouette evenly. Item icons in the
+# inventory grid still render at their real footprint (1×2 swords etc.).
+const PAPERDOLL_SLOT_W: int = 1
+const PAPERDOLL_SLOT_H: int = 1
 
 @onready var back_button: Button = %BackButton
 @onready var title_label: Label = %TitleLabel
 @onready var hero_label: Label = %HeroLabel
 @onready var equipment_grid: Control = %EquipmentGrid
-@onready var hero_portrait: Control = %HeroPortrait
 @onready var stats_panel: VBoxContainer = %StatsPanel
 @onready var details_label: Label = %DetailsLabel
 @onready var right_title: Label = %RightTitle
@@ -125,8 +101,21 @@ func _ready() -> void:
 	EventBus.item_equipped.connect(_on_item_equipped)
 	EventBus.item_unequipped.connect(_on_item_unequipped)
 	EventBus.inventory_changed.connect(_on_inventory_changed_simple)
-	# Refresh when the active hero changes (e.g. HeroesHub Loadout-tab switch).
-	EventBus.hero_selected.connect(func(_id): _refresh())
+	# Refresh when the active hero changes (e.g. HeroesHub roster swap).
+	# Rebuild slots first — the new hero may expose a different slot set
+	# (Dragon = 3 slots vs humanoid 6) — then refresh stats + paperdoll.
+	# Reset _first_refresh BEFORE ensure_starter_gear: that call can emit
+	# inventory_changed → _on_inventory_changed_simple → _refresh, which
+	# would otherwise compare the new hero's stats against the previous
+	# hero's _last_stats_dict and fire a phantom "you equipped X" toast.
+	EventBus.hero_selected.connect(func(new_id):
+		_first_refresh = true
+		_last_stats_dict.clear()
+		if new_id != "":
+			InventoryManager.ensure_starter_gear(new_id)
+		_build_slots()
+		_refresh()
+	)
 	# Sell-mode controls + meta-gold counter live-update.
 	sell_mode_button.pressed.connect(_on_sell_mode_toggled)
 	lock_button.pressed.connect(_on_lock_pressed)
@@ -179,23 +168,28 @@ func _on_back() -> void:
 
 
 func _build_slots() -> void:
-	# Phase 49 — slots positioned absolutely inside EquipmentGrid (a Control,
-	# not a Container) at the SAME CELL_PX the inventory uses. Each slot
-	# claims its item type's footprint via set_slot_footprint, so a sword
-	# equipped or in inventory renders at the same 120×240 pixels.
-	for slot_idx in SLOT_LAYOUT.keys():
+	# Phase 50 — paperdoll layout. Slot icons are positioned via the
+	# Paperdoll-attached EquipmentGrid's anchor_for_slot(slot_idx). Each
+	# slot is a uniform 1×1 footprint regardless of item size so the
+	# layout reads cleanly around the silhouette. Items in inventory keep
+	# their real footprint.
+	# Wipe any existing icons (called on hero swap to rebuild for the new hero).
+	for child in equipment_grid.get_children():
+		# Skip non-ItemIcon children (none expected, defensive).
+		child.queue_free()
+	_slot_icons.clear()
+	for slot_idx in _active_slot_indices_for(LoadoutState.selected_hero_id):
 		_build_one_slot(int(slot_idx))
 
 
 func _build_one_slot(slot_idx: int) -> void:
-	var entry: Dictionary = SLOT_LAYOUT[slot_idx]
-	var col: int = int(entry["col"])
-	var row: int = int(entry["row"])
-	var w: int = int(entry["w"])
-	var h: int = int(entry["h"])
 	var icon: Control = _ItemIconScript.new()
-	icon.set_slot_footprint(w, h)
-	icon.position = Vector2(col * CELL_PX, row * CELL_PX)
+	icon.set_slot_footprint(PAPERDOLL_SLOT_W, PAPERDOLL_SLOT_H)
+	# Position via the Paperdoll's anchor_for_slot. Anchor is the slot's
+	# centerpoint, so subtract half the icon's footprint to top-left it.
+	var anchor: Vector2 = equipment_grid.anchor_for_slot(slot_idx) if equipment_grid.has_method("anchor_for_slot") else Vector2.ZERO
+	var half := Vector2(CELL_PX * 0.5 * PAPERDOLL_SLOT_W, CELL_PX * 0.5 * PAPERDOLL_SLOT_H)
+	icon.position = anchor - half
 	icon.pressed.connect(_on_slot_pressed.bind(slot_idx))
 	icon.hovered.connect(_on_item_hovered)
 	icon.unhovered.connect(_on_item_unhovered)
@@ -204,6 +198,37 @@ func _build_one_slot(slot_idx: int) -> void:
 	icon.long_pressed.connect(_on_item_hovered)
 	_slot_icons[slot_idx] = icon
 	equipment_grid.add_child(icon)
+
+
+# Returns the slot indices THIS hero exposes. Reads HeroData.equipment_slots;
+# empty array (or no hero data) falls back to the default 6-slot humanoid set.
+func _active_slot_indices_for(hero_id: String) -> Array:
+	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
+	if hero_data == null or not ("equipment_slots" in hero_data):
+		return ALL_SLOT_INDICES.duplicate()
+	var arr: Array = hero_data.equipment_slots
+	if arr.is_empty():
+		return ALL_SLOT_INDICES.duplicate()
+	var out: Array = []
+	for v in arr:
+		var i: int = int(v)
+		if i >= 0 and i < SLOT_COUNT:
+			out.append(i)
+	return out
+
+
+# Display label for a slot. Honors HeroData.slot_label_overrides for
+# per-hero rename (e.g. Dragon's "Weapon" → "Breath Sigil"); falls back
+# to DEFAULT_SLOT_NAMES.
+func _resolve_slot_label(slot_idx: int) -> String:
+	var hero_data: Resource = ContentRegistry.find_hero(LoadoutState.selected_hero_id)
+	if hero_data != null and "slot_label_overrides" in hero_data:
+		var ov: Dictionary = hero_data.slot_label_overrides
+		if ov.has(slot_idx):
+			return String(ov[slot_idx])
+	if slot_idx >= 0 and slot_idx < DEFAULT_SLOT_NAMES.size():
+		return DEFAULT_SLOT_NAMES[slot_idx]
+	return "Slot %d" % slot_idx
 
 
 func _refresh() -> void:
@@ -223,17 +248,15 @@ func _refresh() -> void:
 	# to read. In sell mode, the hover/long-press path owns the label.
 	if not _sell_mode:
 		details_label.text = "Hover an item to see its details."
-	# Phase 49 — central portrait reflects the currently selected hero. Setup
-	# is idempotent; reads off hero_data.visual.
-	if hero_portrait != null and hero_portrait.has_method("setup"):
-		hero_portrait.setup(hero_data)
-	# Left: slot state — both columns are populated from the same _slot_icons
-	# dict so iteration order doesn't matter; we paint every entry.
+	# Phase 50 — paperdoll backdrop reflects the currently selected hero.
+	# EquipmentGrid has Paperdoll.gd as its script; setup() refreshes both
+	# the silhouette draw and the slot anchor map.
+	if equipment_grid != null and equipment_grid.has_method("setup"):
+		equipment_grid.setup(hero_data)
+	# Left: slot state. _slot_icons only contains slots this hero exposes
+	# (rebuilt by _build_slots whenever the hero changes).
 	for slot_idx in _slot_icons.keys():
 		var icon: Control = _slot_icons[slot_idx]
-		if not ACTIVE_SLOTS.has(slot_idx):
-			icon.setup_locked()
-			continue
 		var inst = InventoryManager.get_equipped_instance(hero_id, slot_idx)
 		if inst == null:
 			icon.setup_empty()
@@ -348,10 +371,17 @@ func _on_inventory_item_pressed(inst) -> void:
 	if base == null:
 		return
 	var slot: int = int(base.slot)
-	if not ACTIVE_SLOTS.has(slot):
-		Toast.show_message("%s slot is locked" % SLOT_NAMES[slot])
+	# Phase 50 — slots not authored on this hero refuse the item with a
+	# clear toast (e.g. Dragon won't accept a humanoid Helm).
+	if not (slot in _active_slot_indices_for(hero_id)):
+		Toast.show_message("%s has no %s slot" % [_hero_name(hero_id), _resolve_slot_label(slot)])
 		return
 	InventoryManager.equip(hero_id, inst.uid)
+
+
+func _hero_name(hero_id: String) -> String:
+	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
+	return String(hero_data.hero_name) if hero_data != null and "hero_name" in hero_data else hero_id
 
 
 # --- Sell mode ---------------------------------------------------------------
@@ -542,13 +572,14 @@ func _refresh_meta_gold_label_amount(amount: int) -> void:
 
 
 func _on_slot_pressed(_signal_arg, slot_idx: int) -> void:
-	if not ACTIVE_SLOTS.has(slot_idx):
-		Toast.show_message("%s slot is locked" % SLOT_NAMES[slot_idx])
-		return
+	# Phase 50 — slots that exist for this hero are always interactive; an
+	# empty tap toasts "Slot is empty", a filled tap unequips. There's no
+	# longer a locked-slot state — slots not authored on the hero simply
+	# don't render.
 	var hero_id: String = LoadoutState.selected_hero_id
 	var current_uid: String = InventoryManager.get_equipped_uid(hero_id, slot_idx)
 	if current_uid == "":
-		Toast.show_message("Slot is empty")
+		Toast.show_message("%s slot is empty" % _resolve_slot_label(slot_idx))
 		return
 	InventoryManager.unequip(hero_id, slot_idx)
 
@@ -717,7 +748,7 @@ func _format_item_details(inst) -> String:
 	lines.append("%s" % base.base_name)
 	lines.append("%s %s" % [
 		_RARITY_NAMES[clampi(int(base.rarity), 0, _RARITY_NAMES.size() - 1)],
-		SLOT_NAMES[clampi(int(base.slot), 0, SLOT_NAMES.size() - 1)],
+		_resolve_slot_label(clampi(int(base.slot), 0, SLOT_COUNT - 1)),
 	])
 	lines.append("")
 	# Implicit abilities (always-on, inherent to the base)

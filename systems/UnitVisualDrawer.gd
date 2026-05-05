@@ -171,6 +171,21 @@ static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vecto
 	if has_xform:
 		ci.draw_set_transform(offset, 0.0, scale)
 
+	# Texture override — when set, paint the image and skip the entire
+	# procedural body. Walk-bob/squash inherits via the transform above.
+	# Other layers (shadow, hit-flash, status rings, HP bar, swing-arc trail)
+	# draw outside draw_unit() and continue to wrap the texture correctly.
+	# skin_tint (endless HP-scaling reddening) is multiplied into the texture
+	# so scaled enemies still visibly redden. Boss phase tints use
+	# CanvasItem.modulate which compounds on top automatically.
+	if v.texture != null:
+		var ts: Vector2 = v.texture_size if v.texture_size.x > 0.0 and v.texture_size.y > 0.0 else Vector2(v.radius * 2.0, v.radius * 2.0)
+		var tex_tint: Color = ctx.get("skin_tint", Color.WHITE)
+		ci.draw_texture_rect(v.texture, Rect2(-ts * 0.5, ts), false, tex_tint)
+		if has_xform:
+			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+
 	# Per-enemy variation + state. All ctx fields are optional; defaults
 	# reproduce the previous draw exactly when ctx is empty.
 	var skin_tint: Color = ctx.get("skin_tint", Color.WHITE)

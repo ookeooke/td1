@@ -98,6 +98,7 @@ var _slow_time_history: Array[float] = []
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
 const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
+const _StatusApplyScript := preload("res://vfx/StatusApplyVFX.gd")
 var _ability_host: RefCounted = null
 
 
@@ -301,13 +302,31 @@ func apply_status_effect(effect) -> void:
 	# If the same id is already active, give the old instance a chance to
 	# clean up (visuals, stat modifiers) before the replacement takes over.
 	# remove() is currently empty for slow/stun, but future effects may not be.
-	if _effects.has(effect.id):
+	var refresh: bool = _effects.has(effect.id)
+	if refresh:
 		_effects[effect.id].remove(self)
 	_effects[effect.id] = effect
 	effect.apply(self)
+	# First-application VFX — single ring pop in the effect's color so the
+	# moment the slow/stun lands reads. Skipped on refresh (the persistent
+	# rotating status ring already signals "still active") and on clean_view.
+	if not refresh and not VFXSpawner.clean_view:
+		var radius: float = 18.0
+		if data != null and data.visual != null:
+			radius = data.visual.radius
+		_StatusApplyScript.spawn(get_tree().current_scene, global_position, radius, _status_apply_color(effect.id))
 	# Stun is a behavior gate (see _physics_process), not a state transition.
 	# Keeps enemies in COMBAT through stun so blockers remain engaged.
 	queue_redraw()
+
+
+func _status_apply_color(effect_id: String) -> Color:
+	match effect_id:
+		"slow":
+			return Color(0.55, 0.85, 1.00)
+		"stun":
+			return Color(1.00, 0.85, 0.30)
+	return Color(1.00, 1.00, 1.00)
 
 
 func _tick_effects(delta: float) -> void:

@@ -1,15 +1,15 @@
-﻿[gd_resource type=Resource script_class=WaveList format=3 uid=uid://b1td1lv4waves]
+[gd_resource type="Resource" script_class="WaveList" format=3 uid="uid://b1td1lv4waves"]
 
-[ext_resource type=Script uid=uid://b20v3766p6m5g path=res://waves/WaveList.gd id=1_list]
-[ext_resource type=Script uid=uid://bi3tyyql6gp6g path=res://waves/WaveData.gd id=2_wave]
-[ext_resource type=Script uid=uid://bn01uqj5y40yv path=res://waves/WaveSpawn.gd id=3_spawn]
-[ext_resource type=PackedScene uid=uid://ct8yjsiicg7nj path=res://enemies/EnemyBasic.tscn id=4_basic]
-[ext_resource type=PackedScene uid=uid://b1td1flysc002 path=res://enemies/EnemyFlying.tscn id=5_fly]
-[ext_resource type=PackedScene uid=uid://b1td1armorsc1 path=res://enemies/EnemyArmored.tscn id=6_armor]
-[ext_resource type=PackedScene uid=uid://b1td1boss1scn path=res://enemies/bosses/Boss1.tscn id=7_boss]
-[ext_resource type=PackedScene path=res://enemies/EnemyBrute.tscn id=8_brute]
-[ext_resource type=PackedScene uid=uid://b1td1scoutsc1 path=res://enemies/EnemyScout.tscn id=9_scout]
-[ext_resource type=PackedScene uid=uid://b1td1healsc02 path=res://enemies/EnemyHealer.tscn id=10_heal]
+[ext_resource type="Script" uid="uid://b20v3766p6m5g" path="res://waves/WaveList.gd" id="1_list"]
+[ext_resource type="Script" uid="uid://bi3tyyql6gp6g" path="res://waves/WaveData.gd" id="2_wave"]
+[ext_resource type="Script" uid="uid://bn01uqj5y40yv" path="res://waves/WaveSpawn.gd" id="3_spawn"]
+[ext_resource type="PackedScene" uid="uid://ct8yjsiicg7nj" path="res://enemies/EnemyBasic.tscn" id="4_basic"]
+[ext_resource type="PackedScene" uid="uid://b1td1flysc002" path="res://enemies/EnemyFlying.tscn" id="5_fly"]
+[ext_resource type="PackedScene" uid="uid://b1td1armorsc1" path="res://enemies/EnemyArmored.tscn" id="6_armor"]
+[ext_resource type="PackedScene" uid="uid://b1td1boss1scn" path="res://enemies/bosses/Boss1.tscn" id="7_boss"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyBrute.tscn" id="8_brute"]
+[ext_resource type="PackedScene" uid="uid://b1td1scoutsc1" path="res://enemies/EnemyScout.tscn" id="9_scout"]
+[ext_resource type="PackedScene" uid="uid://b1td1healsc02" path="res://enemies/EnemyHealer.tscn" id="10_heal"]
 
 ; ============================================================================
 ; Level 4 — Frost Vale. Two-path converge, 10-wave first long-form campaign
@@ -21,441 +21,441 @@
 ; ============================================================================
 
 ; ---- Wave 1: warm-up / lane teaching — north basics, south scouts, light armor ----
-[sub_resource type=Resource id=L4_W1_NorthBasic]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W1_NorthBasic"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("4_basic")
 count = 10
 interval = 5.0
 
-[sub_resource type=Resource id=L4_W1_SouthScouts]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(9_scout)
+[sub_resource type="Resource" id="L4_W1_SouthScouts"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("9_scout")
 count = 6
 interval = 5.0
 start_delay = 4.0
 
-[sub_resource type=Resource id=L4_W1_NorthArmor]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(6_armor)
+[sub_resource type="Resource" id="L4_W1_NorthArmor"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("6_armor")
 count = 2
 interval = 16.0
 start_delay = 16.0
 
-[sub_resource type=Resource id=L4_Wave1]
-script = ExtResource(2_wave)
-spawns = Array[ExtResource(3_spawn)]([SubResource(L4_W1_NorthBasic), SubResource(L4_W1_SouthScouts), SubResource(L4_W1_NorthArmor)])
+[sub_resource type="Resource" id="L4_Wave1"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W1_NorthBasic"), SubResource("L4_W1_SouthScouts"), SubResource("L4_W1_NorthArmor")])
 countdown = 0.0
 bounty = 80
 
 ; ---- Wave 2: second lane opens — south bulk, north armor convoy + shaman ----
-[sub_resource type=Resource id=L4_W2_SouthBasic]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W2_SouthBasic"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 5.0
 
-[sub_resource type=Resource id=L4_W2_NorthArmor]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(6_armor)
+[sub_resource type="Resource" id="L4_W2_NorthArmor"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("6_armor")
 count = 4
 interval = 12.0
 start_delay = 6.0
 
-[sub_resource type=Resource id=L4_W2_NorthHealer]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(10_heal)
+[sub_resource type="Resource" id="L4_W2_NorthHealer"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("10_heal")
 start_delay = 34.0
 
-[sub_resource type=Resource id=L4_Wave2]
-script = ExtResource(2_wave)
-spawns = Array[ExtResource(3_spawn)]([SubResource(L4_W2_SouthBasic), SubResource(L4_W2_NorthArmor), SubResource(L4_W2_NorthHealer)])
+[sub_resource type="Resource" id="L4_Wave2"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W2_SouthBasic"), SubResource("L4_W2_NorthArmor"), SubResource("L4_W2_NorthHealer")])
 countdown = 28.0
 bounty = 90
 
 ; ---- Wave 3: first split pressure — both lanes plus late flyers/scouts ----
-[sub_resource type=Resource id=L4_W3_NorthBasic]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W3_NorthBasic"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 5.0
 
-[sub_resource type=Resource id=L4_W3_SouthBasic]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W3_SouthBasic"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("4_basic")
 count = 10
 interval = 5.5
 start_delay = 3.0
 
-[sub_resource type=Resource id=L4_W3_NorthFly]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(5_fly)
+[sub_resource type="Resource" id="L4_W3_NorthFly"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("5_fly")
 count = 6
 interval = 7.0
 start_delay = 12.0
 
-[sub_resource type=Resource id=L4_W3_SouthScouts]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(9_scout)
+[sub_resource type="Resource" id="L4_W3_SouthScouts"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("9_scout")
 count = 6
 interval = 6.0
 start_delay = 24.0
 
-[sub_resource type=Resource id=L4_Wave3]
-script = ExtResource(2_wave)
-spawns = Array[ExtResource(3_spawn)]([SubResource(L4_W3_NorthBasic), SubResource(L4_W3_SouthBasic), SubResource(L4_W3_NorthFly), SubResource(L4_W3_SouthScouts)])
+[sub_resource type="Resource" id="L4_Wave3"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W3_NorthBasic"), SubResource("L4_W3_SouthBasic"), SubResource("L4_W3_NorthFly"), SubResource("L4_W3_SouthScouts")])
 countdown = 30.0
 bounty = 100
 
 ; ---- Wave 4: armor convoy — healer behind plated enemies, scouts punish tunnel vision ----
-[sub_resource type=Resource id=L4_W4_NorthArmor]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(6_armor)
+[sub_resource type="Resource" id="L4_W4_NorthArmor"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("6_armor")
 count = 6
 interval = 9.0
 
-[sub_resource type=Resource id=L4_W4_NorthBasicEscort]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W4_NorthBasicEscort"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("4_basic")
 count = 14
 interval = 4.5
 start_delay = 2.0
 
-[sub_resource type=Resource id=L4_W4_NorthHealers]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(10_heal)
+[sub_resource type="Resource" id="L4_W4_NorthHealers"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("10_heal")
 count = 2
 interval = 24.0
 start_delay = 16.0
 
-[sub_resource type=Resource id=L4_W4_SouthScouts]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(9_scout)
+[sub_resource type="Resource" id="L4_W4_SouthScouts"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("9_scout")
 count = 8
 interval = 6.0
 start_delay = 14.0
 
-[sub_resource type=Resource id=L4_Wave4]
-script = ExtResource(2_wave)
-spawns = Array[ExtResource(3_spawn)]([SubResource(L4_W4_NorthArmor), SubResource(L4_W4_NorthBasicEscort), SubResource(L4_W4_NorthHealers), SubResource(L4_W4_SouthScouts)])
+[sub_resource type="Resource" id="L4_Wave4"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W4_NorthArmor"), SubResource("L4_W4_NorthBasicEscort"), SubResource("L4_W4_NorthHealers"), SubResource("L4_W4_SouthScouts")])
 countdown = 32.0
 bounty = 110
 
 ; ---- Wave 5: fast leak test — scouts while brutes occupy blockers elsewhere ----
-[sub_resource type=Resource id=L4_W5_SouthScouts]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(9_scout)
+[sub_resource type="Resource" id="L4_W5_SouthScouts"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("9_scout")
 count = 16
 interval = 4.0
 
-[sub_resource type=Resource id=L4_W5_SouthBasic]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W5_SouthBasic"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("4_basic")
 count = 10
 interval = 5.0
 start_delay = 5.0
 
-[sub_resource type=Resource id=L4_W5_NorthBrutes]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(8_brute)
+[sub_resource type="Resource" id="L4_W5_NorthBrutes"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("8_brute")
 count = 2
 interval = 28.0
 start_delay = 10.0
 
-[sub_resource type=Resource id=L4_W5_NorthArmor]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(6_armor)
+[sub_resource type="Resource" id="L4_W5_NorthArmor"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("6_armor")
 count = 3
 interval = 14.0
 start_delay = 20.0
 
-[sub_resource type=Resource id=L4_Wave5]
-script = ExtResource(2_wave)
-spawns = Array[ExtResource(3_spawn)]([SubResource(L4_W5_SouthScouts), SubResource(L4_W5_SouthBasic), SubResource(L4_W5_NorthBrutes), SubResource(L4_W5_NorthArmor)])
+[sub_resource type="Resource" id="L4_Wave5"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W5_SouthScouts"), SubResource("L4_W5_SouthBasic"), SubResource("L4_W5_NorthBrutes"), SubResource("L4_W5_NorthArmor")])
 countdown = 32.0
 bounty = 120
 
 ; ---- Wave 6: recovery / economy — broad basics with an anti-air reminder ----
-[sub_resource type=Resource id=L4_W6_NorthBasic]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W6_NorthBasic"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("4_basic")
 count = 15
 interval = 4.0
 
-[sub_resource type=Resource id=L4_W6_SouthBasic]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W6_SouthBasic"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("4_basic")
 count = 15
 interval = 4.0
 start_delay = 2.0
 
-[sub_resource type=Resource id=L4_W6_Flyers]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(5_fly)
+[sub_resource type="Resource" id="L4_W6_Flyers"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("5_fly")
 count = 8
 interval = 6.0
 start_delay = 8.0
 
-[sub_resource type=Resource id=L4_W6_Healer]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(10_heal)
+[sub_resource type="Resource" id="L4_W6_Healer"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("10_heal")
 start_delay = 36.0
 
-[sub_resource type=Resource id=L4_Wave6]
-script = ExtResource(2_wave)
-spawns = Array[ExtResource(3_spawn)]([SubResource(L4_W6_NorthBasic), SubResource(L4_W6_SouthBasic), SubResource(L4_W6_Flyers), SubResource(L4_W6_Healer)])
+[sub_resource type="Resource" id="L4_Wave6"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W6_NorthBasic"), SubResource("L4_W6_SouthBasic"), SubResource("L4_W6_Flyers"), SubResource("L4_W6_Healer")])
 countdown = 28.0
 bounty = 130
 
 ; ---- Wave 7: brute wall — sustained blocking and magic damage check ----
-[sub_resource type=Resource id=L4_W7_NorthBrutes]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(8_brute)
+[sub_resource type="Resource" id="L4_W7_NorthBrutes"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("8_brute")
 count = 2
 interval = 30.0
 
-[sub_resource type=Resource id=L4_W7_SouthBrutes]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(8_brute)
+[sub_resource type="Resource" id="L4_W7_SouthBrutes"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("8_brute")
 count = 2
 interval = 30.0
 start_delay = 10.0
 
-[sub_resource type=Resource id=L4_W7_Armor]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(6_armor)
+[sub_resource type="Resource" id="L4_W7_Armor"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("6_armor")
 count = 6
 interval = 10.0
 start_delay = 6.0
 
-[sub_resource type=Resource id=L4_W7_Basic]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W7_Basic"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 5.0
 start_delay = 4.0
 
-[sub_resource type=Resource id=L4_W7_Healer]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(10_heal)
+[sub_resource type="Resource" id="L4_W7_Healer"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("10_heal")
 start_delay = 34.0
 
-[sub_resource type=Resource id=L4_Wave7]
-script = ExtResource(2_wave)
-spawns = Array[ExtResource(3_spawn)]([SubResource(L4_W7_NorthBrutes), SubResource(L4_W7_SouthBrutes), SubResource(L4_W7_Armor), SubResource(L4_W7_Basic), SubResource(L4_W7_Healer)])
+[sub_resource type="Resource" id="L4_Wave7"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W7_NorthBrutes"), SubResource("L4_W7_SouthBrutes"), SubResource("L4_W7_Armor"), SubResource("L4_W7_Basic"), SubResource("L4_W7_Healer")])
 countdown = 34.0
 bounty = 140
 
 ; ---- Wave 8: air distraction — flyers arrive while both lanes are occupied ----
-[sub_resource type=Resource id=L4_W8_NorthBasic]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W8_NorthBasic"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("4_basic")
 count = 10
 interval = 5.0
 
-[sub_resource type=Resource id=L4_W8_SouthBasic]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W8_SouthBasic"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("4_basic")
 count = 10
 interval = 5.0
 start_delay = 3.0
 
-[sub_resource type=Resource id=L4_W8_Flyers]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(5_fly)
+[sub_resource type="Resource" id="L4_W8_Flyers"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("5_fly")
 count = 12
 interval = 5.0
 start_delay = 12.0
 
-[sub_resource type=Resource id=L4_W8_Armor]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(6_armor)
+[sub_resource type="Resource" id="L4_W8_Armor"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("6_armor")
 count = 4
 interval = 12.0
 start_delay = 16.0
 
-[sub_resource type=Resource id=L4_W8_Healers]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(10_heal)
+[sub_resource type="Resource" id="L4_W8_Healers"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("10_heal")
 count = 2
 interval = 26.0
 start_delay = 22.0
 
-[sub_resource type=Resource id=L4_W8_Scouts]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(9_scout)
+[sub_resource type="Resource" id="L4_W8_Scouts"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("9_scout")
 count = 8
 interval = 5.0
 start_delay = 30.0
 
-[sub_resource type=Resource id=L4_Wave8]
-script = ExtResource(2_wave)
-spawns = Array[ExtResource(3_spawn)]([SubResource(L4_W8_NorthBasic), SubResource(L4_W8_SouthBasic), SubResource(L4_W8_Flyers), SubResource(L4_W8_Armor), SubResource(L4_W8_Healers), SubResource(L4_W8_Scouts)])
+[sub_resource type="Resource" id="L4_Wave8"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W8_NorthBasic"), SubResource("L4_W8_SouthBasic"), SubResource("L4_W8_Flyers"), SubResource("L4_W8_Armor"), SubResource("L4_W8_Healers"), SubResource("L4_W8_Scouts")])
 countdown = 34.0
 bounty = 150
 
 ; ---- Wave 9: pre-boss gauntlet — all non-boss roles, no single focus target ----
-[sub_resource type=Resource id=L4_W9_NorthBasic]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W9_NorthBasic"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 5.0
 
-[sub_resource type=Resource id=L4_W9_SouthBasic]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W9_SouthBasic"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 5.0
 start_delay = 3.0
 
-[sub_resource type=Resource id=L4_W9_Scouts]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(9_scout)
+[sub_resource type="Resource" id="L4_W9_Scouts"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("9_scout")
 count = 12
 interval = 5.0
 start_delay = 8.0
 
-[sub_resource type=Resource id=L4_W9_Armor]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(6_armor)
+[sub_resource type="Resource" id="L4_W9_Armor"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("6_armor")
 count = 6
 interval = 11.0
 start_delay = 10.0
 
-[sub_resource type=Resource id=L4_W9_Brutes]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(8_brute)
+[sub_resource type="Resource" id="L4_W9_Brutes"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("8_brute")
 count = 3
 interval = 22.0
 start_delay = 16.0
 
-[sub_resource type=Resource id=L4_W9_Flyers]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(5_fly)
+[sub_resource type="Resource" id="L4_W9_Flyers"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("5_fly")
 count = 8
 interval = 7.0
 start_delay = 18.0
 
-[sub_resource type=Resource id=L4_W9_Healers]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(10_heal)
+[sub_resource type="Resource" id="L4_W9_Healers"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("10_heal")
 count = 2
 interval = 28.0
 start_delay = 24.0
 
-[sub_resource type=Resource id=L4_Wave9]
-script = ExtResource(2_wave)
-spawns = Array[ExtResource(3_spawn)]([SubResource(L4_W9_NorthBasic), SubResource(L4_W9_SouthBasic), SubResource(L4_W9_Scouts), SubResource(L4_W9_Armor), SubResource(L4_W9_Brutes), SubResource(L4_W9_Flyers), SubResource(L4_W9_Healers)])
+[sub_resource type="Resource" id="L4_Wave9"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W9_NorthBasic"), SubResource("L4_W9_SouthBasic"), SubResource("L4_W9_Scouts"), SubResource("L4_W9_Armor"), SubResource("L4_W9_Brutes"), SubResource("L4_W9_Flyers"), SubResource("L4_W9_Healers")])
 countdown = 36.0
 bounty = 160
 
 ; ---- Wave 10: boss escort finale — boss never walks alone ----
-[sub_resource type=Resource id=L4_W10_Boss]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(7_boss)
+[sub_resource type="Resource" id="L4_W10_Boss"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("7_boss")
 start_delay = 12.0
 
-[sub_resource type=Resource id=L4_W10_NorthBasic]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W10_NorthBasic"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 5.0
 
-[sub_resource type=Resource id=L4_W10_SouthBasic]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(4_basic)
+[sub_resource type="Resource" id="L4_W10_SouthBasic"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("4_basic")
 count = 12
 interval = 5.0
 start_delay = 4.0
 
-[sub_resource type=Resource id=L4_W10_Brutes]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(8_brute)
+[sub_resource type="Resource" id="L4_W10_Brutes"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("8_brute")
 count = 3
 interval = 24.0
 start_delay = 10.0
 
-[sub_resource type=Resource id=L4_W10_Armor]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(6_armor)
+[sub_resource type="Resource" id="L4_W10_Armor"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("6_armor")
 count = 6
 interval = 12.0
 start_delay = 16.0
 
-[sub_resource type=Resource id=L4_W10_Scouts]
-script = ExtResource(3_spawn)
-path_id = south
-enemy_scene = ExtResource(9_scout)
+[sub_resource type="Resource" id="L4_W10_Scouts"]
+script = ExtResource("3_spawn")
+path_id = "south"
+enemy_scene = ExtResource("9_scout")
 count = 10
 interval = 6.0
 start_delay = 28.0
 
-[sub_resource type=Resource id=L4_W10_Flyers]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(5_fly)
+[sub_resource type="Resource" id="L4_W10_Flyers"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("5_fly")
 count = 8
 interval = 7.0
 start_delay = 30.0
 
-[sub_resource type=Resource id=L4_W10_Healers]
-script = ExtResource(3_spawn)
-path_id = north
-enemy_scene = ExtResource(10_heal)
+[sub_resource type="Resource" id="L4_W10_Healers"]
+script = ExtResource("3_spawn")
+path_id = "north"
+enemy_scene = ExtResource("10_heal")
 count = 2
 interval = 30.0
 start_delay = 22.0
 
-[sub_resource type=Resource id=L4_Wave10]
-script = ExtResource(2_wave)
-spawns = Array[ExtResource(3_spawn)]([SubResource(L4_W10_Boss), SubResource(L4_W10_NorthBasic), SubResource(L4_W10_SouthBasic), SubResource(L4_W10_Brutes), SubResource(L4_W10_Armor), SubResource(L4_W10_Scouts), SubResource(L4_W10_Flyers), SubResource(L4_W10_Healers)])
+[sub_resource type="Resource" id="L4_Wave10"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L4_W10_Boss"), SubResource("L4_W10_NorthBasic"), SubResource("L4_W10_SouthBasic"), SubResource("L4_W10_Brutes"), SubResource("L4_W10_Armor"), SubResource("L4_W10_Scouts"), SubResource("L4_W10_Flyers"), SubResource("L4_W10_Healers")])
 countdown = 40.0
 bounty = 170
 
 [resource]
-script = ExtResource(1_list)
-waves = Array[ExtResource(2_wave)]([SubResource(L4_Wave1), SubResource(L4_Wave2), SubResource(L4_Wave3), SubResource(L4_Wave4), SubResource(L4_Wave5), SubResource(L4_Wave6), SubResource(L4_Wave7), SubResource(L4_Wave8), SubResource(L4_Wave9), SubResource(L4_Wave10)])
+script = ExtResource("1_list")
+waves = Array[ExtResource("2_wave")]([SubResource("L4_Wave1"), SubResource("L4_Wave2"), SubResource("L4_Wave3"), SubResource("L4_Wave4"), SubResource("L4_Wave5"), SubResource("L4_Wave6"), SubResource("L4_Wave7"), SubResource("L4_Wave8"), SubResource("L4_Wave9"), SubResource("L4_Wave10")])

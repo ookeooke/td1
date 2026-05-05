@@ -74,3 +74,15 @@ enum Hat { NONE, HORNS, HELMET, HOOD, BANDANA, CROWN_BIG }
 @export_range(0.5, 2.0, 0.05) var weapon_trail_strength: float = 1.0
 @export var weapon_glow_color: Color = Color(0.0, 0.0, 0.0, 0.0)
 @export_range(0.0, 1.0, 0.01) var weapon_glow_strength: float = 0.0
+
+# When set, replaces the procedural torso/head/legs/arms/hat with this image.
+# Shadow, hit-flash, status rings, HP bar, swing-arc trail still wrap the
+# texture (they're drawn outside draw_unit()). Walk-bob and squash inherit
+# automatically via the body transform. Leave null to keep the procedural
+# silhouette.
+@export_group("Texture Override")
+@export var texture: Texture2D = null
+# Render size in pixels — centered on the unit origin. If either component
+# is 0, falls back to (radius * 2, radius * 2) so the texture matches the
+# procedural body's footprint.
+@export var texture_size: Vector2 = Vector2(80, 80)

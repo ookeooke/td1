@@ -25,9 +25,12 @@
 const _ItemInstanceScript := preload("res://items/ItemInstance.gd")
 const _SellPriceTable: Resource = preload("res://economy/sell_price_table.tres")
 const SLOT_COUNT: int = 6
-# Phase 49 — fixed-size spatial grid. Cap is GRID_COLS × GRID_ROWS = 40 cells.
-# Items occupy 1×1, 1×2, 2×2 etc footprints from ItemBase.grid_width/height.
-# Drops that don't fit are hard-refused with a toast (no auto-sell).
+# Phase 52 — uniform one-slot inventory. Storage is still a GRID_COLS × GRID_ROWS
+# spatial grid (50 cells, save format unchanged), but every item occupies exactly
+# 1×1 regardless of `ItemBase.grid_width / grid_height`. Authored multi-cell
+# values are preserved on disk for future flair (e.g. a "two-handed" badge), but
+# the storage layer ignores them so cap == item count == 50, matching what the
+# Equipment screen displays. Drops past 50 are hard-refused with a toast.
 const GRID_COLS: int = 10
 const GRID_ROWS: int = 5
 
@@ -144,8 +147,9 @@ func add_to_shared(instance) -> bool:
 		# resolves. Defensive only; ContentRegistry should always resolve.
 		shared_inventory.append(instance)
 		return true
-	var w: int = maxi(1, int(base.grid_width))
-	var h: int = maxi(1, int(base.grid_height))
+	# Phase 52 — uniform one-slot inventory: every item is 1×1 in storage.
+	var w: int = 1
+	var h: int = 1
 	var pos: Vector2i = _find_first_fit(w, h)
 	if pos.x < 0:
 		Toast.show_message("Inventory full — drop discarded")
@@ -293,8 +297,9 @@ func move_item(uid: String, row: int, col: int) -> bool:
 	var base: Resource = ContentRegistry.find_item_base(inst.base_id)
 	if base == null:
 		return false
-	var w: int = maxi(1, int(base.grid_width))
-	var h: int = maxi(1, int(base.grid_height))
+	# Phase 52 — uniform one-slot inventory: every item is 1×1 in storage.
+	var w: int = 1
+	var h: int = 1
 	if row < 0 or col < 0 or row + h > GRID_ROWS or col + w > GRID_COLS:
 		return false
 	# Build occupancy with this item EXCLUDED so it can move within its own cells.

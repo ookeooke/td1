@@ -2637,3 +2637,27 @@ Also added `_refresh_hero_hall()` + `_refresh_action_tile_subtitles()` calls to 
 - **Roster card 280→292, Skill tile 180×100→180×104** — pedantic px-rhythm tweaks; current sizes work and meet touch-target rules.
 
 **Verification:** headless `--quit` boot is clean. Manual editor playtest pending for the READY CHECK display + new tile sizes.
+
+---
+
+## 2026-05-06 — Phase 50 follow-up: inventory vertical scroll + defensive correctness
+
+Audit identified one CRITICAL inventory issue (the user's actual root cause for "inventory looks weird at narrow widths") plus four defensive correctness patches. Shipped all five (the audit's "Patch B — disconnect signals on _exit_tree" was deferred — Godot 4 auto-disconnects Callables when the receiver node frees, so the audit's concern about leak-on-re-entry is overstated; revisit if profiler shows actual handler duplication).
+
+**Patch A — vertical-scroll responsive inventory** (the dragon). The prior implementation had `InventoryGrid.custom_minimum_size = Vector2(1200, 600)` hardcoded in [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) — designed for the original standalone-Equipment screen at full 1920×1080. Embedded in HeroesHub with the roster taking 304 px, RightPanel ended up ~940 px wide; inventory grid overflowed by 260 px and forced horizontal scroll. At narrower windows (1228×691) only ~10 % of the grid was visible; mobile users would think most of their loot vanished. Mobile UX research is unambiguous that vertical scroll is the right answer for grid inventories.
+
+Storage stays Tetris (10 × 5 in `InventoryManager.GRID_COLS / GRID_ROWS`, save format unchanged); display columns are now derived from `inventory_grid.get_parent().size.x / CELL_PX` clamped to 5–12. Items keep multi-cell footprints (1 × 2 swords, 2 × 2 chestpieces); placement is recomputed each refresh via greedy first-fit in a vertical-flowing grid. Stored `inst.grid_col / .grid_row` are unused for display (still maintained for save round-trip / `_find_first_fit` on incoming drops).
+
+Implementation in [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) `_refresh` — replaced the fixed-grid block with `_compute_display_cols()` + `_find_display_fit()` + a single-pass layout that grows `cover` row-by-row. Empty placeholders fill remaining display cells. Inventory-grid `custom_minimum_size` is now set per-frame to `(display_cols * CELL_PX, display_rows * CELL_PX)`, so the parent `ScrollContainer` knows how tall the content is and shows a vertical scrollbar when overflow happens. ScrollContainer's `horizontal_scroll_mode = 0` (DISABLED) makes the H-scroll path impossible. `inventory_grid.get_parent().resized` is connected to `_refresh` so the layout re-flows when the panel width changes (window resize, RosterRail visibility toggle).
+
+**Patch C — `_embed_screen` failure no longer traps the hub**. [ui/HeroesHub.gd](ui/HeroesHub.gd) `_embed_screen`. If `load(scene_path)` returns null, also resets `_current_sub = ""` and restores `hero_hall_view.visible = true` + roster + Back button text + title. Without this, the next tap on the same tile would early-exit at `if _current_sub == kind: return` and silently no-op. Rare in practice, but a real footgun if an asset import breaks.
+
+**Patch D — sticky item-details panel no longer survives hero swap**. [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) `hero_selected` listener. Previously `_refresh()` skipped the details reset when `_sell_mode == true` (so a long-pressed item's details stayed visible during sell-mode taps), which leaked across heroes: hover an item on Warrior → swap to Mage → details still showed Warrior's item. Listener now unconditionally resets `details_label.text` on hero swap.
+
+**Patch E — null item base no longer breaks display occupancy** (folded into Patch A). The new layout treats `ContentRegistry.find_item_base(...) == null` as a 1 × 1 item rather than skipping; `ItemIcon.setup_instance` handles the null-base render gracefully (featureless dark tile). Save references to deleted items render as a placeholder cell instead of overlapping with whatever else lands there.
+
+**Patch F — sell mode resets on hero swap**. [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) `hero_selected` listener. Previously sell mode persisted silently across heroes, so a player who entered sell mode on Warrior then tapped Mage in the roster could accidentally sell from Mage's inventory pool with no UI hint that the destructive mode was still on. Listener now resets `_sell_mode`, `_pending_sell_uid`, `_sell_all_armed`, and calls `_refresh_sell_mode_visuals()` on hero swap.
+
+**Deferred (Patch B — `_exit_tree` signal disconnect)**: Godot 4 Callables to instance methods are auto-disconnected when the receiver node frees, so the audit's "duplicate handlers on re-entry" concern likely doesn't manifest in practice. Defensive disconnects would be a 5–10 line addition; can land if profiler shows actual handler duplication after long sessions.
+
+**Verification:** headless `--quit` boot is clean. Manual editor playtest pending — most important checks: open Equipment subview at full window (should see 7 cols at 940 px panel, ~12 cols at 1500 px panel) and at narrower windows (5 cols min, vertical scroll visible when content overflows). Confirm `inventory_grid` re-flows when entering/exiting Equipment (RosterRail visibility toggle should trigger ScrollContainer resize).

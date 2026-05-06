@@ -18,6 +18,8 @@ static func draw(canvas: CanvasItem, kind: String, center: Vector2, radius: floa
 			_draw_skills(canvas, center, radius, fill)
 		"talents":
 			_draw_talents(canvas, center, radius, fill)
+		"overview":
+			_draw_overview(canvas, center, radius, fill)
 		_:
 			canvas.draw_circle(center, radius * 0.6, fill)
 
@@ -131,6 +133,34 @@ static func _draw_skills(canvas: CanvasItem, c: Vector2, r: float, col: Color) -
 		canvas.draw_polyline(PackedVector2Array(pts + PackedVector2Array([pts[0]])), ol, 0.8, true)
 	# Center bright disc.
 	canvas.draw_circle(c, r * 0.18, col.lightened(0.4))
+
+
+# Castle silhouette with crenellations — "Hero Hall" overview.
+static func _draw_overview(canvas: CanvasItem, c: Vector2, r: float, col: Color) -> void:
+	var ol: Color = _outline(col)
+	# Main keep body (taller center) + two short side towers.
+	var body := PackedVector2Array([
+		c + Vector2(-r * 0.85, r * 0.85),
+		c + Vector2(-r * 0.85, -r * 0.20),
+		c + Vector2(-r * 0.55, -r * 0.20),
+		c + Vector2(-r * 0.55, -r * 0.55),
+		c + Vector2(-r * 0.20, -r * 0.55),
+		c + Vector2(-r * 0.20, -r * 0.85),
+		c + Vector2(r * 0.20, -r * 0.85),
+		c + Vector2(r * 0.20, -r * 0.55),
+		c + Vector2(r * 0.55, -r * 0.55),
+		c + Vector2(r * 0.55, -r * 0.20),
+		c + Vector2(r * 0.85, -r * 0.20),
+		c + Vector2(r * 0.85, r * 0.85),
+	])
+	canvas.draw_colored_polygon(body, col)
+	canvas.draw_polyline(PackedVector2Array(body + PackedVector2Array([body[0]])), ol, 1.0, true)
+	# Crenellation notches on the top edges (3 small notches along the top plateau).
+	for nx in [-0.55, 0.0, 0.55]:
+		var notch := Rect2(c + Vector2(r * (nx - 0.10), -r * 0.85 if nx == 0.0 else -r * 0.55), Vector2(r * 0.20, r * 0.18))
+		canvas.draw_rect(notch, col.darkened(0.5), true)
+	# Door arch at the base.
+	canvas.draw_rect(Rect2(c + Vector2(-r * 0.18, r * 0.30), Vector2(r * 0.36, r * 0.55)), col.darkened(0.55), true)
 
 
 # 5-point star with inner pip — talents.

@@ -28,6 +28,11 @@ func resolve_power_tier() -> int:
 	return clampi(int(rarity) + 1, 1, 5)
 @export var icon_glyph: String = "generic"             # key into ItemIcon._draw_glyph
 @export var icon_color: Color = Color.WHITE            # base tint; rarity halo drawn separately
+# Optional texture override — when set, ItemIcon paints this image inside
+# the slot instead of drawing the procedural glyph. Rarity tile background,
+# border, ornaments, and pips still draw around it. Leave null to keep the
+# original glyph rendering. Convention: PNG/JPG at items/art/base_<id>.*.
+@export var icon_texture: Texture2D = null
 @export var hero_restriction: Array[String] = []       # empty = any hero
 @export var level_requirement: int = 1
 @export var implicit_abilities: Array[Resource] = []   # always-on, never rerolled

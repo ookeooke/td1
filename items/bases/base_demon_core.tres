@@ -1,7 +1,8 @@
-[gd_resource type="Resource" script_class="ItemBase" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="ItemBase" load_steps=4 format=3]
 
 [ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
 [ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+[ext_resource type="Texture2D" path="res://items/art/base_demon_core.jpg" id="3_tex"]
 
 [sub_resource type="Resource" id="Impl_DemonCore_Dmg"]
 script = ExtResource("2_mod")
@@ -24,6 +25,7 @@ slot = 5
 rarity = 4
 icon_glyph = "trinket_orb"
 icon_color = Color(1.0, 0.2, 0.1, 1)
+icon_texture = ExtResource("3_tex")
 hero_restriction = Array[String]([])
 level_requirement = 1
 implicit_abilities = Array[Resource]([SubResource("Impl_DemonCore_Dmg"), SubResource("Impl_DemonCore_Hp")])

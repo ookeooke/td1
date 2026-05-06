@@ -38,6 +38,9 @@ var _hero_data: Resource = null
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Clip the procedural hero silhouette to the paperdoll bounds so its body
+	# / legs don't bleed down into the stats panel below.
+	clip_contents = true
 	queue_redraw()
 
 

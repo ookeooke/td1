@@ -46,10 +46,11 @@ theme_override_constants/separation = 12
 
 [node name="BackButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(180, 80)
+custom_minimum_size = Vector2(140, 60)
 layout_mode = 2
+size_flags_vertical = 4
 text = "← Back"
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 18
 
 [node name="TitleLabel" type="Label" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 unique_name_in_owner = true
@@ -78,13 +79,31 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 16
 
-[node name="RosterRail" type="ScrollContainer" parent="SafeAreaMargin/ContentMargin/Layout/Body"]
+[node name="HeroSidebar" type="VBoxContainer" parent="SafeAreaMargin/ContentMargin/Layout/Body"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(304, 0)
+custom_minimum_size = Vector2(140, 0)
 layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HeroScroll" type="ScrollContainer" parent="SafeAreaMargin/ContentMargin/Layout/Body/HeroSidebar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="RosterList" type="VBoxContainer" parent="SafeAreaMargin/ContentMargin/Layout/Body/RosterRail"]
+[node name="HeroButtonList" type="VBoxContainer" parent="SafeAreaMargin/ContentMargin/Layout/Body/HeroSidebar/HeroScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Divider" type="ColorRect" parent="SafeAreaMargin/ContentMargin/Layout/Body/HeroSidebar"]
+custom_minimum_size = Vector2(0, 1)
+layout_mode = 2
+color = Color(0.28, 0.34, 0.46, 1)
+
+[node name="PageNav" type="VBoxContainer" parent="SafeAreaMargin/ContentMargin/Layout/Body/HeroSidebar"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

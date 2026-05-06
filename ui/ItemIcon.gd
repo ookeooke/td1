@@ -75,13 +75,17 @@ const _GLOW_THICKNESS: Array[float] = [0.0, 4.0, 6.0, 8.0, 12.0]
 var _instance = null
 var _base: Resource = null
 var _armed: bool = false
+# Phase 52 — Tap-to-select highlight in EquipmentScreen. Distinct from
+# `_armed` (which now exclusively means "sell-armed, one tap from commit");
+# selected draws a calmer gold outline so the player can see what they're
+# inspecting before they touch any action button.
+var _selected: bool = false
 var _locked: bool = false
 var _is_empty: bool = true
-# Phase 49 — equipment slots claim a fixed footprint matching their item
-# type (HELM 1×1, ARMOR 2×2, WEAPON 1×2, etc) so a sword appears at the
-# same pixel size whether equipped or sitting in inventory. (0, 0) means
-# "no slot override" — sizing falls back to the item's natural footprint
-# (used by inventory icons).
+# Phase 52 — explicit footprint override. Default is 1×1 when unset
+# (Vector2i.ZERO); call sites that need a larger tile (none in the
+# current codebase — both paperdoll and inventory pass 1, 1) set this
+# via set_slot_footprint.
 var _slot_footprint: Vector2i = Vector2i.ZERO
 # IP-3 — "do not sell" pin (separate from `_locked` which means slot-locked /
 # disabled). When true, the icon draws a small padlock glyph in the
@@ -109,12 +113,11 @@ func _ready() -> void:
 	mouse_exited.connect(_on_mouse_exited)
 
 
-# Phase 49 — pixel size = SIZE_PX * footprint. Sizing priority:
-#   1. _slot_footprint when non-zero (equipment slot icons use a fixed
-#      footprint matching their item type — items render at the same
-#      size in inventory and in slots)
-#   2. _base.grid_width × grid_height when an item is set
-#   3. 1×1 fallback for empty / locked tiles
+# Phase 52 — uniform one-slot inventory. Default footprint is 1×1; callers
+# that need a different size (none in the current codebase — paperdoll +
+# inventory both pass 1, 1) override via set_slot_footprint. Inverted from
+# the prior `_base.grid_width × grid_height` default so future call sites
+# can't regress to multi-cell rendering by forgetting set_slot_footprint.
 # Called from _ready, set_slot_footprint, and setup_instance — order-
 # independent so callers can setup either before OR after add_child.
 func _apply_footprint_size() -> void:
@@ -123,19 +126,15 @@ func _apply_footprint_size() -> void:
 	if _slot_footprint != Vector2i.ZERO:
 		w = maxi(1, _slot_footprint.x)
 		h = maxi(1, _slot_footprint.y)
-	elif _base != null:
-		w = maxi(1, int(_base.grid_width))
-		h = maxi(1, int(_base.grid_height))
 	var px: Vector2 = Vector2(SIZE_PX * float(w), SIZE_PX * float(h))
 	custom_minimum_size = px
 	size = px
 
 
-# Phase 49 — pin this icon to a fixed footprint regardless of which item
-# (if any) is later equipped here. Used by equipment slot icons so the
-# slot's shape matches its item type (HELM 1×1, ARMOR 2×2, WEAPON 1×2)
-# and items render at the same pixel size as in inventory. Pass (0, 0) to
-# revert to base-footprint sizing (the default for inventory icons).
+# Phase 52 — explicit footprint. Pass `(1, 1)` for inventory and paperdoll
+# slots (the only call sites today). `(0, 0)` reverts to the 1×1 default.
+# Larger footprints are wired but unused; preserved in case content design
+# later wants a "two-handed" badge effect at the icon level.
 func set_slot_footprint(w: int, h: int) -> void:
 	_slot_footprint = Vector2i(maxi(0, w), maxi(0, h))
 	_apply_footprint_size()
@@ -182,6 +181,16 @@ func set_armed(on: bool) -> void:
 	if _armed == on:
 		return
 	_armed = on
+	queue_redraw()
+
+
+# Phase 52 — selected highlight (tap-to-select flow). Calmer than the
+# armed ring — selection just means "this is what the action row is about
+# to operate on", whereas armed means "next tap commits the sell".
+func set_selected(on: bool) -> void:
+	if _selected == on:
+		return
+	_selected = on
 	queue_redraw()
 
 
@@ -280,23 +289,39 @@ func _draw() -> void:
 	# with tile height. Square glyphs (armor, trinkets, generic) keep the
 	# old min(w,h)-based scale.
 	var center: Vector2 = rect.position + rect.size * 0.5
-	var glyph_id: String = String(_base.icon_glyph)
-	var glyph_r: float
-	if glyph_id.begins_with("sword"):
-		# Half-extents in r-units after the stretch: sword is about ±0.55
-		# wide (crossguard) and ±1.20 tall (blade tip to pommel bottom).
-		var half_w: float = 0.55
-		var half_h: float = 1.20
-		var max_r_w: float = rect.size.x * 0.5 / half_w
-		var max_r_h: float = rect.size.y * 0.5 / half_h
-		# 0.92 leaves a small breathing margin at the tile edge.
-		glyph_r = minf(max_r_w, max_r_h) * 0.92
+	# Texture override — when an item has icon_texture set, paint the image
+	# inside the slot instead of the procedural glyph. Slot bg/border/ornaments
+	# already drew under it; rarity pips still draw on top so the tier reads.
+	if "icon_texture" in _base and _base.icon_texture != null:
+		var tex_inset: float = rect.size.x * 0.08
+		var tex_rect: Rect2 = rect.grow(-tex_inset)
+		draw_texture_rect(_base.icon_texture, tex_rect, false)
+		ItemGlyph.draw_rarity_pips(self, rarity, center, GLYPH_RADIUS_PX * scale_factor)
 	else:
-		glyph_r = GLYPH_RADIUS_PX * scale_factor
-	_draw_glyph_shadow(_base.icon_glyph, center, glyph_r, _base.icon_color)
-	ItemGlyph.draw(self, _base.icon_glyph, center, glyph_r, _base.icon_color)
-	ItemGlyph.draw_rarity_pips(self, rarity, center, glyph_r)
-	# Layer 8 — armed outline (sell-mode confirm), drawn over everything.
+		var glyph_id: String = String(_base.icon_glyph)
+		var glyph_r: float
+		if glyph_id.begins_with("sword"):
+			# Half-extents in r-units after the stretch: sword is about ±0.55
+			# wide (crossguard) and ±1.20 tall (blade tip to pommel bottom).
+			var half_w: float = 0.55
+			var half_h: float = 1.20
+			var max_r_w: float = rect.size.x * 0.5 / half_w
+			var max_r_h: float = rect.size.y * 0.5 / half_h
+			# 0.92 leaves a small breathing margin at the tile edge.
+			glyph_r = minf(max_r_w, max_r_h) * 0.92
+		else:
+			glyph_r = GLYPH_RADIUS_PX * scale_factor
+		_draw_glyph_shadow(_base.icon_glyph, center, glyph_r, _base.icon_color)
+		ItemGlyph.draw(self, _base.icon_glyph, center, glyph_r, _base.icon_color)
+		ItemGlyph.draw_rarity_pips(self, rarity, center, glyph_r)
+	# Layer 8a — selected outline (tap-to-select). Cyan, chosen to be
+	# orthogonal to all five rarity colors (grey/blue/gold/purple/orange)
+	# so a selected Rare item is still obviously distinguishable from an
+	# unselected one. Slightly inset so it reads above the rarity border.
+	if _selected and not _armed:
+		var sel_rect: Rect2 = rect.grow(-2.0)
+		draw_rect(sel_rect, Color(0.4, 0.85, 1.0, 1.0), false, 2.5)
+	# Layer 8b — armed outline (sell-confirm), drawn over everything.
 	if _armed:
 		var armed_rect: Rect2 = rect.grow(-1.0)
 		draw_rect(armed_rect, _ARMED_COLOR, false, ARMED_RING_THICKNESS_PX)

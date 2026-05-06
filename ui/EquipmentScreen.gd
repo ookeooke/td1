@@ -17,6 +17,14 @@ const SLOT_COUNT: int = 6
 const DEFAULT_SLOT_NAMES: Array[String] = ["Weapon", "Armor", "Helm", "Gloves", "Boots", "Trinket"]
 const ALL_SLOT_INDICES: Array[int] = [0, 1, 2, 3, 4, 5]
 
+# Phase 52 — uniform one-slot inventory. Display columns are derived
+# from the panel width (5–12 cols clamped); every item renders as a
+# single 120×120 cell regardless of `ItemBase.grid_width / grid_height`.
+# Storage matches: `InventoryManager.add_to_shared` packs every item at
+# 1×1, so cap == item count == 50. Vertical scroll handles overflow rows.
+const DISPLAY_MIN_COLS: int = 5
+const DISPLAY_MAX_COLS: int = 12
+
 # Phase 49 — fixed spatial grid. CELL_PX matches ItemIcon.SIZE_PX so 1×1
 # tiles look identical to the prior reflow layout; multi-cell items extend
 # to (w*CELL_PX, h*CELL_PX). No gaps between cells (Diablo-style packed grid).
@@ -38,8 +46,10 @@ const PAPERDOLL_SLOT_H: int = 1
 @onready var right_title: Label = %RightTitle
 @onready var inventory_grid: Control = %InventoryGrid
 @onready var hint_label: Label = %HintLabel
-@onready var sell_mode_button: Button = %SellModeButton
+@onready var action_row: HBoxContainer = %ActionRow
+@onready var equip_button: Button = %EquipButton
 @onready var lock_button: Button = %LockButton
+@onready var sell_button: Button = %SellButton
 @onready var sell_all_button: Button = %SellAllButton
 @onready var meta_gold_label: Label = %MetaGoldLabel
 
@@ -49,11 +59,16 @@ var _cached_hero_id: String = ""
 # Slot index (0-5) → ItemIcon instance
 var _slot_icons: Dictionary = {}
 
-# Sell-mode state — when on, tapping an inventory item starts a two-tap
-# confirm to sell it instead of equipping. _pending_sell_uid holds the
-# armed item; second tap on the same uid commits.
-var _sell_mode: bool = false
-var _pending_sell_uid: String = ""
+# Phase 52 — Tap-to-select state. Tap an inventory item to inspect; details
+# panel + action row (Equip / Lock / Sell) act on _selected_uid. Sell button
+# is two-tap confirm in-place: first tap arms (button label flips to
+# "Sell? +Ng"), second tap commits. Selecting a different item or switching
+# hero clears both. Replaces the prior _sell_mode / _pending_sell_uid pair.
+var _selected_uid: String = ""
+var _sell_armed_uid: String = ""
+# uid → ItemIcon control, populated each refresh so selection updates can
+# call icon.set_selected() without rebuilding the grid.
+var _inventory_icons: Dictionary = {}
 # IP-4 — two-tap confirm for the batch "Sell all Common" button so an
 # accidental tap can't liquidate every Common in one move.
 var _sell_all_armed: bool = false
@@ -108,22 +123,50 @@ func _ready() -> void:
 	# inventory_changed → _on_inventory_changed_simple → _refresh, which
 	# would otherwise compare the new hero's stats against the previous
 	# hero's _last_stats_dict and fire a phantom "you equipped X" toast.
+	# Patches D + F — also reset:
+	#   - sticky details panel (otherwise shows hero-A's item while hero B
+	#     is active, especially in sell mode where _refresh skips the reset)
+	#   - sell-mode + pending sell uid (avoid persisting destructive mode
+	#     across heroes silently)
 	EventBus.hero_selected.connect(func(new_id):
 		_first_refresh = true
 		_last_stats_dict.clear()
+		details_label.text = _DEFAULT_DETAILS_HINT
+		# Phase 52 — clear any selection / sell-arm carrying over from the
+		# previous hero (their item is invisible on the new paperdoll, so the
+		# action row would dangle on a stale uid).
+		_selected_uid = ""
+		_sell_armed_uid = ""
+		_sell_all_armed = false
 		if new_id != "":
 			InventoryManager.ensure_starter_gear(new_id)
 		_build_slots()
 		_refresh()
 	)
-	# Sell-mode controls + meta-gold counter live-update.
-	sell_mode_button.pressed.connect(_on_sell_mode_toggled)
+	# Phase 52 — selected-item action row + batch sell + meta-gold live update.
+	equip_button.pressed.connect(_on_equip_pressed)
 	lock_button.pressed.connect(_on_lock_pressed)
+	sell_button.pressed.connect(_on_sell_pressed)
 	sell_all_button.pressed.connect(_on_sell_all_pressed)
 	EventBus.meta_gold_changed.connect(_on_meta_gold_changed)
+	# Phase 50 — re-flow inventory when the ScrollContainer resizes. Fires
+	# once the initial layout pass settles (replacing the placeholder 5-col
+	# layout from _ready when sizes were still 0), and again on any window
+	# resize / parent layout change (e.g. RosterRail toggling visibility in
+	# the embedded HeroesHub flow).
+	var sc: Control = inventory_grid.get_parent() as Control
+	if sc != null:
+		sc.resized.connect(_refresh)
 	_refresh_meta_gold_label()
-	_refresh_sell_mode_visuals()
+	_refresh_action_row()
+	_refresh_sell_all_button()
 	_refresh()
+
+
+# Default text shown by DetailsLabel when nothing is selected. Stored as
+# a const so the multiple reset paths (refresh, hero swap, post-action)
+# all use the same string.
+const _DEFAULT_DETAILS_HINT: String = "Tap an item to inspect."
 
 
 func _on_inventory_changed(_hero_id, _slot, _instance) -> void:
@@ -155,12 +198,14 @@ func _resolve_item_name(instance) -> String:
 
 
 func _on_inventory_changed_simple() -> void:
+	# Phase 52 — selected uid may have just been sold/unequipped; if so,
+	# clear it so the action row doesn't dangle on a missing instance.
+	if _selected_uid != "" and InventoryManager.find_by_uid(_selected_uid) == null:
+		_selected_uid = ""
+		_sell_armed_uid = ""
 	_refresh()
-	# IP-3 / IP-4 — keep lock-button label and sell-all count in sync with
-	# the latest inventory state (e.g., after a lock toggle or batch sell).
-	if _sell_mode:
-		_refresh_lock_button()
-		_refresh_sell_all_button()
+	_refresh_action_row()
+	_refresh_sell_all_button()
 
 
 func _on_back() -> void:
@@ -241,13 +286,13 @@ func _refresh() -> void:
 	# shown here match what the hero will have on next spawn. The grouped /
 	# iconified rows + on-equip flash live in _refresh_stats_panel.
 	_refresh_stats_panel(hero_data, InventoryManager.get_all_equipped(hero_id))
-	# Clear details on any refresh; hover repopulates.
-	# 2026-04-29 audit fix — preserve details during sell mode. _refresh()
-	# fires on every sell-arm tap (to re-modulate icons), and wiping the
-	# details panel each tap kills any context the player just long-pressed
-	# to read. In sell mode, the hover/long-press path owns the label.
-	if not _sell_mode:
-		details_label.text = "Hover an item to see its details."
+	# Phase 52 — preserve details panel when an item is selected; otherwise
+	# reset to the default hint. Selection survives refreshes (lock toggle,
+	# inventory_changed, etc.); the action row reflects the same uid.
+	if _selected_uid != "" and InventoryManager.find_by_uid(_selected_uid) != null:
+		_render_details_for(_selected_uid)
+	else:
+		details_label.text = _DEFAULT_DETAILS_HINT
 	# Phase 50 — paperdoll backdrop reflects the currently selected hero.
 	# EquipmentGrid has Paperdoll.gd as its script; setup() refreshes both
 	# the silhouette draw and the slot anchor map.
@@ -262,121 +307,103 @@ func _refresh() -> void:
 			icon.setup_empty()
 		else:
 			icon.setup_instance(inst)
-	# Right: inventory grid — only UNEQUIPPED items (equipped render on the
-	# left only, matches ARPG convention). Header shows TOTAL pool size vs
-	# cap (equipped count toward the cap), so the player sees at-a-glance
-	# how much room is left before drops start auto-selling.
+	# Right: inventory grid — only UNEQUIPPED items. Phase 50 responsive
+	# Phase 52 — uniform one-slot inventory. Every inventory icon renders as
+	# 1×1 regardless of `ItemBase.grid_width / grid_height` (those stay as
+	# authored data — preserved for future flair). Layout is index-based
+	# row/col; capacity reads as item count, not occupied cells. Save format
+	# unchanged — `InventoryManager` storage internals still drive add/equip.
 	for child in inventory_grid.get_children():
 		child.queue_free()
-	# Phase 49 — fixed spatial grid. Position each item icon at its grid
-	# coordinates (top-left corner = (col * CELL_PX, row * CELL_PX)), sized
-	# by its base footprint. Empty cells render a placeholder so the grid
-	# reads as a real container even when sparse.
+	_inventory_icons.clear()
 	var inv: Array = InventoryManager.get_unequipped()
-	var rows: int = InventoryManager.GRID_ROWS
-	var cols: int = InventoryManager.GRID_COLS
-	# Build a "covered" mask in this scope to decide which cells need a
-	# placeholder. Mirrors InventoryManager._build_occupancy but limited to
-	# unequipped items (equipped ones are guaranteed to be at -1/-1).
-	var cover: Array = []
-	for _r in rows:
-		var row: Array = []
-		row.resize(cols)
-		for c in cols:
-			row[c] = false
-		cover.append(row)
-	for inst in inv:
-		if inst == null or inst.grid_row < 0 or inst.grid_col < 0:
-			continue
-		var b: Resource = ContentRegistry.find_item_base(inst.base_id)
-		if b == null:
-			continue
-		var iw: int = maxi(1, int(b.grid_width))
-		var ih: int = maxi(1, int(b.grid_height))
-		for dr in ih:
-			for dc in iw:
-				var rr: int = inst.grid_row + dr
-				var cc: int = inst.grid_col + dc
-				if rr >= 0 and rr < rows and cc >= 0 and cc < cols:
-					cover[rr][cc] = true
-	var filled_cells: int = 0
-	for r in rows:
-		for c in cols:
-			if cover[r][c]:
-				filled_cells += 1
-	var total_cells: int = rows * cols
-	right_title.text = "Inventory (%d / %d)" % [filled_cells, total_cells]
+	var display_cols: int = _compute_display_cols()
+	# Floor display rows to the storage cap so an empty / sparsely-filled bag
+	# still renders the full 50-cell capacity backdrop. Items past the floor
+	# (shouldn't happen in normal play; defensive) extend the grid further.
+	var bag_cap: int = InventoryManager.GRID_ROWS * InventoryManager.GRID_COLS
+	var min_rows: int = int(ceil(float(bag_cap) / float(display_cols)))
+	var item_rows: int = int(ceil(float(inv.size()) / float(display_cols)))
+	var display_rows: int = maxi(min_rows, item_rows)
+	inventory_grid.custom_minimum_size = Vector2(
+		float(display_cols) * CELL_PX,
+		float(display_rows) * CELL_PX,
+	)
+	# Header — item count vs cap.
+	right_title.text = "Inventory (%d / %d)" % [inv.size(), bag_cap]
 	right_title.modulate = Color.WHITE
-	# Empty placeholders first — drawn under any item icons. mouse_filter set
-	# to IGNORE so they don't catch clicks (which would no-op anyway) and so
-	# moving the cursor across an empty cell between two real items doesn't
-	# fire spurious enter/exit events on the empty.
-	for r in rows:
-		for c in cols:
-			if cover[r][c]:
-				continue
+	# Empty-cell backdrop for the full bag capacity. mouse_filter=IGNORE so
+	# placeholders don't catch hover/click between real items.
+	for r in display_rows:
+		var stop_row: bool = false
+		for c in display_cols:
+			# Cap total placeholders at the bag capacity. With display_cols=12
+			# the natural floor `ceil(50/12)*12 = 60` would draw 10 phantom
+			# slots past index 50; this guard truncates the last row so the
+			# visible grid matches the real cap.
+			if r * display_cols + c >= bag_cap:
+				stop_row = true
+				break
 			var empty_icon: Control = _ItemIconScript.new()
 			empty_icon.setup_empty()
 			empty_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			empty_icon.position = Vector2(c * CELL_PX, r * CELL_PX)
 			empty_icon.size = Vector2(CELL_PX, CELL_PX)
 			inventory_grid.add_child(empty_icon)
-	# Item tiles — placed at their stored grid coordinates, sized by footprint.
-	for inst in inv:
-		if inst == null or inst.grid_row < 0 or inst.grid_col < 0:
+		if stop_row:
+			break
+	# Item tiles in row-major index order.
+	for i in inv.size():
+		var inst = inv[i]
+		if inst == null:
 			continue
-		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
-		var w: int = 1
-		var h: int = 1
-		if base != null:
-			w = maxi(1, int(base.grid_width))
-			h = maxi(1, int(base.grid_height))
+		var col: int = i % display_cols
+		@warning_ignore("integer_division")
+		var row: int = i / display_cols
 		var icon: Control = _ItemIconScript.new()
+		icon.set_slot_footprint(1, 1)   # uniform 1×1 regardless of base footprint
 		icon.setup_instance(inst)
-		icon.position = Vector2(inst.grid_col * CELL_PX, inst.grid_row * CELL_PX)
-		icon.size = Vector2(w * CELL_PX, h * CELL_PX)
+		icon.position = Vector2(col * CELL_PX, row * CELL_PX)
+		icon.size = Vector2(CELL_PX, CELL_PX)
 		icon.pressed.connect(_on_inventory_item_pressed)
 		icon.hovered.connect(_on_item_hovered)
 		icon.unhovered.connect(_on_item_unhovered)
-		# IP-2 — long-press shows details on touch (mobile-equivalent of hover).
-		# Reuses the existing hover handler so the details panel logic isn't
-		# duplicated. Tapped items still equip / sell-arm — long-press is the
-		# read-without-acting path.
+		# Long-press shows details on touch (read-without-acting path).
 		icon.long_pressed.connect(_on_item_hovered)
-		# Sell-mode visual cue: faint red tint on every inventory item, with a
-		# brighter glow on the armed (pending-confirm) item.
-		if _sell_mode:
-			if _pending_sell_uid == inst.uid:
-				icon.modulate = Color(1.4, 0.7, 0.7, 1.0)
-			else:
-				icon.modulate = Color(1.0, 0.85, 0.85, 1.0)
+		icon.set_selected(_selected_uid == inst.uid)
+		icon.set_armed(_sell_armed_uid == inst.uid)
 		inventory_grid.add_child(icon)
+		_inventory_icons[inst.uid] = icon
 
 
-# --- Interaction (D3) -------------------------------------------------------
-# Direct-tap model: tap an inventory item → equip into its slot (swaps out
-# anything currently there; the swapped-out item stays in inventory). Tap
-# an equipped slot → unequip (slot goes empty, item still owned). Tapping a
-# locked slot toasts "Slot locked".
+# Phase 50 — Display column count derived from ScrollContainer width. At
+# _ready time the parent layout hasn't settled yet, so falls back to the
+# minimum (5 cols). Connecting to the ScrollContainer's resized signal in
+# _ready triggers a re-refresh once the layout pass completes, replacing
+# the placeholder layout with the correct one.
+func _compute_display_cols() -> int:
+	if inventory_grid == null:
+		return DISPLAY_MIN_COLS
+	var avail: float = 0.0
+	var sc: Control = inventory_grid.get_parent() as Control
+	if sc != null:
+		avail = sc.size.x
+	if avail <= 0.0:
+		# Fallback: one CELL_PX wider than min so minimum reads sensibly.
+		avail = float(DISPLAY_MIN_COLS) * CELL_PX
+	var n: int = int(avail / CELL_PX)
+	return clampi(n, DISPLAY_MIN_COLS, DISPLAY_MAX_COLS)
+
+
+# --- Interaction ------------------------------------------------------------
+# Tap-to-select model: tap an inventory item → select. Action row (Equip /
+# Lock / Sell) operates on the selected uid. Tap an equipped slot →
+# unequip (slot goes empty, item stays in inventory).
 
 func _on_inventory_item_pressed(inst) -> void:
 	if inst == null:
 		return
-	# In sell mode, tap-to-arm-or-confirm the sell instead of equipping.
-	if _sell_mode:
-		_handle_sell_tap(inst)
-		return
-	var hero_id: String = LoadoutState.selected_hero_id
-	var base: Resource = ContentRegistry.find_item_base(inst.base_id)
-	if base == null:
-		return
-	var slot: int = int(base.slot)
-	# Phase 50 — slots not authored on this hero refuse the item with a
-	# clear toast (e.g. Dragon won't accept a humanoid Helm).
-	if not (slot in _active_slot_indices_for(hero_id)):
-		Toast.show_message("%s has no %s slot" % [_hero_name(hero_id), _resolve_slot_label(slot)])
-		return
-	InventoryManager.equip(hero_id, inst.uid)
+	_select_item(inst.uid)
 
 
 func _hero_name(hero_id: String) -> String:
@@ -384,68 +411,172 @@ func _hero_name(hero_id: String) -> String:
 	return String(hero_data.hero_name) if hero_data != null and "hero_name" in hero_data else hero_id
 
 
-# --- Sell mode ---------------------------------------------------------------
-# Toggle button on the inventory header flips the panel into a "tap items to
-# sell" state. Two-tap confirm: first tap arms a uid (toast + the icon stays
-# brighter); second tap on the SAME uid commits the sale via
-# InventoryManager.sell, which pays out meta-gold and removes the item.
-# Tapping a different inventory item re-arms with that uid.
-# Equipped slots aren't sellable (unequip first) — the slot tap handler keeps
-# its existing unequip behavior even in sell mode so the player can free a
-# slot without leaving the mode.
+# --- Phase 52: tap-to-select + action row ------------------------------------
+# Tap an inventory item → _select_item(uid). Selected uid drives the
+# DetailsLabel content + the action row buttons (Equip / Lock / Sell).
+# Sell is two-tap confirm in-place: first press arms, second press commits.
+# Selecting a different item, switching hero, or any inventory mutation
+# clears the sell-armed state (defensive: never sell an item the player
+# wasn't actively confirming).
 
-func _on_sell_mode_toggled() -> void:
-	_sell_mode = not _sell_mode
-	_pending_sell_uid = ""
-	_refresh_sell_mode_visuals()
-	_refresh()  # rebuilds inventory grid so each icon re-modulates
-
-
-func _refresh_sell_mode_visuals() -> void:
-	if _sell_mode:
-		sell_mode_button.text = "Done"
-		sell_mode_button.modulate = Color(1.0, 0.6, 0.6, 1.0)
-		lock_button.visible = true
-		sell_all_button.visible = true
-		_refresh_lock_button()
-		_refresh_sell_all_button()
-		hint_label.text = "Sell mode: tap to mark for sale (tap again to confirm). Long-press for details. Use 🔒 to pin an armed item against sale."
-	else:
-		sell_mode_button.text = "Sell Mode"
-		sell_mode_button.modulate = Color.WHITE
-		lock_button.visible = false
-		sell_all_button.visible = false
-		_sell_all_armed = false
-		hint_label.text = "Tap inventory item to equip. Tap equipped slot to unequip (item stays in inventory). Long-press for details."
-
-
-# IP-3 — Lock button reflects the armed item's current lock state. Without
-# an armed item, it's a no-op (toast hint). With one, it toggles the pin
-# and updates the button label so the player sees what the next tap does.
-func _refresh_lock_button() -> void:
-	if _pending_sell_uid == "":
-		lock_button.text = "🔒 Lock"
-		lock_button.disabled = true
+func _select_item(uid: String) -> void:
+	if uid == _selected_uid:
+		# Tap on already-selected item: no-op (we explicitly chose strict
+		# tap-to-select; Equip button is the only commit path).
 		return
-	lock_button.disabled = false
-	var inst = InventoryManager.find_by_uid(_pending_sell_uid)
-	if inst != null and "locked" in inst and inst.locked:
-		lock_button.text = "🔓 Unlock"
-	else:
+	# Tapping a different item disarms any pending sell on the previous one.
+	if _sell_armed_uid != "":
+		_set_icon_armed(_sell_armed_uid, false)
+		_sell_armed_uid = ""
+	# Update selection state on the icon controls.
+	if _selected_uid != "" and _inventory_icons.has(_selected_uid):
+		var prev = _inventory_icons[_selected_uid]
+		if prev != null and prev.has_method("set_selected"):
+			prev.set_selected(false)
+	_selected_uid = uid
+	if uid != "" and _inventory_icons.has(uid):
+		var cur = _inventory_icons[uid]
+		if cur != null:
+			if cur.has_method("set_selected"):
+				cur.set_selected(true)
+			if cur.has_method("set_armed"):
+				cur.set_armed(false)
+	_render_details_for(uid)
+	_refresh_action_row()
+
+
+func _render_details_for(uid: String) -> void:
+	if uid == "":
+		details_label.text = _DEFAULT_DETAILS_HINT
+		return
+	var inst = InventoryManager.find_by_uid(uid)
+	if inst == null:
+		details_label.text = _DEFAULT_DETAILS_HINT
+		return
+	# _format_item_details already produces the comparison block (name +
+	# rarity + slot + implicit + rolled affixes + stat diff vs equipped) —
+	# repurpose wholesale as the selection-detail body.
+	_on_item_hovered(inst)
+
+
+func _refresh_action_row() -> void:
+	# Disabled state when nothing selected.
+	if _selected_uid == "":
+		equip_button.disabled = true
+		equip_button.text = "Equip"
+		lock_button.disabled = true
 		lock_button.text = "🔒 Lock"
+		sell_button.disabled = true
+		sell_button.text = "Sell"
+		sell_button.modulate = Color.WHITE
+		return
+	var inst = InventoryManager.find_by_uid(_selected_uid)
+	if inst == null:
+		# Stale uid; clear and re-enter disabled state.
+		_selected_uid = ""
+		_sell_armed_uid = ""
+		_refresh_action_row()
+		return
+	var hero_id: String = LoadoutState.selected_hero_id
+	var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+	# Equip button — enabled if hero exposes the item's slot. "Replace" when
+	# slot is occupied so the player knows the swap-out happens.
+	var slot: int = int(base.slot) if base != null else -1
+	var slot_ok: bool = base != null and (slot in _active_slot_indices_for(hero_id))
+	equip_button.disabled = not slot_ok
+	if slot_ok and InventoryManager.get_equipped_uid(hero_id, slot) != "":
+		equip_button.text = "Replace"
+	else:
+		equip_button.text = "Equip"
+	# Lock button — flips label to reflect the next tap's effect.
+	lock_button.disabled = false
+	var is_locked: bool = "locked" in inst and inst.locked
+	lock_button.text = "🔓 Unlock" if is_locked else "🔒 Lock"
+	# Sell button — locked items still show enabled so the player gets a
+	# clear refusal toast on press; armed state shows the confirm prompt.
+	var price: int = InventoryManager.get_sell_price(_selected_uid)
+	sell_button.disabled = price <= 0
+	if _sell_armed_uid == _selected_uid:
+		sell_button.text = "Sell? +%dg" % price
+		sell_button.modulate = Color(1.0, 0.7, 0.4, 1.0)
+	else:
+		sell_button.text = "Sell"
+		sell_button.modulate = Color.WHITE
+
+
+func _on_equip_pressed() -> void:
+	if _selected_uid == "":
+		return
+	var inst = InventoryManager.find_by_uid(_selected_uid)
+	if inst == null:
+		return
+	var hero_id: String = LoadoutState.selected_hero_id
+	var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+	if base == null:
+		return
+	var slot: int = int(base.slot)
+	if not (slot in _active_slot_indices_for(hero_id)):
+		Toast.show_message("%s has no %s slot" % [_hero_name(hero_id), _resolve_slot_label(slot)])
+		return
+	InventoryManager.equip(hero_id, _selected_uid)
+	# Successful equip clears selection — paperdoll + stats now reflect the
+	# new state, and the action row resets via _on_inventory_changed_simple.
+	_selected_uid = ""
+	_sell_armed_uid = ""
 
 
 func _on_lock_pressed() -> void:
-	if _pending_sell_uid == "":
-		Toast.show_message("Tap an item first to choose what to lock")
+	if _selected_uid == "":
 		return
-	var now_locked: bool = InventoryManager.toggle_lock(_pending_sell_uid)
-	# Toggling consumes the arm — locking an item should NOT also stay-armed
-	# for sale (that'd be confusing UX). The inventory_changed signal fires
-	# from toggle_lock, so the icon redraw picks up the lock glyph for free.
-	_pending_sell_uid = ""
-	_refresh_lock_button()
+	var now_locked: bool = InventoryManager.toggle_lock(_selected_uid)
+	# Toggling lock should not also disarm sell — keep the selection so the
+	# player can still hit Sell after unlocking. _refresh_action_row picks
+	# up the new lock label via inventory_changed.
 	Toast.show_message("Locked from sale" if now_locked else "Unlocked")
+
+
+func _on_sell_pressed() -> void:
+	if _selected_uid == "":
+		return
+	var inst = InventoryManager.find_by_uid(_selected_uid)
+	if inst == null:
+		return
+	if "locked" in inst and inst.locked:
+		Toast.show_message("Locked — tap 🔓 Unlock to allow sale")
+		return
+	var price: int = InventoryManager.get_sell_price(_selected_uid)
+	if price <= 0:
+		Toast.show_message("This item can't be sold")
+		return
+	if _sell_armed_uid != _selected_uid:
+		# First press — arm. Auto-disarm after 3 s if the player walks away.
+		_sell_armed_uid = _selected_uid
+		_set_icon_armed(_sell_armed_uid, true)
+		_refresh_action_row()
+		var armed_uid: String = _selected_uid
+		get_tree().create_timer(3.0).timeout.connect(func():
+			if is_instance_valid(self) and _sell_armed_uid == armed_uid:
+				_set_icon_armed(_sell_armed_uid, false)
+				_sell_armed_uid = ""
+				_refresh_action_row()
+		)
+		return
+	# Second press — commit. inventory_changed clears _selected_uid via
+	# _on_inventory_changed_simple (the sold instance is now find_by_uid==null).
+	var awarded: int = InventoryManager.sell(_selected_uid)
+	_sell_armed_uid = ""
+	if awarded > 0:
+		Toast.show_message("Sold for %dg" % awarded)
+
+
+# Phase 52 — flip an inventory icon's _armed state without rebuilding the
+# whole grid. Used by the Sell button two-tap confirm flow.
+func _set_icon_armed(uid: String, on: bool) -> void:
+	if uid == "" or not _inventory_icons.has(uid):
+		return
+	var icon = _inventory_icons[uid]
+	if icon != null and icon.has_method("set_armed"):
+		icon.set_armed(on)
 
 
 # IP-4 — Two-tap-confirm batch sell of every unlocked Common in inventory.
@@ -517,45 +648,6 @@ func _on_sell_all_pressed() -> void:
 	_refresh_sell_all_button()
 
 
-func _handle_sell_tap(inst) -> void:
-	# IP-3 — locked items refuse sale even at the UI layer, with a clear
-	# toast instead of just silent failure deeper in InventoryManager.sell.
-	if "locked" in inst and inst.locked:
-		_pending_sell_uid = inst.uid  # arm so player can tap Lock to UNLOCK
-		_refresh_lock_button()
-		_refresh()
-		Toast.show_message("Locked — tap 🔓 Unlock to allow sale")
-		return
-	var price: int = InventoryManager.get_sell_price(inst.uid)
-	if price <= 0:
-		Toast.show_message("This item can't be sold")
-		return
-	if _pending_sell_uid != inst.uid:
-		# First tap on this item — arm the sale.
-		_pending_sell_uid = inst.uid
-		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
-		var name_str: String = base.base_name if base != null else "item"
-		Toast.show_message("Sell %s for %dg? Tap again to confirm" % [name_str, price])
-		_refresh_lock_button()  # button label may need to flip Lock ↔ Unlock
-		_refresh()  # so the armed icon renders the visual cue
-		# Auto-disarm after 3 seconds if the player walks away.
-		var armed_uid: String = inst.uid
-		get_tree().create_timer(3.0).timeout.connect(func():
-			if is_instance_valid(self) and _pending_sell_uid == armed_uid:
-				_pending_sell_uid = ""
-				_refresh_lock_button()
-				_refresh()
-		)
-		return
-	# Second tap on the same uid — commit.
-	var awarded: int = InventoryManager.sell(inst.uid)
-	_pending_sell_uid = ""
-	_refresh_lock_button()
-	if awarded > 0:
-		Toast.show_message("Sold for %dg" % awarded)
-	# inventory_changed fires via _refresh path; meta_gold_changed updates label.
-
-
 func _on_meta_gold_changed(new_amount: int) -> void:
 	_refresh_meta_gold_label_amount(new_amount)
 
@@ -581,6 +673,11 @@ func _on_slot_pressed(_signal_arg, slot_idx: int) -> void:
 	if current_uid == "":
 		Toast.show_message("%s slot is empty" % _resolve_slot_label(slot_idx))
 		return
+	# Phase 52 — unequipping changes paperdoll state; clear any inventory
+	# selection so the action row doesn't dangle on a stale uid (the just-
+	# unequipped item still exists, but the player's intent likely shifted).
+	_selected_uid = ""
+	_sell_armed_uid = ""
 	InventoryManager.unequip(hero_id, slot_idx)
 
 
@@ -751,24 +848,31 @@ func _format_item_details(inst) -> String:
 		_resolve_slot_label(clampi(int(base.slot), 0, SLOT_COUNT - 1)),
 	])
 	lines.append("")
-	# Implicit abilities (always-on, inherent to the base)
-	if base.implicit_abilities.size() > 0:
+	# Implicit abilities (always-on, inherent to the base). Gather body
+	# lines first; only emit the header if at least one non-empty body line
+	# exists — otherwise an item whose abilities all _format_ability_line to
+	# empty would leave a dangling "Implicit:" header with nothing under it.
+	var implicit_lines: Array[String] = []
+	for ab in base.implicit_abilities:
+		if ab == null:
+			continue
+		var impl_line: String = _format_ability_line(ab)
+		if impl_line != "":
+			implicit_lines.append("  " + impl_line)
+	if implicit_lines.size() > 0:
 		lines.append("Implicit:")
-		for ab in base.implicit_abilities:
-			if ab == null:
-				continue
-			var impl_line: String = _format_ability_line(ab)
-			if impl_line != "":
-				lines.append("  " + impl_line)
-	# Rolled affixes (unique per instance)
-	if inst.rolled_affixes.size() > 0:
+		lines.append_array(implicit_lines)
+	# Rolled affixes (unique per instance) — same defensive header guard.
+	var affix_lines: Array[String] = []
+	for roll in inst.rolled_affixes:
+		var affix_id: String = String(roll.get("affix_id", ""))
+		var value: float = float(roll.get("value", 0.0))
+		var affix: Resource = ContentRegistry.find_affix(affix_id)
+		if affix != null:
+			affix_lines.append("  " + affix.format_display(value))
+	if affix_lines.size() > 0:
 		lines.append("Affixes:")
-		for roll in inst.rolled_affixes:
-			var affix_id: String = String(roll.get("affix_id", ""))
-			var value: float = float(roll.get("value", 0.0))
-			var affix: Resource = ContentRegistry.find_affix(affix_id)
-			if affix != null:
-				lines.append("  " + affix.format_display(value))
+		lines.append_array(affix_lines)
 	# Stat diff preview — "equipping this would change stats X → Y"
 	var equipped: Array = InventoryManager.get_all_equipped(_cached_hero_id)
 	# Build a swap-hypothetical list: drop whatever's in inst's slot, add inst.

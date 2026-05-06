@@ -98,8 +98,8 @@ func _add_talent_panel(talent: Resource, purchased: Array) -> void:
 	var can_afford: bool = MetaProgression.get_available_stars() >= talent.star_cost
 
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(90, 50)
-	btn.set("theme_override_font_sizes/font_size", 16)
+	btn.custom_minimum_size = Vector2(120, 80)
+	btn.set("theme_override_font_sizes/font_size", 18)
 	if is_purchased:
 		btn.text = "Owned"
 		btn.disabled = true

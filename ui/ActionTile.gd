@@ -14,7 +14,7 @@ class_name ActionTile
 #   │       subtitle         │
 #   └────────────────────────┘
 
-const _TILE_SIZE: Vector2 = Vector2(200, 120)
+const _TILE_SIZE: Vector2 = Vector2(220, 132)
 const _BG: Color = Color(0.13, 0.17, 0.23, 1.0)
 const _BG_HOVER: Color = Color(0.18, 0.24, 0.34, 1.0)
 const _BORDER: Color = Color(0.28, 0.34, 0.46, 1.0)

@@ -2607,3 +2607,33 @@ Hero-name title rendering verification deferred to manual playtest — likely ju
 **Out of scope (deferred):** EquipmentScreen.gd `_on_back` standalone routing (dead path in embed mode), compact embed mode refactor, Stats sub-view content.
 
 **Verification:** headless `--quit` boot is clean. Manual editor playtest pending.
+
+---
+
+## 2026-05-06 — Phase 50 follow-up: Hero Hall polish slice (3 changes)
+
+Third-round design proposal had a lot of aspirational scope (custom palette, parchment vignette, talent tree visualization, color hex codes) but three concrete wins worth shipping. Implemented those three; deferred everything else.
+
+**1. Equipment SellMode / Lock / SellAll buttons 72 → 80 high** — [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn). The 72-px height was a compromise from the prior pass; CLAUDE.md actually mandates 80×80 minimum touch target, so closing the gap. Widths unchanged (160/140/160).
+
+**2. ActionTile 200×120 → 220×132** — [ui/ActionTile.gd](ui/ActionTile.gd) `_TILE_SIZE` constant. Slightly bigger, more "tile-like" than "button-like". `4 × 220 + 3 × 12 = 916 px` total tile-row width; still fits within the Hero Hall hero-body width (~1192 px at 1920×1080) and HFlowContainer wraps gracefully on narrower aspects. [ui/HeroesHub.gd](ui/HeroesHub.gd) `action_row.custom_minimum_size` bumped 128 → 144 to give the now-taller tiles breathing room.
+
+**3. READY CHECK section in Hero Hall summary panel** — [ui/HeroesHub.gd](ui/HeroesHub.gd) `_build_hero_hall` + `_refresh_hero_hall`. New labeled section between POWER and PASSIVES showing live counts:
+```
+READY CHECK
+Equipment   N / M
+Skills      N / 2
+Talents     N ★
+```
+Slot total honors per-hero `equipment_slots` override (Dragon's 3 slots vs humanoid 6, falls back to 6 when array is empty). Data sources are the same ones already used by `_refresh_action_tile_subtitles` — `InventoryManager.get_all_equipped(hid)`, `LoadoutState.get_equipped_skills(hid)`, `MetaProgression.get_available_stars()` — just surfaced on the landing screen so the player doesn't have to read each tile's subtitle to see "what's missing on this hero". Mirrors the AFK Arena / Raid hero-overview pattern of always-visible readiness info.
+
+Also added `_refresh_hero_hall()` + `_refresh_action_tile_subtitles()` calls to `_close_sub_view` so values stay fresh when the player equips items / skills / talents and backs out to Hall. Existing `EventBus` listeners cover live updates inside sub-views; the close-view refresh covers the gap.
+
+**Skipped (with reasoning):**
+- **Color palette hex codes** (`#202936`, `#FFD66A`, etc.) — no central theme system to consume them; would scatter hardcoded colors across files. Adopt a palette when there's infrastructure to use it consistently.
+- **Visual style polish** (parchment vignette, panel borders, fantasy framing) — separate phase; bundling with layout fixes mixes "make it work" with "make it pretty" and inflates scope.
+- **Tap-first Skills mechanic** — user explicitly chose drag-only (the "alt" option) earlier in this conversation. Don't unilaterally reverse a user decision based on third-party suggestion. Revisit only if mobile playtest confirms drag is awkward.
+- **Talent tree visualization** (parent-child connector lines, branching layout) — much bigger scope; the proposal even admits "if you do not want a real tree yet, make each talent card bigger". Defer the tree; accept the list for now.
+- **Roster card 280→292, Skill tile 180×100→180×104** — pedantic px-rhythm tweaks; current sizes work and meet touch-target rules.
+
+**Verification:** headless `--quit` boot is clean. Manual editor playtest pending for the READY CHECK display + new tile sizes.

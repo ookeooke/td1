@@ -40,6 +40,7 @@ var _hall_level_label: Label = null
 var _hall_xp_bar: ProgressBar = null
 var _hall_xp_label: Label = null
 var _hall_stats_label: Label = null
+var _hall_ready_label: Label = null
 var _hall_passives_label: Label = null
 
 # Skills sub-view state — drag-and-drop participants.
@@ -238,6 +239,21 @@ func _build_hero_hall() -> void:
 	_hall_stats_label.text = ""
 	stats_vbox.add_child(_hall_stats_label)
 
+	# READY CHECK — at-a-glance "what's missing on this hero". Populated in
+	# _refresh_hero_hall from InventoryManager / LoadoutState / MetaProgression
+	# (same data sources the action-tile subtitles use; this surfaces it on
+	# the landing screen so the player doesn't have to hover each tile).
+	var ready_title := Label.new()
+	ready_title.text = "READY CHECK"
+	ready_title.add_theme_font_size_override("font_size", 14)
+	ready_title.add_theme_color_override("font_color", Color(0.6, 0.66, 0.78, 1.0))
+	stats_vbox.add_child(ready_title)
+
+	_hall_ready_label = Label.new()
+	_hall_ready_label.add_theme_font_size_override("font_size", 16)
+	_hall_ready_label.text = ""
+	stats_vbox.add_child(_hall_ready_label)
+
 	var passives_title := Label.new()
 	passives_title.text = "PASSIVES"
 	passives_title.add_theme_font_size_override("font_size", 14)
@@ -253,12 +269,12 @@ func _build_hero_hall() -> void:
 	stats_vbox.add_child(_hall_passives_label)
 
 	# --- ActionRow (4 tiles, wrapping) ---
-	# HFlowContainer instead of HBoxContainer so 4×200 + 3×12 = 836 px of
+	# HFlowContainer instead of HBoxContainer so 4×220 + 3×12 = 916 px of
 	# tiles wrap onto two rows on narrower aspect ratios instead of being
-	# squeezed/overlapping. Min height fits one row of 120-tall tiles plus
-	# v_separation; if a wrap fires, the container grows naturally.
+	# squeezed/overlapping. Min height fits one row of 132-tall tiles plus
+	# breathing room; if a wrap fires, the container grows naturally.
 	var action_row := HFlowContainer.new()
-	action_row.custom_minimum_size = Vector2(0, 128)
+	action_row.custom_minimum_size = Vector2(0, 144)
 	action_row.alignment = HFlowContainer.ALIGNMENT_CENTER
 	action_row.add_theme_constant_override("h_separation", 12)
 	action_row.add_theme_constant_override("v_separation", 12)
@@ -307,6 +323,8 @@ func _refresh_hero_hall() -> void:
 		_hall_level_label.text = ""
 		_hall_xp_label.text = ""
 		_hall_stats_label.text = ""
+		if _hall_ready_label != null:
+			_hall_ready_label.text = ""
 		_hall_passives_label.text = ""
 		_hall_xp_bar.value = 0.0
 		if _hall_portrait != null and _hall_portrait.has_method("setup"):
@@ -337,6 +355,29 @@ func _refresh_hero_hall() -> void:
 		float(hero_data.attack_speed),
 		int(round(float(hero_data.armor) * 100.0)),
 	]
+	# READY CHECK lines — equipment slot fill, equipped skill count, talent
+	# stars to spend. Slot total honors per-hero equipment_slots override
+	# (Dragon's 3 slots vs humanoid 6).
+	if _hall_ready_label != null:
+		var equipped_items: int = 0
+		var total_slots: int = 6
+		if has_node("/root/InventoryManager"):
+			equipped_items = InventoryManager.get_all_equipped(hid).size()
+		if "equipment_slots" in hero_data and hero_data.equipment_slots is Array and hero_data.equipment_slots.size() > 0:
+			total_slots = hero_data.equipment_slots.size()
+		var equipped_skills: Array[String] = LoadoutState.get_equipped_skills(hid)
+		var skill_count: int = 0
+		for s in equipped_skills:
+			if s != "":
+				skill_count += 1
+		var stars: int = 0
+		if has_node("/root/MetaProgression") and MetaProgression.has_method("get_available_stars"):
+			stars = int(MetaProgression.get_available_stars())
+		_hall_ready_label.text = "Equipment   %d / %d\nSkills      %d / %d\nTalents     %d ★" % [
+			equipped_items, total_slots,
+			skill_count, LoadoutState.EQUIPPED_SKILL_SLOTS,
+			stars,
+		]
 	# Passives — list ability names if authored.
 	var passive_names: PackedStringArray = []
 	if "abilities" in hero_data:
@@ -459,6 +500,10 @@ func _close_sub_view() -> void:
 		roster_rail.visible = true
 	back_button.text = "← Back"
 	title_label.text = "HERO HALL"
+	# Sub-views can mutate equipment / skills / talents; refresh the Hero Hall
+	# READY CHECK + action tiles so values are current when the player returns.
+	_refresh_hero_hall()
+	_refresh_action_tile_subtitles()
 
 
 func _on_back() -> void:

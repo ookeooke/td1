@@ -500,10 +500,12 @@ func _draw() -> void:
 	var body_offset: Vector2 = lunge_off
 	var body_scale: Vector2 = Vector2.ONE
 	var moving_state: bool = state == State.MOVING or state == State.CHARGING or state == State.RETURNING
+	var walk_rotation: float = 0.0
 	if data != null and data.visual != null and moving_state:
 		var anim: Dictionary = UnitVisualDrawer.compute_walk_anim(data.visual, _walk_t, _walk_phase)
 		body_offset += anim.offset
 		body_scale = anim.scale
+		walk_rotation = anim.get("rotation", 0.0)
 	if _flinch_t > 0.0:
 		var fa: float = _flinch_t / FLINCH_DURATION
 		body_offset += _flinch_dir * FLINCH_DISTANCE * fa
@@ -524,6 +526,8 @@ func _draw() -> void:
 	if data != null and data.visual != null:
 		ctx["skin_tint"] = _skin_tint
 		ctx["face"] = _facing_dir
+		if walk_rotation != 0.0:
+			ctx["walk_rotation"] = walk_rotation
 		var max_hp: int = _effective_max_hp if _effective_max_hp > 0 else (data.max_health if data != null else 1)
 		if max_hp > 0 and float(current_health) / float(max_hp) < 0.30:
 			ctx["low_hp"] = true

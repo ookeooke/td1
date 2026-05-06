@@ -41,6 +41,10 @@ enum Hat { NONE, HORNS, HELMET, HOOD, BANDANA, CROWN_BIG }
 @export_range(0.0, 20.0, 0.1) var walk_bob_speed: float = 7.0
 # Squash magnitude at each foot-plant (body scales X+ Y-). 0 = off.
 @export_range(0.0, 0.25, 0.01) var walk_squash: float = 0.04
+# Body tilt amplitude in radians. Body rocks ±this much per cycle, peaking
+# mid-step (between plants), zero at plant. Sells weight-shift on a single
+# image. ~0.035 rad ≈ 2°. 0 = off.
+@export_range(0.0, 0.10, 0.005) var walk_tilt_amplitude: float = 0.035
 
 # Multi-part body composition (head + legs + optional tusks + hat). When
 # race == NONE the drawer skips these and draws the legacy single shape, so

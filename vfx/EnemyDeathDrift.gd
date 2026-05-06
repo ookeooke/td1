@@ -39,10 +39,32 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if _visual == null:
 		return
-	# Tip + squish in-place. Body falls toward the killing blow direction, then
-	# flattens (Y → 0.22) and widens slightly (X → 1.35). Pivot compensation
-	# keeps feet near the original kill point.
 	var progress: float = clampf(1.0 - _t / LIFETIME, 0.0, 1.0)
+
+	# Branch: textured enemies (single image) tip-over without Y-squish. The
+	# procedural path's 78% Y-squash collapses a multi-part body believably
+	# (head/legs/arms flatten into a heap) but on a single texture it just
+	# smears the whole sprite. Tip-over reads as "fell over dead" instead.
+	var has_texture: bool = "texture" in _visual and _visual.texture != null
+	if has_texture:
+		var ts: Vector2 = _visual.texture_size if "texture_size" in _visual else Vector2(64.0, 64.0)
+		# Smooth ease-out for the rotation so it slows as it lands.
+		var rot_eased: float = 1.0 - pow(1.0 - progress, 3.0)
+		# Brief impact pop (sin curve: 0 → 1 → 0) makes the kill snap.
+		var pop_t: float = sin(progress * PI) * 0.12
+		var s_tex: float = 1.0 + pop_t
+		var rot_tex: float = _fall_dir * deg_to_rad(85.0) * rot_eased
+		var drift_x: float = _fall_dir * progress * ts.x * 0.20
+		var drift_y: float = progress * ts.y * 0.10
+		draw_set_transform(Vector2(drift_x, drift_y), rot_tex, Vector2(s_tex, s_tex))
+		_UnitVisualDrawer.draw_unit(self, _visual)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+
+	# Procedural — tip + squish + flatten + dust (original behavior).
+	# Body falls toward the killing blow direction, then flattens
+	# (Y → 0.22) and widens slightly (X → 1.35). Pivot compensation
+	# keeps feet near the original kill point.
 	var eased: float = 1.0 - pow(1.0 - progress, 2.0)
 	var sx: float = 1.0 + eased * 0.35
 	var sy: float = 1.0 - eased * 0.78

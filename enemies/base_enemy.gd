@@ -67,6 +67,11 @@ var _status_ring_t: float = 0.0
 # Accumulates while in WALKING so body bob + squash animate. Randomized phase
 # per-enemy so a swarm doesn't step in sync. Driven by UnitVisualData fields.
 var _walk_t: float = 0.0
+# Foot-plant tracking — index of the half-cycle the walker is currently in.
+# Plants happen at theta = N*PI, so a change in `int(theta / PI)` is a
+# foot-plant transition. -999 = uninitialized; first observed value seeds it
+# without spawning dust (avoids a spurious puff at the spawn frame).
+var _last_plant_index: int = -999
 var _walk_phase: float = 0.0
 # Hurt flinch: brief recoil away from the damage source on each hit. Reads as
 # a physical reaction to complement the white hit-flash overlay.
@@ -99,6 +104,7 @@ const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
 const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
 const _StatusApplyScript := preload("res://vfx/StatusApplyVFX.gd")
+const _WalkDustScript := preload("res://vfx/WalkDustVFX.gd")
 var _ability_host: RefCounted = null
 
 
@@ -204,6 +210,17 @@ func _physics_process(delta: float) -> void:
 				if v.walk_bob_amplitude > 0.0 or v.walk_squash > 0.0:
 					_walk_t += delta
 					queue_redraw()
+					# Foot-plant dust — fires when theta crosses a multiple
+					# of PI. Plants alternate L/R via the parity of the index
+					# so dust pops on the planting side, not always centered.
+					if v.walk_bob_amplitude > 0.0 and not VFXSpawner.clean_view:
+						var theta: float = _walk_t * v.walk_bob_speed + _walk_phase
+						var plant_idx: int = int(floor(theta / PI))
+						if _last_plant_index == -999:
+							_last_plant_index = plant_idx
+						elif plant_idx != _last_plant_index:
+							_spawn_walk_dust(plant_idx)
+							_last_plant_index = plant_idx
 		State.COMBAT:
 			_combat_tick(delta)
 			# Idle breathing while engaged — small scale pulse so the enemy
@@ -462,6 +479,27 @@ func _despawn() -> void:
 	queue_free()
 
 
+# Spawn a small dust puff at the foot-plant position. Side-alternates
+# horizontally by plant parity so left/right feet leave dust on their own
+# side. Anchored at the texture's bottom edge (or shadow position for
+# procedural enemies) so the dust reads as ground contact, not body height.
+func _spawn_walk_dust(plant_idx: int) -> void:
+	if data == null or data.visual == null:
+		return
+	# Flying enemies don't touch the ground — no foot-plant dust on harpies
+	# and other airborne types. Their bob still drives tilt/squash visually.
+	if data.is_flying:
+		return
+	var v: UnitVisualData = data.visual
+	var feet_y: float = v.radius * 0.95
+	if v.texture != null and v.texture_size.y > 0.0:
+		feet_y = v.texture_size.y * 0.45
+	var side: float = 1.0 if (plant_idx % 2 == 0) else -1.0
+	var x_off: float = side * v.radius * 0.20
+	var pos: Vector2 = global_position + Vector2(x_off, feet_y)
+	_WalkDustScript.spawn(get_tree().current_scene, pos)
+
+
 func _draw() -> void:
 	# 1. Ground shadow — fixed under feet, ignores walk-bob / breath / flinch.
 	if data != null and data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
@@ -477,10 +515,12 @@ func _draw() -> void:
 	var strike_off: Vector2 = _strike_offset()
 	var body_offset: Vector2 = strike_off
 	var body_scale: Vector2 = Vector2.ONE
+	var walk_rotation: float = 0.0
 	if data != null and data.visual != null and state == State.WALKING:
 		var anim: Dictionary = UnitVisualDrawer.compute_walk_anim(data.visual, _walk_t, _walk_phase)
 		body_offset += anim.offset
 		body_scale = anim.scale
+		walk_rotation = anim.get("rotation", 0.0)
 	# Hurt flinch — recoil from damage source, eases out over FLINCH_DURATION.
 	if _flinch_t > 0.0:
 		var fa: float = _flinch_t / FLINCH_DURATION
@@ -507,6 +547,8 @@ func _draw() -> void:
 	if data != null and data.visual != null:
 		ctx["skin_tint"] = _skin_tint
 		ctx["face"] = _facing_dir
+		if walk_rotation != 0.0:
+			ctx["walk_rotation"] = walk_rotation
 		var max_hp: int = _effective_max_health()
 		if max_hp > 0 and float(current_health) / float(max_hp) < 0.30:
 			ctx["low_hp"] = true

@@ -152,8 +152,9 @@ static func draw_hit_flash(ci: CanvasItem, v: UnitVisualData, amount: float, off
 static func compute_walk_anim(v: UnitVisualData, t: float, phase: float) -> Dictionary:
 	var amp: float = v.walk_bob_amplitude
 	var sq: float = clampf(v.walk_squash, 0.0, 0.25)
-	if amp <= 0.0 and sq <= 0.0:
-		return {"offset": Vector2.ZERO, "scale": Vector2.ONE}
+	var tilt_amp: float = v.walk_tilt_amplitude if "walk_tilt_amplitude" in v else 0.0
+	if amp <= 0.0 and sq <= 0.0 and tilt_amp <= 0.0:
+		return {"offset": Vector2.ZERO, "scale": Vector2.ONE, "rotation": 0.0}
 	var theta: float = t * v.walk_bob_speed + phase
 	var s: float = sin(theta)
 	var lift: float = absf(s)  # 0 at plant, 1 at peak — two plants per cycle
@@ -163,13 +164,20 @@ static func compute_walk_anim(v: UnitVisualData, t: float, phase: float) -> Dict
 	var plant_weight: float = 1.0 - lift
 	var sx: float = 1.0 + sq * plant_weight
 	var sy: float = 1.0 - sq * plant_weight
-	return {"offset": Vector2(0.0, bob_y), "scale": Vector2(sx, sy)}
+	# Tilt: rocks left/right between plants. Zero at plants (theta = N*PI),
+	# extremum at peaks. Direction alternates per step so the body sways
+	# weight-shift style instead of just leaning one way forever.
+	var rot: float = s * tilt_amp
+	return {"offset": Vector2(0.0, bob_y), "scale": Vector2(sx, sy), "rotation": rot}
 
 
 static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vector2.ZERO, scale: Vector2 = Vector2.ONE, walk_t: float = -1.0, walk_phase: float = 0.0, ctx: Dictionary = {}) -> void:
-	var has_xform: bool = offset != Vector2.ZERO or scale != Vector2.ONE
+	# Walk-rocking rotation, computed by caller via compute_walk_anim and
+	# passed through ctx so the existing draw_unit signature stays stable.
+	var walk_rot: float = ctx.get("walk_rotation", 0.0)
+	var has_xform: bool = offset != Vector2.ZERO or scale != Vector2.ONE or walk_rot != 0.0
 	if has_xform:
-		ci.draw_set_transform(offset, 0.0, scale)
+		ci.draw_set_transform(offset, walk_rot, scale)
 
 	# Texture override — when set, paint the image and skip the entire
 	# procedural body. Walk-bob/squash inherits via the transform above.

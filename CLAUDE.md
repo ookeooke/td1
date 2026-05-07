@@ -343,6 +343,7 @@ Soldiers AND heroes can lock ground enemies into `COMBAT` (enemy stops walking).
 - **Split rule**: `BaseSoldier._try_engage` + `BaseHero._pick_split_target_in_area` prefer FEWEST current blockers (ties broken by distance). Friendlies spread across threats; pile on a lone target.
 - **Hero auto-claims extras** up to capacity while in COMBAT; releases via `_prune_blocks_out_of_range`.
 - **Release points**: death, rally-move (soldier), tap-to-move (hero), target loss.
+- **Hero engage radius is decoupled from attack_range**: `HeroData.engage_radius` controls the *block-claim* circle (where enemies halt and engage as melee); `HeroData.attack_range` controls *weapon reach* (projectile spawn, AoE pivot, when COMBAT state triggers). Two numbers because the jobs are independent: a Mage at attack_range=350 with engage_radius=55 shoots from far but only locks enemies that walk into face contact; a Knight at 75/55 walks up and swings. Default when unset (0): `min(attack_range, BaseHero.DEFAULT_ENGAGE_RADIUS=60)`. Override only when the archetype needs a divergent value (sniper = 0 to never block, tank = 90 for bigger presence, dragon = 110 for a large body). Mirrors the `SoldierData.melee_range` ≠ weapon-reach pattern.
 
 ---
 

@@ -40,6 +40,11 @@ func _ready() -> void:
 	EventBus.lives_changed.connect(_on_lives_changed)
 	EventBus.wave_started.connect(_on_wave_started)
 	EventBus.all_waves_completed.connect(_on_all_waves_completed)
+	EventBus.purchase_denied.connect(_on_purchase_denied)
+	# Pivot at the label center so the deny-pulse scales evenly instead of
+	# scaling toward the top-left corner. Pivot is a post-layout transform
+	# so the Container's layout pass does not reset it.
+	gold_label.pivot_offset = gold_label.size * 0.5
 	# Early wave call.
 	send_wave_button.pressed.connect(_on_send_wave_pressed)
 	countdown_label.visible = false
@@ -58,6 +63,30 @@ func _on_gold_changed(amount: int) -> void:
 
 func _on_lives_changed(amount: int) -> void:
 	lives_label.text = "Lives: %d" % amount
+
+
+# Deny feedback — modulate flash + scale pulse on the gold label so the
+# player's eye is yanked from the rejected slot to the *reason*. modulate
+# and scale are post-layout transforms so the VBoxContainer's layout pass
+# does not fight the tween.
+var _gold_color_tween: Tween = null
+var _gold_scale_tween: Tween = null
+func _on_purchase_denied(_reason: String) -> void:
+	if _gold_color_tween != null and _gold_color_tween.is_valid():
+		_gold_color_tween.kill()
+	if _gold_scale_tween != null and _gold_scale_tween.is_valid():
+		_gold_scale_tween.kill()
+	gold_label.modulate = Color.WHITE
+	gold_label.scale = Vector2.ONE
+	gold_label.pivot_offset = gold_label.size * 0.5
+	_gold_color_tween = create_tween()
+	_gold_color_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_gold_color_tween.tween_property(gold_label, "modulate", Color(1.0, 0.32, 0.32, 1.0), 0.06)
+	_gold_color_tween.tween_property(gold_label, "modulate", Color.WHITE, 0.34)
+	_gold_scale_tween = create_tween()
+	_gold_scale_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_gold_scale_tween.tween_property(gold_label, "scale", Vector2(1.18, 1.18), 0.08).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_gold_scale_tween.tween_property(gold_label, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 
 
 func _on_wave_started(wave_number: int, _path_ids: Array) -> void:

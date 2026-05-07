@@ -16,11 +16,20 @@ static func draw(canvas: CanvasItem, kind: String, center: Vector2, radius: floa
 	match kind:
 		"damage":
 			_draw_damage(canvas, center, radius, fill_color)
+		"dps":
+			# Phase 53 — DPS is "damage per second"; reuse the sword glyph so
+			# the player sees a unified offense icon. Could be replaced with
+			# a sword-with-clock composite later.
+			_draw_damage(canvas, center, radius, fill_color)
 		"attack_speed":
 			_draw_atk_speed(canvas, center, radius, fill_color)
 		"max_health":
 			_draw_max_hp(canvas, center, radius, fill_color)
 		"armor":
+			_draw_armor(canvas, center, radius, fill_color)
+		"magic_resist":
+			# Phase 53 — magic resist mirrors armor's defensive role; reuse the
+			# shield glyph for consistency with the DEFENSE section grouping.
 			_draw_armor(canvas, center, radius, fill_color)
 		"move_speed":
 			_draw_move_speed(canvas, center, radius, fill_color)

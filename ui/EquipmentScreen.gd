@@ -42,16 +42,31 @@ const PAPERDOLL_SLOT_H: int = 1
 @onready var hero_label: Label = %HeroLabel
 @onready var equipment_grid: Control = %EquipmentGrid
 @onready var stats_panel: VBoxContainer = %StatsPanel
-@onready var details_label: Label = %DetailsLabel
+@onready var details_label: RichTextLabel = %DetailsLabel
 @onready var right_title: Label = %RightTitle
 @onready var inventory_grid: Control = %InventoryGrid
-@onready var hint_label: Label = %HintLabel
 @onready var action_row: HBoxContainer = %ActionRow
 @onready var equip_button: Button = %EquipButton
 @onready var lock_button: Button = %LockButton
 @onready var sell_button: Button = %SellButton
 @onready var sell_all_button: Button = %SellAllButton
 @onready var meta_gold_label: Label = %MetaGoldLabel
+# Phase 54 — bottom-sheet details overlay (Diablo Immortal pattern).
+@onready var details_overlay: Control = %DetailsOverlay
+@onready var dim_backdrop: ColorRect = %DimBackdrop
+@onready var details_header: Label = %DetailsHeader
+@onready var close_button: Button = %CloseButton
+
+# Rarity → name color for the bottom-sheet header. Mirrors ItemIcon's
+# _RARITY_COLORS so a Rare item's name reads gold both on the icon border
+# and in the sheet header.
+const _RARITY_HEADER_COLORS: Array[Color] = [
+	Color(0.85, 0.85, 0.85),   # Common
+	Color(0.45, 0.75, 1.0),    # Magic
+	Color(1.0, 0.92, 0.4),     # Rare
+	Color(0.85, 0.5, 1.0),     # Epic
+	Color(1.0, 0.6, 0.15),     # Legendary
+]
 
 # Holds the hero_id at the last _refresh call, used by hover to compute diffs.
 var _cached_hero_id: String = ""
@@ -89,10 +104,20 @@ const _STATS_LAYOUT: Array = [
 	# section_name, [ (stat_key, display_name), ... ]
 	# stat_key matches the keys returned by _compute_stats_dict — same string
 	# is also passed to StatIcon.draw to pick the glyph.
+	# Phase 53 — POWER row leads with DPS (damage × atk_speed, derived) and
+	# Health, the two headline numbers most useful for cross-item comparison.
+	# Magic Resist surfaced in DEFENSE; rows render but auto-hide when value
+	# rounds to 0 AND no equipped item modifies them (see _refresh_stats_panel).
+	["POWER",   [["dps", "DPS"], ["max_health", "Health"]]],
 	["OFFENSE", [["damage", "Damage"], ["attack_speed", "Atk Speed"]]],
-	["DEFENSE", [["max_health", "Max HP"], ["armor", "Armor"]]],
+	["DEFENSE", [["armor", "Armor"], ["magic_resist", "Magic Resist"]]],
 	["UTILITY", [["move_speed", "Move Speed"], ["xp_gain_mult", "XP Gain"]]],
 ]
+# Stats that should hide when value rounds to 0 AND no equipped item modifies
+# them. Avoids showing "Mag Resist 0%" on heroes with no MR (Knight) while
+# still keeping the row visible for the Mage (intrinsic 30%) or any hero with
+# a Magic Resist affix equipped.
+const _HIDE_WHEN_ZERO_KEYS: Array[String] = ["magic_resist"]
 var _stat_rows: Dictionary = {}
 var _last_stats_dict: Dictionary = {}
 var _first_refresh: bool = true
@@ -138,6 +163,9 @@ func _ready() -> void:
 		_selected_uid = ""
 		_sell_armed_uid = ""
 		_sell_all_armed = false
+		# Phase 54 — also hide the details overlay if it's open.
+		if details_overlay != null:
+			details_overlay.visible = false
 		if new_id != "":
 			InventoryManager.ensure_starter_gear(new_id)
 		_build_slots()
@@ -148,6 +176,10 @@ func _ready() -> void:
 	lock_button.pressed.connect(_on_lock_pressed)
 	sell_button.pressed.connect(_on_sell_pressed)
 	sell_all_button.pressed.connect(_on_sell_all_pressed)
+	# Phase 54 — bottom-sheet dismiss paths. DimBackdrop catches taps outside
+	# the sheet; CloseButton is the explicit dismiss control.
+	dim_backdrop.gui_input.connect(_on_dim_backdrop_input)
+	close_button.pressed.connect(_dismiss_details)
 	EventBus.meta_gold_changed.connect(_on_meta_gold_changed)
 	# Phase 50 — re-flow inventory when the ScrollContainer resizes. Fires
 	# once the initial layout pass settles (replacing the placeholder 5-col
@@ -200,9 +232,13 @@ func _resolve_item_name(instance) -> String:
 func _on_inventory_changed_simple() -> void:
 	# Phase 52 — selected uid may have just been sold/unequipped; if so,
 	# clear it so the action row doesn't dangle on a missing instance.
+	# Phase 54 — also hide the overlay in that case so the bottom-sheet
+	# isn't left showing a ghost item.
 	if _selected_uid != "" and InventoryManager.find_by_uid(_selected_uid) == null:
 		_selected_uid = ""
 		_sell_armed_uid = ""
+		if details_overlay != null:
+			details_overlay.visible = false
 	_refresh()
 	_refresh_action_row()
 	_refresh_sell_all_button()
@@ -443,6 +479,9 @@ func _select_item(uid: String) -> void:
 				cur.set_armed(false)
 	_render_details_for(uid)
 	_refresh_action_row()
+	# Phase 54 — bring up the bottom-sheet whenever a real item is selected.
+	if uid != "":
+		_show_details_overlay(uid)
 
 
 func _render_details_for(uid: String) -> void:
@@ -457,6 +496,54 @@ func _render_details_for(uid: String) -> void:
 	# rarity + slot + implicit + rolled affixes + stat diff vs equipped) —
 	# repurpose wholesale as the selection-detail body.
 	_on_item_hovered(inst)
+
+
+# Phase 54 — bottom-sheet plumbing. Show updates the rarity-colored header
+# label, makes the overlay visible (script-only — no animation in first pass).
+# Dismiss clears _selected_uid + sell-arm and hides the overlay.
+func _show_details_overlay(uid: String) -> void:
+	if details_overlay == null:
+		return
+	var inst = InventoryManager.find_by_uid(uid)
+	if inst == null:
+		return
+	var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+	var name_str: String = String(base.base_name) if base != null else String(inst.base_id)
+	var rarity_idx: int = clampi(int(base.rarity), 0, _RARITY_HEADER_COLORS.size() - 1) if base != null else 0
+	details_header.text = name_str.to_upper()
+	details_header.add_theme_color_override("font_color", _RARITY_HEADER_COLORS[rarity_idx])
+	details_overlay.visible = true
+
+
+func _dismiss_details() -> void:
+	# Clear selection state on the icon currently selected (if any), reset
+	# sell-arm, hide the overlay, refresh the action row to disabled state.
+	if _selected_uid != "":
+		if _inventory_icons.has(_selected_uid):
+			var prev = _inventory_icons[_selected_uid]
+			if prev != null and prev.has_method("set_selected"):
+				prev.set_selected(false)
+	if _sell_armed_uid != "":
+		_set_icon_armed(_sell_armed_uid, false)
+	_selected_uid = ""
+	_sell_armed_uid = ""
+	if details_overlay != null:
+		details_overlay.visible = false
+	details_label.text = _DEFAULT_DETAILS_HINT
+	_refresh_action_row()
+
+
+func _on_dim_backdrop_input(event: InputEvent) -> void:
+	# Tap on the dim backdrop area (outside the sheet itself) → dismiss.
+	# Touch and mouse both arrive here through gui_input.
+	var is_press: bool = false
+	if event is InputEventMouseButton:
+		is_press = event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+	elif event is InputEventScreenTouch:
+		is_press = event.pressed
+	if is_press:
+		_dismiss_details()
+		accept_event()
 
 
 func _refresh_action_row() -> void:
@@ -521,8 +608,8 @@ func _on_equip_pressed() -> void:
 	InventoryManager.equip(hero_id, _selected_uid)
 	# Successful equip clears selection — paperdoll + stats now reflect the
 	# new state, and the action row resets via _on_inventory_changed_simple.
-	_selected_uid = ""
-	_sell_armed_uid = ""
+	# Phase 54 — also hide the bottom-sheet so the player sees the result.
+	_dismiss_details()
 
 
 func _on_lock_pressed() -> void:
@@ -564,7 +651,8 @@ func _on_sell_pressed() -> void:
 	# Second press — commit. inventory_changed clears _selected_uid via
 	# _on_inventory_changed_simple (the sold instance is now find_by_uid==null).
 	var awarded: int = InventoryManager.sell(_selected_uid)
-	_sell_armed_uid = ""
+	# Phase 54 — auto-dismiss the sheet after a successful sell.
+	_dismiss_details()
 	if awarded > 0:
 		Toast.show_message("Sold for %dg" % awarded)
 
@@ -743,6 +831,13 @@ func _refresh_stats_panel(hero_data: Resource, equipped: Array) -> void:
 				continue
 			var row: Control = _stat_rows[key]
 			var new_val: float = float(current.get(key, 0.0))
+			# Phase 53 — hide rows in _HIDE_WHEN_ZERO_KEYS when value rounds to 0.
+			# Avoids "Mag Resist 0%" noise on heroes with no MR; the row reappears
+			# the moment a hero or item brings the value above zero.
+			if key in _HIDE_WHEN_ZERO_KEYS and absf(new_val) < 0.005:
+				row.visible = false
+				continue
+			row.visible = true
 			var formatted: String = _format_stat_value(key, new_val)
 			row.update_value(formatted)
 			# Flash + delta capture, only on non-first refresh.
@@ -786,9 +881,13 @@ func _format_stat_value(key: String, value: float) -> String:
 	match key:
 		"damage":
 			return "%d" % int(round(value))
+		"dps":
+			return "%.1f" % value
 		"max_health":
 			return "%d" % int(ceil(value))
 		"armor":
+			return "%d%%" % int(round(value * 100.0))
+		"magic_resist":
 			return "%d%%" % int(round(value * 100.0))
 		"attack_speed":
 			return "%.2f/s" % value
@@ -807,7 +906,11 @@ func _format_stat_delta(key: String, diff: float) -> String:
 	match key:
 		"damage", "max_health", "move_speed":
 			return "%+d" % int(round(diff))
+		"dps":
+			return "%+.1f" % diff
 		"armor":
+			return "%+d%%" % int(round(diff * 100.0))
+		"magic_resist":
 			return "%+d%%" % int(round(diff * 100.0))
 		"attack_speed":
 			return "%+.2f/s" % diff
@@ -842,8 +945,11 @@ func _format_item_details(inst) -> String:
 		return str(inst.base_id)
 	var lines: Array[String] = []
 	# Header: Name — Rarity Slot
-	lines.append("%s" % base.base_name)
-	lines.append("%s %s" % [
+	# Phase 54 — name + rarity color now live in the bottom-sheet's
+	# DetailsHeader Label (set by _show_details_overlay). The body still
+	# emits the "Rare Trinket" subline so the player sees rarity + slot
+	# type without forcing them to read the colored title twice.
+	lines.append("[color=#9aa9c8]%s %s[/color]" % [
 		_RARITY_NAMES[clampi(int(base.rarity), 0, _RARITY_NAMES.size() - 1)],
 		_resolve_slot_label(clampi(int(base.slot), 0, SLOT_COUNT - 1)),
 	])
@@ -896,7 +1002,7 @@ func _format_item_details(inst) -> String:
 		var diff: String = _format_stat_diff(equipped, hypothetical)
 		if diff != "":
 			lines.append("")
-			lines.append("If equipped:")
+			lines.append("[color=#9aa9c8]EQUIP PREVIEW[/color]")
 			lines.append(diff)
 	else:
 		lines.append("")
@@ -942,6 +1048,15 @@ func _append_if_nonzero_pct(parts: PackedStringArray, ability: Resource, field: 
 	parts.append(template % int(round(v * 100.0)))
 
 
+# Phase 54 — equip preview iterates the FULL _STATS_LAYOUT so DPS, Magic
+# Resist, Move Speed, XP Gain etc. all surface in the comparison whenever
+# an item changes them. Lines are BBCode-colored: green for gains, red for
+# losses. Only changed stats emit; unchanged ones are skipped so the panel
+# stays compact. The DetailsLabel is a RichTextLabel with bbcode_enabled.
+const _DIFF_GAIN_COLOR: String = "#7fff7f"
+const _DIFF_LOSS_COLOR: String = "#ff7f7f"
+
+
 func _format_stat_diff(current_eq: Array, new_eq: Array) -> String:
 	var hero_data: Resource = ContentRegistry.find_hero(_cached_hero_id)
 	if hero_data == null:
@@ -949,17 +1064,28 @@ func _format_stat_diff(current_eq: Array, new_eq: Array) -> String:
 	var cur: Dictionary = _compute_stats_dict(hero_data, current_eq)
 	var after: Dictionary = _compute_stats_dict(hero_data, new_eq)
 	var lines: Array[String] = []
-	_append_diff_line(lines, "Dmg", int(round(cur.damage)), int(round(after.damage)))
-	_append_diff_line(lines, "HP", int(ceil(cur.max_health)), int(ceil(after.max_health)))
-	_append_diff_line(lines, "Arm%", int(round(cur.armor * 100.0)), int(round(after.armor * 100.0)))
-	return "  " + "   ".join(lines) if not lines.is_empty() else "  (no stat change)"
-
-
-func _append_diff_line(lines: Array[String], label: String, old_val: int, new_val: int) -> void:
-	if old_val == new_val:
-		return
-	var arrow: String = "↑" if new_val > old_val else "↓"
-	lines.append("%s %d%s%d" % [label, old_val, arrow, new_val])
+	for section_entry in _STATS_LAYOUT:
+		for row_entry in section_entry[1]:
+			var key: String = row_entry[0]
+			var display: String = row_entry[1]
+			var old_v: float = float(cur.get(key, 0.0))
+			var new_v: float = float(after.get(key, 0.0))
+			var diff: float = new_v - old_v
+			if absf(diff) < 0.0005:
+				continue
+			var arrow: String = "▲" if diff > 0.0 else "▼"
+			var color: String = _DIFF_GAIN_COLOR if diff > 0.0 else _DIFF_LOSS_COLOR
+			lines.append("[color=%s]%s %s   %s → %s   (%s)[/color]" % [
+				color,
+				arrow,
+				display,
+				_format_stat_value(key, old_v),
+				_format_stat_value(key, new_v),
+				_format_stat_delta(key, diff),
+			])
+	if lines.is_empty():
+		return "(no stat change)"
+	return "\n".join(lines)
 
 
 # Shared stat-computation core; _refresh_stats_panel + _format_stat_diff are
@@ -972,6 +1098,7 @@ func _compute_stats_dict(hero_data: Resource, equipped: Array) -> Dictionary:
 		"max_health": float(hero_data.max_health) * hp_mult,
 		"damage": hero_data.attack_damage * dmg_mult * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_HERO_DAMAGE),
 		"armor": hero_data.armor,
+		"magic_resist": float(hero_data.magic_resist) if "magic_resist" in hero_data else 0.0,
 		"attack_speed": hero_data.attack_speed,
 		"move_speed": hero_data.move_speed,
 		"xp_gain_mult": 1.0,
@@ -997,4 +1124,7 @@ func _compute_stats_dict(hero_data: Resource, equipped: Array) -> Dictionary:
 			if pct_field in m:
 				pct_product *= 1.0 + float(m.get(pct_field))
 		current[key] = v * pct_product
+	# Phase 53 — derived DPS for the POWER section. Computed AFTER mod resolution
+	# so flat/pct on damage and attack_speed both feed in.
+	current["dps"] = float(current.get("damage", 0.0)) * float(current.get("attack_speed", 0.0))
 	return current

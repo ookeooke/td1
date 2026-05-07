@@ -114,9 +114,9 @@ func _render_tower_usage(runs: Array) -> void:
 		var runs_with: int = int(s["runs_with"])
 		var pct: float = 100.0 * float(runs_with) / float(runs.size())
 		var avg_lvl: float = float(s["max_level_sum"]) / float(max(1, built))
-		var name: String = _pretty_tower_name(tid)
+		var tower_label: String = _pretty_tower_name(tid)
 		var branch_str: String = "%d/%d/%d" % [int(s["branch_main"]), int(s["branch_a"]), int(s["branch_b"])]
-		_grid_row(grid, [name, str(built), "%.0f%%" % pct, "%.1f" % avg_lvl, branch_str])
+		_grid_row(grid, [tower_label, str(built), "%.0f%%" % pct, "%.1f" % avg_lvl, branch_str])
 	content_vbox.add_child(grid)
 
 

@@ -99,15 +99,27 @@ func get_preview_range() -> float:
 # live-tower get_stats_line() so the player sees the same numbers pre-build
 # and post-build.
 func get_stats_line() -> String:
+	# Debug per-tower-tier overrides at L1 — keeps build-ring preview
+	# aligned with what the placed tower will actually fire at. Identity
+	# (1.0) in production. Lazy-loaded so this Resource isn't pinned to
+	# the override module at .tres parse time.
+	var dmg_mult: float = 1.0
+	var rng_mult: float = 1.0
+	var spd_mult: float = 1.0
+	if tower_id != "":
+		var BO = load("res://balance/debug/BalanceOverrides.gd")
+		dmg_mult = BO.get_tower_mult(tower_id, "l1", "damage_mult")
+		rng_mult = BO.get_tower_mult(tower_id, "l1", "range_mult")
+		spd_mult = BO.get_tower_mult(tower_id, "l1", "speed_mult")
 	if is_barracks():
 		var sd: Resource = soldier_data
 		return "Rally %d   Squad %d   HP %d" % [
-			int(soldier_rally_range),
+			int(soldier_rally_range * rng_mult),
 			int(sd.max_count),
 			int(sd.max_health),
 		]
 	return "Dmg %d   Rng %d   Spd %.1f" % [
-		int(damage),
-		int(attack_range),
-		attack_speed,
+		int(damage * dmg_mult),
+		int(attack_range * rng_mult),
+		attack_speed * spd_mult,
 	]

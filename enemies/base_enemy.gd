@@ -113,6 +113,10 @@ func _ready() -> void:
 	# _hp_scale BEFORE current_health is computed so per-enemy HP reflects
 	# the slider panel's HP %. No-op in production.
 	_hp_scale *= BalanceOverrides.get_hp_mult()
+	# Debug-only per-level HP multiplier (compounds with the global one).
+	# Lets the designer dial up only L4's enemies without touching L1-L3.
+	if RunState.current_level_id != "":
+		_hp_scale *= BalanceOverrides.get_level_float(RunState.current_level_id, "hp_mult", 1.0)
 	if data:
 		current_health = _effective_max_health()
 	# Phase 20: group membership so skill targeting can enumerate live

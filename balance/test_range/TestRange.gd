@@ -67,15 +67,6 @@ func _ready() -> void:
 		"tower_artillery", "tower_ice", "",
 	]
 
-
-func _exit_tree() -> void:
-	# Restore everything we mutated in _ready. Any save_game() called after
-	# this point sees the original loadout, so the sandbox never leaks.
-	LoadoutState.tower_slot_cap = _saved_tower_slot_cap
-	LoadoutState.selected_tower_ids = _saved_selected_tower_ids
-	RunState.current_mode = _saved_current_mode
-	RunState.current_level_id = _saved_current_level_id
-
 	_spawn_hero()
 	_setup_dev_panel()
 
@@ -89,6 +80,15 @@ func _exit_tree() -> void:
 	_refresh_timer.timeout.connect(_refresh_stats)
 	_refresh_timer.autostart = true
 	add_child(_refresh_timer)
+
+
+func _exit_tree() -> void:
+	# Restore everything we mutated in _ready. Any save_game() called after
+	# this point sees the original loadout, so the sandbox never leaks.
+	LoadoutState.tower_slot_cap = _saved_tower_slot_cap
+	LoadoutState.selected_tower_ids = _saved_selected_tower_ids
+	RunState.current_mode = _saved_current_mode
+	RunState.current_level_id = _saved_current_level_id
 
 
 func _spawn_hero() -> void:

@@ -85,11 +85,12 @@ func _gui_input(event: InputEvent) -> void:
 	# Touch-only per CLAUDE.md. Project has emulate_touch_from_mouse=true, so
 	# mouse clicks arrive here as InputEventScreenTouch. Handling both event
 	# types would double-fire `pressed` on PC and break the two-step commit.
-	if not _enabled:
-		return
 	if not (event is InputEventScreenTouch):
 		return
 	var was_inside: bool = Rect2(Vector2.ZERO, size).has_point(event.position)
+	# Disabled-on-this-ring means unaffordable upgrade/branch (sell/target/
+	# rally are always enabled). Let the input flow so we can emit a deny on
+	# release — the player's tap was registered, we just can't pay.
 	if event.pressed:
 		_is_pressed = true
 		queue_redraw()
@@ -97,7 +98,24 @@ func _gui_input(event: InputEvent) -> void:
 		_is_pressed = false
 		queue_redraw()
 		if was_inside:
-			pressed.emit(action_id, payload)
+			if _enabled:
+				pressed.emit(action_id, payload)
+			else:
+				EventBus.purchase_denied.emit("not_enough_gold")
+				_play_deny_shake()
+
+
+var _deny_tween: Tween = null
+func _play_deny_shake() -> void:
+	if _deny_tween != null and _deny_tween.is_valid():
+		_deny_tween.kill()
+	rotation = 0.0
+	_deny_tween = create_tween()
+	_deny_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_deny_tween.tween_property(self, "rotation", 0.10, 0.05)
+	_deny_tween.tween_property(self, "rotation", -0.10, 0.07)
+	_deny_tween.tween_property(self, "rotation", 0.05, 0.06)
+	_deny_tween.tween_property(self, "rotation", 0.0, 0.05)
 
 
 func _on_mouse_entered() -> void:

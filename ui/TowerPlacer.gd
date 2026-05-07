@@ -12,6 +12,11 @@ var _towers_parent: Node
 var _grid: Node
 var _registry: Dictionary = {}
 
+# Debug per-tower-tier overrides — identity (1.0) in production. Read at
+# build time so live slider tweaks apply to the next placed tower without
+# rebuilding the registry.
+const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
+
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -54,7 +59,8 @@ func _on_build_requested(spot_id: String, tower_id: String) -> void:
 	if _grid.is_occupied(spot_id):
 		return
 	var entry: Dictionary = _registry[tower_id]
-	var cost: int = entry.cost
+	# Compute cost live so debug per-tier override applies without rebuild.
+	var cost: int = int(round(float(entry.cost) * _BalanceOverrides.get_tower_mult(tower_id, "l1", "cost_mult")))
 	if not RunState.spend_gold(cost):
 		print("[TowerPlacer] build refused — need %dg, have %d" % [cost, RunState.gold])
 		return

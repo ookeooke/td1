@@ -12,15 +12,15 @@ class_name StatRow
 #     ↑       ↑              ↑
 #   icon   name (left)    value (right)
 
-const _ROW_HEIGHT: float = 24.0
-const _ICON_SIZE: float = 18.0
+const _ROW_HEIGHT: float = 30.0
+const _ICON_SIZE: float = 20.0
 const _ICON_LEFT_PAD: float = 4.0
-const _NAME_LEFT_PAD: float = 28.0   # icon area + small gap
+const _NAME_LEFT_PAD: float = 32.0   # icon area + small gap
 const _VALUE_RIGHT_PAD: float = 4.0
 const _ICON_TINT: Color = Color(0.85, 0.9, 1.0, 1.0)
 
-const _NAME_FONT_SIZE: int = 13
-const _VALUE_FONT_SIZE: int = 15
+const _NAME_FONT_SIZE: int = 14
+const _VALUE_FONT_SIZE: int = 17
 const _NAME_COLOR: Color = Color(0.7, 0.75, 0.85, 1.0)
 const _VALUE_COLOR: Color = Color(1.0, 1.0, 1.0, 1.0)
 

@@ -20,8 +20,13 @@ const _BTN_SIZE: Vector2 = Vector2(120, 112)
 # Phase 52 — sprite scale dropped 1.4 → 1.0 so the procedural hero (~40 px
 # tall) fits comfortably in the upper 64-px band of the 112-px card. clip
 # at the button border catches any future hero with a tall plume / weapon.
-const _SPRITE_SCALE: float = 1.0
-const _SPRITE_OFFSET: Vector2 = Vector2(60, 46)
+# Phase 52b — scale dropped 1.0 → 0.75 and offset chest lifted 46 → 38.
+# At 1.0 the helmet pushed the top edge and the sword/legs leaked into the
+# name/Lv label band; the warrior's full silhouette (helmet + body + sword
+# tip) is ~70 px tall at scale 1.0, not 40 px as the original comment
+# assumed. 0.75 keeps it inside the upper 64-px band with clear headroom.
+const _SPRITE_SCALE: float = 0.75
+const _SPRITE_OFFSET: Vector2 = Vector2(60, 38)
 const _BG_NORMAL: Color = Color(0.13, 0.17, 0.23, 1.0)
 const _BG_SELECTED: Color = Color(0.20, 0.27, 0.40, 1.0)
 const _BORDER_NORMAL: Color = Color(0.28, 0.34, 0.46, 1.0)

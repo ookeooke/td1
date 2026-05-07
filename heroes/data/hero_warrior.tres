@@ -1,9 +1,6 @@
-[gd_resource type="Resource" script_class="HeroData" load_steps=13 format=3 uid="uid://ct8ymjywf8nnk"]
+[gd_resource type="Resource" script_class="HeroData" format=3 uid="uid://ct8ymjywf8nnk"]
 
 [ext_resource type="Script" uid="uid://dhkkla25ah1bs" path="res://heroes/HeroData.gd" id="1_data"]
-[ext_resource type="Resource" path="res://items/bases/base_starter_sword.tres" id="10_s_sword"]
-[ext_resource type="Resource" path="res://items/bases/base_starter_tunic.tres" id="11_s_tunic"]
-[ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="12_s_charm"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_summon_soldiers.tres" id="2_summon"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_bless.tres" id="3_bless"]
 [ext_resource type="Script" uid="uid://yklkyt4lmkcv" path="res://progression/TalentData.gd" id="5_talent"]
@@ -11,6 +8,9 @@
 [ext_resource type="Script" uid="uid://c7gd214j4vheq" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="7_bonusdmg"]
 [ext_resource type="Script" uid="uid://dttyqvth8occr" path="res://systems/abilities/RegenAbility.gd" id="8_regen"]
 [ext_resource type="Resource" uid="uid://fcdhosfxtqow" path="res://heroes/data/visual_warrior.tres" id="9_vis"]
+[ext_resource type="Resource" uid="uid://c54lv1kxmk4o4" path="res://items/bases/base_starter_sword.tres" id="10_s_sword"]
+[ext_resource type="Resource" uid="uid://32g7m66cfmoo" path="res://items/bases/base_starter_tunic.tres" id="11_s_tunic"]
+[ext_resource type="Resource" uid="uid://geo44uq2rco7" path="res://items/bases/base_starter_charm.tres" id="12_s_charm"]
 
 [sub_resource type="Resource" id="Regen_Ability"]
 script = ExtResource("8_regen")

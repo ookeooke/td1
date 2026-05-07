@@ -50,6 +50,15 @@ func reset_for_level() -> void:
 	# Debug-only balance override (BalanceOverrides). No-op in production.
 	gold += BalanceOverrides.get_starting_gold_add()
 	lives = 1 if current_mode == "iron" else STARTING_LIVES
+	# Debug-only per-level overrides — REPLACE the computed values when
+	# present (sentinel -1 means "no override"). No-op in production.
+	if current_level_id != "":
+		var lvl_gold: int = BalanceOverrides.get_level_int(current_level_id, "starting_gold", -1)
+		if lvl_gold >= 0:
+			gold = lvl_gold
+		var lvl_lives: int = BalanceOverrides.get_level_int(current_level_id, "starting_lives", -1)
+		if lvl_lives >= 0:
+			lives = lvl_lives
 	score = 0
 	wave_number = 0
 	stars_earned = 0

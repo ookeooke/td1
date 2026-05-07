@@ -173,3 +173,123 @@ static func reset() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	# Some platforms can't delete user:// via globalize; rewrite defaults instead.
 	_save()
+
+
+# ============================================================================
+# Per-tower overrides — tier-keyed multipliers for damage / range / speed /
+# cost. tier_key ∈ {"l1", "l2", "l3_linear", "branch_a", "branch_b"}. Stored
+# under the "tower_overrides" sub-dict; missing keys return identity (1.0).
+#
+# Read sites:
+#   BaseTower.get_effective_damage / _range / _attack_speed (current tier)
+#   BaseTower.get_upgrade_range / get_upgrade_cost_to (next tier)
+#   BaseTower.get_branch_cost (branch tier)
+#   TowerPlacer._on_build_requested (l1 cost)
+#   TowerData.get_stats_line / TowerUpgradeData.get_preview_stats (display)
+# ============================================================================
+
+const TOWER_STAT_KEYS: Array[String] = ["damage_mult", "range_mult", "speed_mult", "cost_mult"]
+const TOWER_TIER_KEYS: Array[String] = ["l1", "l2", "l3_linear", "branch_a", "branch_b"]
+
+
+static func _ensure_tower_dict() -> Dictionary:
+	_ensure_loaded()
+	if not _cached.has("tower_overrides"):
+		_cached["tower_overrides"] = {}
+	return _cached["tower_overrides"]
+
+
+static func get_tower_mult(tower_id: String, tier_key: String, stat: String) -> float:
+	if not is_active() or tower_id == "" or tier_key == "":
+		return 1.0
+	_ensure_loaded()
+	var t: Dictionary = _cached.get("tower_overrides", {})
+	var per_tower: Dictionary = t.get(tower_id, {})
+	var per_tier: Dictionary = per_tower.get(tier_key, {})
+	return float(per_tier.get(stat, 1.0))
+
+
+static func set_tower_mult(tower_id: String, tier_key: String, stat: String, value: float) -> void:
+	if not is_active() or tower_id == "" or tier_key == "":
+		return
+	if not (stat in TOWER_STAT_KEYS):
+		push_warning("[BalanceOverrides] unknown tower stat: %s" % stat)
+		return
+	if not (tier_key in TOWER_TIER_KEYS):
+		push_warning("[BalanceOverrides] unknown tower tier: %s" % tier_key)
+		return
+	var t: Dictionary = _ensure_tower_dict()
+	if not t.has(tower_id):
+		t[tower_id] = {}
+	if not t[tower_id].has(tier_key):
+		t[tower_id][tier_key] = {}
+	t[tower_id][tier_key][stat] = value
+	_save()
+
+
+static func reset_tower_overrides() -> void:
+	if not is_active():
+		return
+	_ensure_loaded()
+	_cached["tower_overrides"] = {}
+	_save()
+
+
+# ============================================================================
+# Per-level overrides — keyed by level_id. Sentinel -1 for starting_gold /
+# starting_lives means "no override, use computed default". hp_mult defaults
+# to 1.0 (multiplied with global hp_mult, not replacing it).
+#
+# Read sites:
+#   RunState.reset_for_level (starting_gold, starting_lives)
+#   BaseEnemy._ready (hp_mult, on top of global)
+# ============================================================================
+
+const LEVEL_KEYS_INT: Array[String] = ["starting_gold", "starting_lives"]
+const LEVEL_KEYS_FLOAT: Array[String] = ["hp_mult"]
+
+
+static func _ensure_level_dict() -> Dictionary:
+	_ensure_loaded()
+	if not _cached.has("level_overrides"):
+		_cached["level_overrides"] = {}
+	return _cached["level_overrides"]
+
+
+static func get_level_int(level_id: String, key: String, fallback: int = -1) -> int:
+	if not is_active() or level_id == "":
+		return fallback
+	_ensure_loaded()
+	var l: Dictionary = _cached.get("level_overrides", {})
+	var per_level: Dictionary = l.get(level_id, {})
+	return int(per_level.get(key, fallback))
+
+
+static func get_level_float(level_id: String, key: String, fallback: float = 1.0) -> float:
+	if not is_active() or level_id == "":
+		return fallback
+	_ensure_loaded()
+	var l: Dictionary = _cached.get("level_overrides", {})
+	var per_level: Dictionary = l.get(level_id, {})
+	return float(per_level.get(key, fallback))
+
+
+static func set_level_value(level_id: String, key: String, value: Variant) -> void:
+	if not is_active() or level_id == "":
+		return
+	if not (key in LEVEL_KEYS_INT) and not (key in LEVEL_KEYS_FLOAT):
+		push_warning("[BalanceOverrides] unknown level key: %s" % key)
+		return
+	var l: Dictionary = _ensure_level_dict()
+	if not l.has(level_id):
+		l[level_id] = {}
+	l[level_id][key] = value
+	_save()
+
+
+static func reset_level_overrides() -> void:
+	if not is_active():
+		return
+	_ensure_loaded()
+	_cached["level_overrides"] = {}
+	_save()

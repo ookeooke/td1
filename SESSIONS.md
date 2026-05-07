@@ -2661,3 +2661,36 @@ Implementation in [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) `_refresh` — 
 **Deferred (Patch B — `_exit_tree` signal disconnect)**: Godot 4 Callables to instance methods are auto-disconnected when the receiver node frees, so the audit's "duplicate handlers on re-entry" concern likely doesn't manifest in practice. Defensive disconnects would be a 5–10 line addition; can land if profiler shows actual handler duplication after long sessions.
 
 **Verification:** headless `--quit` boot is clean. Manual editor playtest pending — most important checks: open Equipment subview at full window (should see 7 cols at 940 px panel, ~12 cols at 1500 px panel) and at narrower windows (5 cols min, vertical scroll visible when content overflows). Confirm `inventory_grid` re-flows when entering/exiting Equipment (RosterRail visibility toggle should trigger ScrollContainer resize).
+
+---
+
+## 2026-05-06 — Supply vs Demand balance model
+
+Two-headline-numbers balance dashboard layered on top of PPT + Naked Baseline. Closes audited gaps (regen / heal-aura abilities, magic_resist, archetype multipliers, bypass enemies all previously unscored). Per-tier tower weights + segmented player supply. Predicted-vs-observed calibration column reads `RunStats.get_history()`.
+
+**Plan:** `~/.claude/plans/can-we-make-plan-indexed-moonbeam.md`. Industry research showed Riot's champion balance framework (predicted vs actual outcome, never collapse to one number) and LoL's gold-efficiency model are the closest published precedents — no TD studio has published a comparable dashboard.
+
+**New files:**
+- [balance/BalanceModelConfig.gd](balance/BalanceModelConfig.gd) — Resource with `@export` weights for hardness, archetype demand, ability scoring, per-tier tower DPS-per-gold, supply segments, control conversion, safety bands. Defaults are 1.0 (or the historical hardcoded value); designers move only when run-stats drift on ≥3 levels in the same direction.
+- [balance/balance_model_config.tres](balance/balance_model_config.tres) — single-instance config, all defaults.
+- [balance/audit/SupplyDemandReport.gd](balance/audit/SupplyDemandReport.gd) + `.tscn` — level table (supply / demand / safety_ratio / bottleneck / spike wave / win% / avg leaks / drift), per-level drill-down (full demand + supply vectors + sub-ratios), live weight sliders on the right pane (HSplit). Drift flags `⚠ harder` when safety ≥ green_max but win% < 0.5; `⚠ easier` when safety < red_max but win% > 0.85.
+
+**Extended:**
+- [balance/BalanceCalculator.gd](balance/BalanceCalculator.gd) — appended `score_enemy_abilities` (closes regen + heal_aura gap), `wave_demand_vector`, `level_demand_vector`, `tower_avg_dps_per_gold` (per-tier weighted), `player_supply_vector` (segmented + tagged by damage_type/targets_flying/aoe_radius/control), `supply_demand_report` (top-level entry + bottleneck identification), `safety_color`, `observed_effective_dps_ratio`. All pure functions, no state. Existing functions untouched (CORE RULE 1).
+- [balance/BALANCE.md](balance/BALANCE.md) — appended "Supply vs Demand model" section: principles (don't collapse to one number, don't flatten CC to flat damage, don't invent weights), audit gaps closed, calibration loop, read-order before changing weights.
+- [ui/WorldMap.gd](ui/WorldMap.gd) + [ui/WorldMap.tscn](ui/WorldMap.tscn) — added "S/D" debug-only button beside Audit, gated by `OS.is_debug_build()`.
+
+**Algorithm summary:**
+- `level_demand` = Σ(EHP) × archetype weights + ability_ehp_add (regen/heal_aura now scored) + block_cost.
+- `player_supply` = segment_tower (per-tier-weighted DPS-per-gold × gold × duration × effective:theoretical) + segment_hero + segment_skills + segment_control (CC as DPS-multiplier with stack_cap, NOT flat damage) + segment_blocking. Each segment scaled by its own segment_*_weight.
+- Sub-ratios: anti_air, armored, magic_res, swarm, boss, rush, gold. Bottleneck = lowest sub-ratio < 1.0.
+- `effective_to_theoretical_dps_ratio` defaults to 0.65 (community range 50–80%); calibrated per-level from `RunStats.damage_by_tower` via `observed_effective_dps_ratio`.
+
+**Verification (manual editor playtest pending):**
+1. WorldMap → S/D button → loads SupplyDemandReport.
+2. L1 with default loadout shows safety_ratio ≥ 1.0 (Naked Baseline floor).
+3. Drag `tier_l3_linear_weight` slider 1.0 → 0.0; supply column drops as L3 contributions vanish; refresh fires automatically.
+4. Existing `run_stats.json` populates win%/avg leaks; drift column fills with ✓ or ⚠.
+5. Click "Save Weights" persists slider state to `balance_model_config.tres`.
+
+Folded the planned `BalanceSliders.gd` extension into `SupplyDemandReport.tscn` itself — weight sliders belong with the report that visualizes their effect, not with the gameplay-override panel (HP mult / armor add / etc.).

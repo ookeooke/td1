@@ -23,6 +23,8 @@ var _dragging_flag: bool = false
 # _physics_process on barracks — _process is fine for visual-only ticks).
 const _TowerAnimScript := preload("res://systems/TowerAnim.gd")
 const _TowerSilhouetteScript := preload("res://systems/TowerSilhouette.gd")
+# Debug per-tower-tier overrides — identity (1.0) in production.
+const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
 var _construct_t: float = 0.0
 var _upgrade_t: float = 0.0
 # Tap-to-place mode entered from the TowerSpotMenu's "Move Rally" button.
@@ -84,9 +86,19 @@ func _effective_soldier_data() -> Resource:
 
 func _effective_rally_range() -> float:
 	var ov: Resource = _level_override()
+	var base: float = 0.0
 	if ov != null and ov.soldier_rally_range > 0.0:
-		return ov.soldier_rally_range
-	return data.soldier_rally_range if data != null else 0.0
+		base = ov.soldier_rally_range
+	elif data != null:
+		base = data.soldier_rally_range
+	if data != null and data.tower_id != "":
+		base *= _BalanceOverrides.get_tower_mult(data.tower_id, _current_tier_key(), "range_mult")
+	return base
+
+
+func _current_tier_key() -> String:
+	# Barracks have only L1 / L2 — no branches. Mirror base_tower's keys.
+	return "l2" if level >= 2 else "l1"
 
 
 func get_sell_value() -> int:
@@ -99,15 +111,18 @@ func get_sell_value() -> int:
 func get_upgrade_cost_to(next_level: int) -> int:
 	if data == null or next_level <= 1 or next_level > MAX_LEVEL:
 		return 0
+	var raw: int = 0
 	var idx: int = next_level - 2
 	if idx >= 0 and idx < data.level_upgrades.size():
 		var ov: Resource = data.level_upgrades[idx]
 		if ov != null and ov.cost > 0:
-			return ov.cost
+			raw = ov.cost
 	# Legacy fallback, matching BaseTower behaviour.
-	if next_level == 2:
-		return data.upgrade_cost_lvl2
-	return 0
+	if raw == 0 and next_level == 2:
+		raw = data.upgrade_cost_lvl2
+	if raw == 0 or data.tower_id == "":
+		return raw
+	return int(round(float(raw) * _BalanceOverrides.get_tower_mult(data.tower_id, "l2", "cost_mult")))
 
 
 func can_upgrade() -> bool:

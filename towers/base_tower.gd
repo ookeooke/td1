@@ -46,6 +46,10 @@ var _next_buff_threshold: int = 0
 const _TowerAnimScript := preload("res://systems/TowerAnim.gd")
 const _TowerSilhouetteScript := preload("res://systems/TowerSilhouette.gd")
 const _MuzzleFlashScript := preload("res://vfx/MuzzleFlashVFX.gd")
+# Debug tower overrides — per-tower-tier multipliers applied to live stats
+# (damage / range / speed) and to upgrade/branch costs. Identity (1.0) in
+# production via OS.is_debug_build() short-circuit. See BalanceOverrides.gd.
+const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
 const AIM_LERP_SPEED: float = 12.0
 # Multiplier applied to silhouette draws — keep in sync with _draw().
 const _SILHOUETTE_BASE_SIZE: float = 1.08
@@ -112,7 +116,11 @@ func get_branch_cost(idx: int) -> int:
 	if data == null or idx < 0 or idx >= data.level_3_branches.size():
 		return 0
 	var branch: Resource = data.level_3_branches[idx]
-	return int(branch.cost)
+	var raw: int = int(branch.cost)
+	if raw <= 0 or data.tower_id == "":
+		return raw
+	var key: String = "branch_a" if idx == 0 else "branch_b"
+	return int(round(float(raw) * _BalanceOverrides.get_tower_mult(data.tower_id, key, "cost_mult")))
 
 
 func upgrade_to_branch(idx: int) -> bool:
@@ -132,12 +140,14 @@ func upgrade_to_branch(idx: int) -> bool:
 func get_effective_damage() -> float:
 	var base: float = _level_override().damage if _level_override() != null else data.damage
 	base *= MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_ARCHER_DAMAGE)
+	base *= _tower_mult_for_current_tier("damage_mult")
 	return base
 
 
 func get_effective_range() -> float:
 	var base: float = _level_override().attack_range if _level_override() != null else data.attack_range
 	base *= MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_TOWER_RANGE)
+	base *= _tower_mult_for_current_tier("range_mult")
 	return base
 
 
@@ -161,12 +171,55 @@ func get_upgrade_range() -> float:
 	var next: Resource = data.level_upgrades[next_idx]
 	if next == null or next.attack_range <= 0.0:
 		return 0.0
-	return next.attack_range * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_TOWER_RANGE)
+	var r: float = next.attack_range * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_TOWER_RANGE)
+	# Per-tier debug override on the NEXT tier the upgrade ring previews.
+	var nk: String = _next_tier_key()
+	if nk != "" and data.tower_id != "":
+		r *= _BalanceOverrides.get_tower_mult(data.tower_id, nk, "range_mult")
+	return r
 
 
 func get_effective_attack_speed() -> float:
 	var ov: Resource = _level_override()
-	return ov.attack_speed if ov != null else data.attack_speed
+	var base: float = ov.attack_speed if ov != null else data.attack_speed
+	base *= _tower_mult_for_current_tier("speed_mult")
+	return base
+
+
+# Tier key for the tower's current state. Used to look up debug per-tier
+# overrides. Mirrors the tier shape Iron's authored tres files use:
+#   l1          — base TowerData (level 1)
+#   l2          — level_upgrades[0]
+#   l3_linear   — level_upgrades[1] (only when no branches authored)
+#   branch_a/b  — level_3_branches[0]/[1] after a branch pick
+func _current_tier_key() -> String:
+	if level <= 1:
+		return "l1"
+	if level == 2:
+		return "l2"
+	if branch_idx == 0:
+		return "branch_a"
+	if branch_idx == 1:
+		return "branch_b"
+	return "l3_linear"
+
+
+# Convenience: read a per-tower-tier multiplier for the CURRENT tier.
+# Returns 1.0 in non-debug builds (BalanceOverrides short-circuits).
+func _tower_mult_for_current_tier(stat: String) -> float:
+	if data == null or data.tower_id == "":
+		return 1.0
+	return _BalanceOverrides.get_tower_mult(data.tower_id, _current_tier_key(), stat)
+
+
+# Tier key for the NEXT tier (used by upgrade preview). Returns "" if no
+# linear next tier exists (maxed, or sitting at L2 with branches authored).
+func _next_tier_key() -> String:
+	if level == 1:
+		return "l2"
+	if level == 2 and data != null and data.level_3_branches.is_empty():
+		return "l3_linear"
+	return ""
 
 
 # Tower Indicator Interface: each tower formats its own stats row so the
@@ -247,16 +300,25 @@ func get_upgrade_cost_to(next_level: int) -> int:
 	# be current + 1 in Phase 24; branching in Phase 25 may extend this.
 	if data == null or next_level <= 1 or next_level > MAX_LEVEL:
 		return 0
+	var raw_cost: int = 0
 	if next_level - 2 < data.level_upgrades.size():
 		var ov: Resource = data.level_upgrades[next_level - 2]
 		if ov.cost > 0:
-			return ov.cost
+			raw_cost = ov.cost
 	# Legacy fallback for .tres authored before TowerUpgradeData.
-	if next_level == 2:
-		return data.upgrade_cost_lvl2
-	if next_level == 3:
-		return data.upgrade_cost_lvl3
-	return 0
+	if raw_cost == 0:
+		if next_level == 2:
+			raw_cost = data.upgrade_cost_lvl2
+		elif next_level == 3:
+			raw_cost = data.upgrade_cost_lvl3
+	if raw_cost == 0:
+		return 0
+	# Per-tier cost override (l2 / l3_linear). Branch costs go through
+	# get_branch_cost(), not here.
+	if data.tower_id != "":
+		var key: String = "l2" if next_level == 2 else "l3_linear"
+		raw_cost = int(round(float(raw_cost) * _BalanceOverrides.get_tower_mult(data.tower_id, key, "cost_mult")))
+	return raw_cost
 
 
 func can_upgrade() -> bool:

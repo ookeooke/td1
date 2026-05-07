@@ -14,6 +14,7 @@ const SFX_PATHS: Dictionary = {
 	"tower_sell":     "res://audio/sfx/tower_sell.wav",
 	"tower_upgrade":  "res://audio/sfx/tower_upgrade.wav",
 	"gold_earned":    "res://audio/sfx/gold_earned.wav",
+	"purchase_denied":"res://audio/sfx/purchase_denied.wav",
 	"wave_start":     "res://audio/sfx/wave_start.wav",
 	"wave_complete":  "res://audio/sfx/wave_complete.wav",
 	"hero_skill":     "res://audio/sfx/hero_skill.wav",
@@ -49,6 +50,7 @@ func _ready() -> void:
 	EventBus.wave_started.connect(func(_w, _p): play_sfx("wave_start"))
 	EventBus.wave_completed.connect(func(_w): play_sfx("wave_complete"))
 	EventBus.hero_skill_used.connect(func(_s): play_sfx("hero_skill"))
+	EventBus.purchase_denied.connect(func(_r): play_sfx("purchase_denied"))
 	EventBus.game_over.connect(func(): play_sfx("game_over"))
 	EventBus.all_waves_completed.connect(func(): play_sfx("victory"))
 

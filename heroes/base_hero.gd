@@ -45,6 +45,10 @@ const MELEE_ENGAGE_GAP_X: float = 55.0
 # uses MELEE_ENGAGE_GAP_X side-by-side; ranged stops at 80 % of attack_range
 # along the approach vector.
 const RANGED_ATTACK_RANGE_THRESHOLD: float = 150.0
+# Default block-claim radius when HeroData.engage_radius is unset (0).
+# Clamped down by attack_range so a tiny-reach hero doesn't claim blocks
+# past its own swing. See HeroData.engage_radius for the rationale.
+const DEFAULT_ENGAGE_RADIUS: float = 60.0
 # Hero will not chase enemies that are farther than this from its current
 # rally point. The rally point is the HeroSpawn marker at start and updates
 # to the tap position on every player-issued move command.
@@ -147,6 +151,8 @@ var _ability_host: RefCounted = null
 
 @onready var attack_range_area: Area2D = $AttackRange
 @onready var attack_range_shape: CollisionShape2D = $AttackRange/CollisionShape2D
+@onready var engage_range_area: Area2D = $EngageRange
+@onready var engage_range_shape: CollisionShape2D = $EngageRange/CollisionShape2D
 @onready var nav_agent: NavigationAgent2D = $NavigationAgent2D
 @onready var seek_range_area: Area2D = $SeekRange
 @onready var seek_range_shape: CollisionShape2D = $SeekRange/CollisionShape2D
@@ -167,6 +173,12 @@ func _ready() -> void:
 	var atk_circle := CircleShape2D.new()
 	atk_circle.radius = data.attack_range
 	attack_range_shape.shape = atk_circle
+	# EngageRange — block-claim radius (see _effective_engage_radius). Decoupled
+	# from attack_range so ranged heroes attack at distance without locking
+	# every enemy at the edge of their projectile reach.
+	var engage_circle := CircleShape2D.new()
+	engage_circle.radius = _effective_engage_radius()
+	engage_range_shape.shape = engage_circle
 	# SeekRange — hero auto-walks toward enemies in this larger radius.
 	var seek_circle := CircleShape2D.new()
 	seek_circle.radius = data.attack_range * SEEK_RANGE_MULTIPLIER
@@ -889,8 +901,28 @@ func _start_block(enemy: Node) -> void:
 	var cap: int = data.max_block_targets if data != null else 1
 	if _blocked_enemies.size() >= cap:
 		return
+	# Engage gate — block claim only fires when the enemy is within the
+	# hero's engage radius. attack_range can be much wider for ranged heroes;
+	# this lets the mage shoot at 350 px while only locking enemies that
+	# walk into face contact. Distant call sites still call _start_block
+	# unconditionally (move_step, seek_target) — the gate makes them no-op
+	# until _auto_engage_extras catches the enemy crossing into engage range.
+	if not (enemy in engage_range_area.get_overlapping_areas()):
+		return
 	if enemy.engage_combat(self):
 		_blocked_enemies.append(enemy)
+
+
+# Effective block-claim radius. Reads HeroData.engage_radius; when unset (0),
+# falls back to the smaller of attack_range and DEFAULT_ENGAGE_RADIUS so a
+# narrow-reach hero never claims past its own swing.
+func _effective_engage_radius() -> float:
+	if data == null:
+		return DEFAULT_ENGAGE_RADIUS
+	var authored: float = float(data.engage_radius) if "engage_radius" in data else 0.0
+	if authored > 0.0:
+		return authored
+	return minf(data.attack_range, DEFAULT_ENGAGE_RADIUS)
 
 
 # Drop every blocker claim we hold. Called on state exits from COMBAT,
@@ -912,14 +944,16 @@ func _release_block_of(enemy: Node) -> void:
 	_blocked_enemies.erase(enemy)
 
 
-# While engaged, sweep attack_range for extra enemies we could also be
+# While engaged, sweep engage_range for extra enemies we could also be
 # blocking — up to the hero's capacity. Runs every frame in _attack_step,
-# which is cheap because Area2D overlap is O(n) in overlap size.
+# which is cheap because Area2D overlap is O(n) in overlap size. Iterates
+# engage_range_area (not attack_range) so ranged heroes don't claim distant
+# enemies that haven't actually closed to face contact yet.
 func _auto_engage_extras() -> void:
 	var cap: int = data.max_block_targets if data != null else 1
 	if _blocked_enemies.size() >= cap:
 		return
-	for a in attack_range_area.get_overlapping_areas():
+	for a in engage_range_area.get_overlapping_areas():
 		if not (a is BaseEnemy):
 			continue
 		var enemy: BaseEnemy = a

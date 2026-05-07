@@ -1,29 +1,23 @@
-[gd_resource type="Resource" script_class="ItemBase" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="ItemBase" format=3 uid="uid://geo44uq2rco7"]
 
 [ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
 [ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
-[ext_resource type="Texture2D" path="res://items/art/base_starter_charm.jpg" id="3_tex"]
+[ext_resource type="Texture2D" uid="uid://d1h8y5reaynbs" path="res://items/art/base_starter_charm.jpg" id="3_tex"]
 
 [sub_resource type="Resource" id="Impl_StarterCharm"]
 script = ExtResource("2_mod")
+xp_gain_mult_pct = 0.05
 ability_id = "impl_starter_charm"
 trigger = 7
-xp_gain_mult_pct = 0.05
 
 [resource]
 script = ExtResource("1_base")
 base_id = "base_starter_charm"
 base_name = "Lucky Charm"
 slot = 5
-rarity = 0
 icon_glyph = "star"
 icon_color = Color(0.9, 0.8, 0.4, 1)
 icon_texture = ExtResource("3_tex")
-hero_restriction = Array[String]([])
-level_requirement = 1
 implicit_abilities = Array[Resource]([SubResource("Impl_StarterCharm")])
-affix_slots = 0
-allowed_affix_pools = Array[String]([])
 drop_weight = 0.0
-min_wave = 1
 description = "A trinket said to bring fortune to its bearer."

@@ -132,8 +132,11 @@ func _gui_input(event: InputEvent) -> void:
 			if was_inside:
 				locked_pressed.emit()
 		return
-	if _data == null or not _affordable:
+	if _data == null:
 		return
+	# Affordability is enforced on RELEASE rather than at function entry so
+	# unaffordable taps still feel registered: the press visual fires, and on
+	# release we emit `purchase_denied` so HUD/SFX/local jiggle can react.
 	if event.pressed:
 		_is_pressed = true
 		queue_redraw()
@@ -141,7 +144,27 @@ func _gui_input(event: InputEvent) -> void:
 		_is_pressed = false
 		queue_redraw()
 		if was_inside:
-			pressed.emit(_tower_id)
+			if _affordable:
+				pressed.emit(_tower_id)
+			else:
+				EventBus.purchase_denied.emit("not_enough_gold")
+				_play_deny_shake()
+
+
+# Brief head-shake jiggle so the player's tap feels acknowledged even when
+# the action was rejected. Tween targets `rotation` (post-layout transform —
+# safe inside a Container) so it doesn't fight whatever is positioning us.
+var _deny_tween: Tween = null
+func _play_deny_shake() -> void:
+	if _deny_tween != null and _deny_tween.is_valid():
+		_deny_tween.kill()
+	rotation = 0.0
+	_deny_tween = create_tween()
+	_deny_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_deny_tween.tween_property(self, "rotation", 0.10, 0.05)
+	_deny_tween.tween_property(self, "rotation", -0.10, 0.07)
+	_deny_tween.tween_property(self, "rotation", 0.05, 0.06)
+	_deny_tween.tween_property(self, "rotation", 0.0, 0.05)
 
 
 func _on_mouse_entered() -> void:

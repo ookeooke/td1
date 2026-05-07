@@ -302,3 +302,23 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "PPT:  ?"
 theme_override_font_sizes/font_size = 18
+
+[node name="TowerSpacer" type="Control" parent="Scroll/Content"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+
+[node name="TowerSection" type="VBoxContainer" parent="Scroll/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="LevelSpacer" type="Control" parent="Scroll/Content"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+
+[node name="LevelSection" type="VBoxContainer" parent="Scroll/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4

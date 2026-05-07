@@ -583,6 +583,61 @@ To get aggregate views (which towers carry, where lives leak), build `balance/re
 
 ---
 
+## Supply vs Demand model
+
+Layered on top of PPT + Naked Baseline. Two headline numbers per level:
+
+- **player_supply** — total effective damage the player can produce over the level's `target_duration_sec`, segmented by source (towers, hero, skills, control, blocking).
+- **level_demand** — total EHP the player must remove plus archetype premiums (boss EHP × `boss_demand_weight`, healer/regen abilities → `ability_ehp_add`, etc.) plus block_cost.
+- **safety_ratio** = supply / demand. Banded for color: red < 1.00, orange < 1.15, green < 1.40, blue < 2.00, grey ≥ 2.00. Bands live on `BalanceModelConfig` — designers edit `.tres`, not code.
+
+Drill-down vectors identify the **bottleneck** (the axis where the player struggles): `anti_air`, `armored`, `magic_res`, `swarm`, `boss`, `rush`, `gold`. The lowest sub-ratio < 1.0 names the bottleneck; "none" if all ≥ 1.0. Visible in the per-level row of the Supply / Demand report.
+
+### Principles
+
+- **Don't collapse to one number.** The safety_ratio is the headline; the per-axis bars are how you debug a level. (Riot's champion balance framework — same lesson.)
+- **PPT + Naked Baseline stays the floor.** Supply/Demand is *additional*, never a replacement. A level still has to be one-starable at `min_ppt`.
+- **Don't flatten CC to flat damage.** Apply slow/stun as a DPS multiplier on the affected enemy *during* the CC window, capped at `control_stack_cap` fraction of `kill_window`. (SMITE diminishing-returns precedent.)
+- **Don't invent weights from intuition.** Every weight in `BalanceModelConfig` ships at 1.0 (or the historical hardcoded value). Move it only when ≥3 levels drift in the same direction in the predicted-vs-observed table.
+- **Track effective:theoretical DPS.** Community-observed range 50–80% — towers spend cycles out of range, on dead targets, between projectiles. Calibrate per-level from `RunStats.damage_by_tower`. Default `effective_to_theoretical_dps_ratio = 0.65`.
+
+### Closing the audited gaps
+
+Pre-supply/demand, several `EnemyData` fields were authored but never scored:
+
+- **Abilities** (RegenAbility, HealAuraAbility) — now contribute `ability_ehp_add`. A healer's `heal_amount × heal_aura_avg_targets / interval × kill_window` is added to the wave's EHP demand.
+- **`magic_resist`** — was diagnostic only. Now feeds the `magic_resist_ehp` demand vector vs `physical_supply`.
+- **`is_flying`** — drives the `flying_ehp` demand vector vs `anti_air_supply`.
+- **`is_boss` + `boss_phases`** — `boss_ehp` × `boss_demand_weight × (1 + phase_count × phase_bonus)`.
+- **`bypass_engagement`** — feeds `bypass_pressure` vs `segment_blocking`.
+- **`attack_damage` × `attack_speed`** — feeds `block_cost` (drain on supply during enemy engagement).
+
+### Per-tier tower weights + supply segmentation
+
+Every tower is evaluated at every reachable tier independently — `tower_avg_dps_per_gold(tower)` averages L1 / L2 / L3 linear / branch DPS-per-gold weighted by `tier_l1_weight` / `tier_l2_weight` / `tier_l3_linear_weight` / `tier_branch_weight`. Push a tier's weight to 0.5 if data shows players never reach it.
+
+Supply is segmented and tagged by `damage_type` / `targets_flying` / `aoe_radius` / on-hit control so each segment's contribution to anti-air / armored / swarm / boss demand can be compared independently.
+
+### Calibration loop
+
+The Supply/Demand report's right-hand column reads `RunStats.get_history()` and shows observed `win_pct` + `avg_leaks` per level. Drift flags:
+
+- safety ≥ green_max but win% < 0.5 → `⚠ harder` (model under-predicts).
+- safety < red_max but win% > 0.85 → `⚠ easier` (model over-predicts).
+
+When ≥3 levels flag in the same direction, re-fit per-segment weights — never tune individual numbers from intuition.
+
+### Read order before changing weights
+
+1. Open the report (WorldMap → S/D Report, debug-only).
+2. Identify the level whose drift is flagged.
+3. Read the drill-down (demand vector, supply vector, sub-ratios).
+4. Move the *one* weight that maps to the bottleneck (e.g. flying-heavy levels miscalibrated → adjust `flying_demand_weight`, never blanket-tune all archetype weights).
+5. Click Refresh; verify the level's drift flag clears without breaking neighbors.
+6. If the change holds across 3+ levels, click "Save Weights" to persist to `balance_model_config.tres`.
+
+---
+
 ## When to update this file
 
 - After every `.tres` numbers change → update the "current measured values" table

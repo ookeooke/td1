@@ -46,6 +46,11 @@ signal spawn_direction_changed(path_id, screen_edge_position)
 signal gold_changed(new_amount)
 signal lives_changed(new_amount)
 signal stars_changed(total_stars)
+# Player tapped a build/upgrade/branch slot they can't afford. HUD shakes
+# the gold label, SoundManager plays the deny SFX, the slot widget plays a
+# local jiggle. `reason` is a stable string so future denial sources
+# (locked, capped, dead hero) route through the same signal.
+signal purchase_denied(reason: String)
 # Persistent meta-currency. Run-gold (gold_changed) is volatile per level;
 # meta-gold survives across levels. Earned today by selling items in the
 # Equipment tab; future Town phases will let the player spend it.

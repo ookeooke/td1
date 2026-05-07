@@ -134,6 +134,10 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
 text = "Test Range"
+tooltip_text = "DPS sandbox.
+Spawn enemies on demand, place towers, measure live damage in isolation. All towers unlocked, 6 slots.
+Answers: \"does my tower's actual DPS match the spreadsheet?\"
+Snapshots/restores LoadoutState — does not affect campaign save."
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)
 
@@ -142,6 +146,10 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
 text = "Balance Report"
+tooltip_text = "Post-run rollup. Reads user://run_stats.json (last 50 runs).
+Tables: per-level win%, tower usage, branch splits, pair synergy, gold pacing, recent 10 runs.
+Answers: \"what actually happened across recent playtests?\"
+Empty for a fresh save — play some runs first."
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)
 
@@ -150,6 +158,10 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
 text = "Sliders"
+tooltip_text = "Live gameplay overrides for the next level launch.
+Sections: Global (HP / armor / mag-res / speed / damage / gold / PPT) · Tower (per-tier damage / range / speed / cost) · Level (starting gold / lives / HP mult).
+Persists to user://debug_balance.json. Survives \"New Game\" / save wipe.
+Answers: \"what if Archer L2 cost 30% less?\" or \"what if L4 had double starting gold?\" without editing .tres files."
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)
 
@@ -158,6 +170,21 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
 text = "Audit"
+tooltip_text = "Cross-level hardness drift table.
+Each level vs target_ppt × PPT_TO_HARDNESS_FACTOR (7,500). Color-coded ±15% green / ±25% yellow / >25% red. Plus gold/dmg stinginess.
+Answers: \"is this level over- or under-tuned for its PPT band?\""
+theme_override_font_sizes/font_size = 16
+modulate = Color(1, 0.8, 0.4, 1)
+
+[node name="SupplyDemandButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 80)
+layout_mode = 2
+text = "S/D"
+tooltip_text = "Supply vs Demand model.
+Per-level supply / demand / safety_ratio + bottleneck label (anti-air, armored, swarm, boss, rush, gold). Live weight sliders. Predicted-vs-observed drift column reads RunStats.
+Answers: \"where's the bottleneck — and is the model calibrated against actual play?\"
+See balance/BALANCE.md \"Supply vs Demand\"."
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)
 
@@ -166,5 +193,8 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
 text = "Unlock All"
+tooltip_text = "Skip campaign progression for testing.
+Flips MetaProgression.levels_unlocked[id] = true for every level + saves. Campaign-mode only — Heroic / Iron still gate on stars / heroic_complete.
+Answers: \"I want to test L4 without playing L1–L3 first.\""
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)

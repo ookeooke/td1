@@ -248,9 +248,9 @@ func _set_nav_badge(kind: String, text: String) -> void:
 func _on_hero_selected(hero_id: String) -> void:
 	# Roster cards re-mark selected.
 	for hid in _hero_cards.keys():
-		var card: HeroCard = _hero_cards[hid]
-		if card != null:
-			card.set_selected(hid == hero_id)
+		var btn: Button = _hero_cards[hid]
+		if btn != null:
+			btn.set_selected(hid == hero_id)
 	_refresh_hero_hall()
 	_refresh_nav_state()
 	# If a sub-view is open, refresh it (Skills builds itself; Equipment/Talents
@@ -719,10 +719,7 @@ func _embed_screen(scene_path: String) -> void:
 	# panel content) stay visible — only the section title labels are hidden.
 	for redundant_path in [
 		"TopBar/HeroLabel",
-		"Body/LeftPanel/LeftTitle",
-		"Body/LeftPanel/StatsTitle",
-		"Body/LeftPanel/DetailsTitle",
-		"Body/RightPanel/RightControls/MetaGoldLabel",
+		"Body/RightPanel/InventoryCard/VBox/HeaderRow/MetaGoldLabel",
 	]:
 		var node: Control = screen.get_node_or_null(redundant_path)
 		if node != null:
@@ -885,7 +882,12 @@ func _add_section_label(parent: Control, text: String) -> void:
 class HallPortrait extends Control:
 	# Big procedural portrait — same draw as HeroPortrait but bigger.
 	const _DRAW_SCALE: float = 5.5
-	const _ANCHOR_FRACTION: float = 0.85
+	# Vertical chest pivot. UnitVisualDrawer draws chest at the given offset;
+	# legs extend ~_DRAW_SCALE*16 below and head/helmet ~_DRAW_SCALE*16 above.
+	# 0.62 centers the figure with breathing room above the head and below
+	# the floor disc on a tall panel; the older 0.85 buried the hero at the
+	# bottom edge with a black void above.
+	const _ANCHOR_FRACTION: float = 0.62
 	const _BG_COLOR: Color = Color(0.07, 0.09, 0.12, 1.0)
 	const _BORDER_COLOR: Color = Color(0.25, 0.30, 0.40, 1.0)
 	const _FLOOR_COLOR: Color = Color(0.13, 0.16, 0.22, 1.0)

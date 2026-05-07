@@ -24,6 +24,7 @@ var _levels: Array[Resource] = []
 @onready var balance_report_button: Button = %BalanceReportButton
 @onready var balance_sliders_button: Button = %BalanceSlidersButton
 @onready var level_audit_button: Button = %LevelAuditButton
+@onready var supply_demand_button: Button = %SupplyDemandButton
 @onready var unlock_all_button: Button = %UnlockAllButton
 
 
@@ -44,12 +45,14 @@ func _ready() -> void:
 		balance_report_button.pressed.connect(_on_balance_report)
 		balance_sliders_button.pressed.connect(_on_balance_sliders)
 		level_audit_button.pressed.connect(_on_level_audit)
+		supply_demand_button.pressed.connect(_on_supply_demand)
 		unlock_all_button.pressed.connect(_on_unlock_all)
 	else:
 		test_range_button.visible = false
 		balance_report_button.visible = false
 		balance_sliders_button.visible = false
 		level_audit_button.visible = false
+		supply_demand_button.visible = false
 		unlock_all_button.visible = false
 	_refresh_stars_label()
 	_refresh_meta_gold_label()
@@ -172,6 +175,11 @@ func _on_level_audit() -> void:
 	# Debug-only — cross-level hardness + PPT-drift table. Reads authored
 	# level_list.tres + per-level wave_list .tres files.
 	SceneManager.goto("res://balance/audit/LevelAudit.tscn")
+
+
+func _on_supply_demand() -> void:
+	# Debug-only — Supply vs Demand model. See balance/BALANCE.md.
+	SceneManager.goto("res://balance/audit/SupplyDemandReport.tscn")
 
 
 func _on_unlock_all() -> void:

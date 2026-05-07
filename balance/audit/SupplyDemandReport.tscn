@@ -1,0 +1,85 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://balance/audit/SupplyDemandReport.gd" id="1_sdr"]
+
+[node name="SupplyDemandReport" type="Control"]
+script = ExtResource("1_sdr")
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.10, 0.12, 0.14, 1)
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 24.0
+offset_top = 24.0
+offset_right = -24.0
+offset_bottom = 80.0
+theme_override_constants/separation = 16
+
+[node name="BackButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 56)
+layout_mode = 2
+text = "Back"
+theme_override_font_sizes/font_size = 18
+
+[node name="Title" type="Label" parent="TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Supply / Demand Report"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 26
+
+[node name="SaveButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 56)
+layout_mode = 2
+text = "Save Weights"
+theme_override_font_sizes/font_size = 16
+
+[node name="RefreshButton" type="Button" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 56)
+layout_mode = 2
+text = "Refresh"
+theme_override_font_sizes/font_size = 18
+
+[node name="HSplit" type="HSplitContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = 96.0
+offset_right = -24.0
+offset_bottom = -24.0
+split_offset = 1100
+
+[node name="ContentScroll" type="ScrollContainer" parent="HSplit"]
+layout_mode = 2
+
+[node name="ContentVBox" type="VBoxContainer" parent="HSplit/ContentScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="SliderScroll" type="ScrollContainer" parent="HSplit"]
+layout_mode = 2
+
+[node name="SliderVBox" type="VBoxContainer" parent="HSplit/SliderScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4

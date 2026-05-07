@@ -1,31 +1,25 @@
-[gd_resource type="Resource" script_class="ItemBase" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="ItemBase" format=3 uid="uid://32g7m66cfmoo"]
 
 [ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
 [ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
-[ext_resource type="Texture2D" path="res://items/art/base_starter_tunic.jpg" id="3_tex"]
+[ext_resource type="Texture2D" uid="uid://bsydv8atf0juw" path="res://items/art/base_starter_tunic.jpg" id="3_tex"]
 
 [sub_resource type="Resource" id="Impl_StarterTunic"]
 script = ExtResource("2_mod")
+max_health_flat = 10.0
 ability_id = "impl_starter_tunic"
 trigger = 7
-max_health_flat = 10.0
 
 [resource]
 script = ExtResource("1_base")
 base_id = "base_starter_tunic"
 base_name = "Padded Tunic"
 slot = 1
-rarity = 0
 icon_glyph = "armor_tunic"
 icon_color = Color(0.7, 0.55, 0.35, 1)
 icon_texture = ExtResource("3_tex")
-hero_restriction = Array[String]([])
-level_requirement = 1
 implicit_abilities = Array[Resource]([SubResource("Impl_StarterTunic")])
-affix_slots = 0
-allowed_affix_pools = Array[String]([])
 drop_weight = 0.0
-min_wave = 1
 grid_width = 2
 grid_height = 2
 description = "Simple cloth padding. Better than nothing."

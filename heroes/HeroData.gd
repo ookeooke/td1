@@ -16,6 +16,14 @@ class_name HeroData
 @export var max_health: int = 100
 @export var attack_damage: float = 10.0
 @export var attack_range: float = 150.0
+# Blocker-claim radius — enemies entering this halt and engage as melee.
+# Decoupled from `attack_range` so ranged heroes (mage, sniper) attack from
+# afar without freezing every enemy at the edge of their projectile reach,
+# while melee heroes still pull enemies into face contact. 0 = derive
+# `min(attack_range, BaseHero.DEFAULT_ENGAGE_RADIUS)` at spawn — set it
+# explicitly only when the archetype diverges (tank with bigger presence,
+# sniper that should never block, dragon with a large body).
+@export var engage_radius: float = 0.0
 @export var attack_speed: float = 1.0
 @export var move_speed: float = 275.0
 @export var armor: float = 0.2

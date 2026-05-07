@@ -32,8 +32,15 @@ const BalanceOverrides = preload("res://balance/debug/BalanceOverrides.gd")
 @onready var readout_hardness: Label = %ReadoutHardness
 @onready var readout_gold_dmg: Label = %ReadoutGoldDmg
 @onready var readout_ppt: Label = %ReadoutPpt
+@onready var tower_section: VBoxContainer = %TowerSection
+@onready var level_section: VBoxContainer = %LevelSection
 
 var _levels: Array = []   # Array[LevelNodeData], populated from level_list.tres
+# Per-tower-tier value labels keyed by "tower_id|tier|stat" so refresh after
+# Reset can rewrite them in place without rebuilding the whole subtree.
+var _tower_value_labels: Dictionary = {}
+# Per-level value labels keyed by "level_id|key".
+var _level_value_labels: Dictionary = {}
 
 
 func _ready() -> void:
@@ -43,6 +50,8 @@ func _ready() -> void:
 	_load_levels()
 	_load_slider_values()
 	_connect_sliders()
+	_build_tower_section()
+	_build_level_section()
 	_refresh_readout()
 
 
@@ -219,4 +228,323 @@ func _on_play() -> void:
 func _on_reset() -> void:
 	BalanceOverrides.reset()
 	_load_slider_values()
+	# Rebuild the tower + level sections so their sliders snap to defaults.
+	_build_tower_section()
+	_build_level_section()
 	_refresh_readout()
+
+
+# ── Tower overrides section ──────────────────────────────────────────────
+# Per-tower-tier multipliers for damage / range / speed / cost. Folded into
+# BaseTower.get_effective_* + TowerPlacer build cost + TowerData display
+# preview. See balance/debug/BalanceOverrides.gd "tower_overrides" sub-dict.
+
+const _TOWER_TIER_KEYS := ["l1", "l2", "l3_linear", "branch_a", "branch_b"]
+const _TOWER_STAT_KEYS := ["damage_mult", "range_mult", "speed_mult", "cost_mult"]
+
+
+func _build_tower_section() -> void:
+	for c in tower_section.get_children():
+		c.queue_free()
+	_tower_value_labels.clear()
+	var heading := Label.new()
+	heading.text = "Tower overrides — per-tier multipliers (1.0 = no change)"
+	heading.set("theme_override_font_sizes/font_size", 22)
+	heading.modulate = Color(1.0, 0.9, 0.5, 1)
+	tower_section.add_child(heading)
+	for tower in ContentRegistry.towers:
+		if tower == null or not ("tower_id" in tower) or tower.tower_id == "":
+			continue
+		_add_tower_subgroup(tower)
+
+
+func _add_tower_subgroup(tower: TowerData) -> void:
+	var group := VBoxContainer.new()
+	group.set("theme_override_constants/separation", 2)
+	# Header (tap to expand/collapse).
+	var hdr := Button.new()
+	hdr.text = "▸ %s   (%s)" % [tower.tower_name, tower.tower_id]
+	hdr.flat = true
+	hdr.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	hdr.set("theme_override_font_sizes/font_size", 18)
+	hdr.modulate = Color(0.85, 0.95, 1.0)
+	var body := VBoxContainer.new()
+	body.set("theme_override_constants/separation", 2)
+	body.visible = false
+	hdr.pressed.connect(func():
+		body.visible = not body.visible
+		hdr.text = ("▾ " if body.visible else "▸ ") + tower.tower_name + "   (" + tower.tower_id + ")")
+	for tier_key in _TOWER_TIER_KEYS:
+		if not _tower_has_tier(tower, tier_key):
+			continue
+		_add_tower_tier_block(body, tower, tier_key)
+	group.add_child(hdr)
+	group.add_child(body)
+	tower_section.add_child(group)
+
+
+# Returns true when the tower actually authors the given tier — skip absent
+# tiers so we don't render meaningless sliders for, say, an L3 linear when
+# the tower has branches authored instead.
+func _tower_has_tier(tower: TowerData, tier_key: String) -> bool:
+	if tower == null:
+		return false
+	match tier_key:
+		"l1":
+			return true
+		"l2":
+			return tower.level_upgrades.size() >= 1
+		"l3_linear":
+			return tower.level_3_branches.is_empty() and tower.level_upgrades.size() >= 2
+		"branch_a":
+			return tower.level_3_branches.size() >= 1
+		"branch_b":
+			return tower.level_3_branches.size() >= 2
+	return false
+
+
+func _add_tower_tier_block(parent: VBoxContainer, tower: TowerData, tier_key: String) -> void:
+	var tier_label := Label.new()
+	tier_label.text = "    " + _tier_display_name(tier_key)
+	tier_label.set("theme_override_font_sizes/font_size", 14)
+	tier_label.modulate = Color(0.8, 0.85, 0.8)
+	parent.add_child(tier_label)
+	for stat in _TOWER_STAT_KEYS:
+		var authored: float = _authored_stat(tower, tier_key, stat)
+		# Skip irrelevant stats (e.g. damage/speed on a barracks where
+		# tower.damage = 0). Keeps the panel honest.
+		if authored <= 0.0:
+			continue
+		_add_tower_slider(parent, tower.tower_id, tier_key, stat, authored)
+
+
+# Pretty tier label for the panel — "L1" reads better than "l1", etc.
+func _tier_display_name(tier_key: String) -> String:
+	match tier_key:
+		"l1": return "L1"
+		"l2": return "L2"
+		"l3_linear": return "L3"
+		"branch_a": return "L3 branch A"
+		"branch_b": return "L3 branch B"
+	return tier_key
+
+
+# Authored value for a (tower, tier, stat) tuple. Mirrors the inheritance
+# rules used by base_tower._level_override / TowerUpgradeData.get_preview_stats:
+# upgrade overrides at 0 fall back to the base TowerData. Returns 0 when
+# the stat is irrelevant for that tower (e.g. damage on a barracks).
+func _authored_stat(tower: TowerData, tier_key: String, stat: String) -> float:
+	if tower == null:
+		return 0.0
+	var ov: Resource = null
+	match tier_key:
+		"l2":
+			if tower.level_upgrades.size() >= 1:
+				ov = tower.level_upgrades[0]
+		"l3_linear":
+			if tower.level_upgrades.size() >= 2:
+				ov = tower.level_upgrades[1]
+		"branch_a":
+			if tower.level_3_branches.size() >= 1:
+				ov = tower.level_3_branches[0]
+		"branch_b":
+			if tower.level_3_branches.size() >= 2:
+				ov = tower.level_3_branches[1]
+	match stat:
+		"damage_mult":
+			if ov != null and ov.damage > 0.0:
+				return ov.damage
+			return tower.damage
+		"range_mult":
+			if tower.is_barracks():
+				if ov != null and ov.soldier_rally_range > 0.0:
+					return ov.soldier_rally_range
+				return tower.soldier_rally_range
+			if ov != null and ov.attack_range > 0.0:
+				return ov.attack_range
+			return tower.attack_range
+		"speed_mult":
+			if ov != null and ov.attack_speed > 0.0:
+				return ov.attack_speed
+			return tower.attack_speed
+		"cost_mult":
+			if ov != null:
+				return float(ov.cost)
+			return float(tower.cost)
+	return 0.0
+
+
+# Slider step appropriate for the stat's typical magnitude.
+func _step_for_stat(stat: String, authored: float) -> float:
+	match stat:
+		"damage_mult":
+			return 0.5 if authored < 20.0 else 1.0
+		"range_mult":
+			return 5.0
+		"speed_mult":
+			return 0.05
+		"cost_mult":
+			return 5.0 if authored >= 50.0 else 1.0
+	return 1.0
+
+
+# Format a stat's absolute value + multiplier for the value label.
+func _format_stat_value(stat: String, absolute: float, mult: float) -> String:
+	match stat:
+		"damage_mult":
+			return "%.1f  (×%.2f)" % [absolute, mult]
+		"range_mult":
+			return "%d  (×%.2f)" % [int(round(absolute)), mult]
+		"speed_mult":
+			return "%.2f  (×%.2f)" % [absolute, mult]
+		"cost_mult":
+			return "%d g  (×%.2f)" % [int(round(absolute)), mult]
+	return "%.2f" % absolute
+
+
+# Friendly label shown left of the slider — "Dmg" reads faster than "damage_mult".
+func _stat_display_name(stat: String) -> String:
+	match stat:
+		"damage_mult": return "Dmg"
+		"range_mult":  return "Rng"
+		"speed_mult":  return "Spd"
+		"cost_mult":   return "Cost"
+	return stat
+
+
+# Slider operates on absolute values (so you read "Dmg 7" not "1.4×"), but
+# storage stays as multipliers — that way overrides scale automatically if
+# you later rebalance authored .tres values. mult = absolute / authored.
+func _add_tower_slider(parent: VBoxContainer, tower_id: String, tier_key: String,
+		stat: String, authored: float) -> void:
+	var hb := HBoxContainer.new()
+	hb.set("theme_override_constants/separation", 12)
+	var name_lbl := Label.new()
+	name_lbl.text = "        " + _stat_display_name(stat)
+	name_lbl.set("theme_override_font_sizes/font_size", 13)
+	name_lbl.custom_minimum_size = Vector2(220, 0)
+	var current_mult: float = BalanceOverrides.get_tower_mult(tower_id, tier_key, stat)
+	var current_abs: float = authored * current_mult
+	var sld := HSlider.new()
+	sld.min_value = 0.0
+	sld.max_value = authored * 3.0
+	sld.step = _step_for_stat(stat, authored)
+	sld.value = current_abs
+	sld.custom_minimum_size = Vector2(280, 0)
+	sld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var val_lbl := Label.new()
+	val_lbl.text = _format_stat_value(stat, current_abs, current_mult)
+	val_lbl.set("theme_override_font_sizes/font_size", 13)
+	val_lbl.custom_minimum_size = Vector2(140, 0)
+	sld.value_changed.connect(func(v: float):
+		var m: float = (v / authored) if authored > 0.0 else 1.0
+		BalanceOverrides.set_tower_mult(tower_id, tier_key, stat, m)
+		val_lbl.text = _format_stat_value(stat, v, m))
+	hb.add_child(name_lbl)
+	hb.add_child(sld)
+	hb.add_child(val_lbl)
+	parent.add_child(hb)
+	_tower_value_labels[tower_id + "|" + tier_key + "|" + stat] = val_lbl
+
+
+# ── Level overrides section ──────────────────────────────────────────────
+# Per-level: starting_gold, starting_lives (sentinel -1 = no override),
+# hp_mult (multiplied with global hp_mult). See BalanceOverrides.gd
+# "level_overrides" sub-dict.
+
+func _build_level_section() -> void:
+	for c in level_section.get_children():
+		c.queue_free()
+	_level_value_labels.clear()
+	var heading := Label.new()
+	heading.text = "Level overrides"
+	heading.set("theme_override_font_sizes/font_size", 22)
+	heading.modulate = Color(1.0, 0.9, 0.5, 1)
+	level_section.add_child(heading)
+	for lvl in _levels:
+		if lvl == null or not ("level_id" in lvl) or lvl.level_id == "":
+			continue
+		_add_level_subgroup(lvl)
+
+
+func _add_level_subgroup(lvl: Resource) -> void:
+	var group := VBoxContainer.new()
+	group.set("theme_override_constants/separation", 2)
+	var hdr := Button.new()
+	hdr.text = "▸ %s   (%s)" % [lvl.display_name, lvl.level_id]
+	hdr.flat = true
+	hdr.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	hdr.set("theme_override_font_sizes/font_size", 18)
+	hdr.modulate = Color(0.85, 0.95, 1.0)
+	var body := VBoxContainer.new()
+	body.set("theme_override_constants/separation", 2)
+	body.visible = false
+	hdr.pressed.connect(func():
+		body.visible = not body.visible
+		hdr.text = ("▾ " if body.visible else "▸ ") + lvl.display_name + "   (" + lvl.level_id + ")")
+	# Three rows: starting_gold (int with -1 sentinel), starting_lives, hp_mult.
+	_add_level_int_slider(body, lvl.level_id, "starting_gold", -1, 2000, 25)
+	_add_level_int_slider(body, lvl.level_id, "starting_lives", -1, 100, 1)
+	_add_level_float_slider(body, lvl.level_id, "hp_mult", 0.5, 3.0, 0.05)
+	group.add_child(hdr)
+	group.add_child(body)
+	level_section.add_child(group)
+
+
+func _add_level_int_slider(parent: VBoxContainer, level_id: String, key: String,
+		rmin: int, rmax: int, rstep: int) -> void:
+	var hb := HBoxContainer.new()
+	hb.set("theme_override_constants/separation", 12)
+	var name_lbl := Label.new()
+	name_lbl.text = "    " + key + " (-1 = default)"
+	name_lbl.set("theme_override_font_sizes/font_size", 13)
+	name_lbl.custom_minimum_size = Vector2(260, 0)
+	var sld := HSlider.new()
+	sld.min_value = rmin
+	sld.max_value = rmax
+	sld.step = rstep
+	sld.value = float(BalanceOverrides.get_level_int(level_id, key, rmin))
+	sld.custom_minimum_size = Vector2(280, 0)
+	sld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var val_lbl := Label.new()
+	val_lbl.text = "default" if int(sld.value) < 0 else str(int(sld.value))
+	val_lbl.set("theme_override_font_sizes/font_size", 13)
+	val_lbl.custom_minimum_size = Vector2(80, 0)
+	sld.value_changed.connect(func(v: float):
+		var iv: int = int(v)
+		BalanceOverrides.set_level_value(level_id, key, iv)
+		val_lbl.text = "default" if iv < 0 else str(iv))
+	hb.add_child(name_lbl)
+	hb.add_child(sld)
+	hb.add_child(val_lbl)
+	parent.add_child(hb)
+	_level_value_labels[level_id + "|" + key] = val_lbl
+
+
+func _add_level_float_slider(parent: VBoxContainer, level_id: String, key: String,
+		rmin: float, rmax: float, rstep: float) -> void:
+	var hb := HBoxContainer.new()
+	hb.set("theme_override_constants/separation", 12)
+	var name_lbl := Label.new()
+	name_lbl.text = "    " + key + " (1.0 = identity)"
+	name_lbl.set("theme_override_font_sizes/font_size", 13)
+	name_lbl.custom_minimum_size = Vector2(260, 0)
+	var sld := HSlider.new()
+	sld.min_value = rmin
+	sld.max_value = rmax
+	sld.step = rstep
+	sld.value = BalanceOverrides.get_level_float(level_id, key, 1.0)
+	sld.custom_minimum_size = Vector2(280, 0)
+	sld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var val_lbl := Label.new()
+	val_lbl.text = "%.2f" % sld.value
+	val_lbl.set("theme_override_font_sizes/font_size", 13)
+	val_lbl.custom_minimum_size = Vector2(80, 0)
+	sld.value_changed.connect(func(v: float):
+		BalanceOverrides.set_level_value(level_id, key, v)
+		val_lbl.text = "%.2f" % v)
+	hb.add_child(name_lbl)
+	hb.add_child(sld)
+	hb.add_child(val_lbl)
+	parent.add_child(hb)
+	_level_value_labels[level_id + "|" + key] = val_lbl

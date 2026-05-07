@@ -12,4 +12,4 @@ radius = 200.0
 damage_bonus = 8.0
 health_bonus = 30
 buff_duration = 8.0
-description = "Empower nearby soldiers for 8 seconds: +8 attack damage and +30 max HP."
+description = "Bless yourself and nearby soldiers for 8 seconds: +8 attack damage and +30 HP."

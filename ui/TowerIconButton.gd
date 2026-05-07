@@ -105,7 +105,7 @@ func set_equipped(on: bool) -> void:
 func refresh_affordability() -> void:
 	if _data == null:
 		return
-	_affordable = RunState.gold >= int(_data.cost)
+	_affordable = RunState.gold >= _data.get_effective_cost()
 	queue_redraw()
 
 
@@ -342,7 +342,7 @@ func _draw_cost_badge(center: Vector2, radius: float) -> void:
 	draw_arc(badge_pos, br, 0.0, TAU, 20, Color(0.08, 0.08, 0.1), 1.5)
 	var font: Font = ThemeDB.fallback_font
 	var font_size: int = 15
-	var cost_text: String = str(int(_data.cost))
+	var cost_text: String = str(_data.get_effective_cost())
 	var text_size: Vector2 = font.get_string_size(cost_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
 	var text_pos: Vector2 = badge_pos - Vector2(text_size.x * 0.5, -text_size.y * 0.3)
 	draw_string(font, text_pos, cost_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.05, 0.05, 0.05))

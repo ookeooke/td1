@@ -50,7 +50,7 @@ func show_for_build_preview(data: Resource, anchor_pos: Vector2, min_clearance: 
 	title_label.text = String(data.tower_name)
 	_set_stats_plain(data.get_stats_line())
 	var parts: PackedStringArray = PackedStringArray()
-	parts.append("Cost: %dg" % int(data.cost))
+	parts.append("Cost: %dg" % data.get_effective_cost())
 	if data.encyclopedia_entry != "":
 		parts.append(String(data.encyclopedia_entry))
 	meta_label.text = "   \u2022   ".join(parts)

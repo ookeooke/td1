@@ -64,10 +64,13 @@ static func _ensure_loaded() -> void:
 	var parsed: Variant = JSON.parse_string(raw)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
-	# Merge — unknown keys ignored, missing keys keep defaults
-	for k in _cached.keys():
-		if (parsed as Dictionary).has(k):
-			_cached[k] = (parsed as Dictionary)[k]
+	# Merge: copy every persisted key back over the defaults-seeded _cached.
+	# Iterate parsed.keys (NOT _cached.keys) so non-default top-level keys
+	# like "tower_overrides" and "level_overrides" — added lazily by
+	# set_tower_mult / set_level_value, never present in _defaults() —
+	# survive across restarts. Iterating _cached.keys silently dropped them.
+	for k in (parsed as Dictionary).keys():
+		_cached[k] = (parsed as Dictionary)[k]
 
 
 static func _save() -> void:
@@ -132,6 +135,17 @@ static func get_ppt_override() -> int:
 		return -1
 	_ensure_loaded()
 	return int(_cached.get("ppt_override", -1))
+
+
+# Deep-copy snapshot of every active override. Empty dict in non-debug builds.
+# Used by RunStats to stamp each run record with the slider state at run start
+# so post-mortem analysis can disambiguate "Wave 5 leaked at hp_mult=0.85"
+# from "Wave 5 leaked at default values".
+static func get_snapshot() -> Dictionary:
+	if not is_active():
+		return {}
+	_ensure_loaded()
+	return _cached.duplicate(true)
 
 
 # Convenience — true if any override is non-default.

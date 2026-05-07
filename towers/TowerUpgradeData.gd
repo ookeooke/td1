@@ -16,6 +16,14 @@ class_name TowerUpgradeData
 @export var attack_speed: float = 0.0
 @export var cost: int = 0  # gold to reach this level from the previous level
 @export var sell_value: int = 0  # refund after buying this upgrade
+# AoE override per upgrade. 0 = inherit from base TowerData.aoe_radius.
+# Lets upgrades grow (or shrink) splash without retuning the base. Same
+# inheritance rule as damage/range/speed.
+@export var aoe_radius: float = 0.0
+# Splash damage % override per upgrade. 0 = inherit from base
+# TowerData.splash_damage_pct (which itself defaults to 0.5). Set > 0 to
+# tune secondary-target damage at this tier.
+@export_range(0.0, 1.0, 0.05) var splash_damage_pct: float = 0.0
 # On-hit ability list for projectiles at this level — reserved for future
 # general-purpose on-hit composition (pierce, chain, etc.). Phase 41 polish
 # generalizes on-hit to this list. For Phase 25 branching, the common
@@ -75,7 +83,7 @@ func get_preview_stats(base: TowerData) -> Array:
 	var dmg: float = damage if damage > 0.0 else (base.damage if base != null else 0.0)
 	var rng: float = attack_range if attack_range > 0.0 else (base.attack_range if base != null else 0.0)
 	var spd: float = attack_speed if attack_speed > 0.0 else (base.attack_speed if base != null else 0.0)
-	var aoe: float = base.aoe_radius if base != null else 0.0
+	var aoe: float = aoe_radius if aoe_radius > 0.0 else (base.aoe_radius if base != null else 0.0)
 	var rows: Array = [
 		{"label": "Dmg", "value": dmg, "fmt": "%d"},
 		{"label": "Rng", "value": rng, "fmt": "%d"},

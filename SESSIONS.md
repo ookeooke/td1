@@ -3091,3 +3091,51 @@ The game felt frantic. Three felt-issues from playtest: enemies cross the map to
 5. Open Test Range (`balance/test_range/`) → place Archer L1 alone vs single Basic: confirm time-to-kill feels deliberate (target ~4 hits = 16 dmg vs 24 HP).
 6. Run Balance Report → cross-check L1 hardness score against the L1 PPT=2 expected band.
 7. Naked Baseline check: complete L1 with default warrior, no items / talents / upgrades, 1-star or better.
+
+---
+
+## 2026-05-07 — In-level hero HUD polish — portrait, skill cluster, move marker, navmesh-gated taps, round CD buttons
+
+Single-session pass tightening every interactive element of the in-level hero HUD: the bottom-right portrait, the skill cluster around it, tap-to-move feedback, and one real cooldown-lifecycle bug. All additive — no signals added, no autoload changes, no new scenes.
+
+**1. Portrait tap = select-only (drop camera-focus emit).** Tapping the portrait used to do `EventBus.camera_focus_requested.emit(...)` AND `set_selected(true)`. The 0.35 s pan was disruptive when the player tapped the portrait specifically to issue a move order. Dropped the emit. Selection-only flow now: portrait tap arms `is_selected`, next world tap moves (HeroInputManager already gates `move_to` on `is_selected`).
+
+**2. Damage flash on portrait.** New `_damage_flash_t` decay timer on `HeroHudPortrait`, listens to existing `EventBus.hit_landed(target, source, amount, dmg_type)`, sets flash to 1.0 when `target == _hero`, decays over `FLASH_DURATION = 0.35 s`. Drawn as a translucent red ring over the HP layer in `_draw`. Mirrors `BaseHero._hit_flash_t` pattern. Paused-tree gated like the respawn tick so the flash freezes during tactical pause instead of ticking off invisibly.
+
+**3. Move-order marker on hero.** Added `_move_marker_pos` / `_move_marker_t` to `BaseHero`, set inside `move_to()` after the DEAD/data legality gate. `_physics_process` decays the timer alongside `_hit_flash_t` / `_flinch_t`. `_draw()` converts the world destination via `to_local()` and draws an expanding green ring (`MOVE_MARKER_BASE_RADIUS = 6`, expands by 14 px as alpha fades). Zoom-scaled per the CLAUDE.md rule. RTS-style click confirmation that the order landed, before the hero has visibly turned.
+
+**4. Off-navmesh tap rejection in HeroInputManager.** Hero `move_to()` trusted its caller, so off-map taps (water, mountain, beyond `map_bounds`) silently failed at `nav_agent.target_position` while still emitting the marker and entering MOVING. Mirrored CORE RULE 13's soldier-rally pattern: in `HeroInputManager._on_map_tap`, after the spot check, snap via `NavigationServer2D.map_get_closest_point()` and reject if `world_pos.distance_to(snap) > MAX_OFFMESH_TOLERANCE` (150 px). Slight misses on path edges snap to walkable; far-off taps silently drop.
+
+**5. Skill cluster fans around portrait, DI-style.** Iterated twice. First attempt put slots in a 60° symmetric arc above the portrait; user screenshot showed they still read as "on top" rather than "around". Final layout: cluster widened from 200×400 to 280×400, portrait control moved from cluster (40,280) sized 120×120 to (100,260) sized 140×140. `SLOT_POSITIONS` recomputed for a 115 px arc around portrait center (170, 330) at angles −165° (lower-left, ~10 o'clock) and −105° (upper-left, ~11 o'clock). Both slots now visually wrap the **left** side of the portrait — DI-fan pattern.
+
+**6. Hero portrait bumped 120 → 140.** Skills must stay 80×80 (CLAUDE.md min touch target), so size hierarchy comes from growing the portrait. 1.75× ratio between portrait and skill button reads cleanly as "primary anchor + subordinate skills".
+
+**7. Cooldown reset on respawn (real bug).** `_physics_process` early-returns on `state == DEAD`, so `_tick_skill_cooldowns` doesn't run. `_die()` and `_respawn()` never touched `_skill_cooldowns`. Net effect: a skill at 25/30 s when the hero died was still at 25/30 s after a 30 s respawn — respawn time bought zero cooldown progress. Added a zero-fill loop in `_respawn` alongside the existing `_attack_cooldown = 0.0`, plus emits `EventBus.skill_ready` for any slot that was on cooldown so future ready-glow listeners trigger. KR-style fresh-start, simpler than ticking through DEAD.
+
+**8. Round skill buttons.** `CooldownButton._draw` was using `draw_rect` for base + border and a corner-distance pie slice. Replaced with `draw_circle` for base + `draw_arc` for border, and pie-slice radius now equals `minf(size.x, size.y) * 0.5` so the cooldown sweep stays inside the disk. Visual parity with the already-circular `EmptySkillSlot` and the portrait.
+
+**9. CooldownButton stuck-dark bug.** `refresh()` used `is_equal_approx(f, _last_fraction)` to gate redraws. `is_equal_approx` near zero uses absolute epsilon ~1e-5; if a cooldown ticked to a sub-epsilon residual one frame and clamped to 0 the next, the diff was within tolerance and the redraw was skipped — button stayed in `COOLDOWN_ACTIVE` (dark brown) forever. Added `_last_is_ready: bool` tracker; redraw fires whenever the ready boundary flips OR the fraction changes by more than tolerance. Catches the transition regardless of float precision.
+
+**Modified:**
+- [ui/HeroHudPortrait.gd](ui/HeroHudPortrait.gd) — `SIZE` 120→140, dropped camera-focus emit on tap, added `_damage_flash_t` field + `_on_hit_landed` handler + `_process` decay tick + red overlay ring in `_draw`, new `FLASH_DURATION` const
+- [ui/SkillBar.gd](ui/SkillBar.gd) — replaced stacked `SLOT_POSITIONS` with arc layout around portrait center (170, 330) at radius 115, angles −165° / −105°
+- [ui/SkillBar.tscn](ui/SkillBar.tscn) — cluster 200→280 wide, portrait control moved/grown to (100, 260)–(240, 400) for 140×140
+- [ui/CooldownButton.gd](ui/CooldownButton.gd) — round draw (`draw_circle` + `draw_arc`), pie-slice radius = button radius, added `_last_is_ready` tracker
+- [heroes/base_hero.gd](heroes/base_hero.gd) — move-order marker constants + fields + `_physics_process` decay + `_draw` expanding green ring, `_skill_cooldowns` zero-fill in `_respawn` + `EventBus.skill_ready` re-emit
+- [heroes/HeroInputManager.gd](heroes/HeroInputManager.gd) — `MAX_OFFMESH_TOLERANCE = 150 px` + `NavigationServer2D.map_get_closest_point` snap-and-reject
+
+**Risks:**
+- Hero portrait 120→140 may push the level-badge corner offset slightly. `BADGE_OFFSET = (48, 48)` was tuned for 120; visually fine in playtest but may want a +5 px nudge later for symmetry.
+- Cluster widening from 200 to 280 px eats slightly more screen real-estate from gameplay at the bottom-right corner. Verify it doesn't overlap any HUD chip on smaller mobile aspect ratios — SafeAreaMargin should handle this but eyes-on-device confirms.
+- The 150 px `MAX_OFFMESH_TOLERANCE` is a guess; if levels with narrow paths feel "sticky" (taps near walls always snap to the path), drop to 100.
+- Round CooldownButton still draws the skill name as text via `draw_string`; long names ("Summon Soldiers") spill past the disk edge. Pre-existing readability issue. If we later want glyphs/truncation, mirror `TowerIconButton._draw_glyph()` and add a `pictogram` field to `SkillData`.
+
+**Verification — confirmed working in editor.**
+
+1. Tap hero portrait → camera does NOT pan, hero shows yellow selection ring, next world tap moves him. ✓
+2. Tap deep water / mountain interior → no move, no marker, claim stays unclaimed. ✓
+3. Tap valid ground → green expanding ring fades at the destination over 0.5 s. ✓
+4. Hero takes damage → portrait pulses red briefly. ✓
+5. Cluster reads as "skills wrap around the left of the portrait" instead of stacked above it; portrait visually dominates. ✓
+6. Cast a skill, let it cool down → button returns to bright orange (no stuck-dark). ✓
+7. Cast skill, hero dies before CD ends, respawns → skill is fully ready immediately on respawn. ✓

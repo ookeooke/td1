@@ -4,5 +4,10 @@
 
 [node name="Arrow" type="Node2D"]
 script = ExtResource("1_arrow")
+speed = 800.0
 hit_radius = 22.0
-arc_height = 45.0
+trail_color_core = Color(1.0, 0.95, 0.7, 1.0)
+trail_color_edge = Color(0.7, 0.55, 0.25, 1.0)
+trail_smooth = true
+arc_height = 75.0
+cast_shadow = true

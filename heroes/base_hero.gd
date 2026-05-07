@@ -898,6 +898,15 @@ func _respawn() -> void:
 	modulate.a = 1.0
 	visible = true
 	_attack_cooldown = 0.0
+	# Skill cooldowns — respawning is a fresh start. Without this, cooldowns
+	# freeze during DEAD (because _physics_process early-returns on DEAD)
+	# and resume from the same value on respawn, so the respawn time costs
+	# zero cooldown progress. Reset to 0.0 and re-emit skill_ready for any
+	# slot that was on cooldown so future ready-glow listeners still fire.
+	for i in _skill_cooldowns.size():
+		if _skill_cooldowns[i] > 0.0:
+			_skill_cooldowns[i] = 0.0
+			EventBus.skill_ready.emit(i)
 	change_state(State.IDLE)
 	queue_redraw()
 	EventBus.hero_respawned.emit()

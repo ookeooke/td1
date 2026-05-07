@@ -21,7 +21,7 @@ class_name HeroHudPortrait
 #
 # Tap → camera focus + select the hero (mirrors KR's tap-portrait behavior).
 
-const SIZE: Vector2 = Vector2(120, 120)
+const SIZE: Vector2 = Vector2(140, 140)
 const XP_RING_THICKNESS: float = 8.0
 const HP_RING_THICKNESS: float = 6.0
 const RING_GAP: float = 2.0

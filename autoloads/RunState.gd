@@ -106,10 +106,24 @@ func record_round_damage(source: Node, amount: float) -> void:
 		return
 	if source is BaseTower:
 		var key: int = source.get_instance_id()
-		var entry: Dictionary = round_damage_towers.get(key, {"name": "", "total": 0.0})
-		# Refresh display name each hit — tower can upgrade/branch mid-run.
+		var entry: Dictionary = round_damage_towers.get(key, {
+			"name": "", "tower_id": "", "level": 1, "branch_idx": -1, "total": 0.0,
+		})
+		# Refresh per-hit so upgrade / branch choice mid-run is reflected. Branch
+		# towers display under their branch upgrade_name (e.g. "Archmage") so the
+		# Mage L3 Archmage / Necromancer split is preserved in run_stats.json.
 		if source.data != null:
-			entry["name"] = "%s L%d" % [source.data.tower_name, source.level]
+			entry["tower_id"] = source.data.tower_id
+			entry["level"] = source.level
+			entry["branch_idx"] = source.branch_idx
+			var display_name: String = "%s L%d" % [source.data.tower_name, source.level]
+			if source.branch_idx >= 0 \
+					and source.data.level_3_branches != null \
+					and source.branch_idx < source.data.level_3_branches.size():
+				var branch: Resource = source.data.level_3_branches[source.branch_idx]
+				if branch != null and "upgrade_name" in branch and String(branch.upgrade_name) != "":
+					display_name = String(branch.upgrade_name)
+			entry["name"] = display_name
 		entry["total"] = float(entry.get("total", 0.0)) + amount
 		round_damage_towers[key] = entry
 	elif source is BaseHero:

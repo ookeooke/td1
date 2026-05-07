@@ -9,6 +9,12 @@ extends CanvasLayer
 @onready var summary_label: Label = %SummaryLabel
 @onready var continue_button: Button = %ContinueButton
 @onready var restart_button: Button = %RestartButton
+# Phase 56b: debug-only Balance Verdict block. Hidden in release builds.
+@onready var verdict_panel: PanelContainer = %VerdictPanel
+@onready var metrics_grid: GridContainer = %MetricsGrid
+@onready var flags_label: RichTextLabel = %FlagsLabel
+@onready var replay_button: Button = %ReplayButton
+@onready var sliders_button: Button = %SlidersButton
 
 var _shown: bool = false
 
@@ -18,6 +24,8 @@ func _ready() -> void:
 	visible = false
 	continue_button.pressed.connect(_on_continue_pressed)
 	restart_button.pressed.connect(_on_restart_pressed)
+	replay_button.pressed.connect(_on_replay_pressed)
+	sliders_button.pressed.connect(_on_sliders_pressed)
 	EventBus.game_over.connect(_on_game_over)
 	EventBus.all_waves_completed.connect(_on_all_waves_completed)
 
@@ -144,6 +152,101 @@ func _show(title: String, summary: String) -> void:
 		title_label.remove_theme_color_override("font_color")
 	visible = true
 	get_tree().paused = true
+	# Verdict panel populates AFTER RunStats has finalized the just-finished
+	# run (RunStats appends on level_completed / game_over signals; signal
+	# handler order isn't guaranteed). Deferred read of history[-1] avoids
+	# the race entirely.
+	if OS.is_debug_build():
+		call_deferred("_populate_verdict")
+
+
+func _populate_verdict() -> void:
+	if not OS.is_debug_build():
+		return
+	var history: Array = RunStats.get_history()
+	if history.is_empty():
+		verdict_panel.visible = false
+		return
+	var record: Dictionary = history[history.size() - 1]
+	if not (record is Dictionary):
+		verdict_panel.visible = false
+		return
+	var level_id: String = String(record.get("level_id", ""))
+	var mode: String = String(record.get("mode", ""))
+	var run_id: String = String(record.get("run_id", ""))
+	var level_data: Resource = _find_level_data(level_id)
+	var wave_list: Resource = null
+	if level_data != null and "wave_list_path" in level_data and String(level_data.wave_list_path) != "":
+		wave_list = load(level_data.wave_list_path)
+	var BV: GDScript = load("res://balance/BalanceVerdict.gd")
+	if BV == null:
+		verdict_panel.visible = false
+		return
+	var prior: Array = BV.recent_comparable(history, level_id, mode, run_id)
+	var verdict: Dictionary = BV.compute(record, level_data, wave_list, prior)
+	_render_metrics_grid(verdict.get("metrics", []))
+	_render_flags(verdict.get("flags", []), int(verdict.get("history_n", 0)))
+	verdict_panel.visible = true
+
+
+func _render_metrics_grid(metrics: Array) -> void:
+	for c in metrics_grid.get_children():
+		c.queue_free()
+	for m in metrics:
+		var label_lbl := Label.new()
+		label_lbl.text = String(m.get("label", ""))
+		label_lbl.add_theme_color_override("font_color", Color(0.78, 0.85, 0.95))
+		var value_lbl := Label.new()
+		value_lbl.text = String(m.get("value_str", ""))
+		var delta_lbl := Label.new()
+		delta_lbl.text = String(m.get("delta_str", ""))
+		delta_lbl.add_theme_color_override("font_color", Color(0.65, 0.75, 0.85))
+		metrics_grid.add_child(label_lbl)
+		metrics_grid.add_child(value_lbl)
+		metrics_grid.add_child(delta_lbl)
+
+
+func _render_flags(flags: Array, history_n: int) -> void:
+	if flags.is_empty():
+		var note: String = ""
+		if history_n < 2:
+			note = "[i][color=#888](Δ vs avg appears after 2+ prior runs of this level + mode)[/color][/i]"
+		flags_label.text = "[color=#9bd]No verdict flags raised.[/color]\n" + note
+		return
+	var lines: PackedStringArray = []
+	for f in flags:
+		var sev: String = String(f.get("severity", "info"))
+		var hex: String = "#f88" if sev == "warn" else "#fc8"
+		lines.append("[color=%s]• %s[/color]" % [hex, String(f.get("label", ""))])
+	if history_n < 2:
+		lines.append("[i][color=#888](Δ vs avg appears after 2+ prior runs of this level + mode)[/color][/i]")
+	flags_label.text = "\n".join(lines)
+
+
+func _find_level_data(level_id: String) -> Resource:
+	if ContentRegistry == null or level_id == "":
+		return null
+	var levels: Array = ContentRegistry.get("levels")
+	if not (levels is Array):
+		return null
+	for ld in levels:
+		if ld == null:
+			continue
+		if "level_id" in ld and String(ld.level_id) == level_id:
+			return ld
+	return null
+
+
+func _on_replay_pressed() -> void:
+	# Same path as RestartButton — keeps overrides active for back-to-back A/B
+	# testing of slider tweaks.
+	_on_restart_pressed()
+
+
+func _on_sliders_pressed() -> void:
+	get_tree().paused = false
+	WaveManager.stop()
+	SceneManager.goto("res://balance/debug/BalanceSliders.tscn")
 
 
 func _on_continue_pressed() -> void:

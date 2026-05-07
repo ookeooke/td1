@@ -145,7 +145,7 @@ func _format_enemy(data: Resource) -> Dictionary:
 
 func _format_tower(data: Resource) -> Dictionary:
 	var stats: String = "DMG %.0f  RNG %.0f  SPD %.1f  Cost %dg" % [
-		data.damage, data.attack_range, data.attack_speed, data.cost,
+		data.damage, data.attack_range, data.attack_speed, data.get_effective_cost(),
 	]
 	if data.targets_flying:
 		stats += "  [Hits Air]"

@@ -26,6 +26,12 @@ class_name TowerData
 # AoE splash radius. 0 = single target (arrow). > 0 = projectile splashes
 # on hit, damaging all enemies within this radius of the impact point.
 @export var aoe_radius: float = 0.0
+# Splash damage as a fraction of the primary-target damage. Primary target
+# always takes 100 %; secondary targets in the AoE take this share. Default
+# 0.5 matches the original hardcoded behavior. Range [0, 1] — values > 1
+# would let splash hit harder than the primary, intentionally allowed for
+# future weird towers (e.g. resonance bombs) but author at your peril.
+@export_range(0.0, 1.0, 0.05) var splash_damage_pct: float = 0.5
 # Phase 47d-6: base-level on-hit status effects (applied at L1 before any
 # upgrade). Upgrade overrides on TowerUpgradeData still win when set.
 # Matches TowerUpgradeData field shape for symmetry.
@@ -123,3 +129,16 @@ func get_stats_line() -> String:
 		int(attack_range * rng_mult),
 		attack_speed * spd_mult,
 	]
+
+
+# L1 build cost with the BalanceOverrides cost_mult applied. UI display +
+# affordability checks must route through this so the icon, stats card, and
+# affordability gate read the same number TowerPlacer will actually charge.
+# In production BalanceOverrides.is_active() returns false → mult is 1.0 →
+# identity. Lazy load() (not preload) per CORE RULE 16.
+func get_effective_cost() -> int:
+	if tower_id == "":
+		return cost
+	var BO = load("res://balance/debug/BalanceOverrides.gd")
+	var mult: float = BO.get_tower_mult(tower_id, "l1", "cost_mult")
+	return int(round(float(cost) * mult))

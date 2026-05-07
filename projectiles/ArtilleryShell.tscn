@@ -13,7 +13,8 @@ speed = 625.0
 hit_radius = 35.0
 proj_color = Color(0.95, 0.55, 0.15, 1.0)
 trail_enabled = false
-arc_height = 80.0
+arc_height = 110.0
+cast_shadow = true
 
 [node name="Smoke" type="CPUParticles2D" parent="."]
 amount = 14

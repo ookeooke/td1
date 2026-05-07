@@ -28,6 +28,11 @@ enum TargetType { SINGLE, AREA, SELF }
 # Skills tab as locked ("Unlocks at Lv X"); only unlocked skills can be
 # slotted into the hero's 3 equipped-skill loadout.
 @export var level_required: int = 1
+# When true, AREA-targeting bypasses the hero range check — player can tap
+# anywhere on the map. SkillBar skips the range circle preview and skips
+# the in-range gate. Use for "summon"-style skills that drop allies on the
+# road far from the hero. Default false = range-locked (existing behavior).
+@export var unrestricted_targeting: bool = false
 
 
 # Subclasses override this with the actual effect. hero is BaseHero,

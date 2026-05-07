@@ -151,6 +151,25 @@ func get_effective_range() -> float:
 	return base
 
 
+# AoE splash radius for this tower at its current level. Reads upgrade
+# override (TowerUpgradeData.aoe_radius > 0) first, falls back to base
+# TowerData.aoe_radius. Mirrors the damage/range/speed inheritance rule.
+func get_effective_aoe_radius() -> float:
+	var ov: Resource = _level_override()
+	if ov != null and "aoe_radius" in ov and ov.aoe_radius > 0.0:
+		return ov.aoe_radius
+	return data.aoe_radius if data != null else 0.0
+
+
+# Splash damage as a fraction of primary-target damage. Upgrade override
+# wins when > 0, else base TowerData.splash_damage_pct (default 0.5).
+func get_effective_splash_pct() -> float:
+	var ov: Resource = _level_override()
+	if ov != null and "splash_damage_pct" in ov and ov.splash_damage_pct > 0.0:
+		return ov.splash_damage_pct
+	return data.splash_damage_pct if data != null else 0.5
+
+
 # Unified range accessor used by UI (RangePreview, TowerStatsCard,
 # TowerRadialMenu). Attack towers return attack_range; barracks override
 # to return rally range. Keeps the UI duck-typed against a single method.
@@ -240,7 +259,7 @@ func get_preview_stats() -> Array:
 	# Read upgrade override first, fall back to base TowerData fields so an
 	# Ice-Tower-style L1 that slows shows its slow row in the stats card too.
 	var ov: Resource = _level_override()
-	var aoe: float = data.aoe_radius if data != null else 0.0
+	var aoe: float = get_effective_aoe_radius()
 	var slow_f: float = 0.0
 	var slow_d: float = 0.0
 	var stun: float = 0.0
@@ -459,9 +478,10 @@ func _fire_projectile(target: Node) -> void:
 	var effect = _build_on_hit_effect()
 	if effect == null:
 		effect = _maybe_roll_debug_effect()
-	var aoe: float = data.aoe_radius if data != null else 0.0
+	var aoe: float = get_effective_aoe_radius()
+	var splash_pct: float = get_effective_splash_pct()
 	if proj.has_method("setup"):
-		proj.setup(target, get_effective_damage(), data.damage_type, self, effect, aoe)
+		proj.setup(target, get_effective_damage(), data.damage_type, self, effect, aoe, splash_pct)
 	# Muzzle flash at the silhouette's barrel/tip, tinted by tower type.
 	# Skipped on clean_view and on towers without a defined muzzle (barracks).
 	if not VFXSpawner.clean_view:

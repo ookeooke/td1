@@ -56,7 +56,13 @@ func _on_wave_countdown_started(_duration: float) -> void:
 
 func _start_new_run() -> void:
 	_start_time_msec = Time.get_ticks_msec()
+	# schema_version=2 added the loadout / overrides_snapshot fields below.
+	# Records without it (loaded from older run_stats.json) implicitly = 1 and
+	# the new fields read as absent. Bump on any future shape change.
+	const SCHEMA_VERSION: int = 2
+	var BO = load("res://balance/debug/BalanceOverrides.gd")
 	_current = {
+		"schema_version": SCHEMA_VERSION,
 		"run_id": _make_id(),
 		"timestamp": Time.get_datetime_string_from_system(),
 		"level_id": RunState.current_level_id,
@@ -64,6 +70,14 @@ func _start_new_run() -> void:
 		"hero_id": LoadoutState.selected_hero_id,
 		"starting_gold": RunState.gold,
 		"starting_lives": RunState.lives,
+		"loadout": {
+			"hero_id": LoadoutState.selected_hero_id,
+			"tower_ids": LoadoutState.selected_tower_ids.duplicate(),
+			"equipped_skills": LoadoutState.get_equipped_skills(LoadoutState.selected_hero_id).duplicate(),
+			"effective_ppt": LoadoutState.get_effective_ppt(),
+		},
+		"overrides_active": BO.any_active(),
+		"overrides_snapshot": BO.get_snapshot(),
 		"lives_lost_per_wave": [],
 		"_pending_wave_leak": 0,
 		"tower_placements": [],
@@ -203,6 +217,9 @@ func _finalize(outcome: String, stars: int) -> void:
 		towers_total += tot
 		per_tower.append({
 			"name": String(ent.get("name", "")),
+			"tower_id": String(ent.get("tower_id", "")),
+			"level": int(ent.get("level", 1)),
+			"branch_idx": int(ent.get("branch_idx", -1)),
 			"damage": tot,
 		})
 	per_tower.sort_custom(func(a, b): return float(a.damage) > float(b.damage))

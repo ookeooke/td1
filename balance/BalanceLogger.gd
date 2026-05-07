@@ -58,7 +58,14 @@ static func print_hardness_readout(_level: Node, level_id: String, wave_path: St
 		display_tag, int(total_req_dmg), level_gpd, ratio_line
 	])
 	# Tower damage-per-gold table — 1 gold buys X damage over 60s, by tier.
-	var towers: Array = ContentRegistry.towers if ContentRegistry != null else []
+	# Object.get() returns null on missing key without raising — guards against
+	# the static-call-into-autoload path where dot-access on `.towers` raised
+	# "Invalid access to property" on Godot 4.6 even though the var exists.
+	var towers: Array = []
+	if ContentRegistry != null:
+		var raw_towers = ContentRegistry.get("towers")
+		if raw_towers is Array:
+			towers = raw_towers
 	var window_sec: float = 60.0
 	print("[%s/Towers] dmg per gold over %.0fs window:" % [display_tag, window_sec])
 	var best_l1: float = 0.0

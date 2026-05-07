@@ -102,7 +102,6 @@ var _slow_time_history: Array[float] = []
 # abilities like ExplodeOnDeath or SummonOnDeath can hook in.
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
-const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
 const _StatusApplyScript := preload("res://vfx/StatusApplyVFX.gd")
 const _WalkDustScript := preload("res://vfx/WalkDustVFX.gd")
 var _ability_host: RefCounted = null
@@ -414,12 +413,7 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 		EventBus.enemy_damaged.emit(self, final, type)
 	if source != null:
 		_last_damage_source = source
-	# Floating damage number — shows raw hit, not capped, so players see
-	# the full impact of their tower's power.
-	if final > 0.0:
-		var parent: Node = get_tree().current_scene
-		if parent != null:
-			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.3, 0.2), global_position + Vector2(0, -50), 28)
+	# Damage number is spawned by VFXSpawner via EventBus.hit_landed (CORE RULE 2).
 	queue_redraw()
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_TAKEN, {"source": source, "amount": final})

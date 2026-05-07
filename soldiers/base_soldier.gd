@@ -73,7 +73,6 @@ var _charge_target: BaseEnemy = null
 # soldiers attach DamageBlockAbility; etc. — all variants author as data.
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
-const _FloatingTextScript := preload("res://vfx/FloatingText.gd")
 const _DeathVFXScript := preload("res://vfx/DeathVFX.gd")
 var _ability_host: RefCounted = null
 
@@ -455,9 +454,7 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 		else:
 			_flinch_dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 0.0)).normalized()
 		EventBus.hit_landed.emit(self, source, final, type)
-		var parent: Node = get_tree().current_scene
-		if parent != null:
-			_FloatingTextScript.spawn(parent, str(int(ceil(final))), Color(1.0, 0.85, 0.2), global_position + Vector2(0, -40), 26)
+		# Damage number is spawned by VFXSpawner via EventBus.hit_landed.
 	queue_redraw()
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_TAKEN, {"source": source, "amount": final})

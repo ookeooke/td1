@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://ct8ym0kj0hlnk"]
+
+[ext_resource type="Script" path="res://ui/HudChip.gd" id="1_chip"]
+[ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
+
+[node name="HudChip" type="PanelContainer"]
+custom_minimum_size = Vector2(140, 44)
+theme = ExtResource("2_theme")
+script = ExtResource("1_chip")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 32
+
+[node name="ChipValue" type="Label" parent="Margin"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "--"
+theme_override_font_sizes/font_size = 22

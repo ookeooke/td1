@@ -2694,3 +2694,41 @@ Two-headline-numbers balance dashboard layered on top of PPT + Naked Baseline. C
 5. Click "Save Weights" persists slider state to `balance_model_config.tres`.
 
 Folded the planned `BalanceSliders.gd` extension into `SupplyDemandReport.tscn` itself — weight sliders belong with the report that visualizes their effect, not with the gameplay-override panel (HP mult / armor add / etc.).
+
+---
+
+## 2026-05-07 — Combat-text + HUD polish pass
+
+Floating combat numbers and the in-level HUD were functional but unstyled — every `FloatingText.spawn(...)` call site hand-tuned color/size, the HUD was plain Labels with no value-change feedback, and damage numbers spawned inline from `BaseEnemy.take_damage()` instead of routing through `EventBus`. This pass shipped a Kingdom-Rush-grade combat-feedback layer in five files. Plan: `~/.claude/plans/what-do-you-think-snazzy-dewdrop.md`.
+
+**Phase 1 — `vfx/FloatingText.gd` style-driven rewrite.** Added `Kind` enum (DAMAGE_ENEMY, DAMAGE_BIG, DAMAGE_HERO_TAKEN, DAMAGE_SOLDIER_TAKEN, HEAL, GOLD, XP, PICKUP, WARNING) and a typed `_STYLES` Dictionary table — each style holds font_size, color, outline_color, outline_thickness, lifetime, drift_dir, drift_dist, drift_spread, pop_scale, z_index, wobble. Animation pipeline: scale 0.75→1.25 (pop, 0.08s, TRANS_BACK/EASE_OUT) → 1.25→1.0 (settle, 0.10s) running parallel to position drift over full lifetime, alpha fade across the last 30%. `_draw()` does an 8-direction outline pass (cardinal + diagonal) instead of the old single drop shadow — outline thickness scales with zoom (zoom-scale rule). Old API `spawn(parent, text, color, pos, font_size)` kept verbatim for back-compat (legacy drop-shadow path); new API `spawn_kind(parent, kind, pos, amount, text_override, color_override)` auto-formats text per kind and supports per-call color override (used by item rarity).
+
+**Phase 2 + 3 — VFXSpawner becomes the damage-text router with merging.** `VFXSpawner._on_hit_landed` now dispatches damage numbers based on target type (`is BaseEnemy / BaseHero / BaseSoldier`), reusing the existing `EventBus.hit_landed(target, source, amount, dmg_type)` signal — no new signals were added. Per-(target, source) accumulator buckets (`_merge_buckets: Dictionary` keyed by `"tid_sid"`) sum hits within `MERGE_WINDOW_SEC = 0.25`; first hit in a series spawns immediately, follow-ups accumulate, and the next hit after the window flushes the total. Big hits (`amount / target.max_health >= 0.25`) and hero-attributed hits bypass merging — they pop immediately as `DAMAGE_BIG` for legibility. A 0.05s drain Timer flushes stale buckets so the last hit in a series isn't held forever, and drops buckets for freed enemies. Inline `FloatingText.spawn(...)` calls removed from `enemies/base_enemy.gd:422`, `heroes/base_hero.gd:807`, `soldiers/base_soldier.gd:460`; the now-unused `_FloatingTextScript` const removed from each. `items/ItemPickup.gd:196` migrated to `spawn_kind(Kind.PICKUP, ...)` with rarity color override. `EventBus.enemy_died` gold text and `EventBus.hero_xp_gained` XP text also routed through `spawn_kind`. Damage text (but not gold/XP/sparks) is gated by `clean_view`.
+
+**Phase 4 — HUD chips refactor.** New [ui/HudChip.gd](ui/HudChip.gd) + [ui/HudChip.tscn](ui/HudChip.tscn) — `PanelContainer`-based widget with a procedurally-drawn glyph (`coin` / `heart` / `wave` / `threat`) on the left and a Label on the right. The panel stylebox comes from `game_theme`; the glyph is drawn in `_draw()` after the panel; a `MarginContainer` with `margin_left = 32` reserves the icon slot. Public API: `set_value(text)`, `set_value_color(c)`, `pulse_pop(scale_to, in, out)`, `pulse_modulate(flash, in, out)` — all tweens use `TWEEN_PAUSE_PROCESS` so they fire during tactical pause (mirrors the existing `purchase_denied` feedback shape on the old `GoldLabel`).
+
+`ui/HUD.tscn` rewired: `GoldLabel` / `LivesLabel` / `WaveLabel` / `SpawnRateLabel` replaced by four HudChip instances under `TopLeft` / `TopRight`, plus a new centered `WaveBanner` Label (size_flags 4|4 inside `SafeArea`, font_size 64, outline 8) hidden by default. `ui/HUD.gd` reduced to chip-driving orchestration — caches `_last_gold` / `_last_lives` to detect deltas: gold gain → `pulse_pop` + warm flash; gold spend → subtle dim modulate; lives loss → red flash + pop; wave start → wave-chip pop + 0.3s fade-in / 0.5s hold / 0.6s fade-out banner. Threat chip color escalates by band: white < 200 < yellow < 500 < orange < 1000 < red. The rolling 5s incoming-HP window math (`_refresh_threat`) is unchanged — only the display widget changed. Send-Wave button blink and countdown logic untouched.
+
+**No new EventBus signals, no `.tres` data changes, no balance changes.**
+
+**Modified:**
+- [vfx/FloatingText.gd](vfx/FloatingText.gd) — full rewrite, old API preserved
+- [autoloads/VFXSpawner.gd](autoloads/VFXSpawner.gd) — damage-text routing + merging accumulator
+- [enemies/base_enemy.gd](enemies/base_enemy.gd) — removed inline floating-text spawn + unused const
+- [heroes/base_hero.gd](heroes/base_hero.gd) — same
+- [soldiers/base_soldier.gd](soldiers/base_soldier.gd) — same
+- [items/ItemPickup.gd](items/ItemPickup.gd) — migrated to `spawn_kind(Kind.PICKUP, ...)`
+- [ui/HUD.tscn](ui/HUD.tscn) + [ui/HUD.gd](ui/HUD.gd) — chip-based, banner added
+
+**New:**
+- [ui/HudChip.gd](ui/HudChip.gd) + [ui/HudChip.tscn](ui/HudChip.tscn)
+
+**Carve-out from CORE RULE 1.** This pass touched five working scripts (base_enemy, base_hero, base_soldier, ItemPickup, HUD) — explicitly authorized via the plan: scattering inline `FloatingText.spawn` from unit scripts directly contradicts CORE RULE 2 (cross-system via EventBus), and the routing fix was the entire point.
+
+**Verification — pending in-editor playtest.** Headless parse check unavailable on this machine (no `godot` on PATH). Items to verify when running in editor:
+
+1. Boot Level 1, send wave: damage numbers above enemies are styled (red-orange, outlined, scale-pop); 4 towers firing on one enemy show **merged** numbers (one bigger total per ~0.25s, not 4 stacks); a hero skill landing a chunky hit pops as DAMAGE_BIG (yellow, larger, immediate, no merge); hero takes damage → bright red number; soldier takes damage → yellow/orange number; item pickup → name floats up.
+2. HUD: gold-gain pop + warm flash; gold-spend dim; life-loss red flash + pop; wave-start banner fade-in/out; threat chip color-escalates as wave HP grows.
+3. Pinch zoom 0.5x → 2.0x: numbers + outline stay readable.
+4. Tactical pause → HUD pulses still fire on radial-menu build/sell.
+5. Clean-view toggle suppresses combat numbers + sparks; HUD chips unaffected.

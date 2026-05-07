@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3 uid="uid://b1td1hud00000"]
+[gd_scene load_steps=5 format=3 uid="uid://b1td1hud00000"]
 
 [ext_resource type="Script" path="res://ui/HUD.gd" id="1_hud"]
 [ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
 [ext_resource type="Script" path="res://ui/SafeAreaMargin.gd" id="3_safe"]
+[ext_resource type="PackedScene" uid="uid://b1td1hudchip01" path="res://ui/HudChip.tscn" id="4_chip"]
 
 [node name="HUD" type="CanvasLayer"]
 follow_viewport_enabled = false
@@ -21,25 +22,25 @@ script = ExtResource("3_safe")
 layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 0
-theme_override_constants/separation = 4
+theme_override_constants/separation = 6
 
-[node name="GoldLabel" type="Label" parent="SafeArea/TopLeft"]
+[node name="GoldChip" parent="SafeArea/TopLeft" instance=ExtResource("4_chip")]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Gold: --"
-theme_override_font_sizes/font_size = 22
+glyph = "coin"
+value_text = "0"
 
-[node name="LivesLabel" type="Label" parent="SafeArea/TopLeft"]
+[node name="LivesChip" parent="SafeArea/TopLeft" instance=ExtResource("4_chip")]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Lives: --"
-theme_override_font_sizes/font_size = 22
+glyph = "heart"
+value_text = "--"
 
-[node name="WaveLabel" type="Label" parent="SafeArea/TopLeft"]
+[node name="WaveChip" parent="SafeArea/TopLeft" instance=ExtResource("4_chip")]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Wave: --"
-theme_override_font_sizes/font_size = 22
+glyph = "wave"
+value_text = "--"
 
 [node name="CountdownLabel" type="Label" parent="SafeArea/TopLeft"]
 unique_name_in_owner = true
@@ -81,11 +82,24 @@ layout_mode = 2
 text = "| |"
 theme_override_font_sizes/font_size = 22
 
-[node name="SpawnRateLabel" type="Label" parent="SafeArea/TopRight"]
+[node name="ThreatChip" parent="SafeArea/TopRight" instance=ExtResource("4_chip")]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 10
-text = "Incoming: 0 HP/5s"
-horizontal_alignment = 2
-theme_override_font_sizes/font_size = 18
-theme_override_colors/font_color = Color(1, 0.85, 0.4, 1)
+size_flags_horizontal = 8
+glyph = "threat"
+value_text = "0"
+
+[node name="WaveBanner" type="Label" parent="SafeArea"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+mouse_filter = 2
+text = ""
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 64
+theme_override_colors/font_color = Color(1, 0.92, 0.55, 1)
+theme_override_colors/font_outline_color = Color(0.1, 0.05, 0, 1)
+theme_override_constants/outline_size = 8
+modulate = Color(1, 1, 1, 0)

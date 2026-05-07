@@ -193,5 +193,5 @@ func _spawn_pickup_feedback() -> void:
 	var label: String = base.base_name if base != null else instance.base_id
 	var host: Node = get_tree().current_scene
 	if host != null:
-		_FloatingTextScript.spawn(host, "+" + label, _rarity_color, global_position, 28)
+		_FloatingTextScript.spawn_kind(host, _FloatingTextScript.Kind.PICKUP, global_position, 0.0, "+" + label, _rarity_color)
 	SoundManager.play_sfx("item_pickup")

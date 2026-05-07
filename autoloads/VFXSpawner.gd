@@ -47,7 +47,6 @@ func _ready() -> void:
 	EventBus.game_won.connect(_on_game_won)
 	EventBus.clean_view_toggled.connect(func(v): clean_view = v)
 	EventBus.hit_landed.connect(_on_hit_landed)
-	EventBus.enemy_damaged.connect(_on_enemy_damaged)
 	EventBus.hero_skill_used.connect(_on_hero_skill_used)
 	# Drain the last hit in any series so it isn't held forever waiting for
 	# a follow-up that never arrives.
@@ -195,18 +194,6 @@ func _spawn_styled(parent: Node, kind: int, pos: Vector2, amount: float) -> void
 	if clean_view:
 		return
 	_FloatingTextScript.spawn_kind(parent, kind, pos, amount)
-
-
-func _on_enemy_damaged(enemy: Node, _amount: float, _dmg_type: int) -> void:
-	if clean_view:
-		return
-	if not is_instance_valid(enemy) or enemy.data == null:
-		return
-	if not enemy.data.is_boss:
-		return
-	var cam: Camera2D = get_viewport().get_camera_2d()
-	if cam != null and cam.has_method("add_shake"):
-		cam.add_shake(2.0, 0.12)
 
 
 func _on_hero_skill_used(skill_name: String) -> void:

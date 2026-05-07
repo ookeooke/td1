@@ -3,7 +3,7 @@ extends Control
 # Hero Hall hub.
 #
 # Layout:
-#   TopBar      : Back button (or "← Hero Hall" chip in sub-views) + title + meta gold
+#   TopBar      : Close button (✕, always exits to WorldMap) + title + meta gold
 #   HeroSidebar : compact 140-px column — hero portrait buttons (top, scroll),
 #                 divider, page-nav buttons (bottom): Overview / Equip / Skills / Talents
 #   MainStack:
@@ -615,10 +615,9 @@ func _open_sub_view(kind: String) -> void:
 	# Phase 51 — sidebar is compact (140 px), stays visible on every page.
 	# No roster_rail.visible toggle anymore.
 	_set_active_nav(kind)
-	# Top bar: swap Back chip to point back to Hero Hall + retitle.
-	# Use "Hero Hall" (not just "Hall") so it reads as a destination, not
-	# an ambiguous label.
-	back_button.text = "← Hero Hall"
+	# Phase 55e — back button is now a fixed "✕ close to WorldMap" affordance,
+	# no longer context-sensitive. Sub-view navigation uses the sidebar
+	# Overview button to return to the Hero Hall root.
 	title_label.text = _title_for_sub(kind)
 	# Build the sub-view body.
 	match kind:
@@ -642,7 +641,6 @@ func _close_sub_view() -> void:
 	_current_sub = ""
 	sub_view.visible = false
 	hero_hall_view.visible = true
-	back_button.text = "← Back"
 	title_label.text = "HERO HALL"
 	_set_active_nav("")
 	# Sub-views can mutate equipment / skills / talents; refresh the Hero Hall
@@ -651,11 +649,13 @@ func _close_sub_view() -> void:
 	_refresh_nav_state()
 
 
+# Phase 55e — back button always exits the hub. Previously this was
+# context-sensitive (close sub-view → return to Hero Hall, then a second
+# press to leave to WorldMap), which duplicated the sidebar's Overview
+# button. The new "✕" is a fixed close affordance; sub-view-to-root
+# navigation goes through Overview.
 func _on_back() -> void:
-	if _current_sub != "":
-		_close_sub_view()
-	else:
-		SceneManager.goto("res://ui/WorldMap.tscn")
+	SceneManager.goto("res://ui/WorldMap.tscn")
 
 
 func _title_for_sub(kind: String) -> String:
@@ -688,7 +688,6 @@ func _embed_screen(scene_path: String) -> void:
 		_current_sub = ""
 		sub_view.visible = false
 		hero_hall_view.visible = true
-		back_button.text = "← Back"
 		title_label.text = "HERO HALL"
 		_set_active_nav("")
 		return

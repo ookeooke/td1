@@ -638,6 +638,43 @@ When ≥3 levels flag in the same direction, re-fit per-segment weights — neve
 
 ---
 
+## Pacing targets (Phase 48 — KR-feel pass, 2026-05-07)
+
+Premium TDs (Kingdom Rush canon) keep enemies on screen long enough for the player to read the wave, watch projectiles arc, and react. Pre-pass our basics crossed L1 in ~14 s at 1× / ~5 s at 3×, which felt frantic and prevented hero/soldier melee duels from lasting more than a swing or two. This pass biases toward "deliberate at 1×, brisk at 2×, still readable at 3×."
+
+### Travel-time bands (L1, 1991 px reference path)
+
+| Enemy class | Target 1× | Target 3× | Speed band (px/s) |
+|---|---:|---:|---:|
+| Heavies (Brute, Boss base) | 25–30 s | ≥ 8 s | 65–80 |
+| Armored / Healer | 20–28 s | ≥ 7 s | 75–100 |
+| Basic chasers | 18–24 s | ≥ 6.5 s | 90–110 |
+| Flying | 14–18 s | ≥ 5 s | 110–140 |
+| Fast runners (Scout) | 11–14 s | ≥ 4 s | 140–180 |
+
+Anything below the 3× floor means a single tower can barely engage — the projectile lifetime exceeds the engagement window. Don't drop speeds below the band.
+
+### HP bias for "fight-feel"
+
+Squishy chasers (Basic, Scout, Flying, Healer) carry **+30 % HP** vs the pre-pass values so hero/soldier engagements last 3+ swings instead of 1–2. Heavies (Brute, Armored, Boss) keep their existing HP — they were already in the right band. The intent is *more time per enemy in combat*, not *more enemies surviving*.
+
+### Tower range bias
+
+Combat-tower L1 ranges trimmed by ~10 % (Archer 400→360, Ice 350→315) and Artillery by ~12.5 % (600→525). L2/L3 ranges scaled proportionally. Mage stays at 300. Compresses engagement zones so the player visually sees enemies *enter* and *exit* tower coverage rather than getting shot the whole way across the map. Range-trim is uniform across each tower's progression so upgrade-relative gain stays the same.
+
+### Speed button policy — keep 1×/2×/3×
+
+No mainline Kingdom Rush ships fast-forward; Ironhide has refused the request for ~13 years. Our 3× is a deliberate UX advantage. With the pacing pass applied, basics at 3× = ~7 s — comfortably above the "single tower can engage" floor. Do not narrow `HUD.SPEED_OPTIONS` without strong playtest signal.
+
+### Verification on next play-test
+
+- Stopwatch a basic enemy on L1 from spawn → keep at 1×: should land in 18–24 s.
+- A hero vs. armored squad melee duel should last > 5 s before either side dies.
+- Per-enemy archer-shot count should be ~3–5 across L1 coverage, not 1–2.
+- Re-run `BalanceCalculator.score_level()` on Level 1 — slower + tougher chasers raises tower DPS efficiency, so hardness will rise. If it overshoots the L1 PPT=2 target band (~15,000), reduce the chaser HP bump from +30 % to +20 %.
+
+---
+
 ## When to update this file
 
 - After every `.tres` numbers change → update the "current measured values" table

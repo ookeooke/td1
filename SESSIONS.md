@@ -2732,3 +2732,362 @@ Floating combat numbers and the in-level HUD were functional but unstyled — ev
 3. Pinch zoom 0.5x → 2.0x: numbers + outline stay readable.
 4. Tactical pause → HUD pulses still fire on radial-menu build/sell.
 5. Clean-view toggle suppresses combat numbers + sparks; HUD chips unaffected.
+
+---
+
+## 2026-05-07 — Phase 55: Diablo-Immortal-style gear cells + Gear/Relics tab split
+
+EquipmentScreen visual rework matching Diablo Immortal's stash. Plan: `~/.claude/plans/what-do-you-think-shimmying-fern.md`. The user pointed at a DI screenshot — gear slots are slightly taller than wide and the paperdoll uses the same cell shape as the inventory grid. Storage stays untouched (one shared 50-slot bag); the tab split is purely a display filter.
+
+**Cell sizing.** Replaced the single `CELL_PX = 120.0` constant in [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) with `CELL_W = 120.0` / `CELL_H = 144.0` (5:6 ratio). Width unchanged so column counts and `ScrollContainer` layout don't shift; only the y stride grows. Both paperdoll slots and inventory cells use the same dimensions — a sword in the bag and the same sword equipped on the silhouette are visually identical. `Paperdoll.anchor_for_slot()` is normalized 0..1 so slot widgets reposition automatically when their `custom_minimum_size` changes; no anchor rewrite was needed.
+
+**ItemIcon API.** Added `set_pixel_size(Vector2)` to [ui/ItemIcon.gd](ui/ItemIcon.gd). The new field `_pixel_size_override` (default `Vector2.ZERO`) supersedes the footprint-based sizing in `_apply_footprint_size()` when set. The legacy `set_slot_footprint(w, h)` path stays for back-compat — only EquipmentScreen migrated. `_draw()` already derived effects from `min(rect.size.x, rect.size.y) / SIZE_PX`, so non-square cells fall through cleanly: a 120×144 tile gets `scale_factor = 1.0` and effects fit naturally in the new aspect ratio.
+
+**Gear / Relics tabs.** Added two-button TabBar (`TabGearButton` / `TabRelicsButton`) above the stash `ScrollContainer` in [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn). Tab membership is data-derived from `ItemBase.slot`: Gear holds slots 0–4 (Weapon/Armor/Helm/Gloves/Boots), Relics holds slot 5 (Trinket). New helpers in EquipmentScreen.gd: `_filter_inventory_by_tab` (defensive — items whose base is missing fall through to Gear so they aren't lost), `_on_tab_pressed` (dismisses the bottom-sheet if the selected item is hidden by the new tab), `_refresh_tab_buttons` (modulate-on-active, mirrors the EncyclopediaScreen pattern). Right-panel header now reads `"Gear (5) — Bag 23 / 50"` so the player sees both this-tab count and overall fullness.
+
+**Why same-size paperdoll + slightly-taller cells.** Two corrections from the v1 plan: (1) v1 proposed `120×160` (1.33×) which read cinema-poster-tall; the DI screenshot is closer to 5:6 so we landed on `120×144` (1.20×) for a subtle cue. (2) v1 proposed keeping paperdoll at `1×1` while making inventory tall to avoid rewriting per-hero anchors — the user pushed back: visual consistency between "the gear on me" and "the gear in my bag" is the whole point of the DI look, and `Paperdoll.anchor_for_slot()`'s normalized anchors handle the resize automatically anyway.
+
+**Why one shared bag (not separate gear/relic stashes).** Diablo IV's lesson: mixed-shape grids "require additional programming logic for sorting and moving items," so D4 went uniform-with-tabs. We followed the same — uniform grid, tabs as a pure filter, single occupancy logic. `InventoryManager` storage is unchanged; `_filter_inventory_by_tab` is a read-time helper.
+
+**Modified:**
+- [ui/ItemIcon.gd](ui/ItemIcon.gd) — `_pixel_size_override` field + `set_pixel_size(Vector2)` API; `_apply_footprint_size` honors override before falling through
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) — `CELL_W` / `CELL_H` constants, `Tab` enum, `_current_tab` state, tab filter + tab-pressed handler + tab-button refresh; all paperdoll + inventory icon construction switched to `set_pixel_size`
+- [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) — `TabBar` HBox added between `HeaderRow` and `ScrollContainer`
+
+**Verification — pending in-editor playtest.** Items to confirm when running:
+
+1. Open Hero Hall → Equip. Gear tab is active by default; paperdoll + stash cells are 120×144 (subtle, slightly taller than wide). Anchor positions still read humanoid (helm above, boots below, weapon left, gloves right, armor center, trinket upper-right shoulder).
+2. Tap Relics tab. Stash filters to TRINKET items only; cells stay 120×144; tab buttons swap modulate state.
+3. Tap a stash item → bottom-sheet pops with rarity header, affixes, Equip/Lock/Sell row (Phase-54 unchanged).
+4. Equip the item. It disappears from stash and appears at the matching paperdoll slot at the same 120×144 size; stats panel flashes the changed rows.
+5. Select an item on Gear tab, then switch to Relics — bottom-sheet auto-dismisses since the selected item is no longer visible.
+6. Long-press an item on touch — details suppress short-press equip (regression check).
+7. Right-panel header reads `"Gear (N) — Bag M / 50"` and updates when items move between tabs (e.g. equipping a trinket lowers Relics tab count).
+8. Touch targets: 120×144 ≥ the 80×80 minimum from CLAUDE.md.
+
+---
+
+## 2026-05-07 — Phase 55b: Equipment-screen post-review fixes (stats hide, scroll reset, active-tab visual, honest backdrop)
+
+Self-review of Phase 55 surfaced four issues; this pass shipped all four. Plan section: "Post-implementation review" in `~/.claude/plans/what-do-you-think-shimmying-fern.md`.
+
+**#7 — Stats panel hidden.** The original v2 plan called for omitting the redundant POWER/OFFENSE/DEFENSE/UTILITY card (already shown on Hero Hall's Overview view), but Phase 55 shipped without it. [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn): `Body/LeftPanel/StatsCard.visible = false`, plus `Body/LeftPanel/EquippedCard.size_flags_vertical = 3` and `EquipmentGrid.size_flags_vertical = 3` so the paperdoll silhouette grows to fill the freed ~360px instead of leaving an empty hole. `_build_stats_panel` / `_refresh_stats_panel` keep running harmlessly against the invisible nodes — equip-preview deltas in the bottom-sheet (`_format_stat_diff` → `DetailsLabel`) are unaffected because they live on a different code path. Cleanup of the dead StatsCard node + `_stat_rows` / `_last_stats_dict` deferred until the screen is otherwise stable.
+
+**#2 — Scroll position resets on tab switch.** `_on_tab_pressed` now sets `inventory_grid.get_parent().scroll_vertical = 0` after `_refresh()`. Without this, scrolling deep in Gear then tapping Relics would leave the (single) trinket above the viewport.
+
+**#3 — Active tab uses Godot's disabled-state visual.** Replaced the modulate-only highlight (active = white, inactive = grey) with `tab_gear_button.disabled = (_current_tab == Tab.GEAR)` + same for Relics. Disabled buttons render with built-in pressed-in styling so the active tab reads as obviously selected, and tapping the active tab is a no-op at the input layer (defense in depth — `_on_tab_pressed` already early-returns in that case).
+
+**#1 — Empty backdrop reflects remaining shared bag capacity.** Pre-fix: every tab drew the full 50-cell bag-cap backdrop, so a player with 1 trinket on the Relics tab saw 1 trinket + 49 empty cells implying "I can fit 49 more relics." But the bag is shared with Gear; the player might only have 5 free slots overall. New formula: `visible_cells = inv.size() + max(0, bag_cap - inv_all.size())` — the cells in this tab plus the actual remaining free space. The `"Bag M / 50"` portion of the right-panel header was already accurate; now the visual matches.
+
+**Modified:**
+- [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) — StatsCard.visible=false; EquippedCard + EquipmentGrid expand vertically
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) — empty-backdrop formula, scroll-reset on tab switch, disabled-state for active tab
+
+**Verification — pending in-editor playtest.** Items to confirm:
+
+1. Open Hero Hall → Equip — left panel is paperdoll-only; silhouette larger than before; no STATS section visible.
+2. Tap Gear tab while it's already active — nothing happens (button is disabled). Same for Relics.
+3. Switch tabs — active button visually "pressed in," inactive is normal/clickable.
+4. Scroll down in Gear, then tap Relics — viewport scrolls back to top so the trinket is visible.
+5. Bag mostly full (e.g. 47/50): Gear tab shows N gear + 3 empty cells; Relics tab shows M trinkets + 3 empty cells. NOT 50 empties in either tab.
+6. Empty bag (0/50): Gear shows 50 empty cells, Relics also shows 50 empty cells (full bag-cap available). No items, no overlap.
+7. Equip-preview deltas in the bottom-sheet still work when an item is selected — DPS/Damage/Armor arrow lines render in DetailsLabel.
+
+---
+
+## 2026-05-07 — WorldMap polish: next-level pulse + hide-locked + unlock celebration
+
+Three-part progression-feedback polish on top of the 2026-05-04 WorldMap rework. User noted the static dotted path between authored markers didn't celebrate progression and didn't communicate "next level to play." Plan: `~/.claude/plans/where-to-move-level-immutable-firefly.md` (Phase 1 only) + in-conversation extension for Phases 2–4.
+
+**Phase 1 — next-level pulse.** [ui/world_map/LevelMarker.gd](ui/world_map/LevelMarker.gd) gains `set_pulse(active: bool)` — a looping `scale` Tween from `1.0` → `1.08` → `1.0` with `TRANS_SINE EASE_IN_OUT`, ~1.2s per cycle. `pivot_offset = MARKER_SIZE * 0.5` so the pulse reads as centered on the banner. [ui/world_map/WorldMapView.gd](ui/world_map/WorldMapView.gd) gains `_apply_pulse_to_recommended()` + `_find_recommended_level_id()` — pulses the lowest-`unlock_order` level that is unlocked and has 0 campaign stars. Called from both `_rebuild_markers` and `refresh_states` so debug Unlock All re-targets correctly. Editor preview path skipped (would pulse every marker).
+
+**Phase 2 — locked levels hidden.** `_apply_state_to_marker` now sets `marker.visible = unlocked` for the runtime path; locked levels disappear entirely from the WorldMap. Editor preview keeps every marker visible so the designer can see the full layout. `_draw_dotted_path` was rewritten to be segment-aware: each segment is skipped when its origin level is locked, OR when its destination is locked AND the segment isn't the currently-animating celebration segment. Editor preview bypasses the unlock filter via `Engine.is_editor_hint()`.
+
+**Phase 3+4 — unlock celebration handoff + animation.** New `pending_unlock_celebration_id: String` field on [autoloads/MetaProgression.gd](autoloads/MetaProgression.gd), persisted by [autoloads/SaveManager.gd](autoloads/SaveManager.gd) (default `""` for old saves, no `SAVE_VERSION` bump — additive field). `SaveManager._try_unlock_next_level` now sets the field when it flips `levels_unlocked[next_id] = true`. The flag is intentionally persisted: a force-quit between unlock and the next WorldMap visit must still trigger the show, which means it can't live only in-memory.
+
+`WorldMapView.play_celebration(level_id)`:
+1. Looks up the level's index in the `unlock_order`-sorted `_path_point_ids` array; bails if `idx <= 0` (level 1 has no prior segment).
+2. Sets `_celebration_segment_idx = idx - 1` and `_celebration_progress = 0.0`.
+3. On the just-unlocked marker: `set_pulse(false)` (kill any pulse tween before the reveal-pop), `visible = false`, `modulate.a = 0`, `scale = Vector2(0.5, 0.5)`.
+4. Tween `_set_celebration_progress` 0→1 over 1.5s with `TRANS_CUBIC EASE_OUT`. Each step `queue_redraw`s; the animating segment's dot count is `int(round(step_count * progress))`, so dots fill in along the Catmull-Rom curve from origin toward destination.
+5. Tween callback `_on_celebration_road_done`: marker visible, parallel pop tween — `modulate:a 0→1` (0.35s) + `scale 0.5→1.15` with `TRANS_BACK EASE_OUT` (0.30s), chained `scale 1.15→1.0` (0.20s).
+6. Final callback `_on_celebration_done`: clear state, emit `celebration_finished`, restart `_apply_pulse_to_recommended` (the just-revealed marker is the new recommended target).
+
+[ui/WorldMap.gd](ui/WorldMap.gd) reads `pending_unlock_celebration_id` immediately after `set_levels()` and calls `play_celebration()` in the **same frame**. This is load-bearing: `_apply_state_to_marker` set the marker `visible = true`, and `play_celebration` overrides it to `false` before any frame renders. No flash. On `celebration_finished`, the field is cleared and the save persists — guarantees replay-on-force-quit.
+
+**Phase 1 visibility caveat — addressed.** `_apply_pulse_to_recommended` runs in `_rebuild_markers` *before* `play_celebration`, so the just-unlocked marker briefly has the pulse tween armed. `play_celebration` calls `set_pulse(false)` to kill it before starting the reveal pop — otherwise the two scale Tweens would fight.
+
+**Why this order (data → visibility → animation, not animation-first).** Hiding the marker has zero risk — if the celebration code never runs (force-quit, bug, debug bypass), the marker simply stays hidden until the player makes progress, which is the correct end-state anyway. Adding the celebration first without the visibility change would have meant the new marker pops into view but everything beyond it is still drawn, defeating the "fog of war" feeling.
+
+**Modified:**
+- [autoloads/MetaProgression.gd](autoloads/MetaProgression.gd) — `pending_unlock_celebration_id` field; cleared in `reset()`
+- [autoloads/SaveManager.gd](autoloads/SaveManager.gd) — sets the field in `_try_unlock_next_level`; persists in save dict; reads back with `""` default
+- [ui/world_map/LevelMarker.gd](ui/world_map/LevelMarker.gd) — `set_pulse(active)` + `_pulse_tween` + `pivot_offset`
+- [ui/world_map/WorldMapView.gd](ui/world_map/WorldMapView.gd) — visibility on `_apply_state_to_marker`; `_path_point_ids` parallel array; segment-aware `_draw_dotted_path`; `play_celebration` + animation callbacks; `_apply_pulse_to_recommended`; `celebration_finished` signal; editor live-drag `_process` polling
+- [ui/WorldMap.gd](ui/WorldMap.gd) — reads pending field after `set_levels`; connects `celebration_finished`; clears field + saves on completion
+
+**Carve-out from CORE RULE 1.** Touched four working scripts (MetaProgression, SaveManager, LevelMarker, WorldMapView, WorldMap) — all additive modifications: new fields, new methods, the `_draw_dotted_path` rewrite is the only logic change to existing code. The rewrite was unavoidable since the segment filter has to live inside the existing draw loop.
+
+**Verification — pending in-editor playtest.** Items to confirm when running:
+
+1. Fresh save (delete `user://save.json` or use Reset Progress). Open WorldMap — only Level 1 visible. No dotted path drawn (only one unlocked endpoint). Level 1 banner pulses gently (0 stars).
+2. Play Level 1, clear with ≥1 star, return to WorldMap. Auto-scroll lands on the "next" area; dotted path animates from L1 toward (still-hidden) L2 over ~1.5s; L2 marker fades in + scale-pops with subtle overshoot; pulse handoff: L1 stops pulsing (has stars), L2 starts pulsing (0 stars).
+3. Force-quit during step 2's animation (Alt+F4 mid-tween). Reopen game → WorldMap. Animation replays from start — `pending_unlock_celebration_id` was preserved.
+4. Clear L2 → return. Same animation, L2→L3.
+5. Debug "Unlock All" button (top of WorldMap, debug builds only). All four markers appear without animation; full Catmull-Rom path between all four. Pulse lands on L1 (lowest unstarred, since stars are unchanged by Unlock All).
+6. Open `ui/world_map/WorldMapView.tscn` in the Godot editor — all four markers visible (preview mode), full dotted path, no pulse (editor skips the runtime pulse helper). Drag a Marker2D — banner + path follow live (the @tool poll loop from earlier today).
+7. The 1.5s reveal duration and 1.15 overshoot on the marker pop are guesses — playtester may want to tune `road_tween` duration in `play_celebration` and the `Vector2(1.15, 1.15)` overshoot in `_on_celebration_road_done`.
+
+---
+
+## 2026-05-07 — Phase 55c: Equipment-screen polish (slot extensibility, dismiss-before-equip, paperdoll layout safety)
+
+Static bug review of Phase 55 + 55b surfaced five fixable issues; this pass shipped four. Plan / review file: `~/.claude/plans/phase-55-bug-review.md`.
+
+**A1 — Tab filter is now extensibility-safe.** Pre-fix: `_GEAR_SLOTS = [0,1,2,3,4]` and `_RELIC_SLOTS = [5]` hardcoded. A future `Slot.RING` value or a corrupt slot index from a save migration would silently disappear from BOTH tabs (stored, never displayed). Post-fix: `_RELIC_SLOTS` stays explicit (today: `[5]`); Gear is the *negation* — `_instance_belongs_to_tab` returns `is_relic if tab == RELICS else not is_relic`. Stranded items (null base, slot=-1, slot=99, future enum values) all fall through to Gear so they remain visible. `_GEAR_SLOTS` and `_slot_set_for_tab` retired.
+
+**A2 — Bottom-sheet no longer flickers on equip.** Pre-fix: `equip()` ran first → `inventory_changed` → `_refresh()` re-rendered the sheet showing the now-equipped item → THEN `_dismiss_details()` hid it. One-frame flicker. Post-fix in `_on_equip_pressed`: capture uid → `_dismiss_details()` → THEN `equip(uid_to_equip)`.
+
+**A3 — `set_pixel_size(Vector2)` guards against zero-component vectors.** Pre-fix: `_pixel_size_override != Vector2.ZERO` passed for partial-zero vectors (e.g. `Vector2(0, 144)`), zeroing the icon's width. Post-fix: both axes must be `> 0` for the override to apply.
+
+**C3 — Removed duplicate `_refresh_tab_buttons` call in `_ready`.** The first `_refresh()` at the end of `_ready` already covers it.
+
+**B1 mitigation — Paperdoll silhouette layout protected.** [Paperdoll.gd](ui/Paperdoll.gd) draws the figure with a constant `_DRAW_SCALE = 4.5` — the silhouette doesn't grow when the box does. Phase 55b's `EquippedCard.size_flags_vertical = 3` (and the same on `EquipmentGrid`) would have grown the box from `~640px` to `~1000px` while leaving the figure the same physical size, risking a stranded silhouette in a sea of dark space. Phase 55c reverted both flags. The `EquippedCard` now sits at its natural height (~640px); `LeftPanel` may have ~360px of empty dark space below it (since `StatsCard` is hidden). This is the conservative fallback — open the screen in Godot, judge whether the empty space looks acceptable. If it doesn't, options are (a) re-add a stats summary in the freed space, (b) center `EquippedCard` vertically, or (c) make `Paperdoll._DRAW_SCALE` size-driven.
+
+**Modified:**
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) — slot-filter refactor (A1), dismiss-before-equip (A2), dup-call cleanup (C3)
+- [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) — reverted `size_flags_vertical = 3` on `EquippedCard` + `EquipmentGrid` (B1)
+- [ui/ItemIcon.gd](ui/ItemIcon.gd) — guard against zero-component pixel size (A3)
+
+**Deferred (to a v3 polish pass):**
+- C4 — empty-tab affordance ("No relics yet — defeat enemies to find trinkets")
+- C5 — StatsCard dead-code removal (~150 LOC). `_compute_stats_dict` must stay because the bottom-sheet equip preview uses it.
+
+**Verification — pending in-editor playtest.**
+
+1. Open Hero Hall → Equip — confirm whether the empty space below the paperdoll feels acceptable or needs a layout follow-up.
+2. Tap any inventory item → bottom-sheet pops → tap Equip — confirm there's NO frame where the sheet shows "(equipped)" before dismissing.
+3. Add a sandbox `ItemBase` with `slot = 99` (or just temporarily change a `.tres`) — confirm it appears on the Gear tab instead of vanishing.
+4. Bottom-sheet equip-preview deltas still render (regression check on the StatsCard-hidden path).
+
+---
+
+## 2026-05-07 — Phase 55d: Paperdoll layout fixes (HELM clipping + figure right-sizing)
+
+In-editor screenshot of Phase 55c showed three real layout problems on the EQUIPPED card:
+1. HELM slot icon clipped above the EquipmentGrid top edge — anchor norm `(0.50, 0.10)` × grid height 600 = pixel y=60, minus icon half-height 72 = top edge at `y=-12`, outside the grid.
+2. Silhouette overlapped slot icons — `_DRAW_SCALE = 4.5` made the figure dominate the grid; with bigger 144-tall icons it read as visual chaos.
+3. EquippedCard sat at ~640px while LeftPanel had ~1000px to fill (Phase 55b hid StatsCard, Phase 55c reverted vertical-expand). Cramped at top, dark gap at bottom.
+
+**Root cause:** Phase 55 grew icons from 120×120 → 120×144 (taller) without resizing the EquipmentGrid container or the silhouette. Both stayed sized for the old square cells.
+
+**A — Grid enlarged.** [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn): `EquipmentGrid.custom_minimum_size = Vector2(540, 600)` → `Vector2(600, 720)`. Math after the change: HELM top-left at `y=0` (exactly at grid edge, no clip); BOOTS bottom at `y=706` (14 px margin). All other slots fit with margin.
+
+**B — Silhouette right-sized.** [ui/Paperdoll.gd:31](ui/Paperdoll.gd): `_DRAW_SCALE = 4.5` → `3.5` (~78% of original). Figure no longer fills the grid; ring-of-slots reads cleanly around it.
+
+**C — Silhouette centered.** [ui/Paperdoll.gd:34](ui/Paperdoll.gd): `_ANCHOR_FRACTION = 0.85` → `0.70`. Was "feet near the bottom" (HeroPortrait framing); now "chest centered." With the smaller `_DRAW_SCALE`, figure occupies roughly the middle third of the grid with breathing room above for HELM and below for BOOTS.
+
+**D — EquippedCard fills LeftPanel height.** Re-added `EquippedCard.size_flags_vertical = 3` (Phase 55c had reverted this defensively). Now safe because the figure is right-sized for a taller box (B+C). EquipmentGrid stays at 600×720 minimum, card itself spans up to ~1000 px, no dark gap below.
+
+**No GDScript changes in EquipmentScreen.gd** — slot anchors are normalized 0..1, so all positions reflow automatically with the larger grid.
+
+**Modified:**
+- [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) — EquipmentGrid `(540,600)→(600,720)`; EquippedCard `size_flags_vertical = 3`
+- [ui/Paperdoll.gd](ui/Paperdoll.gd) — `_DRAW_SCALE 4.5→3.5`, `_ANCHOR_FRACTION 0.85→0.70`
+
+**Verification — pending in-editor playtest.**
+
+1. Hero Hall → Equip on Knight: HELM, TRINKET, WEAPON, ARMOR, GLOVES, BOOTS all visible inside the EQUIPPED card, with margin from edges. None clipped at top, none falling out the bottom.
+2. Silhouette is smaller and roughly centered vertically. Slots ring around it without overlapping body parts heavily.
+3. EquippedCard reaches near the bottom of LeftPanel — no large dark gap below.
+4. Switch to Dragon (`HeroData.equipment_slots` = 3 slots, `HeroData.slot_anchors` overrides). Custom anchors still place slots correctly inside the larger grid.
+5. Tap a slot → empty toast or unequip flow unchanged.
+6. Tap an inventory item → Equip → slot fills at the right paperdoll position with no flicker (Phase 55c A2 still holds).
+
+---
+
+## 2026-05-07 — Phase 55e: HeroesHub close button (✕ replaces context-sensitive back chip)
+
+User flagged a redundancy in the Hero Hall TopBar: from inside Equipment, the "← Hero Hall" back button and the sidebar's Overview button both did the exact same thing — `_close_sub_view()`. The back button was two-mode (at Hero Hall: exit to WorldMap; in sub-view: return to hub root) and the second mode duplicated the Overview tab's job.
+
+**Fix:** the corner button is now a fixed close affordance — large `✕` glyph, always exits the hub to WorldMap. Sub-view → hub-root navigation goes through the sidebar Overview button (sole owner of that path). Mirrors the Diablo Immortal modal-close convention.
+
+**Modified:**
+- [ui/HeroesHub.tscn](ui/HeroesHub.tscn) — `BackButton`: text `← Back` → `✕`, font size `18` → `36`, size `140×60` → `80×80` (square, big touch target)
+- [ui/HeroesHub.gd](ui/HeroesHub.gd) — `_on_back()` simplified to always call `SceneManager.goto("res://ui/WorldMap.tscn")`; removed `back_button.text = "← Hero Hall"` / `"← Back"` swaps in `_open_sub_view`, `_close_sub_view`, and `_embed_screen` failure path; updated file docstring
+
+**Verification — pending in-editor playtest.**
+
+1. Open Hero Hall — corner button is a large `✕` (not text). Tap it → returns to WorldMap.
+2. Open Hero Hall → Equip — corner `✕` still visible, still goes to WorldMap (no longer "back to Hero Hall" intermediate step). Tap Overview in sidebar → returns to Hero Hall root, then `✕` exits.
+3. Same flow on Skills and Talents sub-views.
+4. Confirm the title still updates correctly per sub-view (`EQUIPMENT — Knight`, `SKILLS — Knight`, etc.) — that text-swap stays.
+
+---
+
+## 2026-05-07 — Phase 55f: Paperdoll slot positions are Marker2D children (visual editor authoring)
+
+User asked how to adjust slot positions and the EQUIPPED container without text-editing constants. The container size was already inspector-editable (`EquipmentGrid.custom_minimum_size`), but slot positions lived as a `const Dictionary` of normalized 0..1 values in `Paperdoll.gd`. Phase 55f converts the slot positions to **`Marker2D` children of `EquipmentGrid`** — drag with the W tool in the 2D viewport.
+
+**Pattern matches existing project conventions** — same as `TowerSpots → Spot1` in `Level1.tscn` and `LevelMarkers → level_1` in `WorldMapView.tscn`. CLAUDE.md "scene-tree nodes for authored geometry" rule.
+
+**Naming:** Marker2D children named `Slot0`..`Slot5` (indices match `ItemBase.Slot` enum). Position is in the parent `EquipmentGrid` Control's local pixel space.
+
+**Resolution order** in `Paperdoll.anchor_for_slot()` (highest to lowest priority):
+1. `HeroData.slot_anchors` per-hero override (normalized 0..1) — used by Dragon's custom 3-slot layout.
+2. `Slot<N>` Marker2D child of EquipmentGrid (absolute pixels) — the new visual-editor path.
+3. `DEFAULT_HUMANOID_ANCHORS` const fallback (normalized 0..1) — kept so any future scene that forgets to add markers still works without crashing.
+
+**Inspector-tweakable silhouette:** `_DRAW_SCALE` and `_ANCHOR_FRACTION` were converted from `const` to `@export var draw_scale: float = 3.5` and `@export_range(0.0, 1.0, 0.01) var anchor_fraction: float = 0.70`. Tune them in the EquipmentGrid node's Inspector pane with live preview when scene reloads.
+
+**How to author slots in editor:**
+1. Open `ui/EquipmentScreen.tscn`.
+2. Click `EquipmentGrid` in the Scene tree.
+3. In the 2D viewport, the 6 Marker2D children show as `+` crosses. Drag with the W tool to reposition.
+4. Adjust `EquipmentGrid.custom_minimum_size` in Inspector for container size.
+5. Adjust `EquipmentGrid.draw_scale` / `anchor_fraction` in Inspector for silhouette tuning.
+6. Save the scene.
+
+**Modified:**
+- [ui/Paperdoll.gd](ui/Paperdoll.gd) — `anchor_for_slot()` now reads `Slot<N>` Marker2D children before falling back to `DEFAULT_HUMANOID_ANCHORS`; `_DRAW_SCALE` / `_ANCHOR_FRACTION` consts → `@export var draw_scale` / `@export_range anchor_fraction`; `_draw()` updated to read the new vars
+- [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) — added 6 `Marker2D` children to `EquipmentGrid`, positions seeded at the prior normalized-anchor pixel locations:
+  - `Slot0` (Weapon) at `(108, 446)`
+  - `Slot1` (Armor) at `(300, 331)`
+  - `Slot2` (Helm) at `(300, 72)`
+  - `Slot3` (Gloves) at `(492, 446)`
+  - `Slot4` (Boots) at `(300, 634)`
+  - `Slot5` (Trinket) at `(492, 130)`
+
+**Backward-compat:** `HeroData.slot_anchors` per-hero overrides still work and still take priority. Dragon's custom layout is unaffected. The const fallback also stays — no scene changes are required for the system to function (markers are an additive, optional layer).
+
+**Verification — pending in-editor playtest.**
+
+1. Open `ui/EquipmentScreen.tscn`. Click `EquipmentGrid`. Six `+` crosses visible at the slot positions.
+2. Drag a marker (e.g. `Slot2`/Helm) with the W tool. Save scene. Run the game → that slot now appears at the new position.
+3. In the EquipmentGrid Inspector, change `draw_scale` to `2.5` (smaller figure) and `anchor_fraction` to `0.50` (centered higher). Save → silhouette responds.
+4. Open `heroes/data/dragon.tres` → `slot_anchors` overrides still position Dragon's slots correctly (priority 1 still wins).
+5. Delete a `Slot<N>` marker temporarily → that slot falls back to `DEFAULT_HUMANOID_ANCHORS` (does not crash, lands at the original 0..1 position).
+
+## 2026-05-07 — Mage AoE removal + screen-shake removal + BalanceSliders derived metrics
+
+**Three tower / dev-tool changes in one session.**
+
+### Removed boss-damage screen shake
+[VFXSpawner.gd](autoloads/VFXSpawner.gd) was firing `cam.add_shake(2.0, 0.12)` on every `enemy_damaged` signal where the target was a boss — i.e. every tower/hero/soldier hit on the boss kicked the screen. Disconnected the signal, deleted `_on_enemy_damaged`, removed the now-dead `_shake_t` / `_shake_dur0` / `_shake_amp` fields and the `_process(delta)` shake loop and `add_shake()` API on [GameCamera.gd](map/GameCamera.gd). Updated the stale "boss-shake" doc comment on [EventBus.gd](autoloads/EventBus.gd). The UI button "deny shake" on `RadialActionButton` / `TowerIconButton` is preserved — that's a button head-jiggle on insufficient-funds tap, not a screen shake.
+
+### Mage Tower → single-target
+Removed `aoe_radius = 150.0` from [tower_mage.tres](towers/data/tower_mage.tres). Updated encyclopedia text from *"Slow magic bolts that splash in an area…"* to *"Slow magic bolts that pierce armor. Hits flying. High per-hit damage, low fire rate."* — Mage was overlapping Artillery's swarm-clear niche while also covering flying, making it the "always at least decent" pick. AAA / Kingdom Rush convention is single-target armor-piercing for the mage archetype, with AoE belonging to artillery + dedicated branches. **Heads up:** Mage was paying part of its cost in the AoE radius; with that gone, base/L2/L3-main g/DPS will likely drift to the high side of their bands and may need a damage bump after a measurement pass. The new derived-metrics panel (next entry) makes that comparison live.
+
+### BalanceSliders — per-tier derived-metrics readouts
+[BalanceSliders.gd](balance/debug/BalanceSliders.gd) (debug-only, reachable from WorldMap when `OS.is_debug_build()`). The panel had four sliders per tier (Dmg/Rng/Spd/Cost) but no readout of what those sliders did to gold-efficiency — exactly the missing signal a designer needs while tuning. Wired the existing [BalanceCalculator.gd](balance/BalanceCalculator.gd) static metrics into the panel:
+
+- **Per-tier header row** above each tier's sliders — `DPS · Cumul · g/DPS [color] · TTK · Role tags`. g/DPS color-coded against [BALANCE.md](balance/BALANCE.md) §Per-tower g/DPS bands (green = in band, yellow = ±20%, red beyond). TTK is against `enemy_basic` through DamageCalculator-style mitigation. Role tags derived from `damage_type` / `aoe_radius` / `targets_flying` / `on_hit_slow_*` / `on_hit_stun_*` (slow/stun read per-tier with upgrade override → base fallback).
+- **Per-tier footer row** below each tier's sliders — `vs <lower-tier>: DPS +N (+N%) Rng +N Cost +Ng` and `best at <tier>: X g/DPS (TowerName)`. Branches both compare against L2 (their fork point), not L3 main. When this tower IS the best-in-tier, the comparator says `← this tower`.
+- **Top-of-section summary grid** — every tower × every authored tier in one read-only spreadsheet. Lets you eyeball outliers across the roster before drilling into a slider.
+- **Live recompute** — every tower-slider's `value_changed` callback calls `_refresh_all_metrics()` so a Mage L2 cost tweak instantly updates Mage L2's g/DPS AND every other tower's "best-at-L2" comparator.
+- **Observed DPS from RunStats history** — every header row + summary-grid row also reads `RunStats.get_history()` and shows `Obs <dps> ×<ratio> [n=<runs>]`. `dps` is the average per-run effective DPS from `damage_by_tower / duration_s` across runs that actually saw this tier in play; `ratio = observed / theoretical`. Colors match the community-typical effective:theoretical band ([BALANCE.md](balance/BALANCE.md) §"Track effective:theoretical DPS"): blue >0.8 (over-performing — small sample or AoE), green 0.5–0.8 (in band), yellow 0.3–0.5 (under-utilized), red <0.3, gray = no data. **Branch limitation:** [RunState.record_round_damage](autoloads/RunState.gd) keys damage by `<base_tower_name> L<level>`, so Archmage and Necromancer both surface as `"Mage Tower L3"` — branch_a and branch_b show the SAME observed DPS today. To split branches, telemetry would need to record `branch_idx` in the `round_damage_towers` entry. Documented inline.
+
+No gameplay scripts touched, no `.tres` content changed for this part, no save format changed. Override-only model preserved (debug overrides write to `user://debug_balance.json`, never the `.tres`).
+
+**Verification — pending in-editor playtest.**
+
+1. Run debug build → WorldMap → Balance Sliders.
+2. Expand Mage tower → expand L2 — header reads roughly `DPS 14.4   Cumul 165g   g/DPS 11.4 [in band]   TTK ~1.2s   Role: magic · single · anti-air`.
+3. Drag Mage L2 damage slider from ×1.0 to ×1.5 — DPS rises to ~21.7, g/DPS drops to ~7.6, color flips red ("too cheap 25%"). Footer comparator may flip to `← this tower`.
+4. Reset overrides → header values match BALANCE.md target table.
+5. Barracks tier: header reads `DPS n/a · Cumul Ng · g/DPS n/a · TTK n/a · Role: block` (gray). Sliders show only Range / Cost (Dmg/Spd skipped — existing behavior).
+6. Archer L3 branches (Ranger / Musketeer): only branch_a / branch_b shown (no l3_linear). Footer delta vs L2 (not vs each other). g/DPS shows yellow/red — known overshoot per BALANCE.md.
+7. Necromancer branch role tags include `stun`; Ice tower at every tier includes `slow`.
+
+---
+
+## 2026-05-07 — Phase 55g: EquipmentGrid expands vertically (BOOTS clipping fix)
+
+In-editor screenshot of Phase 55f showed the BOOTS slot icon clipped at the bottom — the user had dragged `Slot4` Marker2D to `(308, 698)` but `EquipmentGrid` was capped at `720 px` tall (`custom_minimum_size`) with `clip_contents = true`, so the icon's bottom 50 px was invisible. Same root cause was leaving ~280 px of dead dark space below the silhouette inside the EquippedCard.
+
+**Single-line fix.** Added `size_flags_vertical = 3` to the `EquipmentGrid` node in [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn). With both `EquippedCard` AND `EquipmentGrid` set to expand vertically, the grid now fills the card (~970 px tall after VBox header + panel margins). Marker positions stay in absolute pixel coords; nothing gets clipped at the user's authored y values.
+
+**Why safe now (vs. why Phase 55c reverted it):** Phase 55c reverted the same change because the silhouette `_DRAW_SCALE = 4.5` would have looked stranded in the bigger box. Phase 55d shrunk the figure to `draw_scale = 3.5` and centered it (`anchor_fraction = 0.70`), so the original concern is moot. Re-applying the expand is now the right move.
+
+**Modified:**
+- [ui/EquipmentScreen.tscn](ui/EquipmentScreen.tscn) — `EquipmentGrid`: added `size_flags_vertical = 3`
+
+No GDScript changes.
+
+**Side-questions answered (no code change):**
+- *Per-hero slot positions* — `HeroData.slot_anchors` is already the priority-1 path in `Paperdoll.anchor_for_slot` (used today by Dragon's 3-slot layout). To customize a hero, edit `heroes/data/<hero>.tres` Inspector → `slot_anchors` Dictionary → set normalized `Vector2` per slot. Knight uses scene Marker2Ds; only divergent heroes need the override.
+- *Width asymmetry (~624 left vs ~1108 right)* — intentional, mirrors DI's 1/3 paperdoll vs 2/3 stash split. Not changing.
+
+**Verification — pending in-editor playtest.**
+
+1. Open `ui/EquipmentScreen.tscn` → click `EquipmentGrid` → confirm `size_flags_vertical` is `Fill + Expand`. Save.
+2. Run game → Hero Hall → Equip on Knight. BOOTS at `Slot4 = (308, 698)` renders fully (no clipping at the bottom).
+3. Drag `Slot4` further down (e.g. `(308, 850)`) → save → game shows BOOTS at the new position. No clipping until past the new grid height (~970 px).
+4. Silhouette still reads correctly (centered at `anchor_fraction = 0.70`, scaled by `draw_scale = 3.5`).
+5. Other slots unchanged — markers below `y=720` already.
+6. Open `heroes/data/dragon.tres` → `slot_anchors` overrides still position Dragon's slots correctly (priority-1 path in `anchor_for_slot`).
+
+---
+
+## 2026-05-07 — Phase 55h: Tap-equipped is non-destructive (inspect, not unequip)
+
+The prior `_on_slot_pressed` flow instantly unequipped a paperdoll slot on tap. On mobile that's a destructive interaction with no undo affordance — one accidental finger drop and your gear is off. ARPG convention (Diablo Immortal / Diablo 4 / PoE mobile) is "tap-to-inspect" — the equipped item's details sheet opens with an explicit `Unequip` button as the action.
+
+**Three changes in [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd):**
+
+1. `_on_slot_pressed` — filled slot taps now route through `_select_item(current_uid)` instead of calling `InventoryManager.unequip()` directly. The same bottom-sheet inventory items use opens, showing the equipped item's affixes / abilities / "(equipped)" indicator.
+2. `_refresh_action_row` — added `is_equipped_on_active` check (`InventoryManager.get_equipped_uid(hero_id, slot) == _selected_uid`). When true, the primary button label flips from `Equip` / `Replace` to **`Unequip`**, and the Sell button disables (player must unequip first to sell — clearer than auto-unequip-then-sell). Lock button stays enabled (locking an equipped item is fine — the lock applies after it's unequipped).
+3. `_on_equip_pressed` — branches at the top: if the selected uid is the currently-equipped item in its slot, dismiss the sheet and call `InventoryManager.unequip()`. Otherwise the existing equip-or-replace path runs unchanged.
+
+**Swap flow (gear-to-gear) is unchanged.** Tap a new inventory item → its sheet → `Equip` (or `Replace` if same slot is occupied) → `InventoryManager.equip` automatically swaps the old gear back to the bag. No manual unequip-first step is needed for the common case.
+
+**Why disable Sell on equipped items instead of auto-unequip-then-sell.** Cleaner mental model: the Sell action operates on bag items; equipped items have to leave the body before going to the merchant. Avoids a confirm dialog ("This will unequip — are you sure?") and the edge case where auto-unequip-then-sell fails partway. Player taps `Unequip` → item drops to bag → second tap on the bag item → `Sell` works as normal.
+
+**Modified:**
+- [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) — `_on_slot_pressed` redirect to `_select_item`; `_refresh_action_row` adds `is_equipped_on_active` branch for both Equip and Sell; `_on_equip_pressed` branches on equipped-state to call `unequip` instead of `equip`
+
+No `.tscn` changes, no signal-graph changes, no inventory-storage changes.
+
+**Verification — pending in-editor playtest.**
+
+1. Hero Hall → Equip on Knight. Tap an equipped paperdoll slot → bottom-sheet opens (no longer instant unequip). Header is rarity-colored, body shows affixes + "(equipped)".
+2. Sheet's primary button reads `Unequip`. Sell button is disabled (greyed). Lock button works.
+3. Tap `Unequip` → sheet dismisses, item drops back to the bag, paperdoll slot empties, stats panel deltas (toast + bottom-sheet equip-preview path) update via the existing `inventory_changed` signal.
+4. Tap an inventory item in same slot → sheet opens with `Equip` (or `Replace` if another item is in that slot). Single-tap equips, swap-replace still works.
+5. Tap an inventory item already equipped on this hero — possible? Yes if the player navigated weirdly. Confirm sheet shows `Unequip` (the action-row branch reads `is_equipped_on_active` regardless of where the selection came from).
+6. Sell flow unchanged for bag items: select → two-tap-confirm → sold.
+7. Empty paperdoll slot taps still toast `"<Slot> slot is empty"` (no regression).
+8. Mid-flow hero swap (equipped item selected → switch to Mage) — `_dismiss_details` fires from the hero-changed handler, sheet hides cleanly.
+
+## 2026-05-07 — Phase 56: Pacing pass — "Kingdom Rush feel"
+
+The game felt frantic. Three felt-issues from playtest: enemies cross the map too fast, towers shoot too quickly, enemies die before melee duels become readable. Audit confirmed the speed half — basic Orcs traversed L1's 1991 px path in ~14 s at 1× / ~5 s at 3×, vs the KR-canonical band of ~25–35 s for early basics. Tower fire rates were already in band; the "spammy" feeling was downstream of enemy speed. The "no fight to enjoy" complaint was the **HP** side of the equation — squishy chasers fell to 1–2 archer arrows before any soldier or hero could lock them.
+
+**Three-axis change, all data-only (no script edits):**
+
+1. **Chaser speeds −30 %, chaser HP +30 %** — Basic 140→95 / 18→24 HP, Scout 224→155 / 10→13 HP, Flying 180→125 / 14→18 HP, Healer 100→75 / 30→38 HP. Slower + tougher means more on-screen lifetime AND more time-in-combat per enemy. Pure speed nerf alone would have made the "die too fast" complaint worse (more tower-shots-per-enemy at the same DPS).
+2. **Anchor speeds eased** — Armored 95→80, Boss base 80→70. Brute (70) and Boss phase multipliers untouched — Brute was already in band, and Boss phase 3 (×1.5 = 105) needs to keep its desperation-rush identity.
+3. **Combat tower ranges −10 % / −12.5 %** — Archer 400→360, Ice 350→315, Artillery 600→525, with L2/L3/branches scaled proportionally. Mage stays at 300 (already the shortest-range combat tower; trimming further would erase its "magic damage at close range" identity). Compresses engagement zones so the player visually sees enemies enter and exit tower coverage instead of getting shot the whole way across the map.
+
+**Speed button policy:** kept `HUD.SPEED_OPTIONS = [1.0, 2.0, 3.0]`. Research (~13 yr of Steam threads) shows no mainline KR ships fast-forward — Ironhide has refused the request the whole life of the franchise. Our 3× is a deliberate UX advantage. With the pacing pass applied, basics at 3× = ~7 s, well above the "single tower can engage" floor (~4 s).
+
+**Modified:**
+- [enemies/data/enemy_basic.tres](enemies/data/enemy_basic.tres), [enemies/data/enemy_scout.tres](enemies/data/enemy_scout.tres), [enemies/data/enemy_flying.tres](enemies/data/enemy_flying.tres), [enemies/data/enemy_healer.tres](enemies/data/enemy_healer.tres) — `move_speed`, `max_health`
+- [enemies/data/enemy_armored.tres](enemies/data/enemy_armored.tres), [enemies/data/boss_orc_warlord.tres](enemies/data/boss_orc_warlord.tres) — `move_speed`
+- [towers/data/tower_archer.tres](towers/data/tower_archer.tres), [towers/data/tower_ice.tres](towers/data/tower_ice.tres), [towers/data/tower_artillery.tres](towers/data/tower_artillery.tres) — `attack_range` on base + every upgrade
+- [balance/BALANCE.md](balance/BALANCE.md) — appended "Pacing targets" section documenting L1-reference travel-time bands, HP bias rationale, range-trim rationale, and 3× speed-button policy
+
+**Risks (logged in BALANCE.md verification):**
+- Hardness drift — slower + tougher chasers raise tower DPS efficiency (more shots fired per crossing enemy). Re-run `BalanceCalculator.score_level()` on Level 1 next session; if it overshoots the L1 PPT=2 band (~15,000), back the chaser HP bump from +30 % to +20 %.
+- Wave-time inflation — each L1 wave now takes ~30 % longer to clear. The 360 s budget in BALANCE.md may need bumping toward ~450 s in `level1_waves.tres`. Defer until after the hardness re-audit confirms the pass holds.
+- Naked Baseline — the +30 % chaser HP must still be 1-starable with default warrior + zero items / talents / upgrades. Verify on next playthrough before shipping; this is the floor invariant.
+
+**Verification — pending in-editor playtest.**
+
+1. Wipe save → select Warrior → run L1 at 1×. Stopwatch a Basic from spawn → keep: should land in ~21 s.
+2. Run L1 at 3×: same Basic should still land in ~7 s, not the pre-pass ~5 s.
+3. Hero vs. armored squad melee: duel should last > 5 s, not the prior ~2-swing kill.
+4. Per-enemy archer-shot count for L1 chasers: should land at ~3–5 across coverage, not 1–2.
+5. Open Test Range (`balance/test_range/`) → place Archer L1 alone vs single Basic: confirm time-to-kill feels deliberate (target ~4 hits = 16 dmg vs 24 HP).
+6. Run Balance Report → cross-check L1 hardness score against the L1 PPT=2 expected band.
+7. Naked Baseline check: complete L1 with default warrior, no items / talents / upgrades, 1-star or better.

@@ -32,12 +32,14 @@ const COLOR_NUMBER_LOCKED: Color = Color(0.75, 0.75, 0.75, 1.0)
 var _level_number: int = 1
 var _unlocked: bool = false
 var _total_stars: int = 0       # 0..5 composite (campaign 0-3 + heroic + iron)
+var _pulse_tween: Tween = null
 
 
 func _ready() -> void:
 	flat = true
 	focus_mode = Control.FOCUS_NONE
 	custom_minimum_size = MARKER_SIZE
+	pivot_offset = MARKER_SIZE * 0.5
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	# Repositioning markers is done by dragging the authored Marker2D nodes
 	# under WorldMapView/LevelMarkers in the 2D editor (W move tool). The
@@ -49,6 +51,24 @@ func set_state(level_number: int, unlocked: bool, total_stars: int) -> void:
 	_unlocked = unlocked
 	_total_stars = clampi(total_stars, 0, 5)
 	queue_redraw()
+
+
+# Looping scale pulse to nudge the player toward the recommended next level
+# (lowest-unlock_order unlocked level with 0 campaign stars). WorldMapView
+# computes the target and toggles this on exactly one marker; callers must
+# disable on the previously-pulsing marker themselves.
+func set_pulse(active: bool) -> void:
+	if _pulse_tween != null and _pulse_tween.is_valid():
+		_pulse_tween.kill()
+	_pulse_tween = null
+	if not active:
+		scale = Vector2.ONE
+		return
+	_pulse_tween = create_tween().set_loops()
+	_pulse_tween.tween_property(self, "scale", Vector2(1.08, 1.08), 0.6) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_pulse_tween.tween_property(self, "scale", Vector2(1.0, 1.0), 0.6) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
 func _draw() -> void:

@@ -26,6 +26,12 @@ const MOVE_REACHED_TOLERANCE: float = 10.0
 const SELECT_TAP_RADIUS: float = 55.0
 const SELECTION_RING_RADIUS: float = 45.0
 const HIT_FLASH_DURATION: float = 0.08
+# Move-order marker — small expanding ring drawn at the destination of an
+# accepted move_to() command. Confirms the order landed before the hero
+# has visibly turned, the way RTS click-feedback markers do.
+const MOVE_MARKER_DURATION: float = 0.5
+const MOVE_MARKER_BASE_RADIUS: float = 6.0
+const MOVE_MARKER_EXPAND: float = 14.0
 # Lunge animation — hero hops a few px toward its target on every attack
 # tick and snaps back. Triangle-wave easing computed analytically; no Tween
 # node allocated (cheaper, and a new attack just resets the clock).
@@ -85,6 +91,10 @@ var _nav_repath_timer: float = 0.0
 var _lunge_dir: Vector2 = Vector2.ZERO
 var _lunge_t: float = 0.0
 var _hit_flash_t: float = 0.0
+# Move-order marker — world-space destination of the last accepted move_to,
+# plus a 1.0→0.0 fade timer. Drawn in _draw() via to_local().
+var _move_marker_pos: Vector2 = Vector2.ZERO
+var _move_marker_t: float = 0.0
 # Hurt flinch — body recoil away from damage source on each hit. Mirrors
 # the BaseEnemy flinch so combat readability is consistent across units.
 const FLINCH_DURATION: float = 0.12
@@ -468,6 +478,12 @@ func move_to(world_pos: Vector2) -> void:
 	# the player sent it, not back to the original spawn.
 	_rally_position = world_pos
 	nav_agent.target_position = world_pos
+	# Move-order marker — arm the destination ring. Sits here so it only
+	# fires for orders that pass the DEAD/data gate above; HeroInputManager
+	# already filters illegal taps (tower spots, unselected hero) before
+	# we get here, so reaching this line means the order is legitimate.
+	_move_marker_pos = world_pos
+	_move_marker_t = 1.0
 	# Auto-deselect on move command — Option B. Next stray tap won't re-move
 	# the hero until the player taps the body to re-arm.
 	if is_selected:
@@ -523,6 +539,9 @@ func _physics_process(delta: float) -> void:
 		queue_redraw()
 	if _flinch_t > 0.0:
 		_flinch_t = maxf(0.0, _flinch_t - delta)
+		queue_redraw()
+	if _move_marker_t > 0.0:
+		_move_marker_t = maxf(0.0, _move_marker_t - delta / MOVE_MARKER_DURATION)
 		queue_redraw()
 	# Facing direction — sampled from world delta. Falls back to active
 	# target direction when the hero is stationary so eyes still face the
@@ -985,6 +1004,16 @@ func _prune_blocks_out_of_range() -> void:
 
 func _draw() -> void:
 	var zs: float = _get_zoom_scale()
+	# Move-order marker — expanding ring at the destination of the last
+	# accepted move_to(). Drawn first so it sits under the skill preview /
+	# selection ring / shadow / body.
+	if _move_marker_t > 0.0:
+		var local_target: Vector2 = to_local(_move_marker_pos)
+		var t_inv: float = 1.0 - _move_marker_t  # 0 → 1 as the ring expands
+		var radius: float = (MOVE_MARKER_BASE_RADIUS + MOVE_MARKER_EXPAND * t_inv) * zs
+		var alpha: float = _move_marker_t * 0.85
+		draw_arc(local_target, radius, 0.0, TAU, 24,
+			Color(0.4, 1.0, 0.45, alpha), 2.0 * zs)
 	# Skill targeting range circle (Phase 20) — drawn first.
 	if _skill_range_preview > 0.0:
 		draw_circle(Vector2.ZERO, _skill_range_preview, Color(1.0, 0.9, 0.3, 0.08))

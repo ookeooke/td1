@@ -87,6 +87,11 @@ var _is_empty: bool = true
 # current codebase — both paperdoll and inventory pass 1, 1) set this
 # via set_slot_footprint.
 var _slot_footprint: Vector2i = Vector2i.ZERO
+# Phase 55 — explicit pixel-size override. When non-zero, supersedes
+# the footprint-based sizing so callers can request non-square cells
+# (Diablo-style 120×144 gear tiles) without re-deriving math from
+# SIZE_PX. Set via set_pixel_size; Vector2.ZERO falls back to footprint.
+var _pixel_size_override: Vector2 = Vector2.ZERO
 # IP-3 — "do not sell" pin (separate from `_locked` which means slot-locked /
 # disabled). When true, the icon draws a small padlock glyph in the
 # upper-right corner; rendering is otherwise unchanged.
@@ -121,6 +126,15 @@ func _ready() -> void:
 # Called from _ready, set_slot_footprint, and setup_instance — order-
 # independent so callers can setup either before OR after add_child.
 func _apply_footprint_size() -> void:
+	# Pixel-size override (Phase 55) wins when set — used by EquipmentScreen
+	# to request 120×144 Diablo-style gear cells. Falls through to the
+	# footprint multiplier path otherwise so legacy call sites keep working.
+	# Both axes must be > 0; a partial-zero vector (e.g. Vector2(0, 144))
+	# would otherwise zero the icon's width and clip it to nothing.
+	if _pixel_size_override.x > 0.0 and _pixel_size_override.y > 0.0:
+		custom_minimum_size = _pixel_size_override
+		size = _pixel_size_override
+		return
 	var w: int = 1
 	var h: int = 1
 	if _slot_footprint != Vector2i.ZERO:
@@ -137,6 +151,14 @@ func _apply_footprint_size() -> void:
 # later wants a "two-handed" badge effect at the icon level.
 func set_slot_footprint(w: int, h: int) -> void:
 	_slot_footprint = Vector2i(maxi(0, w), maxi(0, h))
+	_apply_footprint_size()
+
+
+# Phase 55 — explicit pixel size. Supersedes set_slot_footprint when both
+# are called; pass Vector2.ZERO to clear and revert to the footprint path.
+# Used by EquipmentScreen for non-square gear cells (e.g. 120×144).
+func set_pixel_size(px: Vector2) -> void:
+	_pixel_size_override = Vector2(maxf(0.0, px.x), maxf(0.0, px.y))
 	_apply_footprint_size()
 
 

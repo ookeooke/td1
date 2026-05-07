@@ -68,6 +68,22 @@ var _decorations: Array = []
 const _EnvironmentScatterScript := preload("res://systems/EnvironmentScatter.gd")
 
 
+# Painted-background opt-in. When the level scene has a `MapBackground`
+# Sprite2D child under the root, the painting owns the visual — procedural
+# decorations and path strokes are suppressed (the painting has its own
+# scenery and roads). Procedural BG fill + borders stay so zoom-out past
+# the painting still looks intentional. Adding a `MapBackgroundOverflow`
+# sibling Node also suppresses borders, for paintings that include their
+# own framing past map_bounds. L5+ pattern; L1–L4 stay procedural forever
+# (CORE RULE 21).
+func _has_map_background() -> bool:
+	return has_node("MapBackground")
+
+
+func _has_background_overflow() -> bool:
+	return has_node("MapBackgroundOverflow")
+
+
 # ============================================================================
 # Subclass overrides — declare which level this script represents.
 # Defaults are safe: hardness readout no-ops if _wave_list_path() returns "".
@@ -205,6 +221,10 @@ func _register_tower_spots() -> void:
 # Builds the off-path decoration list — deterministic per seed so the same
 # map always lays out the same way. Called once at runtime in _ready.
 func _generate_decorations() -> void:
+	# Painted backgrounds own the scenery — skip the procedural scatter so
+	# trees/bushes don't double up over the painting's own foliage.
+	if _has_map_background():
+		return
 	# Collect baked path points from every Path2D (uses the existing pattern
 	# from _draw + _cache_paths). Flatten into a single PackedVector2Array.
 	var path_pts: PackedVector2Array = PackedVector2Array()
@@ -227,30 +247,41 @@ func _generate_decorations() -> void:
 
 
 func _draw() -> void:
+	var has_bg: bool = _has_map_background()
 	# Bleed the background far beyond the design viewport so wider/taller
-	# devices and zoomed-out views see grass instead of gray void.
-	draw_rect(Rect2(Vector2(-3000, -3000), Vector2(8000, 8000)), BG_COLOR)
+	# devices and zoomed-out views see grass instead of gray void. Suppressed
+	# when a painting is present — BaseLevel's _draw() runs at the root
+	# node's z_index (0), so the BG rect would overdraw any child Sprite2D
+	# regardless of the sprite's negative z_index. Borders still draw past
+	# map_bounds to frame the painting on zoom-out.
+	if not has_bg:
+		draw_rect(Rect2(Vector2(-3000, -3000), Vector2(8000, 8000)), BG_COLOR)
 
 	# Map border visuals — mountains (top), cliffs (sides), water (bottom).
-	_draw_borders()
+	# Suppressed when the painting includes its own framing past map_bounds.
+	if not _has_background_overflow():
+		_draw_borders()
 
 	# Off-path scenery — drawn after borders but before paths, so the road
 	# cleanly overlays anything that grew right up to the edge. Trees / bushes
-	# pre-sorted by Y inside generate() for a faux-isometric overlap.
+	# pre-sorted by Y inside generate() for a faux-isometric overlap. Skipped
+	# when a painting owns the scenery (decorations list is empty in that case).
 	for d in _decorations:
 		_EnvironmentScatterScript.draw(self, d)
 
 	# Paths come from children so the Godot Path2D curve editor works.
 	# Two-pass draw: a wider darker stroke beneath the main road gives the
 	# path a defined edge against the grass instead of fading into the BG.
-	var source := paths_node if paths_node != null else get_node_or_null("Paths")
-	if source != null:
-		for child in source.get_children():
-			if child is Path2D and child.curve != null:
-				var pts: PackedVector2Array = child.curve.get_baked_points()
-				if pts.size() >= 2:
-					draw_polyline(pts, PATH_EDGE_COLOR, PATH_WIDTH + PATH_EDGE_PADDING)
-					draw_polyline(pts, PATH_COLOR, PATH_WIDTH)
+	# Suppressed when the painting shows the road itself.
+	if not has_bg:
+		var source := paths_node if paths_node != null else get_node_or_null("Paths")
+		if source != null:
+			for child in source.get_children():
+				if child is Path2D and child.curve != null:
+					var pts: PackedVector2Array = child.curve.get_baked_points()
+					if pts.size() >= 2:
+						draw_polyline(pts, PATH_EDGE_COLOR, PATH_WIDTH + PATH_EDGE_PADDING)
+						draw_polyline(pts, PATH_COLOR, PATH_WIDTH)
 
 	var spots := tower_spots_node if tower_spots_node != null else get_node_or_null("TowerSpots")
 	if spots != null:

@@ -6,7 +6,7 @@ signal enemy_died(enemy, gold_value)
 signal enemy_reached_end(enemy, lives_lost)
 signal enemy_damaged(enemy, amount, dmg_type)
 
-# Combat (any unit taking damage; drives hit sparks, boss-shake, etc.)
+# Combat (any unit taking damage; drives hit sparks, etc.)
 signal hit_landed(target, source, amount, dmg_type)
 signal soldier_fell(soldier, facing_dir)
 

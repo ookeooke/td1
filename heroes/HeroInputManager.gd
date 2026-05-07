@@ -8,6 +8,12 @@ extends Node
 # selection claim the tap first.
 
 const SPOT_TAP_RADIUS: float = 90.0
+# Max distance between the raw tap and the nearest navmesh point that we
+# still treat as a valid move order. Taps within this radius are snapped
+# to walkable ground (forgiving for slight misses on path edges); taps
+# farther off are dropped silently (deep water, mountain interiors).
+# Mirrors the soldier rally navmesh-snap pattern (TowerBarracks._snap_world_to_navmesh).
+const MAX_OFFMESH_TOLERANCE: float = 150.0
 
 @export var hero_path: NodePath
 @export var grid_manager_path: NodePath
@@ -47,6 +53,14 @@ func _on_map_tap(screen_pos: Vector2, claim: RefCounted) -> void:
 		var spot_id: String = _grid.find_nearest_spot(world_pos, SPOT_TAP_RADIUS * zoom_scale)
 		if spot_id != "":
 			return
+	# Navmesh validation — snap small offsets, reject far-off taps. Hero
+	# move_to() trusts its caller, so the gate has to live here.
+	var nav_map: RID = _map.get_world_2d().navigation_map
+	if nav_map.is_valid():
+		var snap_pos: Vector2 = NavigationServer2D.map_get_closest_point(nav_map, world_pos)
+		if world_pos.distance_to(snap_pos) > MAX_OFFMESH_TOLERANCE:
+			return
+		world_pos = snap_pos
 	if _hero.has_method("move_to"):
 		_hero.move_to(world_pos)
 		claim.claimed = true

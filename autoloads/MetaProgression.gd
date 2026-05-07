@@ -45,6 +45,12 @@ var unlocked_content: Array[String] = []       # explicitly unlocked (IAP, star-
 # Per-hero purchased talents: hero_id → Array[String] of talent_ids.
 var hero_talents: Dictionary = {}
 var endless_best_score: int = 0
+# WorldMap unlock-celebration handoff. SaveManager._try_unlock_next_level
+# stores the just-unlocked level_id here; WorldMap._build_level_entries reads
+# it on entry, plays the road-reveal + marker-pop animation, then clears it.
+# Persisted so a force-quit between unlock and the next WorldMap visit still
+# triggers the celebration. Empty string means no pending celebration.
+var pending_unlock_celebration_id: String = ""
 # Persistent meta-currency for the inventory sell loop. Earned by selling
 # unwanted items; future Town phases (Buy / Smith) will spend it. Distinct
 # from `gold`, which is per-run and resets every level.
@@ -94,6 +100,7 @@ func reset() -> void:
 	endless_best_score = 0
 	endless_leaderboard = []
 	meta_gold = 0
+	pending_unlock_celebration_id = ""
 	encyclopedia_unlocked = []
 	unlocked_content = []
 	hero_talents = {}

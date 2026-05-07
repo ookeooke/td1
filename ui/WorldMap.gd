@@ -209,7 +209,23 @@ func _build_level_entries() -> void:
 		world_map_view.marker_pressed.connect(_on_marker_pressed)
 	if not world_map_view.markers_built.is_connected(_on_markers_built):
 		world_map_view.markers_built.connect(_on_markers_built)
+	if not world_map_view.celebration_finished.is_connected(_on_celebration_finished):
+		world_map_view.celebration_finished.connect(_on_celebration_finished)
 	world_map_view.set_levels(_levels)
+	# Replay handoff: SaveManager._try_unlock_next_level set this when the
+	# previous run cleared a level. Kick the road-reveal + marker-pop in the
+	# same frame as set_levels — play_celebration overrides marker.visible on
+	# the just-unlocked marker before any frame renders, so no flash.
+	var pending: String = MetaProgression.pending_unlock_celebration_id
+	if pending != "":
+		world_map_view.play_celebration(pending)
+
+
+# Cleared after the animation actually completes so a force-quit mid-celebration
+# replays the show on next entry. SaveManager.save_game persists immediately.
+func _on_celebration_finished() -> void:
+	MetaProgression.pending_unlock_celebration_id = ""
+	SaveManager.save_game()
 
 
 # Auto-scrolls the ScrollContainer to the highest-unlock_order level the

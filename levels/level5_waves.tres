@@ -1,0 +1,457 @@
+[gd_resource type="Resource" script_class="WaveList" format=3 uid="uid://b1td1lv5waves"]
+
+[ext_resource type="Script" uid="uid://b20v3766p6m5g" path="res://waves/WaveList.gd" id="1_list"]
+[ext_resource type="Script" uid="uid://bi3tyyql6gp6g" path="res://waves/WaveData.gd" id="2_wave"]
+[ext_resource type="Script" uid="uid://bn01uqj5y40yv" path="res://waves/WaveSpawn.gd" id="3_spawn"]
+[ext_resource type="PackedScene" uid="uid://ct8yjsiicg7nj" path="res://enemies/EnemyBasic.tscn" id="4_basic"]
+[ext_resource type="PackedScene" uid="uid://b1td1flysc002" path="res://enemies/EnemyFlying.tscn" id="5_fly"]
+[ext_resource type="PackedScene" uid="uid://b1td1armorsc1" path="res://enemies/EnemyArmored.tscn" id="6_armor"]
+[ext_resource type="PackedScene" uid="uid://b1td1boss1scn" path="res://enemies/bosses/Boss1.tscn" id="7_boss"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyBrute.tscn" id="8_brute"]
+[ext_resource type="PackedScene" uid="uid://b1td1scoutsc1" path="res://enemies/EnemyScout.tscn" id="9_scout"]
+[ext_resource type="PackedScene" uid="uid://b1td1healsc02" path="res://enemies/EnemyHealer.tscn" id="10_heal"]
+
+; ============================================================================
+; Level 5 — Riverford. Two paths, both crossing the plank bridge:
+;   bl_plank — main path (BL spawn). Active every wave.
+;   tl_plank — second path (TL spawn). Activates from W3 onward.
+;
+; Wave structure: W1–W2 are a single-front warm-up on bl_plank; W3 opens
+; the second front as an escalation moment. W3–W10 use both paths.
+;
+; 10-wave campaign at target_ppt = 6 (~17,600 hardness).
+; ============================================================================
+
+; ---- Wave 1: warm-up — main path only, basics + a small armor closer ----
+[sub_resource type="Resource" id="L5_W1_BLBasic"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 10
+interval = 5.0
+
+[sub_resource type="Resource" id="L5_W1_BLArmor"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("6_armor")
+count = 3
+interval = 14.0
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L5_Wave1"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W1_BLBasic"), SubResource("L5_W1_BLArmor")])
+countdown = 0.0
+bounty = 85
+
+; ---- Wave 2: main path intensifies — basics + scouts + armor ----
+[sub_resource type="Resource" id="L5_W2_BLBasic"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 14
+interval = 5.0
+
+[sub_resource type="Resource" id="L5_W2_BLScouts"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("9_scout")
+count = 6
+interval = 5.0
+start_delay = 4.0
+
+[sub_resource type="Resource" id="L5_W2_BLArmor"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("6_armor")
+count = 4
+interval = 11.0
+start_delay = 8.0
+
+[sub_resource type="Resource" id="L5_Wave2"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W2_BLBasic"), SubResource("L5_W2_BLScouts"), SubResource("L5_W2_BLArmor")])
+countdown = 28.0
+bounty = 95
+
+; ---- Wave 3: SECOND FRONT OPENS — tl_plank activates with flyers ----
+[sub_resource type="Resource" id="L5_W3_BLBasic"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 12
+interval = 5.0
+
+[sub_resource type="Resource" id="L5_W3_TLBasic"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 10
+interval = 5.5
+start_delay = 3.0
+
+[sub_resource type="Resource" id="L5_W3_TLFly"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("5_fly")
+count = 8
+interval = 6.0
+start_delay = 12.0
+
+[sub_resource type="Resource" id="L5_W3_BLScouts"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("9_scout")
+count = 6
+interval = 6.0
+start_delay = 24.0
+
+[sub_resource type="Resource" id="L5_Wave3"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W3_BLBasic"), SubResource("L5_W3_TLBasic"), SubResource("L5_W3_TLFly"), SubResource("L5_W3_BLScouts")])
+countdown = 30.0
+bounty = 105
+
+; ---- Wave 4: armor convoy on the main path with healer behind ----
+[sub_resource type="Resource" id="L5_W4_BLArmor"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("6_armor")
+count = 6
+interval = 9.0
+
+[sub_resource type="Resource" id="L5_W4_BLBasicEscort"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 14
+interval = 4.5
+start_delay = 2.0
+
+[sub_resource type="Resource" id="L5_W4_BLHealers"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("10_heal")
+count = 2
+interval = 22.0
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L5_W4_TLScouts"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("9_scout")
+count = 8
+interval = 5.5
+start_delay = 14.0
+
+[sub_resource type="Resource" id="L5_Wave4"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W4_BLArmor"), SubResource("L5_W4_BLBasicEscort"), SubResource("L5_W4_BLHealers"), SubResource("L5_W4_TLScouts")])
+countdown = 32.0
+bounty = 115
+
+; ---- Wave 5: fast leak test — scouts on second front, brutes on main ----
+[sub_resource type="Resource" id="L5_W5_TLScouts"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("9_scout")
+count = 18
+interval = 4.0
+
+[sub_resource type="Resource" id="L5_W5_BLBasic"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 12
+interval = 5.0
+start_delay = 5.0
+
+[sub_resource type="Resource" id="L5_W5_BLBrutes"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("8_brute")
+count = 2
+interval = 26.0
+start_delay = 10.0
+
+[sub_resource type="Resource" id="L5_W5_TLArmor"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("6_armor")
+count = 4
+interval = 12.0
+start_delay = 20.0
+
+[sub_resource type="Resource" id="L5_Wave5"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W5_TLScouts"), SubResource("L5_W5_BLBasic"), SubResource("L5_W5_BLBrutes"), SubResource("L5_W5_TLArmor")])
+countdown = 32.0
+bounty = 125
+
+; ---- Wave 6: recovery / economy — broad basics with anti-air check ----
+[sub_resource type="Resource" id="L5_W6_BLBasic"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 16
+interval = 4.0
+
+[sub_resource type="Resource" id="L5_W6_TLBasic"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 16
+interval = 4.0
+start_delay = 2.0
+
+[sub_resource type="Resource" id="L5_W6_TLFlyers"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("5_fly")
+count = 8
+interval = 6.0
+start_delay = 8.0
+
+[sub_resource type="Resource" id="L5_W6_BLHealer"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("10_heal")
+start_delay = 36.0
+
+[sub_resource type="Resource" id="L5_Wave6"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W6_BLBasic"), SubResource("L5_W6_TLBasic"), SubResource("L5_W6_TLFlyers"), SubResource("L5_W6_BLHealer")])
+countdown = 28.0
+bounty = 135
+
+; ---- Wave 7: brute wall on both fronts — sustained blocking + magic check ----
+[sub_resource type="Resource" id="L5_W7_BLBrutes"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("8_brute")
+count = 2
+interval = 28.0
+
+[sub_resource type="Resource" id="L5_W7_TLBrutes"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("8_brute")
+count = 2
+interval = 28.0
+start_delay = 10.0
+
+[sub_resource type="Resource" id="L5_W7_BLArmor"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("6_armor")
+count = 6
+interval = 9.0
+start_delay = 6.0
+
+[sub_resource type="Resource" id="L5_W7_TLBasic"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 12
+interval = 5.0
+start_delay = 4.0
+
+[sub_resource type="Resource" id="L5_W7_BLHealer"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("10_heal")
+start_delay = 34.0
+
+[sub_resource type="Resource" id="L5_Wave7"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W7_BLBrutes"), SubResource("L5_W7_TLBrutes"), SubResource("L5_W7_BLArmor"), SubResource("L5_W7_TLBasic"), SubResource("L5_W7_BLHealer")])
+countdown = 34.0
+bounty = 145
+
+; ---- Wave 8: air swarm with both fronts occupied — anti-air must be solved ----
+[sub_resource type="Resource" id="L5_W8_BLBasic"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 12
+interval = 5.0
+
+[sub_resource type="Resource" id="L5_W8_TLBasic"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 12
+interval = 5.0
+start_delay = 3.0
+
+[sub_resource type="Resource" id="L5_W8_TLFlySwarm"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("5_fly")
+count = 14
+interval = 4.5
+start_delay = 12.0
+
+[sub_resource type="Resource" id="L5_W8_BLArmor"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("6_armor")
+count = 5
+interval = 11.0
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L5_W8_BLHealers"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("10_heal")
+count = 2
+interval = 24.0
+start_delay = 22.0
+
+[sub_resource type="Resource" id="L5_W8_TLScouts"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("9_scout")
+count = 10
+interval = 4.5
+start_delay = 30.0
+
+[sub_resource type="Resource" id="L5_Wave8"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W8_BLBasic"), SubResource("L5_W8_TLBasic"), SubResource("L5_W8_TLFlySwarm"), SubResource("L5_W8_BLArmor"), SubResource("L5_W8_BLHealers"), SubResource("L5_W8_TLScouts")])
+countdown = 34.0
+bounty = 155
+
+; ---- Wave 9: pre-boss gauntlet — every role, no single focus target ----
+[sub_resource type="Resource" id="L5_W9_BLBasic"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 14
+interval = 5.0
+
+[sub_resource type="Resource" id="L5_W9_TLBasic"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 14
+interval = 5.0
+start_delay = 3.0
+
+[sub_resource type="Resource" id="L5_W9_TLScouts"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("9_scout")
+count = 12
+interval = 5.0
+start_delay = 8.0
+
+[sub_resource type="Resource" id="L5_W9_BLArmor"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("6_armor")
+count = 6
+interval = 10.0
+start_delay = 10.0
+
+[sub_resource type="Resource" id="L5_W9_BLBrutes"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("8_brute")
+count = 3
+interval = 20.0
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L5_W9_TLFlyers"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("5_fly")
+count = 8
+interval = 6.5
+start_delay = 18.0
+
+[sub_resource type="Resource" id="L5_W9_BLHealers"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("10_heal")
+count = 2
+interval = 26.0
+start_delay = 24.0
+
+[sub_resource type="Resource" id="L5_Wave9"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W9_BLBasic"), SubResource("L5_W9_TLBasic"), SubResource("L5_W9_TLScouts"), SubResource("L5_W9_BLArmor"), SubResource("L5_W9_BLBrutes"), SubResource("L5_W9_TLFlyers"), SubResource("L5_W9_BLHealers")])
+countdown = 36.0
+bounty = 165
+
+; ---- Wave 10: boss escort finale — boss takes the main path ----
+[sub_resource type="Resource" id="L5_W10_Boss"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("7_boss")
+start_delay = 12.0
+
+[sub_resource type="Resource" id="L5_W10_BLBasic"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 14
+interval = 5.0
+
+[sub_resource type="Resource" id="L5_W10_TLBasic"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("4_basic")
+count = 14
+interval = 5.0
+start_delay = 4.0
+
+[sub_resource type="Resource" id="L5_W10_BLBrutes"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("8_brute")
+count = 4
+interval = 22.0
+start_delay = 10.0
+
+[sub_resource type="Resource" id="L5_W10_TLArmor"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("6_armor")
+count = 6
+interval = 11.0
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L5_W10_BLScouts"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("9_scout")
+count = 12
+interval = 5.0
+start_delay = 28.0
+
+[sub_resource type="Resource" id="L5_W10_TLFlyers"]
+script = ExtResource("3_spawn")
+path_id = "tl_plank"
+enemy_scene = ExtResource("5_fly")
+count = 10
+interval = 6.0
+start_delay = 30.0
+
+[sub_resource type="Resource" id="L5_W10_BLHealers"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("10_heal")
+count = 2
+interval = 28.0
+start_delay = 22.0
+
+[sub_resource type="Resource" id="L5_Wave10"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W10_Boss"), SubResource("L5_W10_BLBasic"), SubResource("L5_W10_TLBasic"), SubResource("L5_W10_BLBrutes"), SubResource("L5_W10_TLArmor"), SubResource("L5_W10_BLScouts"), SubResource("L5_W10_TLFlyers"), SubResource("L5_W10_BLHealers")])
+countdown = 42.0
+bounty = 185
+
+[resource]
+script = ExtResource("1_list")
+waves = Array[ExtResource("2_wave")]([SubResource("L5_Wave1"), SubResource("L5_Wave2"), SubResource("L5_Wave3"), SubResource("L5_Wave4"), SubResource("L5_Wave5"), SubResource("L5_Wave6"), SubResource("L5_Wave7"), SubResource("L5_Wave8"), SubResource("L5_Wave9"), SubResource("L5_Wave10")])

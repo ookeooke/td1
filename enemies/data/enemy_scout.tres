@@ -7,8 +7,8 @@
 script = ExtResource("1_data")
 enemy_id = "enemy_scout"
 enemy_name = "Goblin Scout"
-max_health = 10
-move_speed = 224.0
+max_health = 13
+move_speed = 155.0
 gold_worth = 1
 xp_worth = 8
 attack_damage = 2.0

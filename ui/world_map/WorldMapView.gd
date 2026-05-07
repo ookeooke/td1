@@ -23,6 +23,11 @@ signal marker_pressed(level_id: String)
 # moment in the layout cycle. Also fires from the editor preview path
 # so @tool consumers see it.
 signal markers_built
+# Fired when play_celebration finishes the road-reveal + marker-pop chain.
+# WorldMap consumes this to clear MetaProgression.pending_unlock_celebration_id
+# and persist; we keep the field set until the animation actually completes
+# so a force-quit mid-celebration replays it on next entry.
+signal celebration_finished
 
 const MAP_SIZE: Vector2 = Vector2(2400, 1400)
 
@@ -55,6 +60,18 @@ const REGION_LABELS: Array = [
 var _levels: Array[Resource] = []
 var _markers_by_id: Dictionary = {}  # level_id → LevelMarker
 var _path_points: PackedVector2Array = PackedVector2Array()
+# Parallel to _path_points: the level_id at each path index, sorted by
+# unlock_order. Lets _draw_dotted_path skip segments whose endpoints aren't
+# both unlocked, and lets play_celebration locate the animating segment.
+var _path_point_ids: PackedStringArray = PackedStringArray()
+# Active road-reveal animation state.
+# _celebration_segment_idx == segment index in _path_points being drawn
+# progressively (segment i runs _path_points[i] → _path_points[i+1]).
+# -1 means no animation active and all unlocked segments draw fully.
+# _celebration_progress 0..1 — fraction of the animating segment's dot count.
+var _celebration_id: String = ""
+var _celebration_segment_idx: int = -1
+var _celebration_progress: float = 1.0
 var _mountain_shapes: Array = []     # Pre-baked from seeded RNG.
 var _sand_dots: PackedVector2Array = PackedVector2Array()
 
@@ -72,6 +89,37 @@ func _ready() -> void:
 	# WorldMap.gd → set_levels() with real progression state.
 	if Engine.is_editor_hint():
 		_build_editor_preview_markers()
+		_rebuild_path_from_scene()
+		queue_redraw()
+	# Editor-only: poll Marker2D positions each frame so banner previews and
+	# the dotted path follow live as the designer drags. Disabled at runtime —
+	# set_levels() is the runtime entry and never enables process.
+	set_process(Engine.is_editor_hint())
+
+
+func _process(_delta: float) -> void:
+	if not Engine.is_editor_hint():
+		return
+	if level_markers_root == null:
+		return
+	var any_changed: bool = false
+	var needs_rebuild: bool = false
+	for pos_node in level_markers_root.get_children():
+		if not (pos_node is Node2D):
+			continue
+		var lid: String = String(pos_node.name)
+		var marker: LevelMarker = _markers_by_id.get(lid)
+		if marker == null:
+			needs_rebuild = true
+			continue
+		var target_pos: Vector2 = (pos_node as Node2D).position - LevelMarker.MARKER_SIZE * 0.5
+		if marker.position != target_pos:
+			marker.position = target_pos
+			any_changed = true
+	if needs_rebuild:
+		_build_editor_preview_markers()
+		any_changed = true
+	if any_changed:
 		_rebuild_path_from_scene()
 		queue_redraw()
 
@@ -93,6 +141,40 @@ func refresh_states() -> void:
 		if marker == null:
 			continue
 		_apply_state_to_marker(marker, data)
+	_apply_pulse_to_recommended()
+
+
+# Pulse exactly one marker — the lowest-unlock_order level that is unlocked
+# but has 0 campaign stars. That's the player's recommended next attempt.
+# All other markers get their pulse cleared. No-op in the editor since the
+# preview path treats every marker as unlocked/0-star (would pulse all).
+func _apply_pulse_to_recommended() -> void:
+	if Engine.is_editor_hint():
+		return
+	var pulse_id: String = _find_recommended_level_id()
+	for lid in _markers_by_id:
+		var marker: LevelMarker = _markers_by_id[lid]
+		if marker == null:
+			continue
+		marker.set_pulse(lid == pulse_id)
+
+
+func _find_recommended_level_id() -> String:
+	var best_id: String = ""
+	var best_order: int = -1
+	for data in _levels:
+		if data == null:
+			continue
+		if not MetaProgression.levels_unlocked.get(data.level_id, false):
+			continue
+		var campaign_stars: int = MetaProgression.level_stars.get(data.level_id, 0)
+		if campaign_stars > 0:
+			continue
+		var order: int = int(data.unlock_order)
+		if best_order == -1 or order < best_order:
+			best_order = order
+			best_id = data.level_id
+	return best_id
 
 
 func _rebuild_markers() -> void:
@@ -115,6 +197,7 @@ func _rebuild_markers() -> void:
 		marker.pressed.connect(_on_marker_pressed.bind(data.level_id))
 		_apply_state_to_marker(marker, data)
 		_markers_by_id[data.level_id] = marker
+	_apply_pulse_to_recommended()
 	markers_built.emit()
 
 
@@ -155,10 +238,14 @@ func _apply_state_to_marker(marker: LevelMarker, data: Resource) -> void:
 	# Show every marker as unlocked / 0 stars so the designer sees them all.
 	if Engine.is_editor_hint():
 		marker.set_state(int(data.unlock_order), true, 0)
+		marker.visible = true
 		return
 	var unlocked: bool = MetaProgression.levels_unlocked.get(data.level_id, false)
 	var total_stars: int = MetaProgression.calculate_total_stars_for_level(data.level_id)
 	marker.set_state(int(data.unlock_order), unlocked, total_stars)
+	# Locked levels are hidden entirely — the player only sees content they've
+	# reached. play_celebration will reveal the just-unlocked one on entry.
+	marker.visible = unlocked
 
 
 func _on_marker_pressed(level_id: String) -> void:
@@ -175,6 +262,7 @@ func _position_node_for(level_id: String) -> Node2D:
 
 func _rebuild_path() -> void:
 	_path_points.clear()
+	_path_point_ids.clear()
 	# Sort by unlock_order; positions come from the authored Marker2D nodes.
 	var sorted: Array = _levels.duplicate()
 	sorted.sort_custom(func(a, b): return int(a.unlock_order) < int(b.unlock_order))
@@ -185,6 +273,7 @@ func _rebuild_path() -> void:
 		if pos_node == null:
 			continue
 		_path_points.append(pos_node.position)
+		_path_point_ids.append(String(data.level_id))
 
 
 # Editor-only fallback: when no LevelNodeData is bound (designing the
@@ -192,11 +281,13 @@ func _rebuild_path() -> void:
 # Marker2D order directly. Same Catmull-Rom path is drawn either way.
 func _rebuild_path_from_scene() -> void:
 	_path_points.clear()
+	_path_point_ids.clear()
 	if level_markers_root == null:
 		return
 	for pos_node in level_markers_root.get_children():
 		if pos_node is Node2D:
 			_path_points.append((pos_node as Node2D).position)
+			_path_point_ids.append(String(pos_node.name))
 
 
 func _bake_background() -> void:
@@ -278,20 +369,119 @@ func _draw_mountain_cluster(center: Vector2, w: float, h: float, snow: bool) -> 
 func _draw_dotted_path() -> void:
 	# For each segment, walk it in fixed-spacing steps and stamp dots.
 	# Catmull-Rom curvature (using virtual endpoints) gives the path a
-	# winding feel without authoring control points.
+	# winding feel without authoring control points. Runtime: a segment
+	# only draws if both endpoint levels are unlocked (or it's the
+	# currently-animating celebration segment, where dots fill in from
+	# 0..step_count over _celebration_progress). Editor preview: draws
+	# every segment fully so the designer can see the full layout.
 	var n: int = _path_points.size()
+	var editor: bool = Engine.is_editor_hint()
 	for i in range(n - 1):
+		var animating: bool = (i == _celebration_segment_idx)
+		if not editor:
+			var origin_id: String = _path_point_ids[i] if i < _path_point_ids.size() else ""
+			var dest_id: String = _path_point_ids[i + 1] if i + 1 < _path_point_ids.size() else ""
+			var origin_unlocked: bool = MetaProgression.levels_unlocked.get(origin_id, false)
+			var dest_unlocked: bool = MetaProgression.levels_unlocked.get(dest_id, false)
+			# Origin must always be unlocked. Destination may be locked only
+			# while this segment is being animated open by play_celebration —
+			# otherwise the segment is invisible (player hasn't reached it).
+			if not origin_unlocked:
+				continue
+			if not dest_unlocked and not animating:
+				continue
 		var p0: Vector2 = _path_points[max(i - 1, 0)]
 		var p1: Vector2 = _path_points[i]
 		var p2: Vector2 = _path_points[i + 1]
 		var p3: Vector2 = _path_points[min(i + 2, n - 1)]
 		var seg_len: float = p1.distance_to(p2)
 		var step_count: int = max(int(seg_len / PATH_DOT_SPACING), 4)
-		# Skip the last sample so the dot density stays even at joints.
-		for s in range(1, step_count):
+		# Animating segment fills in progressively; everything else is full.
+		var max_step: int = step_count
+		if animating:
+			max_step = clampi(int(round(float(step_count) * _celebration_progress)), 0, step_count)
+		# Skip s=0 (drawn by the prior joint) so density stays even.
+		for s in range(1, max_step):
 			var t: float = float(s) / float(step_count)
 			var pt: Vector2 = _catmull_rom(p0, p1, p2, p3, t)
 			draw_circle(pt, PATH_DOT_RADIUS, COLOR_PATH_DOT)
+
+
+# Plays the road-reveal + marker-pop sequence for a freshly-unlocked level.
+# Caller (WorldMap) must invoke immediately after set_levels so the marker's
+# "visible = true" state is overridden in the same frame, no flash. Emits
+# `celebration_finished` when the chain completes; WorldMap then clears
+# MetaProgression.pending_unlock_celebration_id and persists.
+func play_celebration(level_id: String) -> void:
+	if level_id == "":
+		return
+	# Locate the celebration level's index in the unlock-order-sorted path.
+	var idx: int = -1
+	for i in range(_path_point_ids.size()):
+		if String(_path_point_ids[i]) == level_id:
+			idx = i
+			break
+	if idx <= 0:
+		# Level 1 (or unknown) — no prior segment to animate. Bail without
+		# firing the signal; nothing changed and no save flag to clear.
+		return
+	var marker: LevelMarker = _markers_by_id.get(level_id)
+	if marker == null:
+		return
+	_celebration_id = level_id
+	_celebration_segment_idx = idx - 1
+	_celebration_progress = 0.0
+	# Suppress Phase 1 pulse on this marker while it animates in — the pulse's
+	# scale tween would fight the reveal pop. Restored in _on_celebration_done.
+	marker.set_pulse(false)
+	marker.visible = false
+	marker.modulate.a = 0.0
+	marker.scale = Vector2(0.5, 0.5)
+	queue_redraw()
+	var road_tween: Tween = create_tween()
+	road_tween.tween_method(_set_celebration_progress, 0.0, 1.0, 1.5) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	road_tween.tween_callback(_on_celebration_road_done)
+
+
+func _set_celebration_progress(p: float) -> void:
+	_celebration_progress = p
+	queue_redraw()
+
+
+func _on_celebration_road_done() -> void:
+	var marker: LevelMarker = _markers_by_id.get(_celebration_id)
+	if marker == null:
+		_finalize_celebration()
+		return
+	marker.visible = true
+	var pop: Tween = create_tween().set_parallel(true)
+	pop.tween_property(marker, "modulate:a", 1.0, 0.35) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	pop.tween_property(marker, "scale", Vector2(1.15, 1.15), 0.30) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# Settle to 1.0 after the overshoot. set_parallel + chain runs the settle
+	# sequentially after the pop completes.
+	pop.chain().tween_property(marker, "scale", Vector2.ONE, 0.20) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	pop.chain().tween_callback(_on_celebration_done)
+
+
+func _on_celebration_done() -> void:
+	# Restart the next-level pulse on the just-revealed marker (it's likely
+	# the recommended target now: unlocked + 0 campaign stars).
+	var marker: LevelMarker = _markers_by_id.get(_celebration_id)
+	_finalize_celebration()
+	if marker != null:
+		_apply_pulse_to_recommended()
+
+
+func _finalize_celebration() -> void:
+	_celebration_id = ""
+	_celebration_segment_idx = -1
+	_celebration_progress = 1.0
+	queue_redraw()
+	celebration_finished.emit()
 
 
 func _catmull_rom(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> Vector2:

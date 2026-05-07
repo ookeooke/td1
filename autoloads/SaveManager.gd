@@ -83,6 +83,10 @@ func _try_unlock_next_level(completed_level_id: String) -> void:
 			continue
 		if int(entry.unlock_order) == next_order:
 			MetaProgression.levels_unlocked[entry.level_id] = true
+			# Hand off to WorldMap: it'll play the road-reveal + marker-pop
+			# animation on next entry, then clear this field. Persisted so a
+			# force-quit between unlock and the visit still triggers the show.
+			MetaProgression.pending_unlock_celebration_id = entry.level_id
 			return
 
 
@@ -123,6 +127,7 @@ func _save_to_path(path: String) -> void:
 		# as 0 by default. No SAVE_VERSION bump needed since the field is
 		# pure-extension; existing keys are untouched.
 		"meta_gold": MetaProgression.meta_gold,
+		"pending_unlock_celebration_id": MetaProgression.pending_unlock_celebration_id,
 		# LoadoutState — pre-level picks, persisted across runs.
 		"selected_hero_id": LoadoutState.selected_hero_id,
 		"selected_tower_ids": LoadoutState.selected_tower_ids,
@@ -265,6 +270,8 @@ func _load_from_path(path: String) -> void:
 				}
 	# Phase Sell — meta-gold (default 0 if save predates this field).
 	MetaProgression.meta_gold = int(data.get("meta_gold", 0))
+	# WorldMap unlock celebration handoff (default "" for old saves).
+	MetaProgression.pending_unlock_celebration_id = str(data.get("pending_unlock_celebration_id", ""))
 	if data.has("level_best_times") and data.level_best_times is Dictionary:
 		MetaProgression.level_best_times = {}
 		for key in data.level_best_times:

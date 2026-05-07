@@ -1,8 +1,8 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene format=3 uid="uid://lej2fyf88s36"]
 
-[ext_resource type="Script" path="res://ui/EquipmentScreen.gd" id="1_script"]
-[ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
-[ext_resource type="Script" path="res://ui/Paperdoll.gd" id="3_paperdoll"]
+[ext_resource type="Script" uid="uid://dqon68kt0hslq" path="res://ui/EquipmentScreen.gd" id="1_script"]
+[ext_resource type="Theme" uid="uid://ct8ylftmdf88w" path="res://ui/theme/game_theme.tres" id="2_theme"]
+[ext_resource type="Script" uid="uid://064xnywp5pew" path="res://ui/Paperdoll.gd" id="3_paperdoll"]
 
 [sub_resource type="StyleBoxFlat" id="card_style"]
 content_margin_left = 12.0
@@ -20,23 +20,27 @@ corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
 
-[node name="EquipmentScreen" type="Control"]
+[node name="EquipmentScreen" type="Control" unique_id=308871737]
 clip_contents = true
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 theme = ExtResource("2_theme")
 script = ExtResource("1_script")
 
-[node name="Background" type="ColorRect" parent="."]
+[node name="Background" type="ColorRect" parent="." unique_id=1931943110]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.1, 0.14, 0.18, 1)
 
-[node name="TopBar" type="HBoxContainer" parent="."]
+[node name="TopBar" type="HBoxContainer" parent="." unique_id=690074913]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
@@ -44,31 +48,32 @@ offset_left = 16.0
 offset_top = 16.0
 offset_right = -16.0
 offset_bottom = 80.0
+grow_horizontal = 2
 
-[node name="BackButton" type="Button" parent="TopBar"]
+[node name="BackButton" type="Button" parent="TopBar" unique_id=1351808154]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(80, 60)
 layout_mode = 2
-text = "Back"
 theme_override_font_sizes/font_size = 20
+text = "Back"
 
-[node name="TitleLabel" type="Label" parent="TopBar"]
+[node name="TitleLabel" type="Label" parent="TopBar" unique_id=183391576]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-horizontal_alignment = 1
-text = "Equipment"
 theme_override_font_sizes/font_size = 24
+text = "Equipment"
+horizontal_alignment = 1
 
-[node name="HeroLabel" type="Label" parent="TopBar"]
+[node name="HeroLabel" type="Label" parent="TopBar" unique_id=650985496]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(200, 60)
 layout_mode = 2
+theme_override_font_sizes/font_size = 18
 horizontal_alignment = 2
 vertical_alignment = 1
-theme_override_font_sizes/font_size = 18
 
-[node name="Body" type="HBoxContainer" parent="."]
+[node name="Body" type="HBoxContainer" parent="." unique_id=7404920]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -77,127 +82,172 @@ offset_left = 16.0
 offset_top = 96.0
 offset_right = -16.0
 offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
 theme_override_constants/separation = 16
 
-[node name="LeftPanel" type="VBoxContainer" parent="Body"]
+[node name="LeftPanel" type="VBoxContainer" parent="Body" unique_id=996354657]
 custom_minimum_size = Vector2(480, 0)
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="EquippedCard" type="PanelContainer" parent="Body/LeftPanel"]
+[node name="EquippedCard" type="PanelContainer" parent="Body/LeftPanel" unique_id=1721155226]
 layout_mode = 2
+size_flags_vertical = 3
 theme_override_styles/panel = SubResource("card_style")
 
-[node name="VBox" type="VBoxContainer" parent="Body/LeftPanel/EquippedCard"]
+[node name="VBox" type="VBoxContainer" parent="Body/LeftPanel/EquippedCard" unique_id=961914828]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="SectionHeader" type="Label" parent="Body/LeftPanel/EquippedCard/VBox"]
+[node name="SectionHeader" type="Label" parent="Body/LeftPanel/EquippedCard/VBox" unique_id=1364198391]
 layout_mode = 2
-text = "EQUIPPED"
-theme_override_font_sizes/font_size = 12
 theme_override_colors/font_color = Color(0.6, 0.66, 0.78, 1)
+theme_override_font_sizes/font_size = 12
+text = "EQUIPPED"
 
-[node name="EquipmentGrid" type="Control" parent="Body/LeftPanel/EquippedCard/VBox"]
+[node name="EquipmentGrid" type="Control" parent="Body/LeftPanel/EquippedCard/VBox" unique_id=157853770]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(540, 600)
+custom_minimum_size = Vector2(600, 720)
 layout_mode = 2
+size_flags_vertical = 3
 mouse_filter = 1
 script = ExtResource("3_paperdoll")
 
-[node name="StatsCard" type="PanelContainer" parent="Body/LeftPanel"]
+[node name="Slot0" type="Marker2D" parent="Body/LeftPanel/EquippedCard/VBox/EquipmentGrid" unique_id=965356575]
+position = Vector2(108, 446)
+
+[node name="Slot1" type="Marker2D" parent="Body/LeftPanel/EquippedCard/VBox/EquipmentGrid" unique_id=203235522]
+position = Vector2(300, 331)
+
+[node name="Slot2" type="Marker2D" parent="Body/LeftPanel/EquippedCard/VBox/EquipmentGrid" unique_id=50590076]
+position = Vector2(297, 144)
+
+[node name="Slot3" type="Marker2D" parent="Body/LeftPanel/EquippedCard/VBox/EquipmentGrid" unique_id=1326348431]
+position = Vector2(492, 446)
+
+[node name="Slot4" type="Marker2D" parent="Body/LeftPanel/EquippedCard/VBox/EquipmentGrid" unique_id=512528274]
+position = Vector2(308, 698)
+
+[node name="Slot5" type="Marker2D" parent="Body/LeftPanel/EquippedCard/VBox/EquipmentGrid" unique_id=1778285199]
+position = Vector2(440, 233)
+
+[node name="StatsCard" type="PanelContainer" parent="Body/LeftPanel" unique_id=1588386898]
+visible = false
 layout_mode = 2
 theme_override_styles/panel = SubResource("card_style")
 
-[node name="VBox" type="VBoxContainer" parent="Body/LeftPanel/StatsCard"]
+[node name="VBox" type="VBoxContainer" parent="Body/LeftPanel/StatsCard" unique_id=1315264405]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="SectionHeader" type="Label" parent="Body/LeftPanel/StatsCard/VBox"]
+[node name="SectionHeader" type="Label" parent="Body/LeftPanel/StatsCard/VBox" unique_id=2047700744]
 layout_mode = 2
-text = "STATS"
-theme_override_font_sizes/font_size = 12
 theme_override_colors/font_color = Color(0.6, 0.66, 0.78, 1)
+theme_override_font_sizes/font_size = 12
+text = "STATS"
 
-[node name="StatsPanel" type="VBoxContainer" parent="Body/LeftPanel/StatsCard/VBox"]
+[node name="StatsPanel" type="VBoxContainer" parent="Body/LeftPanel/StatsCard/VBox" unique_id=1731736794]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="RightPanel" type="VBoxContainer" parent="Body"]
+[node name="RightPanel" type="VBoxContainer" parent="Body" unique_id=325836480]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="InventoryCard" type="PanelContainer" parent="Body/RightPanel"]
+[node name="InventoryCard" type="PanelContainer" parent="Body/RightPanel" unique_id=475976757]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_styles/panel = SubResource("card_style")
 
-[node name="VBox" type="VBoxContainer" parent="Body/RightPanel/InventoryCard"]
+[node name="VBox" type="VBoxContainer" parent="Body/RightPanel/InventoryCard" unique_id=1004581394]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="HeaderRow" type="HBoxContainer" parent="Body/RightPanel/InventoryCard/VBox"]
+[node name="HeaderRow" type="HBoxContainer" parent="Body/RightPanel/InventoryCard/VBox" unique_id=545032185]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="RightTitle" type="Label" parent="Body/RightPanel/InventoryCard/VBox/HeaderRow"]
+[node name="RightTitle" type="Label" parent="Body/RightPanel/InventoryCard/VBox/HeaderRow" unique_id=422305371]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-vertical_alignment = 1
-text = "Inventory (0)"
 theme_override_font_sizes/font_size = 20
+text = "Inventory (0)"
+vertical_alignment = 1
 
-[node name="SellAllButton" type="Button" parent="Body/RightPanel/InventoryCard/VBox/HeaderRow"]
+[node name="SellAllButton" type="Button" parent="Body/RightPanel/InventoryCard/VBox/HeaderRow" unique_id=2146313070]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(180, 60)
 layout_mode = 2
-text = "Sell all Common"
 theme_override_font_sizes/font_size = 14
+text = "Sell all Common"
 
-[node name="MetaGoldLabel" type="Label" parent="Body/RightPanel/InventoryCard/VBox/HeaderRow"]
+[node name="MetaGoldLabel" type="Label" parent="Body/RightPanel/InventoryCard/VBox/HeaderRow" unique_id=491657187]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 0)
 layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.85, 0.4, 1)
+theme_override_font_sizes/font_size = 18
+text = "💰 0"
 horizontal_alignment = 2
 vertical_alignment = 1
-text = "💰 0"
-theme_override_font_sizes/font_size = 18
-theme_override_colors/font_color = Color(1.0, 0.85, 0.4, 1.0)
 
-[node name="ScrollContainer" type="ScrollContainer" parent="Body/RightPanel/InventoryCard/VBox"]
+[node name="TabBar" type="HBoxContainer" parent="Body/RightPanel/InventoryCard/VBox" unique_id=1223202082]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TabGearButton" type="Button" parent="Body/RightPanel/InventoryCard/VBox/TabBar" unique_id=1850135131]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 56)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Gear"
+
+[node name="TabRelicsButton" type="Button" parent="Body/RightPanel/InventoryCard/VBox/TabBar" unique_id=1073015001]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 56)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Relics"
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Body/RightPanel/InventoryCard/VBox" unique_id=1098974422]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="InventoryGrid" type="Control" parent="Body/RightPanel/InventoryCard/VBox/ScrollContainer"]
+[node name="InventoryGrid" type="Control" parent="Body/RightPanel/InventoryCard/VBox/ScrollContainer" unique_id=2079921089]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 1
 
-[node name="DetailsOverlay" type="Control" parent="."]
+[node name="DetailsOverlay" type="Control" parent="." unique_id=568932524]
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 mouse_filter = 1
 
-[node name="DimBackdrop" type="ColorRect" parent="DetailsOverlay"]
+[node name="DimBackdrop" type="ColorRect" parent="DetailsOverlay" unique_id=201327534]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0, 0, 0, 0.5)
 
-[node name="DetailsSheet" type="PanelContainer" parent="DetailsOverlay"]
+[node name="DetailsSheet" type="PanelContainer" parent="DetailsOverlay" unique_id=876486695]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 12
@@ -208,68 +258,69 @@ offset_left = 16.0
 offset_top = -440.0
 offset_right = -16.0
 offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 0
 theme_override_styles/panel = SubResource("card_style")
 
-[node name="VBox" type="VBoxContainer" parent="DetailsOverlay/DetailsSheet"]
+[node name="VBox" type="VBoxContainer" parent="DetailsOverlay/DetailsSheet" unique_id=2108965569]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="HeaderRow" type="HBoxContainer" parent="DetailsOverlay/DetailsSheet/VBox"]
+[node name="HeaderRow" type="HBoxContainer" parent="DetailsOverlay/DetailsSheet/VBox" unique_id=455903288]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="DetailsHeader" type="Label" parent="DetailsOverlay/DetailsSheet/VBox/HeaderRow"]
+[node name="DetailsHeader" type="Label" parent="DetailsOverlay/DetailsSheet/VBox/HeaderRow" unique_id=1189759556]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-vertical_alignment = 1
-text = "Item"
 theme_override_font_sizes/font_size = 22
+text = "Item"
+vertical_alignment = 1
 
-[node name="CloseButton" type="Button" parent="DetailsOverlay/DetailsSheet/VBox/HeaderRow"]
+[node name="CloseButton" type="Button" parent="DetailsOverlay/DetailsSheet/VBox/HeaderRow" unique_id=1202317193]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(60, 60)
 layout_mode = 2
+theme_override_font_sizes/font_size = 28
 text = "×"
 flat = true
-theme_override_font_sizes/font_size = 28
 
-[node name="DetailsLabel" type="RichTextLabel" parent="DetailsOverlay/DetailsSheet/VBox"]
+[node name="DetailsLabel" type="RichTextLabel" parent="DetailsOverlay/DetailsSheet/VBox" unique_id=3114036]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_colors/default_color = Color(0.88, 0.92, 1, 1)
+theme_override_font_sizes/normal_font_size = 15
 bbcode_enabled = true
 fit_content = true
-scroll_active = true
-theme_override_font_sizes/normal_font_size = 15
-theme_override_colors/default_color = Color(0.88, 0.92, 1, 1)
 
-[node name="ActionRow" type="HBoxContainer" parent="DetailsOverlay/DetailsSheet/VBox"]
+[node name="ActionRow" type="HBoxContainer" parent="DetailsOverlay/DetailsSheet/VBox" unique_id=1702664724]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="EquipButton" type="Button" parent="DetailsOverlay/DetailsSheet/VBox/ActionRow"]
+[node name="EquipButton" type="Button" parent="DetailsOverlay/DetailsSheet/VBox/ActionRow" unique_id=1234415017]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 80)
 layout_mode = 2
-text = "Equip"
 theme_override_font_sizes/font_size = 18
 disabled = true
+text = "Equip"
 
-[node name="LockButton" type="Button" parent="DetailsOverlay/DetailsSheet/VBox/ActionRow"]
+[node name="LockButton" type="Button" parent="DetailsOverlay/DetailsSheet/VBox/ActionRow" unique_id=1938388755]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)
 layout_mode = 2
-text = "🔒 Lock"
 theme_override_font_sizes/font_size = 18
 disabled = true
+text = "🔒 Lock"
 
-[node name="SellButton" type="Button" parent="DetailsOverlay/DetailsSheet/VBox/ActionRow"]
+[node name="SellButton" type="Button" parent="DetailsOverlay/DetailsSheet/VBox/ActionRow" unique_id=412633888]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 80)
 layout_mode = 2
-text = "Sell"
 theme_override_font_sizes/font_size = 18
 disabled = true
+text = "Sell"

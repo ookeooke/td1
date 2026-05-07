@@ -28,6 +28,10 @@ const RING_GAP: float = 2.0
 const BADGE_RADIUS: float = 18.0
 const BADGE_OFFSET: Vector2 = Vector2(48.0, 48.0)  # from portrait center
 const ARC_STEPS: int = 64
+# Damage flash — duration of the red overlay decay after a hit lands on the
+# hero. Mirrors BaseHero._hit_flash_t but lives on the portrait so the
+# corner UI sells damage even when the hero is off-screen / out of focus.
+const FLASH_DURATION: float = 0.35
 
 var _hero: Node = null
 # Polled each frame from _hero.current_health (no HP-change signal today).
@@ -36,6 +40,9 @@ var _last_xp: int = -1
 var _last_level: int = -1
 # Respawn countdown (seconds remaining). Drives the level-badge text overlay.
 var _respawn_remaining: float = 0.0
+# Damage flash decay (1.0 → 0.0). Set to 1.0 on every hit_landed where
+# target == _hero, then ticks to zero in _process.
+var _damage_flash_t: float = 0.0
 
 
 func _ready() -> void:
@@ -49,6 +56,7 @@ func _ready() -> void:
 	EventBus.hero_respawned.connect(_on_hero_respawned)
 	EventBus.hero_xp_gained.connect(_on_xp_changed)
 	EventBus.hero_leveled_up.connect(_on_level_changed)
+	EventBus.hit_landed.connect(_on_hit_landed)
 	# Seed from a hero that may already exist (e.g. SkillBar rebuilt mid-run).
 	for h in get_tree().get_nodes_in_group("heroes"):
 		_hero = h
@@ -61,6 +69,11 @@ func _process(delta: float) -> void:
 	# the hero uses.
 	if _respawn_remaining > 0.0 and not get_tree().paused:
 		_respawn_remaining = maxf(0.0, _respawn_remaining - delta)
+		queue_redraw()
+	# Damage flash decay — same paused gate so the flash freezes during
+	# tactical pause rather than ticking off invisibly.
+	if _damage_flash_t > 0.0 and not get_tree().paused:
+		_damage_flash_t = maxf(0.0, _damage_flash_t - delta / FLASH_DURATION)
 		queue_redraw()
 	if _hero == null or not is_instance_valid(_hero):
 		return
@@ -101,12 +114,21 @@ func _on_level_changed(_new_level: int) -> void:
 	queue_redraw()
 
 
+func _on_hit_landed(target: Node, _source: Node, _amount: float, _dmg_type: int) -> void:
+	if target == null or target != _hero:
+		return
+	_damage_flash_t = 1.0
+	queue_redraw()
+
+
 func _gui_input(event: InputEvent) -> void:
-	# Tap → focus camera + select the hero. Matches KR's tap-portrait UX.
+	# Tap → select the hero only. The world-tap that follows is what moves
+	# the hero (HeroInputManager gates move_to on is_selected). Camera is
+	# left where the player put it — panning on portrait tap was disruptive
+	# during fights since players tap the portrait to issue a move order.
 	if event is InputEventScreenTouch and event.pressed:
 		accept_event()
 		if _hero != null and is_instance_valid(_hero):
-			EventBus.camera_focus_requested.emit(_hero.global_position, 0.35)
 			if _hero.has_method("set_selected"):
 				_hero.set_selected(true)
 
@@ -149,6 +171,14 @@ func _draw() -> void:
 	draw_arc(center, disk_radius, 0.0, TAU, ARC_STEPS,
 		Color(0.0, 0.0, 0.0, 0.85), 2.0, true)
 	_draw_class_glyph(center, disk_radius * 0.55)
+
+	# Damage flash — translucent red ring drawn over the HP ring while
+	# _damage_flash_t > 0. Sells incoming damage even if the HP delta is
+	# small or the hero is off-screen. Decays via _process tick.
+	if _damage_flash_t > 0.0:
+		var flash_alpha: float = _damage_flash_t * 0.6
+		draw_arc(center, hp_radius, 0.0, TAU, ARC_STEPS,
+			Color(1.0, 0.2, 0.2, flash_alpha), HP_RING_THICKNESS + 2.0, true)
 
 	# Level badge — small filled disk in lower-right of portrait.
 	var badge_pos: Vector2 = center + BADGE_OFFSET

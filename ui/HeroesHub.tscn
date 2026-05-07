@@ -46,11 +46,11 @@ theme_override_constants/separation = 12
 
 [node name="BackButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(140, 60)
+custom_minimum_size = Vector2(80, 80)
 layout_mode = 2
 size_flags_vertical = 4
-text = "← Back"
-theme_override_font_sizes/font_size = 18
+text = "✕"
+theme_override_font_sizes/font_size = 36
 
 [node name="TitleLabel" type="Label" parent="SafeAreaMargin/ContentMargin/Layout/TopBar"]
 unique_name_in_owner = true

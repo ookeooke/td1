@@ -25,17 +25,28 @@ const ALL_SLOT_INDICES: Array[int] = [0, 1, 2, 3, 4, 5]
 const DISPLAY_MIN_COLS: int = 5
 const DISPLAY_MAX_COLS: int = 12
 
-# Phase 49 — fixed spatial grid. CELL_PX matches ItemIcon.SIZE_PX so 1×1
-# tiles look identical to the prior reflow layout; multi-cell items extend
-# to (w*CELL_PX, h*CELL_PX). No gaps between cells (Diablo-style packed grid).
-# Bumped 92→120 in the mobile-fit pass so tiles clear Material Design's
-# 7 mm touch-target floor on a typical 6.1″ phone.
-const CELL_PX: float = 120.0
-# Phase 50 — paperdoll slots use a uniform 1×1 footprint regardless of item
-# size, so they arrange around the silhouette evenly. Item icons in the
-# inventory grid still render at their real footprint (1×2 swords etc.).
-const PAPERDOLL_SLOT_W: int = 1
-const PAPERDOLL_SLOT_H: int = 1
+# Phase 55 — Diablo-Immortal-style gear cells. Slots are slightly taller
+# than wide (5:6 ratio, 120×144) for both the paperdoll and the stash so
+# a sword reads as a tall blade instead of a square sticker. Width stays
+# at 120 (legacy CELL_PX value) so column counts and ScrollContainer
+# layout don't shift; only the y stride changes. Both axes feed into
+# ItemIcon via set_pixel_size — _draw scales effects from min(w,h).
+const CELL_W: float = 120.0
+const CELL_H: float = 144.0
+
+# Phase 55 — stash tabs split items by category. Relics holds trinket-class
+# slots (the small-icon side of the Diablo Immortal layout); Gear is "every
+# other slot" — phrased as a negation so a future Slot enum value (RING /
+# OFFHAND / etc.) automatically lands in Gear instead of being silently
+# dropped from both tabs. Items with a corrupt slot index (-1, 99) also
+# fall through to Gear so they remain visible.
+#
+# Storage is unchanged — InventoryManager is still one shared bag; the
+# tab is purely a display filter. Keeping it shared means the bag capacity
+# (50) applies across both tabs, matching how the player thinks of "my
+# stuff" rather than "my gear bag, separately my relic bag".
+enum Tab { GEAR, RELICS }
+const _RELIC_SLOTS: Array[int] = [5]              # Trinket — extend here when adding new accessory slots
 
 @onready var back_button: Button = %BackButton
 @onready var title_label: Label = %TitleLabel
@@ -56,6 +67,9 @@ const PAPERDOLL_SLOT_H: int = 1
 @onready var dim_backdrop: ColorRect = %DimBackdrop
 @onready var details_header: Label = %DetailsHeader
 @onready var close_button: Button = %CloseButton
+# Phase 55 — Gear / Relics tab bar above the stash grid.
+@onready var tab_gear_button: Button = %TabGearButton
+@onready var tab_relics_button: Button = %TabRelicsButton
 
 # Rarity → name color for the bottom-sheet header. Mirrors ItemIcon's
 # _RARITY_COLORS so a Rare item's name reads gold both on the icon border
@@ -70,6 +84,12 @@ const _RARITY_HEADER_COLORS: Array[Color] = [
 
 # Holds the hero_id at the last _refresh call, used by hover to compute diffs.
 var _cached_hero_id: String = ""
+
+# Phase 55 — currently active stash tab. Storage is unchanged (one shared
+# bag); _current_tab only filters which items render in the inventory grid.
+# Selecting an item from one tab and switching tabs auto-clears the
+# selection so the action row doesn't dangle on a now-hidden uid.
+var _current_tab: int = Tab.GEAR
 
 # Slot index (0-5) → ItemIcon instance
 var _slot_icons: Dictionary = {}
@@ -176,6 +196,10 @@ func _ready() -> void:
 	lock_button.pressed.connect(_on_lock_pressed)
 	sell_button.pressed.connect(_on_sell_pressed)
 	sell_all_button.pressed.connect(_on_sell_all_pressed)
+	# Phase 55 — Gear / Relics tab bar. The first _refresh() at the bottom
+	# of _ready will call _refresh_tab_buttons; no extra call needed here.
+	tab_gear_button.pressed.connect(_on_tab_pressed.bind(Tab.GEAR))
+	tab_relics_button.pressed.connect(_on_tab_pressed.bind(Tab.RELICS))
 	# Phase 54 — bottom-sheet dismiss paths. DimBackdrop catches taps outside
 	# the sheet; CloseButton is the explicit dismiss control.
 	dim_backdrop.gui_input.connect(_on_dim_backdrop_input)
@@ -265,11 +289,11 @@ func _build_slots() -> void:
 
 func _build_one_slot(slot_idx: int) -> void:
 	var icon: Control = _ItemIconScript.new()
-	icon.set_slot_footprint(PAPERDOLL_SLOT_W, PAPERDOLL_SLOT_H)
+	icon.set_pixel_size(Vector2(CELL_W, CELL_H))
 	# Position via the Paperdoll's anchor_for_slot. Anchor is the slot's
 	# centerpoint, so subtract half the icon's footprint to top-left it.
 	var anchor: Vector2 = equipment_grid.anchor_for_slot(slot_idx) if equipment_grid.has_method("anchor_for_slot") else Vector2.ZERO
-	var half := Vector2(CELL_PX * 0.5 * PAPERDOLL_SLOT_W, CELL_PX * 0.5 * PAPERDOLL_SLOT_H)
+	var half := Vector2(CELL_W * 0.5, CELL_H * 0.5)
 	icon.position = anchor - half
 	icon.pressed.connect(_on_slot_pressed.bind(slot_idx))
 	icon.hovered.connect(_on_item_hovered)
@@ -352,39 +376,46 @@ func _refresh() -> void:
 	for child in inventory_grid.get_children():
 		child.queue_free()
 	_inventory_icons.clear()
-	var inv: Array = InventoryManager.get_unequipped()
+	# Phase 55 — filter the unequipped bag by the active tab. Storage is
+	# unchanged (single shared bag); Gear holds the 5 main equipment slots,
+	# Relics holds the trinket slot. Total bag-cap header reflects ALL
+	# items so the player sees overall fullness regardless of which tab
+	# they're viewing.
+	var inv_all: Array = InventoryManager.get_unequipped()
+	var inv: Array = _filter_inventory_by_tab(inv_all, _current_tab)
 	var display_cols: int = _compute_display_cols()
-	# Floor display rows to the storage cap so an empty / sparsely-filled bag
-	# still renders the full 50-cell capacity backdrop. Items past the floor
-	# (shouldn't happen in normal play; defensive) extend the grid further.
+	# Phase 55 — empty backdrop reflects ACTUAL remaining bag capacity rather
+	# than always drawing 50 cells. Storage is shared across tabs, so showing
+	# 49 empty cells in the Relics tab when only 1 trinket fits would lie
+	# about how many more relics the player can carry. Visible cells per tab =
+	# items in this tab + remaining shared bag space.
 	var bag_cap: int = InventoryManager.GRID_ROWS * InventoryManager.GRID_COLS
-	var min_rows: int = int(ceil(float(bag_cap) / float(display_cols)))
-	var item_rows: int = int(ceil(float(inv.size()) / float(display_cols)))
-	var display_rows: int = maxi(min_rows, item_rows)
+	var bag_free: int = maxi(0, bag_cap - inv_all.size())
+	var visible_cells: int = clampi(inv.size() + bag_free, 0, bag_cap)
+	var display_rows: int = maxi(1, int(ceil(float(visible_cells) / float(display_cols))))
 	inventory_grid.custom_minimum_size = Vector2(
-		float(display_cols) * CELL_PX,
-		float(display_rows) * CELL_PX,
+		float(display_cols) * CELL_W,
+		float(display_rows) * CELL_H,
 	)
-	# Header — item count vs cap.
-	right_title.text = "Inventory (%d / %d)" % [inv.size(), bag_cap]
+	# Header — items in this tab + total bag fullness across both tabs.
+	var tab_name: String = "Gear" if _current_tab == Tab.GEAR else "Relics"
+	right_title.text = "%s (%d) — Bag %d / %d" % [tab_name, inv.size(), inv_all.size(), bag_cap]
 	right_title.modulate = Color.WHITE
-	# Empty-cell backdrop for the full bag capacity. mouse_filter=IGNORE so
-	# placeholders don't catch hover/click between real items.
+	_refresh_tab_buttons()
+	# Empty-cell backdrop. Cells past `visible_cells` aren't drawn so the grid
+	# truthfully shows "items in this tab + free bag space." mouse_filter=IGNORE
+	# so placeholders don't catch hover/click between real items.
 	for r in display_rows:
 		var stop_row: bool = false
 		for c in display_cols:
-			# Cap total placeholders at the bag capacity. With display_cols=12
-			# the natural floor `ceil(50/12)*12 = 60` would draw 10 phantom
-			# slots past index 50; this guard truncates the last row so the
-			# visible grid matches the real cap.
-			if r * display_cols + c >= bag_cap:
+			if r * display_cols + c >= visible_cells:
 				stop_row = true
 				break
 			var empty_icon: Control = _ItemIconScript.new()
+			empty_icon.set_pixel_size(Vector2(CELL_W, CELL_H))
 			empty_icon.setup_empty()
 			empty_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			empty_icon.position = Vector2(c * CELL_PX, r * CELL_PX)
-			empty_icon.size = Vector2(CELL_PX, CELL_PX)
+			empty_icon.position = Vector2(c * CELL_W, r * CELL_H)
 			inventory_grid.add_child(empty_icon)
 		if stop_row:
 			break
@@ -397,10 +428,9 @@ func _refresh() -> void:
 		@warning_ignore("integer_division")
 		var row: int = i / display_cols
 		var icon: Control = _ItemIconScript.new()
-		icon.set_slot_footprint(1, 1)   # uniform 1×1 regardless of base footprint
+		icon.set_pixel_size(Vector2(CELL_W, CELL_H))
 		icon.setup_instance(inst)
-		icon.position = Vector2(col * CELL_PX, row * CELL_PX)
-		icon.size = Vector2(CELL_PX, CELL_PX)
+		icon.position = Vector2(col * CELL_W, row * CELL_H)
 		icon.pressed.connect(_on_inventory_item_pressed)
 		icon.hovered.connect(_on_item_hovered)
 		icon.unhovered.connect(_on_item_unhovered)
@@ -425,10 +455,68 @@ func _compute_display_cols() -> int:
 	if sc != null:
 		avail = sc.size.x
 	if avail <= 0.0:
-		# Fallback: one CELL_PX wider than min so minimum reads sensibly.
-		avail = float(DISPLAY_MIN_COLS) * CELL_PX
-	var n: int = int(avail / CELL_PX)
+		# Fallback: one CELL_W wider than min so minimum reads sensibly.
+		avail = float(DISPLAY_MIN_COLS) * CELL_W
+	var n: int = int(avail / CELL_W)
 	return clampi(n, DISPLAY_MIN_COLS, DISPLAY_MAX_COLS)
+
+
+# --- Phase 55: tab filter / state -------------------------------------------
+# Phrased as "Relics is the explicit list, Gear is everything else." Stranded
+# items (null base, corrupt slot index, future slot values not yet known to
+# the tab system) fall through to Gear so they're never invisible-but-stored.
+func _is_relic_slot(slot: int) -> bool:
+	return slot in _RELIC_SLOTS
+
+
+func _instance_belongs_to_tab(inst, tab: int) -> bool:
+	if inst == null:
+		return false
+	var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+	var slot: int = -1 if base == null else int(base.slot)
+	var is_relic: bool = _is_relic_slot(slot)
+	# RELICS tab claims relic slots; GEAR claims everything else (including
+	# stranded items with slot=-1 or unknown enum values).
+	return is_relic if tab == Tab.RELICS else not is_relic
+
+
+func _filter_inventory_by_tab(inv: Array, tab: int) -> Array:
+	var out: Array = []
+	for inst in inv:
+		if _instance_belongs_to_tab(inst, tab):
+			out.append(inst)
+	return out
+
+
+func _on_tab_pressed(tab: int) -> void:
+	if tab == _current_tab:
+		return
+	# Switching tabs hides the previously selected item if it's in the other
+	# tab — clear selection so the action row doesn't dangle on a now-hidden
+	# uid. Sell-arm and the bottom-sheet share the fate.
+	_current_tab = tab
+	if _selected_uid != "":
+		var inst = InventoryManager.find_by_uid(_selected_uid)
+		if inst != null and not _instance_belongs_to_tab(inst, tab):
+			_dismiss_details()
+	_refresh()
+	# Reset the stash scroll to top so a tab with few items doesn't render
+	# below the viewport (e.g. Gear scrolled down → Relics with 1 trinket
+	# would otherwise leave the trinket above the viewport).
+	var sc: ScrollContainer = inventory_grid.get_parent() as ScrollContainer
+	if sc != null:
+		sc.scroll_vertical = 0
+
+
+# Visual state for the two tab buttons. Active tab uses Godot's built-in
+# disabled state so it reads as "pressed in" — clearly stronger than a
+# brightness swap. Disabled also prevents redundant taps. Inactive tab
+# stays interactive.
+func _refresh_tab_buttons() -> void:
+	if tab_gear_button == null or tab_relics_button == null:
+		return
+	tab_gear_button.disabled = _current_tab == Tab.GEAR
+	tab_relics_button.disabled = _current_tab == Tab.RELICS
 
 
 # --- Interaction ------------------------------------------------------------
@@ -566,29 +654,48 @@ func _refresh_action_row() -> void:
 		return
 	var hero_id: String = LoadoutState.selected_hero_id
 	var base: Resource = ContentRegistry.find_item_base(inst.base_id)
-	# Equip button — enabled if hero exposes the item's slot. "Replace" when
-	# slot is occupied so the player knows the swap-out happens.
 	var slot: int = int(base.slot) if base != null else -1
-	var slot_ok: bool = base != null and (slot in _active_slot_indices_for(hero_id))
-	equip_button.disabled = not slot_ok
-	if slot_ok and InventoryManager.get_equipped_uid(hero_id, slot) != "":
-		equip_button.text = "Replace"
+	# Phase 55h — branch on whether the selected item is currently equipped on
+	# the active hero. If so, the primary button reads "Unequip" and Sell is
+	# disabled (player must unequip first to sell — clearer than auto-unequip-
+	# then-sell). Tapping an equipped paperdoll slot now opens this sheet
+	# instead of the prior destructive instant-unequip.
+	var is_equipped_on_active: bool = (
+		slot >= 0 and InventoryManager.get_equipped_uid(hero_id, slot) == _selected_uid
+	)
+	# Equip / Unequip button.
+	if is_equipped_on_active:
+		equip_button.disabled = false
+		equip_button.text = "Unequip"
 	else:
-		equip_button.text = "Equip"
-	# Lock button — flips label to reflect the next tap's effect.
+		# Slot-availability check — hero may not expose this slot at all.
+		var slot_ok: bool = base != null and (slot in _active_slot_indices_for(hero_id))
+		equip_button.disabled = not slot_ok
+		if slot_ok and InventoryManager.get_equipped_uid(hero_id, slot) != "":
+			equip_button.text = "Replace"
+		else:
+			equip_button.text = "Equip"
+	# Lock button — flips label to reflect the next tap's effect. Lock works on
+	# equipped items too (locks against accidental sale once unequipped).
 	lock_button.disabled = false
 	var is_locked: bool = "locked" in inst and inst.locked
 	lock_button.text = "🔓 Unlock" if is_locked else "🔒 Lock"
-	# Sell button — locked items still show enabled so the player gets a
-	# clear refusal toast on press; armed state shows the confirm prompt.
-	var price: int = InventoryManager.get_sell_price(_selected_uid)
-	sell_button.disabled = price <= 0
-	if _sell_armed_uid == _selected_uid:
-		sell_button.text = "Sell? +%dg" % price
-		sell_button.modulate = Color(1.0, 0.7, 0.4, 1.0)
-	else:
+	# Sell button — disabled while equipped (player must unequip first). For
+	# unequipped items the existing two-tap-confirm + locked-refusal flow
+	# applies. Armed state still shows the confirm prompt with refund value.
+	if is_equipped_on_active:
+		sell_button.disabled = true
 		sell_button.text = "Sell"
 		sell_button.modulate = Color.WHITE
+	else:
+		var price: int = InventoryManager.get_sell_price(_selected_uid)
+		sell_button.disabled = price <= 0
+		if _sell_armed_uid == _selected_uid:
+			sell_button.text = "Sell? +%dg" % price
+			sell_button.modulate = Color(1.0, 0.7, 0.4, 1.0)
+		else:
+			sell_button.text = "Sell"
+			sell_button.modulate = Color.WHITE
 
 
 func _on_equip_pressed() -> void:
@@ -602,14 +709,23 @@ func _on_equip_pressed() -> void:
 	if base == null:
 		return
 	var slot: int = int(base.slot)
+	# Phase 55h — if the selected item is currently equipped on this hero,
+	# the button is "Unequip" and we route to InventoryManager.unequip.
+	# Capture uid first since _dismiss_details clears it.
+	if InventoryManager.get_equipped_uid(hero_id, slot) == _selected_uid:
+		_dismiss_details()
+		InventoryManager.unequip(hero_id, slot)
+		return
 	if not (slot in _active_slot_indices_for(hero_id)):
 		Toast.show_message("%s has no %s slot" % [_hero_name(hero_id), _resolve_slot_label(slot)])
 		return
-	InventoryManager.equip(hero_id, _selected_uid)
-	# Successful equip clears selection — paperdoll + stats now reflect the
-	# new state, and the action row resets via _on_inventory_changed_simple.
-	# Phase 54 — also hide the bottom-sheet so the player sees the result.
+	# Phase 55 polish — dismiss the bottom-sheet BEFORE equipping. Otherwise
+	# the inventory_changed signal that equip() emits triggers a refresh that
+	# briefly re-renders the sheet showing the now-equipped item before the
+	# dismiss runs.
+	var uid_to_equip: String = _selected_uid
 	_dismiss_details()
+	InventoryManager.equip(hero_id, uid_to_equip)
 
 
 func _on_lock_pressed() -> void:
@@ -752,21 +868,17 @@ func _refresh_meta_gold_label_amount(amount: int) -> void:
 
 
 func _on_slot_pressed(_signal_arg, slot_idx: int) -> void:
-	# Phase 50 — slots that exist for this hero are always interactive; an
-	# empty tap toasts "Slot is empty", a filled tap unequips. There's no
-	# longer a locked-slot state — slots not authored on the hero simply
-	# don't render.
+	# Phase 55h — tap-to-inspect, not tap-to-unequip. Empty slots toast as
+	# before; filled slots open the same bottom-sheet inventory items use,
+	# with the action row's primary button now reading "Unequip" (handled in
+	# _refresh_action_row + _on_equip_pressed). Replaces the prior destructive
+	# instant-unequip-on-tap which was unsafe on mobile.
 	var hero_id: String = LoadoutState.selected_hero_id
 	var current_uid: String = InventoryManager.get_equipped_uid(hero_id, slot_idx)
 	if current_uid == "":
 		Toast.show_message("%s slot is empty" % _resolve_slot_label(slot_idx))
 		return
-	# Phase 52 — unequipping changes paperdoll state; clear any inventory
-	# selection so the action row doesn't dangle on a stale uid (the just-
-	# unequipped item still exists, but the player's intent likely shifted).
-	_selected_uid = ""
-	_sell_armed_uid = ""
-	InventoryManager.unequip(hero_id, slot_idx)
+	_select_item(current_uid)
 
 
 # --- Stats panel (D4) -------------------------------------------------------

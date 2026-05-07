@@ -6,20 +6,25 @@
 custom_minimum_size = Vector2(2400, 1400)
 layout_mode = 3
 anchors_preset = 0
-offset_right = 2400.0
-offset_bottom = 1400.0
+offset_left = -60.0
+offset_top = -59.0
+offset_right = 2340.0
+offset_bottom = 1341.0
 script = ExtResource("1_wmv")
 
-[node name="LevelMarkers" type="Node2D" parent="."]
+[node name="LevelMarkers" type="Node2D" parent="." unique_id=1204039353]
 
-[node name="level_1" type="Marker2D" parent="LevelMarkers"]
-position = Vector2(420, 1080)
+[node name="level_1" type="Marker2D" parent="LevelMarkers" unique_id=1048663558]
+position = Vector2(337, 575)
 
-[node name="level_2" type="Marker2D" parent="LevelMarkers"]
-position = Vector2(960, 820)
+[node name="level_2" type="Marker2D" parent="LevelMarkers" unique_id=1149041009]
+position = Vector2(649, 765)
 
-[node name="level_3" type="Marker2D" parent="LevelMarkers"]
-position = Vector2(1500, 540)
+[node name="level_3" type="Marker2D" parent="LevelMarkers" unique_id=24755305]
+position = Vector2(857, 475)
 
-[node name="level_4" type="Marker2D" parent="LevelMarkers"]
-position = Vector2(2020, 280)
+[node name="level_4" type="Marker2D" parent="LevelMarkers" unique_id=1875077657]
+position = Vector2(1558, 1151)
+
+[node name="level_5" type="Marker2D" parent="LevelMarkers"]
+position = Vector2(2050, 950)

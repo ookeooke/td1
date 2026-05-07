@@ -1,0 +1,91 @@
+[gd_scene format=3 uid="uid://b1td1lvl5scn"]
+
+[ext_resource type="Script" uid="uid://ltjy3lxqt5fm" path="res://levels/Level5.gd" id="1_lvl"]
+[ext_resource type="Script" uid="uid://dc37fqwyab2la" path="res://map/GridManager.gd" id="2_grid"]
+[ext_resource type="PackedScene" uid="uid://ct8yxr78jyvnj" path="res://map/SpawnMarker.tscn" id="3_sm"]
+[ext_resource type="Script" uid="uid://dfxik7tpohcj3" path="res://map/SpotInputManager.gd" id="4_sim"]
+[ext_resource type="Texture2D" uid="uid://bvx82ukcw5n26" path="res://levels/backgrounds/level_5_bg.png" id="5_bg"]
+
+[sub_resource type="NavigationPolygon" id="NavPoly"]
+vertices = PackedVector2Array(721.4375, 994.8906, 447.0078, 1109.1172, 240.70313, 1109.0078, 385.8672, 998.85156, 644.71875, 902.03906, 825.1172, 845.1406, 406.39844, 271.02344, 175.63281, 5.7890625, 349.72656, 11.8515625, 576.4219, 236.53125, 1667.1406, 787.8281, 1795.9219, 672.1172, 1945.2266, 585.2422, 1946.9297, 708.27344, 1856.7109, 781.21875, 1749.3594, 867.8828, 1554.7266, 919.71875, 1582.1719, 816.14844, 1480.7422, 806.7422, 1344.2891, 875.6797, 1329.0391, 713.0703, 1183.6016, 751.46094, 1049.1484, 468.54688, 919.72656, 487.59375, 786.5078, 703.8828, 650.3203, 766.53125, 666.8906, 642.6406, 395.21875, 694.0781, 527.1328, 621.53125, 429.57813, 551.5469, 339.59375, 638.4531, 286.52344, 566.09375, 990.7031, 254.57031, 913.7422, 395.6172, 816.78125, 297.60156, 849.8125, 202.21875, 617.6406, 316.27344, 420.57813, 474.9922, 273.45313, 477.35156, 339.39844, 378.42188, 474.22656, 408.46094)
+polygons = Array[PackedInt32Array]([PackedInt32Array(0, 1, 2, 3, 4, 5), PackedInt32Array(6, 7, 8, 9), PackedInt32Array(10, 11, 12, 13, 14, 15, 16), PackedInt32Array(17, 10, 16), PackedInt32Array(18, 17, 16, 19), PackedInt32Array(20, 18, 19, 21), PackedInt32Array(22, 20, 21, 23), PackedInt32Array(24, 5, 4, 25, 26), PackedInt32Array(26, 25, 27, 28), PackedInt32Array(29, 28, 27, 30, 31), PackedInt32Array(32, 22, 23, 33), PackedInt32Array(32, 33, 34, 35), PackedInt32Array(9, 35, 34, 36), PackedInt32Array(37, 29, 31, 38, 39), PackedInt32Array(40, 37, 39, 6, 9), PackedInt32Array(40, 9, 36)])
+outlines = Array[PackedVector2Array]([PackedVector2Array(153, -5, 354, 2, 580, 226, 851, 192, 999, 247, 1058, 463, 1335, 705, 1484, 797, 1581, 806, 1662, 779, 1790, 664, 1955, 568, 1957, 713, 1863, 789, 1754, 877, 1555, 930, 1340, 885, 1177, 759, 910, 492, 904, 400, 813, 308, 621, 326, 481, 416, 431, 478, 439, 546, 531, 612, 670, 633, 795, 697, 836, 847, 728, 1003, 448.9994, 1119.136, 211, 1119, 381, 990, 635, 895, 640, 774, 390, 703, 332, 645, 277, 570, 263, 475, 331, 373, 394, 272)])
+
+[sub_resource type="Curve2D" id="Curve_TLPlank"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 239, -11, -30.613, -15.972, 30.613, 15.972, 525, 306, -111.804, -54.571, 111.804, 54.571, 912, 255, -22.627, -38.599, 22.627, 38.599, 1001, 488, 0, 0, 0, 0, 1334, 801, -89.177, -2.662, 89.177, 2.662, 1538, 883, 0, 0, 0, 0, 1767, 783, 0, 0, 0, 0, 1981, 641)
+}
+point_count = 8
+
+[sub_resource type="Curve2D" id="Curve_BLPlank"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 220, 1179, -3.9930003, 97.16301, 3.9930003, -97.16301, 756, 882, 10.263161, 26.124409, -10.263161, -26.124409, 770, 788, 17.303001, 13.310001, -17.303001, -13.310001, 712, 700, 17.303001, 142.417, -17.303001, -142.417, 334, 538, -139.755, 27.951002, 139.755, -27.951002, 565, 258, -37.268, -49.247, 37.268, 49.247, 950, 290, 0, 0, 0, 0, 1008, 497, -66.55, -85.184006, 66.55, 85.184006, 1209, 699, -42.592003, 7.9860005, 42.592003, -7.9860005, 1554, 886, 0, 0, 0, 0, 1977, 625)
+}
+point_count = 11
+
+[node name="Level5" type="Node2D" unique_id=967710135]
+script = ExtResource("1_lvl")
+
+[node name="NavigationRegion2D" type="NavigationRegion2D" parent="." unique_id=1533738285]
+visible = false
+navigation_polygon = SubResource("NavPoly")
+
+[node name="MapBackground" type="Sprite2D" parent="." unique_id=648662338]
+z_index = -50
+position = Vector2(1042.5366, 581)
+scale = Vector2(1.3602552, 1.3602551)
+texture = ExtResource("5_bg")
+
+[node name="Paths" type="Node2D" parent="." unique_id=1826087334]
+
+[node name="tl_plank" type="Path2D" parent="Paths" unique_id=1064146001]
+curve = SubResource("Curve_TLPlank")
+
+[node name="bl_plank" type="Path2D" parent="Paths" unique_id=1762290805]
+position = Vector2(25, 0)
+curve = SubResource("Curve_BLPlank")
+
+[node name="TowerSpots" type="Node2D" parent="." unique_id=264944260]
+
+[node name="Spot1" type="Marker2D" parent="TowerSpots" unique_id=91225449]
+position = Vector2(178, 437)
+
+[node name="Spot2" type="Marker2D" parent="TowerSpots" unique_id=1054158329]
+position = Vector2(554, 497)
+
+[node name="Spot3" type="Marker2D" parent="TowerSpots" unique_id=551745825]
+position = Vector2(428, 852)
+
+[node name="Spot4" type="Marker2D" parent="TowerSpots" unique_id=2042621906]
+position = Vector2(716, 411)
+
+[node name="Spot5" type="Marker2D" parent="TowerSpots" unique_id=306879117]
+position = Vector2(932, 132)
+
+[node name="Spot6" type="Marker2D" parent="TowerSpots" unique_id=529524023]
+position = Vector2(1504, 644)
+
+[node name="Spot7" type="Marker2D" parent="TowerSpots" unique_id=1945269290]
+position = Vector2(1301, 977)
+
+[node name="Spot8" type="Marker2D" parent="TowerSpots" unique_id=515888747]
+position = Vector2(1748, 559)
+
+[node name="HeroSpawn" type="Marker2D" parent="." unique_id=1476364680]
+position = Vector2(1820, 540)
+
+[node name="SpawnMarkers" type="Node2D" parent="." unique_id=674843679]
+
+[node name="SpawnMarkerTL" parent="SpawnMarkers" unique_id=1982404121 instance=ExtResource("3_sm")]
+position = Vector2(40, 220)
+path_id = "tl_plank"
+
+[node name="SpawnMarkerBL" parent="SpawnMarkers" unique_id=718968151 instance=ExtResource("3_sm")]
+position = Vector2(40, 920)
+path_id = "bl_plank"
+
+[node name="GridManager" type="Node" parent="." unique_id=1623720964]
+script = ExtResource("2_grid")
+
+[node name="SpotInputManager" type="Node" parent="." unique_id=25241447]
+script = ExtResource("4_sim")

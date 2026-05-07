@@ -70,6 +70,7 @@ Entry point: `res://ui/MainMenu.tscn`. Design viewport: 1920x1080 (landscape). S
     | Item (instances in bag) | `InventoryManager` (already separate) | `ItemInstance.uid` |
 
 	Adding a new content type (pets, mounts, world-map flags) = one new dict on the appropriate autoload, three helpers (`get_*`, `set_*`, `_default_*_for`), one EventBus signal. Mirrors `LoadoutState.hero_equipped_skills` end-to-end. (See SESSIONS.md "2026-05-01 — GameState split" for the rationale.)
+21. **Painted backgrounds are L5+ only, opt-in via a `MapBackground` Sprite2D child.** When a level scene has a `MapBackground` Sprite2D under its root, BaseLevel auto-suppresses the procedural BG fill, decorations (trees/bushes/flowers), and path strokes — the painting owns those layers. (BG fill must be suppressed because BaseLevel's `_draw()` runs at root z_index=0 and would overdraw any Sprite2D child regardless of the sprite's negative z_index.) Procedural borders stay by default so zoom-out past the painting still looks framed. Adding a `MapBackgroundOverflow` Node sibling also suppresses borders, for paintings that include their own framing past `map_bounds`. Tower spots always render (interactive build cue). **Never retrofit painted backgrounds onto L1–L4** — they stay 100% procedural forever. Reasoning: (a) shipped/balanced levels shouldn't be reskinned without scoped re-verification, (b) the procedural look is the deliberate art direction for early game, (c) keeping the procedural draw branches load-bearing on multiple shipped levels prevents bit-rot. Image lives at `levels/backgrounds/level_<N>_bg.<ext>`; native size 2000×1160 for 1:1 placement against the default `map_bounds`. Set `MapBackground.z_index = -50` so it draws beneath spots.
 
 ---
 
@@ -422,6 +423,8 @@ Levels stay as editor-visible `.tscn` files (CORE RULE: human drags Curve2D hand
 6. **Place the marker on the WorldMap** — open `ui/world_map/WorldMapView.tscn`, add a `Marker2D` named exactly `level_<N>` (must match the `level_id` from step 5) under the `LevelMarkers` Node2D, and drag it to the desired position. Mirrors the `TowerSpots → Spot1` pattern: node name == content_id, position lives in the scene. WorldMapView reads it at runtime; missing marker = `push_warning` and the level is skipped.
 
 7. **Author the wave file** — replace the placeholder waves with real content. Use the existing wave files (`level1_waves.tres`, `level2_waves.tres`) as references.
+
+8. **(Optional, L5+) Painted background.** Drop the source image into `levels/backgrounds/level_<N>_bg.png` (or `.webp`). Open `Level<N>.tscn`, add a `Sprite2D` child named exactly `MapBackground` directly under the root, set its `texture` to the image, `z_index = -50`, drag/scale to align with your authored paths. BaseLevel auto-suppresses procedural decorations + path strokes (CORE RULE 21). Add a sibling `MapBackgroundOverflow` Node if the painting extends past `map_bounds` and supplies its own framing. **L1–L4 stay procedural — do not retrofit.**
 
 **Template invariants** — every template `.tscn` MUST have:
 - Root node attached to `res://levels/BaseLevel.gd` (no per-template script)

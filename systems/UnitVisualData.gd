@@ -36,11 +36,11 @@ enum Hat { NONE, HORNS, HELMET, HOOD, BANDANA, CROWN_BIG }
 # subtle so every existing enemy reads as "alive" without per-tres editing.
 @export_group("Walk Animation")
 # Vertical lift at peak, in pixels. Body hops by |sin| — two plants per cycle.
-@export_range(0.0, 12.0, 0.1) var walk_bob_amplitude: float = 2.5
+@export_range(0.0, 12.0, 0.1) var walk_bob_amplitude: float = 4.0
 # Cycle rate in radians/sec. ~7.0 ≈ ~2.2 plants/sec (one plant per half cycle).
 @export_range(0.0, 20.0, 0.1) var walk_bob_speed: float = 7.0
 # Squash magnitude at each foot-plant (body scales X+ Y-). 0 = off.
-@export_range(0.0, 0.25, 0.01) var walk_squash: float = 0.04
+@export_range(0.0, 0.25, 0.01) var walk_squash: float = 0.06
 # Body tilt amplitude in radians. Body rocks ±this much per cycle, peaking
 # mid-step (between plants), zero at plant. Sells weight-shift on a single
 # image. ~0.035 rad ≈ 2°. 0 = off.

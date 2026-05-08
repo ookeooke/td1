@@ -13,3 +13,9 @@ class_name WaveData
 @export var spawns: Array[WaveSpawn] = []
 @export var countdown: float = 20.0
 @export var bounty: int = 0
+# Per-wave early-call window override. Caps `bonus = min(seconds_remaining, window)`.
+# Sentinel -1 = inherit from LevelNodeData.early_call_window_sec (default 10).
+# Use cases: shorter window on boss waves (less reward for skipping the
+# breathing room), longer window on rest waves (encourage aggressive play).
+# Authored per-wave; the BalanceSliders slider can also override at runtime.
+@export var early_call_window_sec: float = -1.0

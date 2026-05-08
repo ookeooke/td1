@@ -116,6 +116,10 @@ func _ready() -> void:
 	# Lets the designer dial up only L4's enemies without touching L1-L3.
 	if RunState.current_level_id != "":
 		_hp_scale *= BalanceOverrides.get_level_float(RunState.current_level_id, "hp_mult", 1.0)
+	# Per-enemy HP multiplier — applies on top of the global + level mults so
+	# the designer can dial up only Brutes without touching everything else.
+	if data != null and data.enemy_id != "":
+		_hp_scale *= BalanceOverrides.get_enemy_mult(data.enemy_id, "hp_mult")
 	if data:
 		current_health = _effective_max_health()
 	# Phase 20: group membership so skill targeting can enumerate live
@@ -291,8 +295,9 @@ func _combat_tick(delta: float) -> void:
 	# should still play out toward where the strike was aimed.
 	_start_strike(focus)
 	var splash_r: float = data.attack_splash_radius if "attack_splash_radius" in data else 0.0
+	var dmg: float = _effective_attack_damage()
 	if splash_r <= 0.0:
-		focus.take_damage(data.attack_damage * BalanceOverrides.get_damage_mult(), DamageCalculator.DamageType.PHYSICAL, self)
+		focus.take_damage(dmg, DamageCalculator.DamageType.PHYSICAL, self)
 		return
 	# AoE swing: every blocker whose body sits inside splash_r of the focus
 	# eats the full counter-attack. Designed counter to rally-stack surrounds.
@@ -302,7 +307,16 @@ func _combat_tick(delta: float) -> void:
 		if b == null or not is_instance_valid(b) or not b.has_method("take_damage"):
 			continue
 		if b.global_position.distance_squared_to(origin) <= r2:
-			b.take_damage(data.attack_damage * BalanceOverrides.get_damage_mult(), DamageCalculator.DamageType.PHYSICAL, self)
+			b.take_damage(dmg, DamageCalculator.DamageType.PHYSICAL, self)
+
+
+# Per-strike damage including global + per-enemy debug multipliers. No-op in
+# production. Centralized so future strike sites stay consistent.
+func _effective_attack_damage() -> float:
+	var d: float = data.attack_damage * BalanceOverrides.get_damage_mult()
+	if data != null and data.enemy_id != "":
+		d *= BalanceOverrides.get_enemy_mult(data.enemy_id, "damage_mult")
+	return d
 
 
 func _prune_blockers() -> void:
@@ -371,9 +385,34 @@ func _effective_speed() -> float:
 	var s: float = data.move_speed
 	if _effects.has("slow"):
 		s *= (1.0 - _effects["slow"].slow_factor)
-	# Debug-only balance override. No-op in production.
+	# Debug-only balance override. No-op in production. Per-enemy mult layered
+	# on top of the global so a single enemy class can be tuned independently.
 	s *= BalanceOverrides.get_speed_mult()
+	if data != null and data.enemy_id != "":
+		s *= BalanceOverrides.get_enemy_mult(data.enemy_id, "speed_mult")
 	return s
+
+
+# DamageCalculator hooks: returns per-enemy override-adjusted armor / mag-res.
+# Existing global Enemy armor+ / mag-res+ sliders apply uniformly; per-enemy
+# adders layer on top so the designer can give Armored more armor without
+# affecting basics. All values clamped 0..0.95 by DamageCalculator.
+func get_effective_armor() -> float:
+	if data == null:
+		return 0.0
+	var a: float = data.armor + BalanceOverrides.get_armor_add()
+	if data.enemy_id != "":
+		a += BalanceOverrides.get_enemy_mult(data.enemy_id, "armor_add")
+	return clampf(a, 0.0, 0.95)
+
+
+func get_effective_magic_resist() -> float:
+	if data == null:
+		return 0.0
+	var m: float = data.magic_resist + BalanceOverrides.get_mag_res_add()
+	if data.enemy_id != "":
+		m += BalanceOverrides.get_enemy_mult(data.enemy_id, "mag_res_add")
+	return clampf(m, 0.0, 0.95)
 
 
 func take_damage(amount: float, type: int, source: Node = null) -> float:
@@ -459,7 +498,10 @@ func _die() -> void:
 	# while we're still valid.
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_DEATH, {})
-	EventBus.enemy_died.emit(self, data.gold_worth)
+	# Per-enemy gold multiplier — affects every consumer of the signal
+	# (RunState bounty payout, LootDropper drop chance via gold_worth, etc.).
+	var bounty: int = int(round(float(data.gold_worth) * BalanceOverrides.get_enemy_mult(data.enemy_id, "gold_mult")))
+	EventBus.enemy_died.emit(self, bounty)
 	_despawn()
 
 

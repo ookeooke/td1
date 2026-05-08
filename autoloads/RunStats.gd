@@ -136,9 +136,13 @@ func _on_tower_built(tower, spot_id) -> void:
 	if _current.is_empty() or tower == null or tower.data == null:
 		return
 	var arr: Array = _current["tower_placements"]
+	# Stamp the live tower's instance_id on the placement so subsequent
+	# upgrade / branch events update THIS entry, not every placement that
+	# happens to share the tower_id. Two archers no longer move in lockstep.
 	arr.append({
 		"id": String(tower.data.tower_id),
 		"spot_id": String(spot_id),
+		"instance_id": tower.get_instance_id(),
 		"max_level": 1,
 		"branch": -1,
 	})
@@ -149,9 +153,17 @@ func _on_tower_upgraded(tower, new_level: int) -> void:
 	if _current.is_empty() or tower == null or tower.data == null:
 		return
 	_current["tower_upgrades"] = int(_current.get("tower_upgrades", 0)) + 1
-	# Update the matching placement's max_level (last-match-wins is fine —
-	# rare for two same-id towers to be upgraded out of order).
+	# Match by instance_id so duplicate-tower-id placements update independently.
+	# instance_id-on-Node is monotonic in Godot 4.x, no recycling risk.
+	var iid: int = tower.get_instance_id()
 	var arr: Array = _current["tower_placements"]
+	for entry in arr:
+		if int(entry.get("instance_id", -1)) == iid:
+			entry["max_level"] = max(int(entry.get("max_level", 1)), new_level)
+			return
+	# Fallback for a placement record from before instance_id was tracked
+	# (e.g. an in-progress run that loaded a save predating this change).
+	# Falls back to the old by-id match — last-write-wins.
 	for entry in arr:
 		if String(entry["id"]) == String(tower.data.tower_id):
 			entry["max_level"] = max(int(entry.get("max_level", 1)), new_level)
@@ -160,7 +172,13 @@ func _on_tower_upgraded(tower, new_level: int) -> void:
 func _on_tower_branch_chosen(tower, branch_idx: int) -> void:
 	if _current.is_empty() or tower == null or tower.data == null:
 		return
+	var iid: int = tower.get_instance_id()
 	var arr: Array = _current["tower_placements"]
+	for entry in arr:
+		if int(entry.get("instance_id", -1)) == iid:
+			entry["branch"] = branch_idx
+			return
+	# Same legacy fallback as _on_tower_upgraded.
 	for entry in arr:
 		if String(entry["id"]) == String(tower.data.tower_id):
 			entry["branch"] = branch_idx

@@ -225,22 +225,33 @@ func _refresh_threat() -> void:
 
 func _process(_delta: float) -> void:
 	_refresh_threat()
-	# Tick the countdown label from WaveManager state.
+	# Countdown label tick — only when WaveManager is in its inter-wave
+	# countdown phase. Button-only mode (W1) keeps the "Ready when you are"
+	# label set by _on_countdown_started.
 	if countdown_label.visible and WaveManager.is_countdown_active():
-		# Button-only mode (W1) keeps the "Ready when you are" label set by
-		# _on_countdown_started. Other waves tick down the seconds remaining.
 		if WaveManager.countdown_total() > 0.0:
 			countdown_label.text = "Next wave: %.1fs" % maxf(0.0, WaveManager.countdown_remaining())
-		# Send-Wave button is visible the entire countdown (CORE RULE 19) —
-		# the window only caps bonus magnitude, never button availability.
-		# Lazy-start blink the moment the button first appears in this countdown.
-		var should_show: bool = WaveManager.early_call_available()
-		if should_show != send_wave_button.visible:
-			send_wave_button.visible = should_show
-			if should_show:
-				_start_send_wave_blink()
-			else:
-				_stop_send_wave_blink()
+	# Send-Wave button — visible during countdown OR mid-spawn (Stage E
+	# mid-spawn early-call). Self-managing visibility means the brief
+	# `_hide_countdown()` on wave_launched gets re-corrected on the next
+	# tick if the wave is still call-able.
+	var should_show: bool = WaveManager.early_call_available()
+	if should_show != send_wave_button.visible:
+		send_wave_button.visible = should_show
+		if should_show:
+			_start_send_wave_blink()
+		else:
+			_stop_send_wave_blink()
+	if should_show:
+		# Bonus + cost label. During countdown: "Xg · Ys saved" tells the
+		# player how much time is being skipped. Mid-spawn: "Xg · OVERLAP"
+		# tells them the cost is concurrent pressure, not time.
+		var bonus: int = WaveManager.current_early_call_bonus()
+		if WaveManager.is_countdown_active():
+			var saved: int = int(ceil(maxf(0.0, WaveManager.countdown_remaining())))
+			send_wave_button.text = "Send Wave!\n+%dg · %ds saved" % [bonus, saved]
+		else:
+			send_wave_button.text = "Send Wave!\n+%dg · OVERLAP" % bonus
 
 
 func _on_wave_launched(_wave_number: int, _path_ids: Array) -> void:

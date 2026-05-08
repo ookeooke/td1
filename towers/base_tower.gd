@@ -241,6 +241,28 @@ func _next_tier_key() -> String:
 	return ""
 
 
+# Tier key the tower would land on if `up` were applied. Used by the
+# upgrade-preview stats card so per-tier BalanceOverrides multipliers
+# (damage_mult, range_mult, speed_mult) match what the LIVE tower will
+# read after the upgrade. Without this, slider tweaks on L2/L3 stats
+# only show up post-upgrade, not in the preview diff.
+func tier_key_for_upgrade(up: Resource) -> String:
+	if data == null or up == null:
+		return ""
+	if level == 1:
+		return "l2"
+	if level == 2:
+		# Linear L3 (no branches authored).
+		if data.level_3_branches.is_empty():
+			return "l3_linear"
+		# Branch pick: compare by reference against authored slots.
+		if data.level_3_branches.size() > 0 and data.level_3_branches[0] == up:
+			return "branch_a"
+		if data.level_3_branches.size() > 1 and data.level_3_branches[1] == up:
+			return "branch_b"
+	return ""
+
+
 # Tower Indicator Interface: each tower formats its own stats row so the
 # stats card stays tower-agnostic. Combat towers show Dmg / Rng / Spd.
 func get_stats_line() -> String:

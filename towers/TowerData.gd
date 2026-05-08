@@ -95,10 +95,17 @@ func is_barracks() -> bool:
 
 # Ring radius shown on the build-ring armed slot. Combat towers use
 # attack_range; barracks fall back to rally range (their attack_range is 0).
+# Applies the L1 range_mult debug override so the build-ring's range circle
+# matches what the live tower will use after spawn (and what get_stats_line
+# is already showing). Identity in production via is_active() short-circuit.
 func get_preview_range() -> float:
+	var rng_mult: float = 1.0
+	if tower_id != "":
+		var BO = load("res://balance/debug/BalanceOverrides.gd")
+		rng_mult = BO.get_tower_mult(tower_id, "l1", "range_mult")
 	if attack_range > 0.0:
-		return attack_range
-	return soldier_rally_range
+		return attack_range * rng_mult
+	return soldier_rally_range * rng_mult
 
 
 # Stats-card row for a buildable (not-yet-built) tower. Format mirrors the

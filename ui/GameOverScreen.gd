@@ -66,9 +66,17 @@ func _on_game_over() -> void:
 
 
 func _on_all_waves_completed() -> void:
+	# Diagnostic — narrows down whether the victory screen is failing to RUN
+	# (handler not invoked / bailed at guard) vs failing to RENDER (handler
+	# ran but the panel never visually appeared). Cheap, debug-only.
+	print("[GameOverScreen] all_waves received  _shown=%s  lives=%d  mode=%s" % [
+		_shown, RunState.lives, RunState.current_mode,
+	])
 	if _shown:
+		print("[GameOverScreen] bail — _shown already true")
 		return
 	if RunState.lives <= 0:
+		print("[GameOverScreen] bail — lives <= 0 (defeat path)")
 		return
 	var stars: int = RunState.calculate_stars()
 	RunState.stars_earned = stars
@@ -163,12 +171,15 @@ func _show(title: String, summary: String) -> void:
 func _populate_verdict() -> void:
 	if not OS.is_debug_build():
 		return
+	print("[GameOverScreen/Verdict] populate begin")
 	var history: Array = RunStats.get_history()
 	if history.is_empty():
+		print("[GameOverScreen/Verdict] bail — RunStats history empty")
 		verdict_panel.visible = false
 		return
 	var record: Dictionary = history[history.size() - 1]
 	if not (record is Dictionary):
+		print("[GameOverScreen/Verdict] bail — last history record not a Dictionary")
 		verdict_panel.visible = false
 		return
 	var level_id: String = String(record.get("level_id", ""))
@@ -180,13 +191,24 @@ func _populate_verdict() -> void:
 		wave_list = load(level_data.wave_list_path)
 	var BV: GDScript = load("res://balance/BalanceVerdict.gd")
 	if BV == null:
+		print("[GameOverScreen/Verdict] bail — BalanceVerdict.gd failed to load")
 		verdict_panel.visible = false
 		return
+	print("[GameOverScreen/Verdict] level=%s mode=%s lvl_data=%s wave_list=%s" % [
+		level_id, mode,
+		"ok" if level_data != null else "null",
+		"ok" if wave_list != null else "null",
+	])
 	var prior: Array = BV.recent_comparable(history, level_id, mode, run_id)
 	var verdict: Dictionary = BV.compute(record, level_data, wave_list, prior)
+	print("[GameOverScreen/Verdict] compute returned metrics=%d flags=%d" % [
+		(verdict.get("metrics", []) as Array).size(),
+		(verdict.get("flags", []) as Array).size(),
+	])
 	_render_metrics_grid(verdict.get("metrics", []))
 	_render_flags(verdict.get("flags", []), int(verdict.get("history_n", 0)))
 	verdict_panel.visible = true
+	print("[GameOverScreen/Verdict] populate complete; panel visible")
 
 
 func _render_metrics_grid(metrics: Array) -> void:

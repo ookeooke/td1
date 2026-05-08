@@ -72,7 +72,16 @@ func show_for_upgrade_preview(current: Node, upgrade: Resource, anchor_pos: Vect
 	var curr_stats: Array = current.get_preview_stats() if current != null and current.has_method("get_preview_stats") else []
 	var up_stats: Array = []
 	if current != null and upgrade.has_method("get_preview_stats"):
-		up_stats = upgrade.get_preview_stats(current.data)
+		# Pass the post-upgrade tier_key so the upgrade resource can apply
+		# per-tier BalanceOverrides multipliers — keeping the diff card
+		# in sync with what the live tower will actually read after the
+		# upgrade. Falls back to "" for towers that don't expose the
+		# helper (preview then shows raw .tres values, prior behavior).
+		var tower_id: String = String(current.data.tower_id) if current.data != null else ""
+		var tier_key: String = ""
+		if current.has_method("tier_key_for_upgrade"):
+			tier_key = current.tier_key_for_upgrade(upgrade)
+		up_stats = upgrade.get_preview_stats(current.data, tower_id, tier_key)
 	var bbcode: String = ""
 	if not curr_stats.is_empty() and not up_stats.is_empty():
 		bbcode = _diff_bbcode(curr_stats, up_stats)

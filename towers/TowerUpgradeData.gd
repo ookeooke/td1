@@ -65,7 +65,13 @@ func get_stats_line(base: TowerData) -> String:
 # Structured post-upgrade stats for the diff-card. Mirrors the shape of
 # BaseTower.get_preview_stats / TowerBarracks.get_preview_stats so the card
 # can zip rows by label and render color-coded gains/losses.
-func get_preview_stats(base: TowerData) -> Array:
+#
+# tower_id + tier_key are optional. When supplied (by TowerStatsCard), the
+# damage/range/speed rows are multiplied by the per-tier BalanceOverrides
+# values so the preview matches what the LIVE tower will read post-upgrade
+# (otherwise slider tweaks on L2/L3 only show in-flight, not in the diff).
+# Defaults of "" preserve old behavior for any caller that doesn't pass them.
+func get_preview_stats(base: TowerData, tower_id: String = "", tier_key: String = "") -> Array:
 	if base != null and base.is_barracks():
 		var sd: Resource = soldier_data_override if soldier_data_override != null else base.soldier_data
 		var rally: float = soldier_rally_range if soldier_rally_range > 0.0 else base.soldier_rally_range
@@ -80,9 +86,19 @@ func get_preview_stats(base: TowerData) -> Array:
 		if dmg_s > 0.0:
 			rows_b.append({"label": "Dmg", "value": dmg_s, "fmt": "%d"})
 		return rows_b
-	var dmg: float = damage if damage > 0.0 else (base.damage if base != null else 0.0)
-	var rng: float = attack_range if attack_range > 0.0 else (base.attack_range if base != null else 0.0)
-	var spd: float = attack_speed if attack_speed > 0.0 else (base.attack_speed if base != null else 0.0)
+	# Per-tier debug multipliers — match BaseTower.get_effective_*() so the
+	# preview reads the same number the live tower will see after upgrade.
+	var dmg_mult: float = 1.0
+	var rng_mult: float = 1.0
+	var spd_mult: float = 1.0
+	if tower_id != "" and tier_key != "":
+		var BO: GDScript = load("res://balance/debug/BalanceOverrides.gd")
+		dmg_mult = BO.get_tower_mult(tower_id, tier_key, "damage_mult")
+		rng_mult = BO.get_tower_mult(tower_id, tier_key, "range_mult")
+		spd_mult = BO.get_tower_mult(tower_id, tier_key, "speed_mult")
+	var dmg: float = (damage if damage > 0.0 else (base.damage if base != null else 0.0)) * dmg_mult
+	var rng: float = (attack_range if attack_range > 0.0 else (base.attack_range if base != null else 0.0)) * rng_mult
+	var spd: float = (attack_speed if attack_speed > 0.0 else (base.attack_speed if base != null else 0.0)) * spd_mult
 	var aoe: float = aoe_radius if aoe_radius > 0.0 else (base.aoe_radius if base != null else 0.0)
 	var rows: Array = [
 		{"label": "Dmg", "value": dmg, "fmt": "%d"},

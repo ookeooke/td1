@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" uid="uid://b1td1skillbar" path="res://ui/SkillBar.tscn" id="10_skillbar"]
 [ext_resource type="PackedScene" uid="uid://ct8yuf20wlabe" path="res://ui/PauseMenu.tscn" id="12_pause"]
 [ext_resource type="Script" path="res://ui/WaveCallIndicator.gd" id="16_wavecall"]
+[ext_resource type="Script" path="res://ui/PathPreviewOverlay.gd" id="17_pathpreview"]
 
 [node name="Main" type="Node2D" unique_id=2036122815]
 script = ExtResource("1_main")
@@ -41,6 +42,9 @@ map_path = NodePath("")
 visible = false
 
 [node name="GameOverScreen" parent="." instance=ExtResource("7_gameover")]
+
+[node name="PathPreviewOverlay" type="Node2D" parent="."]
+script = ExtResource("17_pathpreview")
 
 [node name="WaveCallIndicator" type="CanvasLayer" parent="."]
 follow_viewport_enabled = false

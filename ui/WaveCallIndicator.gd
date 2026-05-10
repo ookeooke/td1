@@ -1,10 +1,11 @@
 extends CanvasLayer
 
-# Diegetic spawn-edge badge that replaces the old top-left SendWaveButton.
-# One round badge per path the NEXT wave will spawn from — anchored at the
-# spawn marker projected to screen space, clamped out of HUD reserved zones.
-# Tap a badge (or press W on PC) to call the next wave early. WaveManager
-# mechanics, gold bonus, and overlap behavior are unchanged — this is pure UI.
+# Diegetic Send-Wave badge anchored at each path's first curve-point in
+# world space, projected to screen each frame, edge-clamped, and pushed
+# out of HUD reserved zones. One round badge per path the NEXT wave will
+# spawn from. Tap a badge (or press W on PC) to call the next wave early.
+# WaveManager mechanics, gold bonus, and overlap behavior are unchanged —
+# this is pure UI.
 #
 # States (per-frame):
 #   HIDDEN — WaveManager.early_call_available() is false; nothing drawn.
@@ -18,7 +19,7 @@ const BADGE_RADIUS: float = 50.0          # screen px, gold rim circle
 const RING_RADIUS: float = 60.0           # countdown ring radius (outside rim)
 const RIM_THICKNESS: float = 6.0
 const RING_THICKNESS: float = 5.0
-const TAP_RADIUS: float = 60.0            # forgiving touch target
+const TAP_RADIUS: float = 80.0            # forgiving touch target — meets CLAUDE.md 80 px floor
 
 # HUD reserved zones — clamp badges OUT of these rectangles so they don't
 # collide with chips, pause/speed buttons, or the SkillBar cluster.
@@ -51,10 +52,14 @@ enum State { HIDDEN, PRE_W1, OVERLAP_CALLABLE }
 
 var _draw_node: Control = null
 
-# Per-frame: Array of badge dicts. Each is one of:
-#   single   {paths: ["pid"],          screen_pos, grouped: false}
-#   grouped  {paths: ["pid_a","pid_b"], screen_pos, grouped: true}
-# Tap target uses the same WaveManager.call_early_wave() either way.
+# Per-frame: Array of badge dicts. Shape:
+#   {
+#     paths:       Array[String]    one path_id per single, multiple per grouped
+#     screen_pos:  Vector2          clamped + zone-avoided draw position
+#     grouped:     bool             true after _merge_nearby_badges absorbed
+#                                   one or more siblings within GROUP_DISTANCE
+#   }
+# Tap any badge → WaveManager.call_early_wave(). No two-step commit.
 var _active_badges: Array = []
 var _state: int = State.HIDDEN
 
@@ -64,16 +69,15 @@ var _seconds_left: float = 0.0
 var _window: float = 0.0
 
 # Lazy-resolved level reference. Re-found when the cached node becomes
-# invalid (level reload). Anchor lookup uses author-placed SpawnMarkers
-# first (decoupled from enemy spawn geometry — markers are intentional UI
-# anchors), and falls back to the Path2D's first curve point when no
-# marker exists for that path_id.
+# invalid (level reload). Anchor lookup uses the Path2D first curve-point
+# (where enemies emerge); the SpawnMarker cache is a fallback for path-
+# lookup failure only (typo in WaveSpawn.path_id, partially-authored level).
 var _level: Node = null
 # path_id → world Vector2, populated when _level is resolved.
 var _spawn_markers: Dictionary = {}
 
-# Debug: throttled diagnostic of the gate inputs. Set DEBUG_PRINT to false
-# (or delete the block in _refresh_state) once W2 is verified working.
+# Debug: throttled diagnostic of the gate inputs. Toggle to true to log
+# the gate state once per second; off in production.
 const DEBUG_PRINT: bool = false
 var _last_debug_msec: int = 0
 
@@ -116,12 +120,12 @@ func _ensure_level() -> void:
 		_build_spawn_marker_cache()
 
 
-# Cache author-placed SpawnMarker positions, keyed by path_id. Populated
-# once when the level is resolved (cleared in _ensure_level on level swap).
-# These are the PREFERRED anchor — authors deliberately place them where
-# the call-wave UI should point. Path2D first-curve-point is fallback.
+# Cache author-placed SpawnMarker positions, keyed by path_id. Used as a
+# FALLBACK in _spawn_world_pos when a path_id has no matching Path2D
+# (typo, partially-authored level). Populated once when the level is
+# resolved; cleared in _ensure_level on level swap.
 func _build_spawn_marker_cache() -> void:
-	_spawn_markers.clear()
+	# Caller (_ensure_level) already cleared _spawn_markers.
 	if _level == null:
 		return
 	var markers: Node = _level.get_node_or_null("SpawnMarkers")
@@ -133,18 +137,20 @@ func _build_spawn_marker_cache() -> void:
 
 
 # World position to anchor the badge for `path_id`. Two-tier lookup:
-#   1. Author-placed SpawnMarker.global_position (preferred — UI intent)
-#   2. Path2D.curve.get_point_position(0) in world space (fallback)
+#   1. Path2D.curve.get_point_position(0) in world space — where enemies
+#      actually emerge (KR-canonical: badge AT the spawn portal).
+#   2. Fallback: author-placed SpawnMarker.global_position. Should not be
+#      reached on properly-authored levels — kept as a safety net for
+#      typos in WaveSpawn.path_id or partially-authored test levels.
 # Returns Vector2.INF on miss so callers can skip drawing.
 func _spawn_world_pos(path_id: String) -> Vector2:
+	if _level != null and _level.has_method("get_path_by_id"):
+		var p: Path2D = _level.get_path_by_id(path_id)
+		if p != null and p.curve != null and p.curve.point_count > 0:
+			return p.to_global(p.curve.get_point_position(0))
 	if _spawn_markers.has(path_id):
 		return _spawn_markers[path_id]
-	if _level == null or not _level.has_method("get_path_by_id"):
-		return Vector2.INF
-	var p: Path2D = _level.get_path_by_id(path_id)
-	if p == null or p.curve == null or p.curve.point_count <= 0:
-		return Vector2.INF
-	return p.to_global(p.curve.get_point_position(0))
+	return Vector2.INF
 
 
 func _process(_delta: float) -> void:
@@ -196,7 +202,11 @@ func _refresh_state() -> void:
 		screen_pos = _avoid_zone(screen_pos, Rect2(Vector2.ZERO, TL_ZONE))
 		screen_pos = _avoid_zone(screen_pos, Rect2(Vector2(vp_size.x - TR_ZONE.x, 0), TR_ZONE))
 		screen_pos = _avoid_zone(screen_pos, Rect2(vp_size - BR_ZONE, BR_ZONE))
-		_active_badges.append({"paths": [key], "screen_pos": screen_pos, "grouped": false})
+		_active_badges.append({
+			"paths": [key],
+			"screen_pos": screen_pos,
+			"grouped": false,
+		})
 	# Collapse pairs whose anchors land within GROUP_DISTANCE of each other
 	# into one larger badge centered between them. Same tap action either way.
 	_active_badges = _merge_nearby_badges(_active_badges)
@@ -269,6 +279,9 @@ func _input(event: InputEvent) -> void:
 		for b in _active_badges:
 			var hit_r: float = TAP_RADIUS * (GROUPED_RADIUS_MULT if b.grouped else 1.0)
 			if (b.screen_pos as Vector2).distance_to(p) <= hit_r:
+				# Single-tap commit: any tap on a visible badge calls the
+				# next wave. No off-screen pan-first safety — the camera
+				# stays put, the badge does its job.
 				WaveManager.call_early_wave()
 				get_viewport().set_input_as_handled()
 				return

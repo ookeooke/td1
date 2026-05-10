@@ -1,11 +1,12 @@
 @tool
 extends Node2D
 
-# Authoring anchor for the per-path Send-Wave badge. WaveCallIndicator
-# (CanvasLayer 7) reads `global_position` keyed by `path_id` to position
-# the badge. `_draw()` is gated to `Engine.is_editor_hint()` so the yellow
-# arrow + enemy-icon preview is visible only when designing the level in
-# the 2D editor — never at runtime.
+# Editor-only authoring annotation for path-spawn locations. WaveCallIndicator
+# anchors its Send-Wave badge at the Path2D's first curve-point at runtime;
+# this marker exists for the 2D-editor preview (yellow arrow + enemy-icon)
+# and as a FALLBACK anchor if the path lookup ever fails (typo / partially-
+# authored level). `_draw()` is gated to `Engine.is_editor_hint()` so the
+# preview never renders at runtime — the badge owns the spawn-point UI.
 
 @export var path_id: String = ""
 @export_range(0.0, 360.0) var direction_degrees: float = 0.0

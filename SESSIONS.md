@@ -3195,3 +3195,34 @@ Effectively-dead-but-kept-on-purpose: `WaveCallIndicator.DEBUG_PRINT` block (fli
 - `WaveManager.countdown_total()` / `countdown_remaining()` keep their pre-redesign names while wrapping new "early-call window / spawn-window remaining" math. Renaming forces callsite churn in WaveCallIndicator without behavior change — left alone until the misnomer next causes confusion.
 
 **Verification:** Code committed in `83b37c1`. Runtime eyes-on-device pending — open each level (L1–L5) in Godot's 2D editor and confirm the yellow SpawnMarker preview still renders for authoring; then play each level and confirm no yellow arrows show at runtime, the orange Send-Wave badge appears at every spawn point during pre-W1 grace + the last N seconds of every wave's spawn, and the badge tracks the spawn point as the camera pans (clamping to the screen edge when the spawn is off-screen).
+
+---
+
+## 2026-05-10 — Path preview chevrons + single-tap Send-Wave badge
+
+Eyes-on-device pass over the spawn-UI work surfaced three issues that needed code changes plus a new feature the user asked for. Net result: the Send-Wave badge now anchors at where enemies actually emerge, commits on a single tap, and the paths the next wave will use are telegraphed by marching orange chevrons along the curve.
+
+**1. Path-first anchor priority (the "old spawning places" bug).** [WaveCallIndicator.gd:_spawn_world_pos](ui/WaveCallIndicator.gd) used to prefer `SpawnMarker.global_position` over the Path2D's first curve-point. After Option A made SpawnMarker draw editor-only, the marker positions stayed where the deprecated yellow-arrow render had wanted them — 40 px off on L1, **220–920 px off on L5**, where the marker was placed against the painted background's visible portal art rather than the curve's mathematical first point. Inverted the priority: Path2D first curve-point primary, SpawnMarker fallback only when path lookup fails. Markers retain their editor-preview role and CoverageAnalyzer references; runtime no longer keys off legacy positions.
+
+**2. TAP_RADIUS 60 → 80.** Brought the touch hit-zone up to the CLAUDE.md mobile minimum (80×80 px). Visual `BADGE_RADIUS = 50` is unchanged — only the invisible touch forgiveness grew.
+
+**3. Two-step pan-first commit attempted then rejected.** Imported the KR Vengeance v1.9.9.19 fix: when a badge is edge-clamped (spawn off-screen), first tap pans the camera to the spawn instead of committing; second tap commits. Tried multiple thresholds (EDGE_MARGIN, strict viewport bounds), and added a merge carve-out so two off-screen-clamped badges wouldn't collapse into one (`_merge_nearby_badges` skipped merging if either was off_screen). All of it had to come back out — on L5 the curve first-points sit at world (239, -11) and (372, 1176), genuinely outside the viewport at any zoom. The pan-first branch fired on every tap and the camera couldn't bounds-clamp far enough to bring the spawn on-screen, soft-locking. Removed the entire off_screen / world_pos / camera-focus-emit / merge carve-out machinery; tap on a visible badge always commits. The KR safety isn't suited to a game whose curves intentionally start off-painting.
+
+**4. PathPreviewOverlay (new file).** [ui/PathPreviewOverlay.gd](ui/PathPreviewOverlay.gd) is a world-space Node2D parented to Main. While `WaveManager.early_call_available()` is true, it iterates `get_next_wave_path_ids()` and renders marching chevrons along each path's baked curve. `_phase = fmod(_phase + 60 * delta, 90)` keeps the chevron count and positions stable; only the offset slides, producing a ~1.5-second cycle. Chevron orientation = local tangent via finite difference (`sample_baked(offset+1) - sample_baked(offset)`). Color matches the WaveCallIndicator badge (amber for PRE_W1, orange for OVERLAP). z_index = -10 sits above L5's painted background (-50) and below tower spots (0). Sizes zoom-scaled per the CLAUDE.md zoom-scale rule. Faded immediately on commit (`early_call_available` flips to false → `visible = false`). KR-genre lineage: Alliance's *"most paths are highlighted from the beginning of a round"* + Vengeance's route preview that displays the route enemies will take. Initial chevron half-length 18 was reduced to 12 after eyes-on at user's request.
+
+**5. Doc rot cleanup.** [WaveCallIndicator.gd:DEBUG_PRINT](ui/WaveCallIndicator.gd) comment rewritten — was instructing "set to false once W2 verified," now describes the current toggle state. Redundant `_spawn_markers.clear()` removed from `_build_spawn_marker_cache` (caller `_ensure_level` already clears).
+
+**Modified:**
+- [ui/WaveCallIndicator.gd](ui/WaveCallIndicator.gd) — path-first `_spawn_world_pos`, single-tap `_input` (no off_screen branch), TAP_RADIUS 80, dict shape trimmed to {paths, screen_pos, grouped}, file header / merge / cache / DEBUG_PRINT comments rewritten
+- [map/SpawnMarker.gd](map/SpawnMarker.gd) — header now describes the editor-only + fallback role under path-first priority
+- [main/Main.tscn](main/Main.tscn) — added `PathPreviewOverlay` Node2D as a child of Main (sibling to `WaveCallIndicator`)
+
+**Added:**
+- [ui/PathPreviewOverlay.gd](ui/PathPreviewOverlay.gd) — 111 lines
+
+**Risks:**
+- L5 chevrons start off-painting (the curves' first points sit beyond the painted area, mirroring how enemies emerge). Visually they appear from "outside the visible portal"; mirrors enemy entry behavior, but worth re-verifying that it reads as intended on the painted level.
+- PathPreviewOverlay polls `WaveManager.early_call_available()` per frame. Cheap, but adds one more poll site alongside WaveCallIndicator. If a third overlay needs the same gate later, consider switching to signals.
+- `_phase` on PathPreviewOverlay persists across level reloads (Main child, not level child). Cosmetic only — chevrons just start at a slightly different offset on the new level.
+
+**Verification:** Code-review only this session. Eyes-on-device pending — confirm: (a) badges anchor at the path entry not the marker on L1+L5, (b) single tap on any visible badge commits, no camera movement, (c) marching orange chevrons appear on the next wave's paths during pre-W1 + every early-call window and disappear immediately on commit, (d) chevrons zoom-scale to stay screen-constant, (e) hotkey W still direct-commits.

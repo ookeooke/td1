@@ -1,7 +1,7 @@
-[gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://b1td1scout001"]
+[gd_resource type="Resource" script_class="EnemyData" format=3]
 
-[ext_resource type="Script" uid="uid://bfgo62wek7fpf" path="res://enemies/EnemyData.gd" id="1_data"]
-[ext_resource type="Resource" uid="uid://b1td1scoutvis" path="res://enemies/data/visual_scout.tres" id="2_vis"]
+[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://enemies/data/visual_scout.tres" id="2_vis"]
 
 [resource]
 script = ExtResource("1_data")
@@ -11,6 +11,6 @@ max_health = 13
 move_speed = 155.0
 gold_worth = 1
 xp_worth = 8
-attack_damage = 2.0
+attack_damage = 0.0
 visual = ExtResource("2_vis")
 encyclopedia_entry = "Fast-moving goblin. Slips past slow towers — prioritize with fast shooters."

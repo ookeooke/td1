@@ -59,6 +59,7 @@ func _ready() -> void:
 	EventBus.tower_built.connect(_on_tower_built)
 	EventBus.tower_sold.connect(_on_tower_sold)
 	EventBus.tower_upgraded.connect(_on_tower_upgraded)
+	EventBus.camera_zoom_started.connect(_dismiss)
 
 
 # ── Entry point ─────────────────────────────────────────────────────────

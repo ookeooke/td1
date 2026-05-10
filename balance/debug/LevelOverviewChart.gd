@@ -11,19 +11,26 @@ class_name LevelOverviewChart
 # Debug-only — the surrounding BalanceSliders panel is gated upstream.
 
 # ─── Layout constants ─────────────────────────────────────────────────────
-const CARD_HEIGHT: float = 200.0
+# Card layout grew by 24 px when the pressure strip was added between
+# header and EHP bars (Tuning Console). Constants below enclose the strip
+# in y-band [STRIP_TOP..STRIP_BOTTOM]; PLOT_TOP shifts down accordingly so
+# the EHP bars and gold line keep their absolute footprint.
+const CARD_HEIGHT: float = 224.0
 const CARD_MIN_WIDTH: float = 560.0
 const PAD_X: float = 8.0
 const HEADER_Y: float = 4.0
 const HEADER_H: float = 14.0
-const PLOT_TOP: float = 24.0
-const PLOT_BOTTOM: float = 160.0
-const X_LABEL_Y: float = 166.0
+const STRIP_TOP: float = 22.0
+const STRIP_BOTTOM: float = 46.0
+const PLOT_TOP: float = 50.0
+const PLOT_BOTTOM: float = 184.0
+const X_LABEL_Y: float = 190.0
 const X_LABEL_FONT: int = 11
 const FOOTER_Y_FROM_BOTTOM: float = 4.0
 const FOOTER_FONT: int = 11
 const HEADER_FONT: int = 13
 const AXIS_LABEL_FONT: int = 10
+const STRIP_FONT: int = 10
 
 # ─── Colors (mirror WaveTimelineChart palette so the language is shared) ──
 # Stacked-by-class bars: each wave-bar is segmented by enemy class so the
@@ -52,6 +59,10 @@ const COL_GOLD_LINE: Color = Color(0.45, 0.95, 0.55, 1.0)
 const COL_GOLD_DOT: Color = Color(0.65, 1.00, 0.70, 1.0)
 const COL_HEADER_OK: Color = Color(0.85, 0.95, 1.0)
 const COL_HEADER_WARN: Color = Color(0.95, 0.80, 0.45)
+# Coverage-driven saturation marker — drawn as a dashed horizontal line at
+# the gold value where extra gold stops buying realistic damage on this map.
+# See WaveDamageSimulator.saturation_gold and balance/audit/CoverageReport.
+const COL_SATURATION: Color = Color(0.95, 0.55, 0.85, 0.85)
 const COL_AXIS_LABEL: Color = Color(0.65, 0.70, 0.78)
 const COL_FOOTER: Color = Color(0.65, 0.70, 0.78)
 const COL_BOSS_MARK: Color = Color(0.95, 0.35, 0.55, 0.95)
@@ -66,6 +77,13 @@ const GOLD_DRIFT_WARN_PCT: float = 15.0
 var _wave_list: WaveList = null
 var _level_data: Resource = null
 var _starting_gold: int = 0
+# Coverage-driven saturation gold for this level. 0 = unknown / don't draw.
+# Populated by BalanceSliders before set_data via the optional fourth arg.
+var _saturation_gold: int = 0
+# Per-wave coverage-weighted pressure rows (canonical for Tuning Console).
+# Each row: {actual, target, drift, supply, demand, gold_at_start, reason}.
+# Empty = strip not drawn (legacy callers / errors); see plan.
+var _pressure_rows: Array = []
 
 # Cache per-scene EHP + gold + id + class-key, populated lazily by walking
 # each wave's spawns. Mirrors WaveTimelineChart's caches to avoid
@@ -106,10 +124,13 @@ func clear_enemy_caches() -> void:
 	_enemy_class_cache.clear()
 
 
-func set_data(wave_list: WaveList, level_data: Resource, starting_gold: int) -> void:
+func set_data(wave_list: WaveList, level_data: Resource, starting_gold: int,
+		saturation_gold: int = 0, pressure_rows: Array = []) -> void:
 	_wave_list = wave_list
 	_level_data = level_data
 	_starting_gold = starting_gold
+	_saturation_gold = saturation_gold
+	_pressure_rows = pressure_rows
 	_recompute()
 	queue_redraw()
 
@@ -217,9 +238,11 @@ func _draw() -> void:
 	var usable: float = w - PAD_X * 2.0
 	var slot_w: float = usable / float(n)
 	_draw_header(w)
+	_draw_pressure_strip(usable, slot_w, n)
 	_draw_avg_line(usable)
 	_draw_bars(usable, slot_w)
 	_draw_gold_line(usable, slot_w)
+	_draw_saturation_marker(usable)
 	_draw_x_labels(usable, slot_w, n)
 	_draw_axis_labels(w)
 	_draw_footer(w)
@@ -243,6 +266,24 @@ func _draw_header(w: float) -> void:
 		if absf(drift_pct) > GOLD_DRIFT_WARN_PCT:
 			col = COL_HEADER_WARN
 			head += "  ⚠ %+.0f%% vs target" % drift_pct
+	# Saturation overshoot — wallet ends above the coverage plateau, meaning
+	# late-level gold isn't buying damage. Tag in warm-yellow regardless of
+	# the gold-budget drift band so it's always visible when relevant.
+	if _saturation_gold > 0 and _final_gold > _saturation_gold:
+		head += "  · over-sat +%sg" % _fmt_n(float(_final_gold - _saturation_gold))
+		col = COL_HEADER_WARN
+	# Tuning Console summary: count of waves whose drift is "dangerous" or
+	# "likely unfair" against the authored target (drift > +10%). Surfaces
+	# the level-wide signal without requiring scan of the strip.
+	var over: int = 0
+	for row in _pressure_rows:
+		if float(row.get("target", 0.0)) <= 0.0:
+			continue
+		if float(row.get("drift", 0.0)) > 0.10:
+			over += 1
+	if over > 0:
+		head += "  · %d wave%s over target" % [over, "" if over == 1 else "s"]
+		col = COL_HEADER_WARN
 	draw_string(font, Vector2(PAD_X, HEADER_Y + HEADER_H - 2),
 		head, HORIZONTAL_ALIGNMENT_LEFT, w - PAD_X * 2.0, HEADER_FONT, col)
 
@@ -394,6 +435,82 @@ func _draw_boss_marker(center: Vector2) -> void:
 		var ang: float = TAU * float(i) / 6.0 - PI / 2.0
 		pts.append(center + Vector2(cos(ang), sin(ang)) * r)
 	draw_polyline(pts, COL_BOSS_MARK, 1.5, true)
+
+
+func _draw_pressure_strip(_usable: float, slot_w: float, n: int) -> void:
+	# Per-wave coverage-weighted pressure displayed as a row of cells. Top
+	# line is the actual pressure (white); bottom line is signed drift vs
+	# authored target colored by verdict band. Cell background tints by
+	# verdict at low alpha so the row reads at a glance. When the row is
+	# empty (legacy caller / no data) the strip is suppressed.
+	if _pressure_rows.is_empty() or n <= 0:
+		return
+	var font: Font = ThemeDB.fallback_font
+	var top_y: float = STRIP_TOP
+	var cell_h: float = STRIP_BOTTOM - STRIP_TOP
+	for i in range(min(n, _pressure_rows.size())):
+		var row: Dictionary = _pressure_rows[i]
+		var actual: float = float(row.get("actual", 0.0))
+		var target: float = float(row.get("target", 0.0))
+		var verdict: Dictionary = WaveDamageSimulator.drift_verdict(actual, target)
+		var v_color: Color = verdict["color"]
+		var has_target: bool = bool(verdict["has_target"])
+		# Cell background — verdict color at low alpha, slightly larger when
+		# the wave is over target so the warning reads even on small displays.
+		var cell_x: float = PAD_X + slot_w * float(i) + 2.0
+		var cell_w: float = slot_w - 4.0
+		var bg: Color = v_color
+		bg.a = 0.18 if has_target else 0.10
+		draw_rect(Rect2(cell_x, top_y, cell_w, cell_h), bg, true)
+		# Top line: actual pressure.
+		var actual_str: String = "%.2f" % actual
+		var asz: Vector2 = font.get_string_size(actual_str, HORIZONTAL_ALIGNMENT_LEFT, -1, STRIP_FONT)
+		draw_string(font,
+			Vector2(cell_x + (cell_w - asz.x) * 0.5, top_y + STRIP_FONT + 1.0),
+			actual_str, HORIZONTAL_ALIGNMENT_LEFT, -1, STRIP_FONT,
+			Color(0.95, 0.95, 0.95))
+		# Bottom line: drift% (or "(no target)") in verdict color.
+		var bot_str: String
+		if has_target:
+			var drift: float = float(row.get("drift", 0.0))
+			bot_str = "%+d%%" % int(round(drift * 100.0))
+		else:
+			bot_str = "—"
+		var bsz: Vector2 = font.get_string_size(bot_str, HORIZONTAL_ALIGNMENT_LEFT, -1, STRIP_FONT)
+		draw_string(font,
+			Vector2(cell_x + (cell_w - bsz.x) * 0.5, top_y + cell_h - 2.0),
+			bot_str, HORIZONTAL_ALIGNMENT_LEFT, -1, STRIP_FONT, v_color)
+
+
+func _draw_saturation_marker(usable: float) -> void:
+	# Coverage-driven plateau. Drawn over the gold polyline as a dashed
+	# horizontal line at y(saturation_gold). Where the green wallet curve
+	# crosses this line is the wave at which extra gold stops converting
+	# to damage on this map. Suppressed when saturation is 0 (unknown),
+	# negative, or near/above the chart's top edge.
+	if _saturation_gold <= 0 or _final_gold <= 0:
+		return
+	var max_axis: float = float(_final_gold) * 1.05
+	if float(_saturation_gold) >= max_axis * 0.99:
+		return
+	var plot_h: float = PLOT_BOTTOM - PLOT_TOP
+	var y: float = PLOT_BOTTOM - (float(_saturation_gold) / max_axis) * (plot_h - 2.0)
+	draw_dashed_line(
+		Vector2(PAD_X, y), Vector2(PAD_X + usable, y),
+		COL_SATURATION, 1.5, 6.0, true,
+	)
+	# Right-edge pill label "sat: 1,500g". Placed just above the line so it
+	# doesn't collide with the bottom-edge "Xg" label that already sits at
+	# the right edge.
+	var font: Font = ThemeDB.fallback_font
+	var label: String = "sat: %sg" % _fmt_n(float(_saturation_gold))
+	var sz: Vector2 = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, AXIS_LABEL_FONT)
+	var lx: float = PAD_X + usable - sz.x - 4.0
+	var ly: float = y - 4.0
+	if ly < PLOT_TOP + sz.y:
+		ly = y + sz.y + 2.0
+	draw_string(font, Vector2(lx, ly),
+		label, HORIZONTAL_ALIGNMENT_LEFT, -1, AXIS_LABEL_FONT, COL_SATURATION)
 
 
 func _draw_gold_line(_usable: float, slot_w: float) -> void:

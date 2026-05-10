@@ -25,6 +25,7 @@ var _levels: Array[Resource] = []
 @onready var balance_sliders_button: Button = %BalanceSlidersButton
 @onready var level_audit_button: Button = %LevelAuditButton
 @onready var supply_demand_button: Button = %SupplyDemandButton
+@onready var coverage_button: Button = %CoverageButton
 @onready var unlock_all_button: Button = %UnlockAllButton
 
 
@@ -46,6 +47,7 @@ func _ready() -> void:
 		balance_sliders_button.pressed.connect(_on_balance_sliders)
 		level_audit_button.pressed.connect(_on_level_audit)
 		supply_demand_button.pressed.connect(_on_supply_demand)
+		coverage_button.pressed.connect(_on_coverage)
 		unlock_all_button.pressed.connect(_on_unlock_all)
 	else:
 		test_range_button.visible = false
@@ -53,6 +55,7 @@ func _ready() -> void:
 		balance_sliders_button.visible = false
 		level_audit_button.visible = false
 		supply_demand_button.visible = false
+		coverage_button.visible = false
 		unlock_all_button.visible = false
 	_refresh_stars_label()
 	_refresh_meta_gold_label()
@@ -180,6 +183,13 @@ func _on_level_audit() -> void:
 func _on_supply_demand() -> void:
 	# Debug-only — Supply vs Demand model. See balance/BALANCE.md.
 	SceneManager.goto("res://balance/audit/SupplyDemandReport.tscn")
+
+
+func _on_coverage() -> void:
+	# Debug-only — Coverage Report (map-aware balance). Greedy-spend
+	# simulator + path heatmap + gold-usefulness curve. See the audit
+	# screen and balance/audit/CoverageAnalyzer.gd.
+	SceneManager.goto("res://balance/audit/CoverageReport.tscn")
 
 
 func _on_unlock_all() -> void:

@@ -38,6 +38,11 @@ signal wave_spawning_complete(wave_number)
 signal wave_completed(wave_number)
 signal early_wave_triggered(bonus_gold)
 signal wave_countdown_started(duration)
+# Overlap-only redesign: campaign mode parks before W1 launches so the
+# player can build initial towers. HUD listens to show "Start Wave 1" on
+# the Send Wave button; pressing it fires call_early_wave which kicks off
+# W1 immediately (no bonus, no overlap).
+signal pre_first_wave_ready
 signal all_waves_completed()
 signal clean_view_toggled(enabled)
 signal spawn_direction_changed(path_id, screen_edge_position)
@@ -91,6 +96,7 @@ signal leaderboard_score_submitted(score)
 # Camera
 signal map_tap_confirmed(screen_pos, claim)
 signal camera_focus_requested(world_pos, duration)
+signal camera_zoom_started()
 
 # Items / Loot (Phase 48)
 signal item_dropped(instance, world_pos)

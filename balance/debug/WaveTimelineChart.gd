@@ -2,8 +2,9 @@ extends Control
 class_name WaveTimelineChart
 
 # Per-wave visual planner card. Renders one wave as a stacked timeline:
-#   header text  →  pre-wave (countdown + early-call zone)  →  spawn window
+#   header text  →  fix-suggestion line  →  spawn window
 #   demand bars (per 5s bucket)  →  L1 supply line overlay
+#   in-spawn early-call band (right end, when next wave can be summoned)
 #   path lanes at the bottom (one row per path in the level)  →  composition footer
 #
 # Pure read; no .tres mutation. Created at runtime by BalanceSliders for the
@@ -20,18 +21,28 @@ const CARD_MIN_WIDTH: float = 560.0
 const PAD_X: float = 8.0
 const HEADER_Y: float = 4.0
 const HEADER_H: float = 14.0
-const CHART_TOP: float = 22.0
-const CHART_BOTTOM: float = 116.0          # taller bar + supply line area, +50% over v1
-const LANE_TOP: float = 118.0
+# Fix-suggestion lane between the header and the chart. Grows the card by
+# 14 px universally — when no fix is suggested this lane is blank, accepted
+# in exchange for visual consistency across waves with and without a fix.
+const FIX_LINE_Y: float = 18.0
+const FIX_LINE_H: float = 14.0
+const FIX_LINE_FONT: int = 11
+const CHART_TOP: float = 36.0
+const CHART_BOTTOM: float = 130.0
+const LANE_TOP: float = 132.0
 const LANE_HEIGHT: float = 9.0             # per-path lane
 const FOOTER_Y_FROM_BOTTOM: float = 4.0
 const FOOTER_FONT_SIZE: int = 11
 const HEADER_FONT_SIZE: int = 12
 const BUCKET_SEC: float = 5.0
+# Time-axis row sits between the lane area and the composition footer. Baseline
+# = (lane bottom) + LANE_AXIS_GAP. Labels mark each 5s bucket boundary; on long
+# spawn windows we step every-other label to avoid overlap.
+const LANE_AXIS_GAP: float = 12.0
+const AXIS_LABEL_FONT_SIZE: int = 9
 const WAVE_START_LINE_W: float = 1.0
 
 # ─── Colors ────────────────────────────────────────────────────────────────
-const COL_PREWAVE_BASE: Color = Color(0.16, 0.18, 0.22, 1.0)
 const COL_EARLYCALL_FULL: Color = Color(0.35, 0.85, 0.45, 0.55)  # in-cap zone
 const COL_EARLYCALL_FADE: Color = Color(0.35, 0.85, 0.45, 0.0)   # fades to transparent over the cap
 # Stacked-by-class bars: each bucket's EHP is segmented by enemy class so the
@@ -87,6 +98,16 @@ var _wave_index: int = 0
 var _l1_dmg_per_gold: float = 0.0
 var _gold_at_start: int = 0
 var _paths_in_level: Array = []   # ordered list of path_ids in the level
+# Coverage-weighted pressure (canonical Tuning Console). -1.0 sentinel on
+# _pressure_actual = "no data, fall back to legacy supply/demand ratio in
+# the header." 0.0 on _pressure_target = unauthored target; verdict drops
+# the drift and shows "(no target)" instead.
+var _pressure_actual: float = -1.0
+var _pressure_target: float = 0.0
+var _pressure_reason: String = ""
+# Concrete fix suggestion line shown below the header when verdict is bad.
+# "" suppresses the lane visually (still 14 px tall — see FIX_LINE_Y).
+var _pressure_fix: String = ""
 
 # Cache per-scene EHP + gold_worth + class-key so we don't re-instantiate
 # every redraw. Scoped to this chart instance — fine, six unique scenes max
@@ -123,10 +144,45 @@ var _level_final_gold: int = 0
 var _composition_summary: String = ""
 var _ratio_natural: float = 0.0
 
+# Early-call band state — overlap-only redesign. The band lives INSIDE the
+# spawn region's rightmost portion: start = spawn_end - early_call_window;
+# end = spawn_end. Drag the band's LEFT edge to adjust the window.
+# `_next_wave_gold_per_sec` drives the inline label and is mutable via
+# scroll-wheel / context menu. Set via set_data; zero for the last wave.
+var _next_wave_ec_window: float = 0.0
+var _next_wave_gold_per_sec: float = 1.0
+var _next_wave_authored_ec_window: float = 0.0
+var _next_wave_authored_gold_per_sec: float = 1.0
+var _has_next_wave: bool = false
+
+# Cached during _draw so _gui_input can convert click coords back to the
+# spawn-window or post-wave-gap x-axis without recomputing the split.
+var _draw_spawn_x0: float = 0.0
+var _draw_spawn_w: float = 0.0
+
+# Drag state for the post-wave gap region.
+enum GapDragMode { NONE, RIGHT_EDGE, EC_BOUNDARY }
+var _gap_drag_mode: int = GapDragMode.NONE
+var _gap_hover_zone: int = GapDragMode.NONE
+
+# Emitted when the user clicks anywhere inside the chart's spawn-window
+# region. BalanceSliders subscribes to this and shows the per-class
+# +/- popup over that bucket.
+signal bucket_clicked(wave_index: int, bucket_idx: int, t_start: float, t_end: float, screen_pos: Vector2)
+
+# Emitted when the user drags / wheels / right-clicks the post-wave gap
+# region. wave_index identifies THIS wave; the change targets THIS wave's
+# successor (wave_index + 1). BalanceSliders writes the corresponding
+# BalanceOverrides keys.
+signal next_ec_window_changed(this_wave_index: int, new_seconds: float)
+signal next_ec_gold_per_sec_changed(this_wave_index: int, new_rate: float)
+# reset_window / reset_rate flags. Mirrors the band's two adjustable values.
+signal next_reset_requested(this_wave_index: int, reset_window: bool, reset_rate: bool)
+
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(CARD_MIN_WIDTH, CARD_HEIGHT)
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_STOP
 
 
 # Drop the cached EnemyData snapshots so the next set_data re-instantiates
@@ -148,7 +204,16 @@ func clear_enemy_caches() -> void:
 # cards are stacked.
 func set_data(wave: WaveData, level_data: Resource, wave_index: int,
 		l1_dmg_per_gold: float, gold_at_start: int, paths_in_level: Array,
-		level_final_gold: int = 0) -> void:
+		level_final_gold: int = 0,
+		next_wave_ec_window: float = 0.0,
+		next_wave_authored_ec_window: float = 0.0,
+		next_wave_gold_per_sec: float = 1.0,
+		next_wave_authored_gold_per_sec: float = 1.0,
+		has_next_wave: bool = false,
+		pressure_actual: float = -1.0,
+		pressure_target: float = 0.0,
+		pressure_reason: String = "",
+		pressure_fix: String = "") -> void:
 	_wave = wave
 	_level_data = level_data
 	_wave_index = wave_index
@@ -156,15 +221,26 @@ func set_data(wave: WaveData, level_data: Resource, wave_index: int,
 	_gold_at_start = gold_at_start
 	_paths_in_level = paths_in_level
 	_level_final_gold = level_final_gold
+	_next_wave_ec_window = max(0.0, next_wave_ec_window)
+	_next_wave_authored_ec_window = max(0.0, next_wave_authored_ec_window)
+	_next_wave_gold_per_sec = max(0.0, next_wave_gold_per_sec)
+	_next_wave_authored_gold_per_sec = max(0.0, next_wave_authored_gold_per_sec)
+	_has_next_wave = has_next_wave
+	_pressure_actual = pressure_actual
+	_pressure_target = pressure_target
+	_pressure_reason = pressure_reason
+	_pressure_fix = pressure_fix
 	_recompute()
 	_resize_for_paths()
 	queue_redraw()
 
 
 # Adjust card height so each path gets a lane (multi-path levels are taller).
+# Vertical budget below the last lane: LANE_AXIS_GAP gap + 12px axis labels +
+# 16px footer slot (footer text + 4px bottom margin) = 32px.
 func _resize_for_paths() -> void:
 	var lanes: int = max(1, _paths_in_level.size())
-	var h: float = LANE_TOP + LANE_HEIGHT * lanes + 18.0  # +footer + padding
+	var h: float = LANE_TOP + LANE_HEIGHT * lanes + 32.0
 	custom_minimum_size = Vector2(CARD_MIN_WIDTH, h)
 
 
@@ -413,12 +489,11 @@ func _draw() -> void:
 	if _wave == null:
 		return
 	var w: float = size.x
-	var countdown: float = float(_wave.countdown) if "countdown" in _wave else 0.0
 	var early_window: float = 10.0
 	if _level_data != null and "early_call_window_sec" in _level_data:
 		early_window = float(_level_data.early_call_window_sec)
-	# Resolve effective window via the same 4-step chain WaveManager uses,
-	# so chart visuals match what the player will actually get during play.
+	# Resolve effective window via the same chain WaveManager uses, so chart
+	# visuals match what the player will actually get during play.
 	if _level_data != null and "level_id" in _level_data and String(_level_data.level_id) != "":
 		var lvl_id: String = String(_level_data.level_id)
 		var BO_lvl: GDScript = load("res://balance/debug/BalanceOverrides.gd")
@@ -435,71 +510,85 @@ func _draw() -> void:
 			var w_ec_ov: float = BO_lvl.get_wave_early_call_window(lvl_id, _wave_index)
 			if w_ec_ov >= 0.0:
 				early_window = w_ec_ov
-			# Per-wave countdown override — pre-wave region width tracks the
-			# overridden countdown, so the green early-call zone scales with it.
-			var cd_ov: int = BO_lvl.get_wave_countdown(lvl_id, _wave_index)
-			if cd_ov >= 0:
-				countdown = float(cd_ov)
-	# Map total visible time = countdown + spawn_window into [PAD_X, w - PAD_X].
-	var total_t: float = countdown + _spawn_window_sec
-	if total_t <= 0.0:
+	# Overlap-only redesign: no preceding-gap and no post-spawn-gap regions.
+	# The chart's x-axis is purely the spawn window. The early-call BAND lives
+	# inside the spawn region's right end (start = spawn_end - ec_window).
+	if _spawn_window_sec <= 0.0:
 		return
 	var usable: float = w - PAD_X * 2.0
-	var prewave_w: float = (countdown / total_t) * usable
-	var spawn_x0: float = PAD_X + prewave_w
-	var spawn_w: float = usable - prewave_w
+	var spawn_x0: float = PAD_X
+	var spawn_w: float = usable
+	_draw_spawn_x0 = spawn_x0
+	_draw_spawn_w = spawn_w
 
-	_draw_header(w, countdown, early_window)
-	_draw_prewave(prewave_w, countdown, early_window)
+	_draw_header(w, early_window)
+	_draw_fix_line(w)
 	_draw_bucket_backgrounds(spawn_x0, spawn_w)
 	_draw_demand_bars(spawn_x0, spawn_w)
 	_draw_supply_line(spawn_x0, spawn_w)
 	_draw_gold_curve(spawn_x0, spawn_w)
 	_draw_wave_start_line(spawn_x0)
 	_draw_path_lanes(spawn_x0, spawn_w)
+	_draw_time_axis(spawn_x0, spawn_w)
+	if _has_next_wave and _next_wave_ec_window > 0.0:
+		_draw_inspawn_band(spawn_x0, spawn_w)
 	_draw_footer(w)
 
 
-func _draw_header(w: float, countdown: float, early_window: float) -> void:
+# Inverse-pressure fix suggestion drawn below the header in a reserved
+# 14 px lane. Empty string → blank lane (kept reserved so cards stay aligned).
+# Color matches the verdict band so the eye links the suggestion to the
+# header's drift number above.
+func _draw_fix_line(w: float) -> void:
+	if _pressure_fix == "":
+		return
 	var font: Font = ThemeDB.fallback_font
-	var ratio_str: String = "—" if _ratio_natural <= 0.0 else "%.2f" % _ratio_natural
-	var flag: String = ""
 	var col: Color = COL_HEADER_OK
-	if _ratio_natural > 0.0 and _ratio_natural < 1.0:
-		flag = "  ⚠ supply<demand"
-		col = COL_HEADER_WARN
-	var head: String = "W%d — %.0fs countdown · %.0fs spawn window · req %.0f dmg · ratio %s%s" % [
-		_wave_index + 1, countdown, _spawn_window_sec, _required_damage, ratio_str, flag,
+	if _pressure_actual >= 0.0 and _pressure_target > 0.0:
+		col = WaveDamageSimulator.drift_verdict(_pressure_actual, _pressure_target)["color"]
+	# Slightly dimmer than the header — this is a how-to-fix annotation, not
+	# a verdict.
+	col = col.lerp(Color(0.85, 0.85, 0.85), 0.35)
+	draw_string(font, Vector2(PAD_X + 8.0, FIX_LINE_Y + FIX_LINE_H - 2),
+		_pressure_fix, HORIZONTAL_ALIGNMENT_LEFT, w - PAD_X * 2.0,
+		FIX_LINE_FONT, col)
+
+
+func _draw_header(w: float, early_window: float) -> void:
+	var font: Font = ThemeDB.fallback_font
+	var col: Color = COL_HEADER_OK
+	# Pressure block — canonical Tuning Console verdict when the parent
+	# screen supplied coverage-weighted numbers via set_data; otherwise
+	# fall back to the legacy supply/demand ratio so isolated callers
+	# (or any unconverted code) still see something.
+	var pressure_block: String
+	if _pressure_actual >= 0.0:
+		var verdict: Dictionary = WaveDamageSimulator.drift_verdict(_pressure_actual, _pressure_target)
+		col = verdict["color"]
+		if bool(verdict["has_target"]):
+			var drift: float = (_pressure_actual - _pressure_target) / _pressure_target
+			pressure_block = "pressure %.2f / target %.2f · %+d%% %s" % [
+				_pressure_actual, _pressure_target,
+				int(round(drift * 100.0)), String(verdict["label"]),
+			]
+		else:
+			pressure_block = "pressure %.2f · (no target)" % _pressure_actual
+		if _pressure_reason != "":
+			pressure_block += " · " + _pressure_reason
+	else:
+		var ratio_str: String = "—" if _ratio_natural <= 0.0 else "%.2f" % _ratio_natural
+		var flag: String = ""
+		if _ratio_natural > 0.0 and _ratio_natural < 1.0:
+			flag = "  ⚠ supply<demand"
+			col = COL_HEADER_WARN
+		pressure_block = "ratio %s%s" % [ratio_str, flag]
+	var head: String = "W%d — %.0fs spawn window · req %.0f dmg · %s" % [
+		_wave_index + 1, _spawn_window_sec, _required_damage, pressure_block,
 	]
-	if countdown > 0.0:
+	if early_window > 0.0:
 		head += "   (%.0fs early-call · max bonus %.0fg)" % [early_window, early_window]
 	draw_string(font, Vector2(PAD_X, HEADER_Y + HEADER_H - 2),
 		head, HORIZONTAL_ALIGNMENT_LEFT, w - PAD_X * 2.0, HEADER_FONT_SIZE, col)
-
-
-func _draw_prewave(prewave_w: float, countdown: float, early_window: float) -> void:
-	if prewave_w <= 0.0:
-		return
-	# Base dark grey across the full pre-wave region.
-	draw_rect(Rect2(PAD_X, CHART_TOP, prewave_w, CHART_BOTTOM - CHART_TOP), COL_PREWAVE_BASE, true)
-	# Early-call green tint inside the last `early_window` seconds (where bonus
-	# = sec_remaining, capped at early_window). Solid alpha at the cap edge,
-	# fading to transparent at t=0 — visualizes the diminishing bonus.
-	if countdown <= 0.0 or early_window <= 0.0:
-		return
-	var cap_visible: float = min(early_window, countdown)
-	if cap_visible <= 0.0:
-		return
-	var ec_w: float = (cap_visible / countdown) * prewave_w
-	var ec_x0: float = PAD_X + (prewave_w - ec_w)
-	# Two-step gradient via stacked alphas — Godot's draw_rect doesn't gradient.
-	var steps: int = 8
-	for i in range(steps):
-		var f: float = float(i) / float(steps - 1)  # 0 = cap edge, 1 = wave start
-		var seg_x: float = ec_x0 + ec_w * (float(i) / float(steps))
-		var seg_w: float = ec_w / float(steps) + 0.5
-		var c: Color = COL_EARLYCALL_FULL.lerp(COL_EARLYCALL_FADE, f)
-		draw_rect(Rect2(seg_x, CHART_TOP, seg_w, CHART_BOTTOM - CHART_TOP), c, true)
 
 
 func _draw_bucket_backgrounds(spawn_x0: float, spawn_w: float) -> void:
@@ -596,9 +685,8 @@ func _draw_wave_start_line(spawn_x0: float) -> void:
 # absolute terms (because the deltas ARE small); endpoint dot anchors the
 # eye when the slope barely visually moves.
 #
-# Includes a flat carry-over segment across the pre-wave region (countdown)
-# at gold_at_wave_start, so the player's wallet entering the wave is plotted
-# even before any enemies spawn.
+# Anchors the curve at gold_at_wave_start at the spawn window's left edge so
+# the player's wallet entering the wave is plotted before any enemies spawn.
 func _draw_gold_curve(spawn_x0: float, spawn_w: float) -> void:
 	if _level_final_gold <= 0:
 		return
@@ -658,6 +746,240 @@ func _draw_path_lanes(spawn_x0: float, spawn_w: float) -> void:
 		draw_circle(Vector2(cx, lane_y2), 2.5, col)
 		if HEAVY_KEYS.has(key):
 			draw_arc(Vector2(cx, lane_y2), 4.0, 0.0, TAU, 12, Color(1.0, 0.6, 0.2, 0.9), 1.0, true)
+
+
+# Time-axis label row beneath the path lanes. One label per 5s bucket
+# boundary ("0s · 5s · 10s · …"). When the spawn window has more than 9
+# buckets (>45s) we step every-other label so adjacent labels don't overlap.
+func _draw_time_axis(spawn_x0: float, spawn_w: float) -> void:
+	if _bucket_count <= 0 or _spawn_window_sec <= 0.0:
+		return
+	var lanes: int = max(1, _paths_in_level.size())
+	var lane_bottom: float = LANE_TOP + LANE_HEIGHT * float(lanes)
+	var baseline_y: float = lane_bottom + LANE_AXIS_GAP
+	var font: Font = ThemeDB.fallback_font
+	var step: int = 1 if _bucket_count <= 9 else 2
+	var bw: float = spawn_w / float(_bucket_count)
+	for i in range(_bucket_count + 1):
+		if i % step != 0 and i != _bucket_count:
+			continue
+		var t_sec: int = int(round(float(i) * BUCKET_SEC))
+		var label: String = "%ds" % t_sec
+		var x: float = spawn_x0 + bw * float(i)
+		# Center each label horizontally on its bucket boundary by shifting left
+		# by half its rendered width.
+		var label_w: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT,
+			-1.0, AXIS_LABEL_FONT_SIZE).x
+		draw_string(font, Vector2(x - label_w * 0.5, baseline_y),
+			label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, AXIS_LABEL_FONT_SIZE, COL_FOOTER)
+
+
+# In-spawn early-call band. Lives INSIDE the spawn region's right end:
+# starts at `spawn_end - ec_window`, ends at `spawn_end`. Solid green at the
+# LEFT edge (max overlap = max bonus when player presses right after band
+# opens) → transparent at the RIGHT edge (no overlap, no bonus). Drag the
+# LEFT edge to grow / shrink the early-call window.
+const COL_BAND_HOVER_HANDLE: Color = Color(1.0, 0.95, 0.5, 0.9)
+const COL_BAND_HANDLE_IDLE: Color = Color(0.55, 0.60, 0.68, 0.55)
+
+
+func _draw_inspawn_band(spawn_x0: float, spawn_w: float) -> void:
+	if not _has_next_wave or _next_wave_ec_window <= 0.0 or spawn_w <= 0.0:
+		return
+	if _spawn_window_sec <= 0.0:
+		return
+	var top: float = CHART_TOP
+	var bot: float = CHART_BOTTOM
+	# Window can't exceed the spawn window — clamp the visual.
+	var window: float = min(_next_wave_ec_window, _spawn_window_sec)
+	var band_w: float = (window / _spawn_window_sec) * spawn_w
+	var band_x0: float = spawn_x0 + spawn_w - band_w
+	# Green fade: solid at LEFT edge (max bonus / max overlap) → transparent
+	# at RIGHT edge (no bonus / no overlap). 8-slice gradient.
+	var steps: int = 8
+	for i in range(steps):
+		var f: float = float(i) / float(steps - 1)  # 0 = full, 1 = fade
+		var seg_x: float = band_x0 + band_w * (float(i) / float(steps))
+		var seg_w: float = band_w / float(steps) + 0.5
+		var c: Color = COL_EARLYCALL_FULL.lerp(COL_EARLYCALL_FADE, f)
+		draw_rect(Rect2(seg_x, top, seg_w, bot - top), c, true)
+	# Left-edge drag handle marker (right edge is fixed at spawn end).
+	var left_active: bool = _gap_hover_zone == GapDragMode.EC_BOUNDARY or _gap_drag_mode == GapDragMode.EC_BOUNDARY
+	var left_color: Color = COL_BAND_HOVER_HANDLE if left_active else COL_BAND_HANDLE_IDLE
+	var left_lw: float = 3.0 if left_active else 1.0
+	draw_line(Vector2(band_x0, top), Vector2(band_x0, bot), left_color, left_lw, false)
+	# Inline label beneath the band.
+	var font: Font = ThemeDB.fallback_font
+	var label: String = "early-call: %.0fs · %.1fg/s  (next wave)" % [
+		_next_wave_ec_window, _next_wave_gold_per_sec
+	]
+	var lbl_w: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT,
+		-1.0, 10).x
+	# Right-align the label with the spawn end so it stays anchored to the
+	# band's visual context as the band grows / shrinks.
+	var lbl_x: float = spawn_x0 + spawn_w - lbl_w
+	draw_string(font, Vector2(lbl_x, bot + 12), label,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 10, COL_FOOTER)
+
+
+# Returns the band zone under a screen position. Only LEFT edge is draggable;
+# right edge is fixed at the spawn end.
+func _gap_zone_at(pos: Vector2) -> int:
+	if not _has_next_wave or _next_wave_ec_window <= 0.0:
+		return GapDragMode.NONE
+	if pos.y < CHART_TOP - 4 or pos.y > CHART_BOTTOM + 4:
+		return GapDragMode.NONE
+	if _spawn_window_sec <= 0.0 or _draw_spawn_w <= 0.0:
+		return GapDragMode.NONE
+	var window: float = min(_next_wave_ec_window, _spawn_window_sec)
+	var band_w: float = (window / _spawn_window_sec) * _draw_spawn_w
+	var band_x0: float = _draw_spawn_x0 + _draw_spawn_w - band_w
+	if abs(pos.x - band_x0) <= 8.0:
+		return GapDragMode.EC_BOUNDARY  # left edge of band = window length
+	return GapDragMode.NONE
+
+
+# True if a position is inside the band's body — used to gate scroll wheel
+# and right-click handlers.
+func _is_inside_band(pos: Vector2) -> bool:
+	if not _has_next_wave or _next_wave_ec_window <= 0.0:
+		return false
+	if pos.y < CHART_TOP or pos.y > CHART_BOTTOM:
+		return false
+	if _spawn_window_sec <= 0.0:
+		return false
+	var window: float = min(_next_wave_ec_window, _spawn_window_sec)
+	var band_w: float = (window / _spawn_window_sec) * _draw_spawn_w
+	var band_x0: float = _draw_spawn_x0 + _draw_spawn_w - band_w
+	return pos.x >= band_x0 and pos.x <= _draw_spawn_x0 + _draw_spawn_w
+
+
+# Map an x-pixel inside the spawn window region to a bucket index. Returns
+# -1 if x is outside the window (in pre-wave / margin / past end).
+func _bucket_at_x(x: float) -> int:
+	if _draw_spawn_w <= 0.0 or _bucket_count <= 0:
+		return -1
+	if x < _draw_spawn_x0 or x > _draw_spawn_x0 + _draw_spawn_w:
+		return -1
+	var bw: float = _draw_spawn_w / float(_bucket_count)
+	var idx: int = int(floor((x - _draw_spawn_x0) / bw))
+	return clampi(idx, 0, _bucket_count - 1)
+
+
+func _gui_input(event: InputEvent) -> void:
+	# Mouse motion: handle drag continuation OR hover update for cursor +
+	# handle highlight on the post-wave gap region.
+	if event is InputEventMouseMotion:
+		if _gap_drag_mode != GapDragMode.NONE:
+			_continue_gap_drag(event.position.x, event.ctrl_pressed)
+			accept_event()
+			return
+		var z: int = _gap_zone_at(event.position)
+		if z != _gap_hover_zone:
+			_gap_hover_zone = z
+			match z:
+				GapDragMode.RIGHT_EDGE, GapDragMode.EC_BOUNDARY:
+					mouse_default_cursor_shape = Control.CURSOR_HSIZE
+				_:
+					mouse_default_cursor_shape = Control.CURSOR_ARROW
+			queue_redraw()
+		return
+	if not (event is InputEventMouseButton):
+		return
+	# Mouse wheel — when cursor is on the early-call band: plain = ±1s on
+	# window, shift = ±0.1 on gold_per_sec.
+	if event.pressed and (event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+		if _is_inside_band(event.position):
+			var dir: int = 1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1
+			if event.shift_pressed:
+				next_ec_gold_per_sec_changed.emit(_wave_index,
+					max(0.0, _next_wave_gold_per_sec + 0.1 * float(dir)))
+			else:
+				next_ec_window_changed.emit(_wave_index,
+					max(0.0, _next_wave_ec_window + float(dir)))
+			accept_event()
+			return
+	# Right-click on band → context menu.
+	if event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+		if _gap_zone_at(event.position) != GapDragMode.NONE \
+				or _is_inside_band(event.position):
+			_show_gap_context_menu()
+			accept_event()
+			return
+	# Left-click on gap edge → start drag. Otherwise fall through to bucket
+	# click (existing behavior).
+	if event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			var gz: int = _gap_zone_at(event.position)
+			if gz != GapDragMode.NONE:
+				_gap_drag_mode = gz
+				accept_event()
+				return
+		else:
+			if _gap_drag_mode != GapDragMode.NONE:
+				_gap_drag_mode = GapDragMode.NONE
+				queue_redraw()
+				accept_event()
+				return
+	if event.button_index != MOUSE_BUTTON_LEFT or not event.pressed:
+		return
+	var b: int = _bucket_at_x(event.position.x)
+	if b < 0:
+		return
+	# Hit-test must also be inside the chart band (vertically) — clicks above
+	# the bars or on the lane row / footer should NOT spawn the popup.
+	if event.position.y < CHART_TOP or event.position.y > CHART_BOTTOM:
+		return
+	var t_start: float = float(b) * BUCKET_SEC
+	var t_end: float = float(b + 1) * BUCKET_SEC
+	var screen_pos: Vector2 = get_global_mouse_position()
+	bucket_clicked.emit(_wave_index, b, t_start, t_end, screen_pos)
+	accept_event()
+
+
+func _continue_gap_drag(x: float, ctrl_held: bool) -> void:
+	# Only the band's LEFT edge is draggable (= ec_window length). Right
+	# edge is fixed at the spawn end. Cursor x → time-from-spawn-start →
+	# ec_window = spawn_window - that_time.
+	if _spawn_window_sec <= 0.0 or _draw_spawn_w <= 0.0:
+		return
+	if _gap_drag_mode != GapDragMode.EC_BOUNDARY:
+		return
+	var snap: float = 0.1 if ctrl_held else 1.0
+	# Cursor's time on the spawn axis [0, spawn_window].
+	var t_at_cursor: float = clampf((x - _draw_spawn_x0) / _draw_spawn_w * _spawn_window_sec,
+		0.0, _spawn_window_sec)
+	var new_window: float = clampf(_spawn_window_sec - t_at_cursor, 0.0, _spawn_window_sec)
+	new_window = round(new_window / snap) * snap
+	next_ec_window_changed.emit(_wave_index, new_window)
+
+
+func _show_gap_context_menu() -> void:
+	var menu := PopupMenu.new()
+	var has_ec_override: bool = abs(_next_wave_ec_window - _next_wave_authored_ec_window) > 0.001
+	var has_rate_override: bool = abs(_next_wave_gold_per_sec - _next_wave_authored_gold_per_sec) > 0.001
+	menu.add_item("Reset early-call window", 0)
+	menu.set_item_disabled(0, not has_ec_override)
+	menu.add_item("Reset gold per second", 1)
+	menu.set_item_disabled(1, not has_rate_override)
+	menu.add_separator()
+	menu.add_item("Reset both", 2)
+	menu.set_item_disabled(3, not (has_ec_override or has_rate_override))
+	var wave_idx: int = _wave_index
+	menu.id_pressed.connect(func(id: int):
+		match id:
+			0: next_reset_requested.emit(wave_idx, true, false)
+			1: next_reset_requested.emit(wave_idx, false, true)
+			2: next_reset_requested.emit(wave_idx, true, true)
+		menu.queue_free())
+	menu.close_requested.connect(func(): menu.queue_free())
+	add_child(menu)
+	var screen_pos: Vector2 = get_global_mouse_position()
+	var win: Window = get_window()
+	var origin: Vector2i = Vector2i(screen_pos)
+	if win != null:
+		origin += win.position
+	menu.popup(Rect2i(origin, Vector2i(0, 0)))
 
 
 func _draw_footer(w: float) -> void:

@@ -176,11 +176,11 @@ static func any_active() -> bool:
 		return true
 	if any_wave_active():
 		return true
-	if any_wave_countdown_active():
-		return true
 	if any_wave_timing_active():
 		return true
 	if any_wave_early_call_active():
+		return true
+	if any_wave_gold_per_sec_active():
 		return true
 	var level_dict: Dictionary = _cached.get("level_overrides", {})
 	for lid in level_dict.keys():
@@ -345,6 +345,16 @@ static func reset_level_overrides() -> void:
 	_save()
 
 
+# Snapshot of the active level overrides dict — read-only inspector for
+# Bake's "you have unsaved level overrides" warning. Returns {} when nothing
+# is active. The returned dict is the live dict; callers must not mutate.
+static func get_active_level_overrides() -> Dictionary:
+	if not is_active():
+		return {}
+	_ensure_loaded()
+	return _cached.get("level_overrides", {}) as Dictionary
+
+
 # ============================================================================
 # Per-enemy overrides — keyed by enemy_id. Stat keys mirror EnemyData fields:
 #   hp_mult / speed_mult / damage_mult / gold_mult   → multiplicative
@@ -495,66 +505,6 @@ static func reset_wave_overrides() -> void:
 
 
 # ============================================================================
-# Per-wave countdown overrides — keyed by (level_id → wave_idx → seconds).
-# Stored as ABSOLUTE seconds (not multiplier), with sentinel -1 meaning "use
-# authored". Multipliers are awkward for waves with countdown=0 (×N = still 0)
-# and countdown is a human-friendly absolute time value.
-#
-# Read sites:
-#   WaveManager — when reading wave.countdown for next-wave countdown timing
-#   WaveTimelineChart._draw_header / _draw_prewave — chart pre-wave width
-# ============================================================================
-
-
-static func _ensure_wave_countdown_dict() -> Dictionary:
-	_ensure_loaded()
-	if not _cached.has("wave_countdown_overrides"):
-		_cached["wave_countdown_overrides"] = {}
-	return _cached["wave_countdown_overrides"]
-
-
-# Returns -1 sentinel (use authored) when no override is active.
-static func get_wave_countdown(level_id: String, wave_idx: int) -> int:
-	if not is_active() or level_id == "":
-		return -1
-	_ensure_loaded()
-	var l: Dictionary = _cached.get("wave_countdown_overrides", {})
-	var per_level: Dictionary = l.get(level_id, {})
-	return int(per_level.get(str(wave_idx), -1))
-
-
-static func set_wave_countdown(level_id: String, wave_idx: int, seconds: int) -> void:
-	if not is_active() or level_id == "":
-		return
-	var l: Dictionary = _ensure_wave_countdown_dict()
-	if not l.has(level_id):
-		l[level_id] = {}
-	l[level_id][str(wave_idx)] = seconds
-	_save()
-
-
-static func any_wave_countdown_active() -> bool:
-	if not is_active():
-		return false
-	_ensure_loaded()
-	var l: Dictionary = _cached.get("wave_countdown_overrides", {})
-	for lid in l.keys():
-		var per_level: Dictionary = l[lid]
-		for wk in per_level.keys():
-			if int(per_level[wk]) >= 0:
-				return true
-	return false
-
-
-static func reset_wave_countdown_overrides() -> void:
-	if not is_active():
-		return
-	_ensure_loaded()
-	_cached["wave_countdown_overrides"] = {}
-	_save()
-
-
-# ============================================================================
 # Per-emitter timing overrides — interval (seconds between spawns) and
 # start_delay (seconds after wave-start before this emitter begins). Both
 # stored as ABSOLUTE seconds, sentinel -1 = "use authored".
@@ -654,6 +604,29 @@ static func reset_wave_timing_overrides() -> void:
 	_save()
 
 
+# Clear count + interval + delay overrides for ALL emitters in a single wave.
+# Called from BalanceSliders when an emitter is added/removed — the spawn_idx
+# keys would otherwise refer to stale array positions after the structural edit.
+static func clear_wave_emitter_overrides(level_id: String, wave_idx: int) -> void:
+	if not is_active() or level_id == "":
+		return
+	_ensure_loaded()
+	var wkey: String = str(wave_idx)
+	var changed: bool = false
+	for sub_key in ["wave_overrides", "wave_interval_overrides", "wave_delay_overrides"]:
+		var dict: Dictionary = _cached.get(sub_key, {})
+		if not dict.has(level_id):
+			continue
+		var lvl: Dictionary = dict[level_id]
+		if lvl.has(wkey):
+			lvl.erase(wkey)
+			changed = true
+		if lvl.is_empty():
+			dict.erase(level_id)
+	if changed:
+		_save()
+
+
 # ============================================================================
 # Per-wave early-call window override — keyed by (level_id → wave_idx).
 # Stored as ABSOLUTE seconds, sentinel -1 = use authored. Resolution chain
@@ -711,4 +684,99 @@ static func reset_wave_early_call_overrides() -> void:
 		return
 	_ensure_loaded()
 	_cached["wave_early_call_overrides"] = {}
+	_save()
+
+
+# Clear ONE wave's early-call window override (right-click "Reset" on
+# GapCard). Different from reset_wave_early_call_overrides which wipes all.
+static func reset_wave_early_call_window(level_id: String, wave_idx: int) -> void:
+	if not is_active() or level_id == "":
+		return
+	_ensure_loaded()
+	var d: Dictionary = _cached.get("wave_early_call_overrides", {})
+	if not d.has(level_id):
+		return
+	var lvl: Dictionary = d[level_id]
+	var wk: String = str(wave_idx)
+	if not lvl.has(wk):
+		return
+	lvl.erase(wk)
+	if lvl.is_empty():
+		d.erase(level_id)
+	_save()
+
+
+# ============================================================================
+# Per-wave early-call gold-per-second override — bonus rate when player
+# presses Send Wave during the early-call window. Sentinel -1 = inherit
+# (per-wave authored / per-level authored / 1.0 default).
+#
+# Read sites:
+#   WaveManager._effective_gold_per_sec — bonus formula
+#   WaveTimelineChart._draw — in-spawn band label
+# ============================================================================
+
+
+static func _ensure_wave_gold_per_sec_dict() -> Dictionary:
+	_ensure_loaded()
+	if not _cached.has("wave_gold_per_sec_overrides"):
+		_cached["wave_gold_per_sec_overrides"] = {}
+	return _cached["wave_gold_per_sec_overrides"]
+
+
+# Returns -1.0 sentinel (inherit) when no override is active.
+static func get_wave_gold_per_sec(level_id: String, wave_idx: int) -> float:
+	if not is_active() or level_id == "":
+		return -1.0
+	_ensure_loaded()
+	var l: Dictionary = _cached.get("wave_gold_per_sec_overrides", {})
+	var per_level: Dictionary = l.get(level_id, {})
+	return float(per_level.get(str(wave_idx), -1.0))
+
+
+static func set_wave_gold_per_sec(level_id: String, wave_idx: int, rate: float) -> void:
+	if not is_active() or level_id == "":
+		return
+	var l: Dictionary = _ensure_wave_gold_per_sec_dict()
+	if not l.has(level_id):
+		l[level_id] = {}
+	l[level_id][str(wave_idx)] = rate
+	_save()
+
+
+static func any_wave_gold_per_sec_active() -> bool:
+	if not is_active():
+		return false
+	_ensure_loaded()
+	var l: Dictionary = _cached.get("wave_gold_per_sec_overrides", {})
+	for lid in l.keys():
+		var per_level: Dictionary = l[lid]
+		for wk in per_level.keys():
+			if float(per_level[wk]) >= 0.0:
+				return true
+	return false
+
+
+static func reset_wave_gold_per_sec_overrides() -> void:
+	if not is_active():
+		return
+	_ensure_loaded()
+	_cached["wave_gold_per_sec_overrides"] = {}
+	_save()
+
+
+static func reset_wave_gold_per_sec(level_id: String, wave_idx: int) -> void:
+	if not is_active() or level_id == "":
+		return
+	_ensure_loaded()
+	var d: Dictionary = _cached.get("wave_gold_per_sec_overrides", {})
+	if not d.has(level_id):
+		return
+	var lvl: Dictionary = d[level_id]
+	var wk: String = str(wave_idx)
+	if not lvl.has(wk):
+		return
+	lvl.erase(wk)
+	if lvl.is_empty():
+		d.erase(level_id)
 	_save()

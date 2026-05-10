@@ -1,7 +1,7 @@
-[gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://b1td1armor001"]
+[gd_resource type="Resource" script_class="EnemyData" format=3]
 
-[ext_resource type="Script" uid="uid://bfgo62wek7fpf" path="res://enemies/EnemyData.gd" id="1_data"]
-[ext_resource type="Resource" uid="uid://b1td1armorvis" path="res://enemies/data/visual_armored.tres" id="2_vis"]
+[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://enemies/data/visual_armored.tres" id="2_vis"]
 
 [resource]
 script = ExtResource("1_data")
@@ -12,6 +12,6 @@ move_speed = 80.0
 armor = 0.45
 gold_worth = 6
 xp_worth = 12
-attack_damage = 4.0
+attack_damage = 3.5
 visual = ExtResource("2_vis")
 encyclopedia_entry = "Heavily plated. Physical towers struggle; magic chews through them."

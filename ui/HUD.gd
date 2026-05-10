@@ -12,19 +12,12 @@ extends CanvasLayer
 
 @onready var pause_button: Button = %PauseButton
 @onready var speed_button: Button = %SpeedButton
-@onready var countdown_label: Label = %CountdownLabel
-@onready var send_wave_button: Button = %SendWaveButton
 
 # Rolling 5-second window of incoming enemy HP. Each entry: [spawn_time_ms,
 # max_health]. Old entries pruned in _process. Sum displayed on the threat
 # chip with a tint that escalates by band.
 const SPAWN_RATE_WINDOW_SEC: float = 5.0
 var _spawn_rate_events: Array = []
-
-# 2026-04-29 — Send Wave button blinks while a wave countdown is active so
-# the player notices the "click me to start" affordance. Tween pulses the
-# button's modulate alpha; killed when the wave launches or is sent early.
-var _send_wave_blink: Tween = null
 
 # Fast-forward: cycles through 1x → 2x → 3x → 1x. Kingdom Rush uses 1x/2x;
 # 3x is a power-user option for long endless runs. Engine.time_scale affects
@@ -54,13 +47,6 @@ func _ready() -> void:
 	EventBus.wave_started.connect(_on_wave_started)
 	EventBus.all_waves_completed.connect(_on_all_waves_completed)
 	EventBus.purchase_denied.connect(_on_purchase_denied)
-	# Early wave call.
-	send_wave_button.pressed.connect(_on_send_wave_pressed)
-	countdown_label.visible = false
-	send_wave_button.visible = false
-	EventBus.wave_countdown_started.connect(_on_countdown_started)
-	EventBus.wave_started.connect(_on_wave_launched)
-	EventBus.early_wave_triggered.connect(_on_early_wave)
 	# Rolling 5s incoming-HP window updated on each spawn; pruned every frame
 	# in _process. Cleared on wave_started so each wave's window is fresh.
 	EventBus.enemy_spawned.connect(_on_enemy_spawned_for_rate)
@@ -150,45 +136,6 @@ func _show_wave_banner(wave_number: int) -> void:
 	_banner_tween.tween_property(wave_banner, "modulate", Color(1, 1, 1, 0), 0.6)
 
 
-# --- Early wave call ---
-
-func _on_countdown_started(duration: float) -> void:
-	# duration <= 0 = button-only mode (typically W1). No timer ticks; the
-	# wave waits for the player to press the Send-Wave button.
-	if duration <= 0.0:
-		countdown_label.text = "Ready when you are"
-	else:
-		countdown_label.text = "Next wave: %.1fs" % duration
-	countdown_label.visible = true
-	# KR-canonical: button visible the entire countdown. Bonus magnitude is
-	# capped by early_call_window_sec (in WaveManager.call_early_wave) so
-	# unlimited gold isn't possible. See CORE RULE 19.
-	send_wave_button.visible = true
-	_start_send_wave_blink()
-
-
-func _start_send_wave_blink() -> void:
-	# Stop any prior tween before starting a fresh one — otherwise back-to-back
-	# countdowns layer tweens onto the same property and modulate fights itself.
-	_stop_send_wave_blink()
-	send_wave_button.modulate = Color(1.0, 1.0, 0.6, 1.0)  # warm yellow at full brightness
-	_send_wave_blink = create_tween()
-	_send_wave_blink.set_loops()                      # infinite until killed
-	_send_wave_blink.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)  # keep blinking through tactical pause
-	_send_wave_blink.tween_property(send_wave_button, "modulate",
-		Color(1.0, 1.0, 0.6, 0.45), 0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_send_wave_blink.tween_property(send_wave_button, "modulate",
-		Color(1.0, 1.0, 0.6, 1.0), 0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-
-
-func _stop_send_wave_blink() -> void:
-	if _send_wave_blink != null and _send_wave_blink.is_valid():
-		_send_wave_blink.kill()
-	_send_wave_blink = null
-	# Restore default modulate so a hidden button isn't half-faded next time.
-	send_wave_button.modulate = Color.WHITE
-
-
 func _on_enemy_spawned_for_rate(enemy: Node, _path_id: String) -> void:
 	# Push (now_ms, max_health) into the rolling window. Old entries are
 	# pruned in _process so the displayed sum reflects the last 5s of spawns.
@@ -225,49 +172,3 @@ func _refresh_threat() -> void:
 
 func _process(_delta: float) -> void:
 	_refresh_threat()
-	# Countdown label tick — only when WaveManager is in its inter-wave
-	# countdown phase. Button-only mode (W1) keeps the "Ready when you are"
-	# label set by _on_countdown_started.
-	if countdown_label.visible and WaveManager.is_countdown_active():
-		if WaveManager.countdown_total() > 0.0:
-			countdown_label.text = "Next wave: %.1fs" % maxf(0.0, WaveManager.countdown_remaining())
-	# Send-Wave button — visible during countdown OR mid-spawn (Stage E
-	# mid-spawn early-call). Self-managing visibility means the brief
-	# `_hide_countdown()` on wave_launched gets re-corrected on the next
-	# tick if the wave is still call-able.
-	var should_show: bool = WaveManager.early_call_available()
-	if should_show != send_wave_button.visible:
-		send_wave_button.visible = should_show
-		if should_show:
-			_start_send_wave_blink()
-		else:
-			_stop_send_wave_blink()
-	if should_show:
-		# Bonus + cost label. During countdown: "Xg · Ys saved" tells the
-		# player how much time is being skipped. Mid-spawn: "Xg · OVERLAP"
-		# tells them the cost is concurrent pressure, not time.
-		var bonus: int = WaveManager.current_early_call_bonus()
-		if WaveManager.is_countdown_active():
-			var saved: int = int(ceil(maxf(0.0, WaveManager.countdown_remaining())))
-			send_wave_button.text = "Send Wave!\n+%dg · %ds saved" % [bonus, saved]
-		else:
-			send_wave_button.text = "Send Wave!\n+%dg · OVERLAP" % bonus
-
-
-func _on_wave_launched(_wave_number: int, _path_ids: Array) -> void:
-	_hide_countdown()
-
-
-func _on_send_wave_pressed() -> void:
-	WaveManager.call_early_wave()
-	_hide_countdown()
-
-
-func _on_early_wave(_bonus_gold: int) -> void:
-	_hide_countdown()
-
-
-func _hide_countdown() -> void:
-	countdown_label.visible = false
-	send_wave_button.visible = false
-	_stop_send_wave_blink()

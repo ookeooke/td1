@@ -52,10 +52,17 @@ const _MuzzleFlashScript := preload("res://vfx/MuzzleFlashVFX.gd")
 const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
 const AIM_LERP_SPEED: float = 12.0
 # Multiplier applied to silhouette draws — keep in sync with _draw().
-const _SILHOUETTE_BASE_SIZE: float = 1.08
+const _SILHOUETTE_BASE_SIZE: float = 1.30
 var _construct_t: float = 0.0
 var _upgrade_t: float = 0.0
 var _aim_angle: float = -PI / 2.0
+# Cached projectile arc height. Read once from `data.projectile_scene` at
+# _ready and used by _tick_aim to point the aimable part along the arrow's
+# launch tangent (target shifted up by 4 * arc_height) instead of straight
+# at the target. Without this, a high-arc archer aims flat while the arrow
+# flies through the sky above — bow and arrow visually disagree.
+@warning_ignore("unused_private_class_variable")
+var _proj_arc_height: float = 0.0
 # Continuous accumulator for the idle Y-breath sway. Random phase so a row
 # of identical towers doesn't pulse in lockstep.
 var _idle_t: float = randf() * TAU
@@ -70,11 +77,25 @@ func _ready() -> void:
 		return
 	_refresh_range_shape()
 	_next_buff_threshold = randi_range(3, 6)
+	_cache_projectile_arc()
 	# Kick off the build-in animation. Firing is blocked by the early-return
 	# in _physics_process while _construct_t > 0, so we leave _attack_cooldown
 	# at 0 — the tower fires the frame after construction completes.
 	_construct_t = _TowerAnimScript.CONSTRUCTION_DURATION
 	modulate.a = 0.0
+
+
+func _cache_projectile_arc() -> void:
+	# Peek the projectile scene once to extract its arc_height default. We
+	# instantiate-and-free instead of duplicating the value onto TowerData so
+	# Arrow.tscn / ArtilleryShell.tscn stay the single source of truth.
+	if data == null or data.projectile_scene == null:
+		return
+	var probe: Node = data.projectile_scene.instantiate()
+	if probe != null:
+		if "arc_height" in probe:
+			_proj_arc_height = float(probe.arc_height)
+		probe.free()
 
 
 func _refresh_range_shape() -> void:
@@ -431,7 +452,16 @@ func _physics_process(delta: float) -> void:
 func _tick_aim(delta: float, target: Node) -> void:
 	if target == null or not is_instance_valid(target):
 		return
-	var dir: Vector2 = target.global_position - global_position
+	# Arc compensation: the projectile's visual launch tangent runs from the
+	# tower toward a virtual point 4 * arc_height pixels above the target
+	# (derivative of arc_off.y = -arc_height * 4 * t * (1-t) at t=0). Aim the
+	# bow / barrel along that tangent so the silhouette and the projectile
+	# visually agree. Flat shooters (mage, ice) keep arc_height == 0 and
+	# aim straight at the target.
+	var aim_pos: Vector2 = target.global_position
+	if _proj_arc_height > 0.0:
+		aim_pos.y -= 4.0 * _proj_arc_height
+	var dir: Vector2 = aim_pos - global_position
 	if dir.length_squared() < 1.0:
 		return
 	var target_angle: float = dir.angle()
@@ -492,7 +522,8 @@ func _fire_projectile(target: Node) -> void:
 		return
 	var proj: Node2D = data.projectile_scene.instantiate()
 	get_parent().add_child(proj)
-	proj.global_position = global_position
+	var muzzle_local: Vector2 = _TowerSilhouetteScript.muzzle_offset(data.tower_id, level, _aim_angle)
+	proj.global_position = global_position + muzzle_local * _SILHOUETTE_BASE_SIZE
 
 	# Phase 25: branches can attach an on-hit status effect (Ranger's slow).
 	# Construct a fresh instance per shot so per-target duration state isn't
@@ -506,11 +537,8 @@ func _fire_projectile(target: Node) -> void:
 		proj.setup(target, get_effective_damage(), data.damage_type, self, effect, aoe, splash_pct)
 	# Muzzle flash at the silhouette's barrel/tip, tinted by tower type.
 	# Skipped on clean_view and on towers without a defined muzzle (barracks).
-	if not VFXSpawner.clean_view:
-		var muzzle_local: Vector2 = _TowerSilhouetteScript.muzzle_offset(data.tower_id, level, _aim_angle)
-		if muzzle_local != Vector2.ZERO:
-			var muzzle_world: Vector2 = global_position + muzzle_local * _SILHOUETTE_BASE_SIZE
-			_MuzzleFlashScript.spawn(get_tree().current_scene, muzzle_world, _aim_angle, _TowerSilhouetteScript.muzzle_color(data.tower_id))
+	if not VFXSpawner.clean_view and muzzle_local != Vector2.ZERO:
+		_MuzzleFlashScript.spawn(get_tree().current_scene, proj.global_position, _aim_angle, _TowerSilhouetteScript.muzzle_color(data.tower_id))
 	_recoil_t = 0.08
 	queue_redraw()
 

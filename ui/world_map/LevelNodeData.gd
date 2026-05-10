@@ -30,14 +30,26 @@ class_name LevelNodeData
 # grandfathered. Only applies to fresh LevelNodeData sub-resources.
 @export var target_duration_sec: float = 600.0
 @export var gold_budget_total: int = 700
+# Authored starting gold for this level. Sentinel -1 = fall through to the
+# RunState baseline chain (STARTING_GOLD + meta_bonus + starting_gold_add).
+# When ≥ 0, REPLACES that chain at runtime so the player always starts the
+# level with exactly this value regardless of meta upgrades.
+# Persisted by BalanceSliders' Bake button from the per-level starting_gold
+# slider — see RunState.reset_for_level().
+@export var starting_gold: int = -1
 # One entry per wave; each array sums to 1.0 (validated at editor open).
 # Empty array = uniform distribution.
 @export var wave_gold_shares: Array[float] = []
 @export var wave_time_shares: Array[float] = []
 @export var wave_pressure_targets: Array[float] = []
-# Send-Wave button visible only in the last N seconds of countdown.
-# Caps the early-call gold bonus per wave at this value.
+# Send-Wave button visible only in the last N seconds of the current wave's
+# spawn — pressing it starts the next wave immediately, parallel to the
+# still-running current spawners. Bonus = overlap_seconds × gold_per_sec.
+# Caps the maximum overlap (and therefore the maximum bonus).
 @export var early_call_window_sec: float = 10.0
+# Default gold-per-second of overlap. Per-wave WaveData.early_call_gold_per_sec
+# can override (-1 sentinel = inherit this value).
+@export var early_call_gold_per_sec: float = 1.0
 
 # Player Power Tier band — see balance/BALANCE.md "Player Power Tier (PPT)".
 # `min_ppt` is the Naked Baseline floor (one-star achievable at this PPT or

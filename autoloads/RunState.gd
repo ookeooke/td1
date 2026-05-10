@@ -50,6 +50,13 @@ func reset_for_level() -> void:
 	# Debug-only balance override (BalanceOverrides). No-op in production.
 	gold += BalanceOverrides.get_starting_gold_add()
 	lives = 1 if current_mode == "iron" else STARTING_LIVES
+	# Authored per-level starting gold — REPLACES the computed value when
+	# the level designer pinned a specific number via Bake. Resolution chain:
+	#   debug slider override > LevelNodeData.starting_gold > baseline above.
+	if current_level_id != "":
+		var lvl_data: Resource = ContentRegistry.find_level(current_level_id)
+		if lvl_data != null and "starting_gold" in lvl_data and int(lvl_data.starting_gold) >= 0:
+			gold = int(lvl_data.starting_gold)
 	# Debug-only per-level overrides — REPLACE the computed values when
 	# present (sentinel -1 means "no override"). No-op in production.
 	if current_level_id != "":

@@ -97,12 +97,12 @@ func _render_levels_table(levels: Array) -> void:
 		var bo: int = int(b.unlock_order) if b != null and "unlock_order" in b else 0
 		return ao < bo)
 	var grid := GridContainer.new()
-	grid.columns = 9
+	grid.columns = 10
 	grid.set("theme_override_constants/h_separation", 16)
 	grid.set("theme_override_constants/v_separation", 4)
 	_grid_header(grid, [
 		"Level", "Supply", "Demand", "Safety", "Bottleneck",
-		"Spike Wave", "Win%", "Avg Leaks", "Drift",
+		"Spike Wave", "Real SR", "Win%", "Avg Leaks", "Drift",
 	])
 	var history: Array = RunStats.get_history()
 	for lvl in sorted_levels:
@@ -130,6 +130,28 @@ func _render_level_row(grid: GridContainer, level_data: Resource, history: Array
 	var bottleneck: String = String(rep.get("bottleneck", "none"))
 	var spike: int = int(rep.get("spike_wave_index", -1))
 	var spike_label: String = ("W%d" % (spike + 1)) if spike >= 0 else "—"
+	# Real SR — coverage-weighted safety ratio. Greedy-spend the level's
+	# authored gold budget across map spots (simulator), divide by total
+	# physical-EHP demand. Comparable across levels but NOT to the legacy
+	# Safety column (different units). >1 = oversupplied even with map
+	# constraints; <0.5 = real coverage problem regardless of stats.
+	var real_sr_label: String = "—"
+	var real_sr_color: Color = Color.WHITE
+	var scene_path: String = String(level_data.scene_path) if "scene_path" in level_data else ""
+	var gold_budget: int = int(level_data.gold_budget_total) if "gold_budget_total" in level_data else 0
+	if scene_path != "" and gold_budget > 0:
+		var coverage_matrix: Dictionary = CoverageAnalyzer.build_coverage_matrix(
+			scene_path, _coverage_rows_for_simulator())
+		if not coverage_matrix.is_empty():
+			var profiles: Array = WaveDamageSimulator.build_tower_profiles()
+			var greedy: Dictionary = WaveDamageSimulator.greedy_spend(
+				wave_list.waves, gold_budget, coverage_matrix, profiles)
+			var real_supply: float = float(greedy.get("total_damage", 0.0))
+			var real_demand: float = WaveDamageSimulator.level_demand_damage(wave_list.waves)
+			if real_demand > 0.0:
+				var real_sr: float = real_supply / real_demand
+				real_sr_label = "%.2f" % real_sr
+				real_sr_color = _real_sr_color(real_sr)
 	# Observed columns from RunStats
 	var stats: Dictionary = _level_run_stats(level_data.level_id, history)
 	var win_pct_label: String = "—"
@@ -147,6 +169,7 @@ func _render_level_row(grid: GridContainer, level_data: Resource, history: Array
 	_grid_cell(grid, "%.2f" % safety, BalanceCalculator.safety_color(safety, _config))
 	_grid_cell(grid, bottleneck, _bottleneck_color(bottleneck))
 	_grid_cell(grid, spike_label)
+	_grid_cell(grid, real_sr_label, real_sr_color)
 	_grid_cell(grid, win_pct_label)
 	_grid_cell(grid, avg_leaks_label)
 	_grid_cell(grid, drift_label, drift_color)
@@ -430,3 +453,31 @@ func _grid_cell(grid: GridContainer, text: String, color: Color = Color.WHITE) -
 	if color != Color.WHITE:
 		l.modulate = color
 	grid.add_child(l)
+
+
+# Coverage rows used by CoverageAnalyzer.build_coverage_matrix — minimal
+# {tower_id, tier_key, range} triples extracted from the simulator's
+# tower-tier profile array.
+func _coverage_rows_for_simulator() -> Array:
+	var profiles: Array = WaveDamageSimulator.build_tower_profiles()
+	var out: Array = []
+	for p in profiles:
+		out.append({
+			"tower_id": p["tower_id"],
+			"tier_key": p["tier_key"],
+			"range": p["attack_range"],
+		})
+	return out
+
+
+# Color band for the coverage-weighted safety ratio (real_supply / EHP-demand).
+# >1 = oversupplied (green), 0.7-1 = blue, 0.5-0.7 = grey, <0.5 = red.
+func _real_sr_color(real_sr: float) -> Color:
+	if real_sr >= 1.0:
+		return Color(0.55, 0.85, 0.55)
+	elif real_sr >= 0.7:
+		return Color(0.50, 0.75, 0.95)
+	elif real_sr >= 0.5:
+		return Color(0.85, 0.85, 0.85)
+	else:
+		return Color(0.95, 0.35, 0.35)

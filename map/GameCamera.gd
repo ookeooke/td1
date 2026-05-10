@@ -302,6 +302,7 @@ func _start_pinch() -> void:
 	_velocity = Vector2.ZERO
 	_pinch_start_distance = _current_pinch_distance()
 	_pinch_start_zoom = zoom.x
+	EventBus.camera_zoom_started.emit()
 	if _reset_tween != null and _reset_tween.is_running():
 		_reset_tween.kill()
 		_reset_tween = null
@@ -350,6 +351,7 @@ func _zoom_at(screen_pos: Vector2, zoom_delta: float) -> void:
 	var new_zoom: float = clampf(old_zoom + zoom_delta, ZOOM_MIN, ZOOM_MAX)
 	if is_equal_approx(new_zoom, old_zoom):
 		return
+	EventBus.camera_zoom_started.emit()
 	# Keep content under cursor/finger stable.
 	var world_before: Vector2 = _screen_to_world(screen_pos)
 	zoom = Vector2(new_zoom, new_zoom)
@@ -361,6 +363,7 @@ func _zoom_at(screen_pos: Vector2, zoom_delta: float) -> void:
 # ── Double-tap reset ─────────────────────────────────────────────────────
 
 func _double_tap_reset() -> void:
+	EventBus.camera_zoom_started.emit()
 	if _reset_tween != null and _reset_tween.is_running():
 		_reset_tween.kill()
 	var target_pos: Vector2 = map_bounds.position + map_bounds.size * 0.5

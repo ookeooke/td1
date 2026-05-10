@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" uid="uid://b1td1skillbar" path="res://ui/SkillBar.tscn" id="10_skillbar"]
 [ext_resource type="PackedScene" uid="uid://ct8yuf20wlabe" path="res://ui/PauseMenu.tscn" id="12_pause"]
 [ext_resource type="Script" path="res://ui/SpawnIndicator.gd" id="14_spawnindicator"]
+[ext_resource type="Script" path="res://ui/WaveCallIndicator.gd" id="16_wavecall"]
 
 [node name="Main" type="Node2D" unique_id=2036122815]
 script = ExtResource("1_main")
@@ -47,6 +48,17 @@ follow_viewport_enabled = false
 script = ExtResource("14_spawnindicator")
 
 [node name="DrawLayer" type="Control" parent="SpawnIndicator"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="WaveCallIndicator" type="CanvasLayer" parent="."]
+follow_viewport_enabled = false
+script = ExtResource("16_wavecall")
+
+[node name="DrawLayer" type="Control" parent="WaveCallIndicator"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0

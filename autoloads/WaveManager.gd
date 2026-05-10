@@ -46,17 +46,36 @@ var _all_waves_launched: bool = false # true after the last campaign wave begins
 # incomparable across runs and rebalances every endless session. See
 # BALANCE.md "Mode multipliers" → Endless. Reset to 1.0 in start() / start_endless().
 var _endless_hp_scale: float = 1.0
-# Tick-based countdown state (replaces await-based timer for interruptibility).
-var _in_countdown: bool = false
-var _countdown_remaining: float = 0.0
-var _countdown_total: float = 0.0
-var _pending_wave: Resource = null
-var _pending_path_ids: Array = []
+# Countdown state was removed in the overlap-only redesign. Spawn-window
+# tracking lives in _current_spawn_window_sec / _current_spawn_start_msec
+# below, populated by _launch_wave.
 # Early-call window — Send-Wave button is only available in the last N
 # seconds of countdown. Caps the early-call gold bonus per wave at this
 # value (1 sec = 1 gold per KR convention). 0 = legacy behavior (button
 # available for full countdown). Set by start() from LevelNodeData.
 var _early_call_window: float = 0.0
+# Per-level default gold-per-second for early-call bonus (set in start()
+# from LevelNodeData.early_call_gold_per_sec). Per-wave authored values +
+# debug overrides can replace via the resolution chain.
+var _default_gold_per_sec: float = 1.0
+# Spawn-window tracking — set when each wave launches so early-call gating
+# can read "how many seconds left in the current spawn?". Replaces the
+# old countdown-based _in_countdown / _countdown_remaining state.
+# `_spawn_elapsed_game` accumulates `delta` from `_process`, which is scaled
+# by Engine.time_scale and zero during pause — same frame of reference as
+# the spawner's `await create_timer(...).timeout`. Wall-clock-based
+# tracking (Time.get_ticks_msec) was diverging from spawner timing under
+# 2x/3x speed and during pause, breaking the early-call gate.
+var _current_spawn_window_sec: float = 0.0
+var _spawn_elapsed_game: float = 0.0
+# Pre-W1 grace state — campaign mode only. After start(), the wave loop
+# parks in this state until the player presses Send Wave ("Start Wave 1").
+# Gives unlimited initial setup time at level load. Doesn't apply to
+# subsequent waves (back-to-back per overlap-only redesign) or to endless
+# mode (start_endless launches immediately).
+var _pre_w1_pending: bool = false
+var _pre_w1_pending_wave: Resource = null
+var _pre_w1_pending_path_ids: Array = []
 
 # Enemy scenes for procedural endless wave generation.
 const _EnemyBasicScene: PackedScene = preload("res://enemies/EnemyBasic.tscn")
@@ -86,7 +105,8 @@ func _ready() -> void:
 	print("[WaveManager] loaded")
 
 
-func start(wave_list: Resource, level: Node, early_call_window: float = 0.0) -> void:
+func start(wave_list: Resource, level: Node, early_call_window: float = 0.0,
+		early_call_gold_per_sec: float = 1.0) -> void:
 	if wave_list == null or wave_list.waves.is_empty():
 		push_error("[WaveManager] start: wave_list is empty or null")
 		return
@@ -99,6 +119,7 @@ func start(wave_list: Resource, level: Node, early_call_window: float = 0.0) -> 
 	_running = true
 	_endless_hp_scale = 1.0 # reset — campaign uses authored HP
 	_early_call_window = early_call_window
+	_default_gold_per_sec = early_call_gold_per_sec
 	_alive_per_wave.clear()
 	_pending_bounties.clear()
 	_pending_spawners_per_wave.clear()
@@ -107,63 +128,151 @@ func start(wave_list: Resource, level: Node, early_call_window: float = 0.0) -> 
 	_begin_next_wave()
 
 
-# True if the Send-Wave button should be active right now. KR-canonical:
-# the button is available the *entire* countdown, not gated to a final
-# window. Stage E (mid-spawn early-call) ALSO drops the in-countdown gate —
-# the button stays visible while the current wave is still spawning, with
-# a max bonus capped at early_call_window and concurrent overlap as the
-# cost. Wave N's spawners continue (per-wave tagging via captured wave_idx),
-# so wave N's bounty correctly waits until both alive[N]==0 AND
-# pending_spawners_per_wave[N]==0.
+# True if the Send-Wave button should be active right now. Strict
+# "last N seconds" gate: button visible during the LAST N seconds of the
+# current wave's spawn, where N = early_call_window_sec for the next
+# wave (resolved via the standard chain). Driven by balance data — author
+# tunes the window per-wave or per-level; runtime honors it directly.
+# Bonus = seconds_remaining × gold_per_sec, computed in
+# current_early_call_bonus().
+#
+# Critical: depends on _seconds_left_in_current_spawn returning game-time
+# elapsed (not wall-clock). That's tracked via delta accumulation in
+# _process so 2x/3x speed and pause behave correctly.
+#
+# A next-wave window of 0 still hides the button (no early-call mechanic
+# for that wave).
 func early_call_available() -> bool:
 	if not _running:
 		return false
-	# Active during countdown OR while the latest wave is still spawning.
-	# Last campaign wave: once it's launched, no later wave to advance to.
-	if _in_countdown:
+	# Pre-W1 grace: button is the level-start trigger.
+	if _pre_w1_pending:
 		return true
-	if _wave_active and not _all_waves_launched:
-		return true
-	return false
+	if not _wave_active or _all_waves_launched:
+		return false
+	var target_wave_idx: int = _wave_index + 1
+	var window: float = _effective_early_call_window(target_wave_idx)
+	if window <= 0.0:
+		return false
+	# Empty-wave / last-frame guard: spawning_complete fires the same frame
+	# when remaining hits zero, so don't surface the button for an already-
+	# finished wave.
+	var remaining: float = _seconds_left_in_current_spawn()
+	if remaining <= 0.0:
+		return false
+	return remaining <= window
 
 
-# Countdown state accessors. HUD/etc. should never reach into the _-prefixed
-# fields directly — keeps the private state replaceable (signal-based, etc.).
+# True while the wave loop is parked at level start waiting for Send Wave.
+# HUD reads this to swap the button label to "Start Wave 1".
+func is_pre_w1_pending() -> bool:
+	return _pre_w1_pending
+
+
+# Seconds remaining in the current wave's spawn (0 when not active). Drives
+# both the early-call gate and the bonus formula. `_spawn_elapsed_game`
+# accumulates from `_process(delta)` — same time-scaled, pause-aware frame
+# of reference the spawner's timers use.
+func _seconds_left_in_current_spawn() -> float:
+	if not _wave_active or _current_spawn_window_sec <= 0.0:
+		return 0.0
+	return max(0.0, _current_spawn_window_sec - _spawn_elapsed_game)
+
+
+# State accessors retained for HUD compatibility. After the redesign, the
+# HUD reads `early_call_available()` and `current_early_call_bonus()` plus
+# this seconds-left helper for the "Ys saved" label.
+func seconds_left_in_current_spawn() -> float:
+	return _seconds_left_in_current_spawn()
+
+
 func is_countdown_active() -> bool:
-	return _in_countdown
+	# Compat shim — there's no countdown phase anymore. Returns true when
+	# the early-call window is OPEN so HUD code that gated visibility on
+	# "is countdown active?" still works in the new semantics.
+	return early_call_available()
 
 
 func countdown_total() -> float:
-	return _countdown_total
+	# Compat shim — total = effective early-call window of the next wave.
+	if _all_waves_launched:
+		return 0.0
+	return _effective_early_call_window(_wave_index + 1)
 
 
 func countdown_remaining() -> float:
-	return _countdown_remaining
+	# Compat shim — remaining seconds within the early-call window. Equals
+	# the overlap that pressing right now would create.
+	var target_wave_idx: int = _wave_index + 1
+	var window: float = _effective_early_call_window(target_wave_idx)
+	return clampf(_seconds_left_in_current_spawn(), 0.0, window)
 
 
 # Bonus gold the player would earn if they pressed Send Wave RIGHT NOW.
-# Mirrors the formula in call_early_wave (including per-level early_call_window
-# override). HUD reads this to label the button with `+Xg · Ys saved`.
+# Formula: overlap_seconds × gold_per_sec, capped at the early-call window.
+# Press at window start → max bonus + max overlap. Press near current wave's
+# spawn end → small bonus, small overlap.
 func current_early_call_bonus() -> int:
 	if not _running:
 		return 0
-	# Resolve per-wave window for the wave being skipped INTO. During
-	# countdown: that's _wave_index + 1 (the pending wave). Mid-spawn early-
-	# call: also _wave_index + 1 (the wave you're advancing to).
+	# Pre-W1 grace: pressing Send Wave just starts the level. No bonus,
+	# no overlap — there's no previous wave to overlap with.
+	if _pre_w1_pending:
+		return 0
+	if not _wave_active or _all_waves_launched:
+		return 0
 	var target_wave_idx: int = _wave_index + 1
 	var window: float = _effective_early_call_window(target_wave_idx)
-	# During countdown: bonus scales with how much of the countdown is skipped,
-	# capped at the window. During mid-spawn early-call (Stage E): the player
-	# is skipping the entire next-wave countdown PLUS forcing concurrent
-	# pressure. Bonus = full window (max). Concurrent overlap is the cost.
-	if _in_countdown:
-		if _countdown_total <= 0.0:
-			return 0
-		var raw: float = maxf(0.0, _countdown_remaining)
-		return int(ceil(minf(raw, window)))
-	if _wave_active:
-		return int(ceil(window))
-	return 0
+	var rate: float = _effective_gold_per_sec(target_wave_idx)
+	var remaining: float = _seconds_left_in_current_spawn()
+	var overlap: float = clampf(remaining, 0.0, window)
+	return int(ceil(overlap * rate))
+
+
+# Resolve effective gold-per-second for early-call bonus. Same 4-step chain
+# pattern as _effective_early_call_window. Identity in production via the
+# BalanceOverrides.is_active() short-circuit.
+func _effective_gold_per_sec(target_wave_idx: int) -> float:
+	var lvl_id: String = RunState.current_level_id
+	if target_wave_idx >= 0:
+		var w_dbg: float = BalanceOverrides.get_wave_gold_per_sec(lvl_id, target_wave_idx)
+		if w_dbg >= 0.0:
+			return w_dbg
+	if _wave_list != null and target_wave_idx >= 0 and target_wave_idx < _wave_list.waves.size():
+		var w: WaveData = _wave_list.waves[target_wave_idx]
+		if w != null and "early_call_gold_per_sec" in w and w.early_call_gold_per_sec >= 0.0:
+			return float(w.early_call_gold_per_sec)
+	return _default_gold_per_sec
+
+
+# Total spawn-window duration for a wave = max over emitters of
+# (effective_start_delay + (effective_count - 1) * effective_interval).
+# Reads through BalanceOverrides so the runtime gate matches the chart's
+# rendering exactly. Identity in production via is_active() short-circuit.
+func _compute_effective_spawn_window(wave: Resource, wave_idx: int) -> float:
+	if wave == null or wave.spawns.is_empty():
+		return 0.0
+	var lvl_id: String = RunState.current_level_id
+	var window: float = 0.0
+	for si in range(wave.spawns.size()):
+		var spawn: Resource = wave.spawns[si]
+		if spawn == null:
+			continue
+		# Effective count
+		var count_mult: float = BalanceOverrides.get_wave_count_mult(lvl_id, wave_idx, si)
+		var count: int = max(0, int(round(float(spawn.count) * count_mult)))
+		if count <= 0:
+			continue
+		# Effective interval
+		var int_ov: float = BalanceOverrides.get_wave_interval(lvl_id, wave_idx, si)
+		var interval: float = float(spawn.interval) if int_ov < 0.0 else int_ov
+		# Effective start_delay
+		var dly_ov: float = BalanceOverrides.get_wave_delay(lvl_id, wave_idx, si)
+		var start_t: float = float(spawn.start_delay) if dly_ov < 0.0 else dly_ov
+		var end_t: float = start_t + float(max(count - 1, 0)) * interval
+		if end_t > window:
+			window = end_t
+	return window
 
 
 # Resolve the effective early-call window for a target wave index. Checks
@@ -203,6 +312,7 @@ func start_endless(level: Node) -> void:
 	_endless = true
 	_running = true
 	_endless_hp_scale = 1.0 # set per-wave by _generate_endless_wave
+	_default_gold_per_sec = 1.0
 	_alive_per_wave.clear()
 	_pending_bounties.clear()
 	_pending_spawners_per_wave.clear()
@@ -237,76 +347,56 @@ func _begin_next_wave() -> void:
 	RunState.wave_number = _wave_index + 1
 	for pid in path_ids:
 		EventBus.spawn_direction_changed.emit(pid, Vector2.ZERO)
-	# Tick-based countdown — interruptible via call_early_wave().
-	# wave.countdown is authoritative for every wave including W1; first-wave
-	# grace is now expressed by authoring a longer countdown in the wave .tres.
-	# Debug-only per-wave countdown override (BalanceSliders) replaces the
-	# authored value when set (sentinel -1 = use authored). No-op in production.
-	var countdown_seconds: float = wave.countdown
-	var cd_ov: int = BalanceOverrides.get_wave_countdown(
-		RunState.current_level_id, _wave_index
-	)
-	if cd_ov >= 0:
-		countdown_seconds = float(cd_ov)
-	_pending_wave = wave
-	_pending_path_ids = path_ids
-	_countdown_total = countdown_seconds
-	_countdown_remaining = countdown_seconds
-	_in_countdown = true
-	EventBus.wave_countdown_started.emit(_countdown_total)
-	print("[WaveManager] wave %d countdown %.1fs paths=%s" % [_wave_index + 1, countdown_seconds, path_ids])
+	# Pre-W1 grace: campaign mode parks before W1 launches so the player has
+	# unlimited setup time. Send Wave button shows "Start Wave 1" — pressing
+	# it kicks off W1 (no bonus, no overlap; it's just the start trigger).
+	# Endless mode skips this and launches immediately (start_endless flow).
+	if _wave_index == 0 and not _endless:
+		_pre_w1_pending = true
+		_pre_w1_pending_wave = wave
+		_pre_w1_pending_path_ids = path_ids
+		EventBus.pre_first_wave_ready.emit()
+		print("[WaveManager] pre-W1 grace — waiting for Send Wave press")
+		return
+	_launch_wave(wave, path_ids)
 
 
 func _process(delta: float) -> void:
-	if not _in_countdown:
-		return
-	# countdown_total <= 0 = button-only mode. Never auto-launches; player
-	# must press the Send Wave button to begin. Used for the very first
-	# wave so the player has unbounded setup time.
-	if _countdown_total <= 0.0:
-		return
-	_countdown_remaining -= delta
-	if _countdown_remaining <= 0.0:
-		_finish_countdown()
-
-
-func _finish_countdown() -> void:
-	_in_countdown = false
-	if not _running:
-		return
-	_launch_wave(_pending_wave, _pending_path_ids)
-	_pending_wave = null
-	_pending_path_ids = []
+	# Accumulate game-time elapsed since the current wave launched. `delta`
+	# is automatically scaled by Engine.time_scale and zero during pause —
+	# matches the spawner's `await create_timer(...).timeout` frame of
+	# reference, so _seconds_left_in_current_spawn agrees with reality at
+	# any speed and across pauses.
+	if _wave_active:
+		_spawn_elapsed_game += delta
 
 
 func call_early_wave() -> void:
-	# Button is available the whole countdown — no time gating, see
-	# CORE RULE 19. Bonus = min(seconds_remaining, early_call_window) so
-	# unlimited gold isn't possible from long countdowns. Click early =
-	# max bonus + max overlap; click late = small bonus + small overlap;
-	# wait full = 0 bonus + clean board. Three valid playstyles.
-	# Button-only mode (countdown_total <= 0) gives no bonus — pressing
-	# just starts the wave; W1 is the canonical use.
+	# Overlap-only redesign: button is active in the LAST N seconds of the
+	# current wave's spawn (gated by early_call_available). Pressing →
+	# next wave begins immediately, parallel to the still-running current
+	# spawners. Bonus = overlap_seconds × gold_per_sec. CORE RULE 19's
+	# overlap invariant kept: the current wave's spawners continue tagging
+	# their enemies to the current wave_index via captured wave_idx_for_spawns.
+	#
+	# Pre-W1 grace: same button doubles as "Start Wave 1" — kicks off the
+	# parked W1 with no bonus and no overlap.
 	if not early_call_available():
+		return
+	if _pre_w1_pending:
+		var w: Resource = _pre_w1_pending_wave
+		var p: Array = _pre_w1_pending_path_ids
+		_pre_w1_pending = false
+		_pre_w1_pending_wave = null
+		_pre_w1_pending_path_ids = []
+		EventBus.early_wave_triggered.emit(0)
+		_launch_wave(w, p)
 		return
 	var bonus: int = current_early_call_bonus()
 	if bonus > 0:
 		RunState.add_gold(bonus)
 	EventBus.early_wave_triggered.emit(bonus)
-	# Two cases:
-	#   - In countdown (existing): finish countdown → launch pending wave.
-	#   - Mid-spawn (Stage E): wave N is still spawning. Advance to wave N+1
-	#     immediately. Wave N's spawners continue (per-wave wave_idx capture
-	#     means they tag enemies to wave N correctly). Concurrent pressure
-	#     is the design-intent cost.
-	if _in_countdown:
-		_finish_countdown()
-	elif _wave_active and not _all_waves_launched:
-		# Advance to next wave AND skip its countdown.
-		_begin_next_wave()
-		# _begin_next_wave sets _in_countdown = true. Skip it.
-		if _in_countdown:
-			_finish_countdown()
+	_begin_next_wave()
 
 
 func _launch_wave(wave: Resource, path_ids: Array) -> void:
@@ -323,6 +413,12 @@ func _launch_wave(wave: Resource, path_ids: Array) -> void:
 	_alive_per_wave[_wave_index] = 0
 	_pending_bounties[_wave_index] = wave.bounty if wave != null else 0
 	_pending_spawners_per_wave[_wave_index] = wave.spawns.size()
+	# Spawn-window tracking — drives early_call_available + bonus formula.
+	# Window = max effective end-time across emitters. Effective values
+	# resolve through BalanceOverrides (count_mult / interval / start_delay)
+	# so the runtime gating matches what the chart shows.
+	_current_spawn_window_sec = _compute_effective_spawn_window(wave, _wave_index)
+	_spawn_elapsed_game = 0.0
 	EventBus.wave_started.emit(_wave_index + 1, path_ids)
 	# Edge case: a wave with zero spawners would never complete. Fire the
 	# spawning-complete path immediately so the state machine doesn't hang.
@@ -521,6 +617,46 @@ func _unique_path_ids(wave: Resource) -> Array:
 	return ids
 
 
+# Path_ids of the wave that call_early_wave() would launch RIGHT NOW.
+# Pre-W1 → wave 1's authored paths. During wave N's spawn → wave N+1.
+# Empty when no callable next wave exists.
+#
+# Filters out emitters whose EFFECTIVE count is 0 (authored count × debug
+# count_mult). A path_id only surfaces if at least one emitter on that path
+# will actually spawn enemies — otherwise the badge would point at an
+# entrance no enemies use.
+func get_next_wave_path_ids() -> Array:
+	var wave: Resource = null
+	var wave_idx: int = -1
+	if _pre_w1_pending:
+		wave = _pre_w1_pending_wave
+		wave_idx = 0
+	else:
+		if _all_waves_launched or _wave_list == null:
+			return []
+		var nxt: int = _wave_index + 1
+		if nxt < 0 or nxt >= _wave_list.waves.size():
+			return []
+		wave = _wave_list.waves[nxt]
+		wave_idx = nxt
+	if wave == null:
+		return []
+	var lvl_id: String = RunState.current_level_id
+	var ids: Array = []
+	for si in range(wave.spawns.size()):
+		var spawn: Resource = wave.spawns[si]
+		if spawn == null:
+			continue
+		var mult: float = BalanceOverrides.get_wave_count_mult(lvl_id, wave_idx, si)
+		var effective_count: int = max(0, int(round(float(spawn.count) * mult)))
+		if effective_count <= 0:
+			continue
+		var pid: String = String(spawn.path_id)
+		if not ids.has(pid):
+			ids.append(pid)
+	return ids
+
+
 func _on_enemy_spawned(enemy: Node, _path_id: String) -> void:
 	_alive_count += 1
 	# Per-wave count uses the wave_index meta tagged at spawn time. Default
@@ -564,7 +700,6 @@ func _count_enemy_exit(enemy: Node) -> void:
 func _on_game_over() -> void:
 	_running = false
 	_wave_active = false
-	_in_countdown = false
 	# Defeat → no more bounties pay. Clear so straggler-deaths don't trigger
 	# all_waves_completed after game_over.
 	_pending_bounties.clear()
@@ -578,9 +713,6 @@ func stop() -> void:
 	_running = false
 	_wave_active = false
 	_endless = false
-	_in_countdown = false
-	_pending_wave = null
-	_pending_path_ids = []
 	_wave_list = null
 	_level = null
 	_wave_index = -1
@@ -590,6 +722,16 @@ func stop() -> void:
 	_pending_bounties.clear()
 	_pending_spawners_per_wave.clear()
 	_all_waves_launched = false
+	# Spawn-window tracking — reset so a fresh start() doesn't read stale
+	# state from a previous run (would yield wrong remaining time until the
+	# next wave actually launches).
+	_current_spawn_window_sec = 0.0
+	_spawn_elapsed_game = 0.0
+	# Pre-W1 grace state — clear so a new level start doesn't think it's
+	# already past the parked state from a prior run.
+	_pre_w1_pending = false
+	_pre_w1_pending_wave = null
+	_pre_w1_pending_path_ids = []
 
 
 # Phase 32: procedural wave generation for endless mode.

@@ -188,6 +188,18 @@ See balance/BALANCE.md \"Supply vs Demand\"."
 theme_override_font_sizes/font_size = 16
 modulate = Color(1, 0.8, 0.4, 1)
 
+[node name="CoverageButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 80)
+layout_mode = 2
+text = "Coverage"
+tooltip_text = "Coverage Report — map-aware balance.
+Per-level greedy-spend simulator. Drag the gold slider to see realistic damage scale; the plateau is the saturation point where extra gold stops mattering. Wave table: demand vs realistic supply with pressure verdict. Spot heat: best tower per spot at the current gold budget.
+Answers: \"where does gold stop converting to damage on this map?\"
+Best-case greedy estimate — over-predicts AoE; calibrate against RunStats."
+theme_override_font_sizes/font_size = 16
+modulate = Color(1, 0.8, 0.4, 1)
+
 [node name="UnlockAllButton" type="Button" parent="SafeAreaMargin/ContentMargin/Layout/BottomBar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 80)

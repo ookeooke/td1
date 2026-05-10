@@ -28,10 +28,10 @@ tint = Color(1.15, 0.5, 0.3, 1)
 [sub_resource type="Resource" id="ArtilleryUpg_L2"]
 script = ExtResource("4_upg")
 upgrade_name = "Cannon"
-damage = 34.99999999999999
+damage = 36.0
 attack_range = 550.0000000000026
 attack_speed = 0.55
-cost = 75
+cost = 160
 sell_value = 60
 tint = Color(0.95, 0.85, 0.75, 1)
 

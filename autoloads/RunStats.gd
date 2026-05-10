@@ -22,7 +22,11 @@ func _ready() -> void:
 	# Start the run as soon as ANY level activity begins — pre-wave tower
 	# placements would otherwise be dropped (they happen before wave 1).
 	EventBus.hero_spawned.connect(_on_any_level_start)
-	EventBus.wave_countdown_started.connect(_on_wave_countdown_started)
+	# Overlap-only redesign: wave_countdown_started is no longer emitted
+	# (no countdown phase). Hook into wave_started instead — fires when
+	# a wave's spawners launch. _ensure_run is idempotent so re-firing
+	# every wave is harmless.
+	EventBus.wave_started.connect(_on_wave_started_for_run)
 	EventBus.wave_started.connect(_on_wave_started)
 	EventBus.wave_completed.connect(_on_wave_completed)
 	EventBus.enemy_reached_end.connect(_on_enemy_reached_end)
@@ -50,7 +54,7 @@ func _on_any_level_start(_hero) -> void:
 	_ensure_run()
 
 
-func _on_wave_countdown_started(_duration: float) -> void:
+func _on_wave_started_for_run(_wave_number: int, _path_ids: Array) -> void:
 	_ensure_run()
 
 

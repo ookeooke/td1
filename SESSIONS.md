@@ -3139,3 +3139,16 @@ Single-session pass tightening every interactive element of the in-level hero HU
 5. Cluster reads as "skills wrap around the left of the portrait" instead of stacked above it; portrait visually dominates. ✓
 6. Cast a skill, let it cool down → button returns to bright orange (no stuck-dark). ✓
 7. Cast skill, hero dies before CD ends, respawns → skill is fully ready immediately on respawn. ✓
+
+---
+
+## 2026-05-08 — Coverage report wiring fixes
+
+Tightened the new coverage-weighted balance report so it produces actionable pacing information instead of disconnected geometry numbers.
+
+**Changed:**
+- `balance/audit/CoverageAnalyzer.gd`: path baked points and markers now convert through `global_transform` / `global_position`, so positioned `Path2D` children (Level1 `left`, Level5 `bl_plank`) compare in the same coordinate space as tower spots. Coverage cache keys now include `path_id`; previously the first path's coverage for a spot/range could be reused for every road on multi-path levels.
+- `balance/audit/WaveDamageSimulator.gd`: AoE multiplier now applies before the per-enemy EHP cap, preventing AoE towers from reporting more damage than enemies can actually absorb. Greedy upgrades now follow the real upgrade graph (`l1 -> l2 -> l3/branch`) and no longer allow branch-to-branch swaps.
+- `balance/audit/CoverageReport.gd`: added a "What this means" diagnosis block that summarizes trivial/dangerous wave counts, average natural pressure, and the gold plateau. The per-wave table now spends naturally available gold at each wave start instead of using the same slider gold for every wave; slider/curve remain sandbox views.
+
+**Verification:** Godot CLI was not available in this shell (`godot` not on PATH), so this pass is code-reviewed only. Open Coverage Report from WorldMap in the editor and check Level1/Level5 before trusting the numbers.

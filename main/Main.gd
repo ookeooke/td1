@@ -75,7 +75,10 @@ func _ready() -> void:
 		var entry: Resource = _resolve_level_entry()
 		var wave_list: Resource = _resolve_wave_list(entry)
 		var early_call: float = entry.early_call_window_sec if entry != null else 10.0
-		WaveManager.start(wave_list, level, early_call)
+		var gold_per_sec: float = 1.0
+		if entry != null and "early_call_gold_per_sec" in entry:
+			gold_per_sec = float(entry.early_call_gold_per_sec)
+		WaveManager.start(wave_list, level, early_call, gold_per_sec)
 
 
 # Find the LevelNodeData matching RunState.current_level_id. Returns null

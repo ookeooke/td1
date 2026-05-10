@@ -1,7 +1,7 @@
-[gd_resource type="Resource" script_class="LevelList" format=3 uid="uid://ct8yqj3l4kegd"]
+[gd_resource type="Resource" script_class="LevelList" format=3]
 
-[ext_resource type="Script" uid="uid://dvb8k71vdfoeq" path="res://ui/world_map/LevelNodeData.gd" id="1_lnd"]
-[ext_resource type="Script" uid="uid://dwt6e8qp4ae30" path="res://ui/world_map/LevelList.gd" id="2_list"]
+[ext_resource type="Script" path="res://ui/world_map/LevelNodeData.gd" id="1_lnd"]
+[ext_resource type="Script" path="res://ui/world_map/LevelList.gd" id="2_list"]
 
 [sub_resource type="Resource" id="Level1"]
 script = ExtResource("1_lnd")
@@ -51,7 +51,6 @@ display_name = "Frost Vale"
 scene_path = "res://levels/Level4.tscn"
 unlock_order = 4
 wave_list_path = "res://levels/level4_waves.tres"
-target_duration_sec = 600.0
 gold_budget_total = 1900
 wave_gold_shares = Array[float]([0.06, 0.07, 0.07, 0.09, 0.09, 0.09, 0.12, 0.12, 0.14, 0.15])
 wave_time_shares = Array[float]([0.07, 0.08, 0.085, 0.09, 0.095, 0.085, 0.105, 0.11, 0.13, 0.15])
@@ -66,8 +65,8 @@ display_name = "Riverford"
 scene_path = "res://levels/Level5.tscn"
 unlock_order = 5
 wave_list_path = "res://levels/level5_waves.tres"
-target_duration_sec = 600.0
 gold_budget_total = 2400
+starting_gold = 100
 wave_gold_shares = Array[float]([0.05, 0.06, 0.07, 0.08, 0.09, 0.09, 0.11, 0.13, 0.15, 0.17])
 wave_time_shares = Array[float]([0.07, 0.08, 0.085, 0.09, 0.095, 0.085, 0.105, 0.11, 0.13, 0.15])
 wave_pressure_targets = Array[float]([0.5, 0.6, 0.7, 0.8, 0.9, 0.7, 0.95, 1.0, 1.05, 1.1])

@@ -42,19 +42,6 @@ layout_mode = 2
 glyph = "wave"
 value_text = "--"
 
-[node name="CountdownLabel" type="Label" parent="SafeArea/TopLeft"]
-unique_name_in_owner = true
-layout_mode = 2
-text = ""
-theme_override_font_sizes/font_size = 18
-
-[node name="SendWaveButton" type="Button" parent="SafeArea/TopLeft"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(140, 50)
-layout_mode = 2
-text = "Send Wave!"
-theme_override_font_sizes/font_size = 18
-
 [node name="TopRight" type="VBoxContainer" parent="SafeArea"]
 layout_mode = 2
 size_flags_horizontal = 10

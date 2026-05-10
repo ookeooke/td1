@@ -37,6 +37,20 @@ const BalanceOverrides = preload("res://balance/debug/BalanceOverrides.gd")
 
 const _WaveTimelineChartScript := preload("res://balance/debug/WaveTimelineChart.gd")
 const _LevelOverviewChartScript := preload("res://balance/debug/LevelOverviewChart.gd")
+const _EmitterTimelineStripScript := preload("res://balance/debug/EmitterTimelineStrip.gd")
+
+# Mirror of WaveTimelineChart.ENEMY_COLORS — kept local so the per-emitter
+# timeline strip's tick color matches the bar segment color for that class.
+# Update in lockstep when WaveTimelineChart's palette changes.
+const _EMITTER_STRIP_COLORS: Dictionary = {
+	"basic":   Color(0.65, 0.65, 0.70),
+	"scout":   Color(0.95, 0.90, 0.40),
+	"armored": Color(0.65, 0.45, 0.25),
+	"flying":  Color(0.45, 0.85, 0.95),
+	"healer":  Color(0.45, 0.90, 0.55),
+	"brute":   Color(0.55, 0.30, 0.30),
+	"boss":    Color(0.95, 0.35, 0.55),
+}
 
 var _levels: Array = []   # Array[LevelNodeData], populated from level_list.tres
 # WaveTimelineChart entries created per expanded level — refreshed on any
@@ -63,6 +77,25 @@ var _summary_grid: GridContainer = null
 # the file isn't re-read for every tower-tier label. Cleared on _build_tower_section
 # so a fresh open of the panel re-pulls the latest run history.
 var _history_cache: Array = []
+
+# Wave Editor v2 — enemy-class dropdown, path dropdown, add/remove emitter.
+# Class swaps mutate spawn.enemy_scene in place; structural changes append to
+# wave.spawns. There's no override layer for these — Bake persists them, a
+# Godot restart discards them. _structurally_dirty_levels tracks level_ids
+# whose wave_list has structural edits so Bake includes them in the save list
+# even when no slider deltas exist.
+const _CLASS_KEYS: PackedStringArray = ["basic", "scout", "armored", "flying", "healer", "brute", "boss"]
+const _CLASS_TO_SCENE_PATH: Dictionary = {
+	"basic": "res://enemies/EnemyBasic.tscn",
+	"scout": "res://enemies/EnemyScout.tscn",
+	"armored": "res://enemies/EnemyArmored.tscn",
+	"flying": "res://enemies/EnemyFlying.tscn",
+	"healer": "res://enemies/EnemyHealer.tscn",
+	"brute": "res://enemies/EnemyBrute.tscn",
+	"boss": "res://enemies/bosses/Boss1.tscn",
+}
+var _structurally_dirty_levels: Dictionary = {}   # level_id → wave_list Resource
+
 
 
 func _ready() -> void:
@@ -528,7 +561,9 @@ func _on_bake_pressed() -> void:
 	var tower_deltas: Array = _collect_bake_deltas()
 	var enemy_deltas: Array = _collect_enemy_bake_deltas()
 	var wave_deltas: Array = _collect_wave_bake_deltas()
-	if tower_deltas.is_empty() and enemy_deltas.is_empty() and wave_deltas.is_empty():
+	var has_structural: bool = not _structurally_dirty_levels.is_empty()
+	if tower_deltas.is_empty() and enemy_deltas.is_empty() \
+			and wave_deltas.is_empty() and not has_structural:
 		Toast.show_message("No overrides to bake — all sliders at default")
 		return
 	var bits: PackedStringArray = []
@@ -544,6 +579,8 @@ func _on_bake_pressed() -> void:
 		bits.append("%d wave change(s) across %d wave-list(s)" % [
 			wave_deltas.size(), _unique_wave_list_count(wave_deltas),
 		])
+	if has_structural:
+		bits.append("wave structure changed in %d level(s)" % _structurally_dirty_levels.size())
 	var dlg := ConfirmationDialog.new()
 	dlg.title = "Bake stats?"
 	dlg.dialog_text = "%s will be written into res:// .tres files.\n\nThis modifies authored content. Use git to review or revert.\n\nProceed?" % " and ".join(bits)
@@ -563,7 +600,7 @@ func _on_bake_pressed() -> void:
 				if chart != null and is_instance_valid(chart) \
 						and chart.has_method("clear_enemy_caches"):
 					chart.clear_enemy_caches()
-		if not wave_deltas.is_empty():
+		if not wave_deltas.is_empty() or has_structural:
 			_apply_wave_bake(wave_deltas)
 		# Final UI rebuild — both sections snap back to defaults; the wave
 		# charts pick up the new authored numbers via _refresh_wave_charts.
@@ -757,15 +794,14 @@ func _apply_enemy_bake(deltas: Array) -> void:
 	BalanceOverrides.reset_enemy_overrides()
 
 
-# Walk every level × wave for active count or countdown overrides. Each delta
-# resolves to a sub-resource (WaveSpawn for count, WaveData for countdown) on
-# the level's wave_list, so a single wave_list save cascades all changes for
-# that level. `kind` discriminator selects which property the apply step writes.
+# Walk every level × wave for active wave-shape overrides. Each delta resolves
+# to a sub-resource (WaveSpawn for count/interval/delay, WaveData for early-
+# call/gold-per-sec) on the level's wave_list, so a single wave_list save
+# cascades all changes for that level. `kind` discriminator selects which
+# property the apply step writes.
 #
 # Count delta: {kind:"count", wave_list, level_id, wave_idx, spawn_idx, spawn,
 #               authored, mult, new_count}
-# Countdown delta: {kind:"countdown", wave_list, level_id, wave_idx, wave,
-#                   authored, new_seconds}
 func _collect_wave_bake_deltas() -> Array:
 	var out: Array = []
 	for lvl in _levels:
@@ -794,33 +830,32 @@ func _collect_wave_bake_deltas() -> Array:
 				var authored: int = int(spawn.count)
 				if authored <= 0:
 					continue
-				out.append({
-					"kind": "count",
-					"wave_list": wave_list,
-					"level_id": String(lvl.level_id),
-					"wave_idx": wi,
-					"spawn_idx": si,
-					"spawn": spawn,
-					"authored": authored,
-					"mult": mult,
-					"new_count": max(0, int(round(float(authored) * mult))),
-				})
-			# Countdown override (per wave). Stored as absolute seconds,
-			# sentinel -1 means "use authored" (skip).
-			var cd_ov: int = BalanceOverrides.get_wave_countdown(
-				String(lvl.level_id), wi
-			)
-			if cd_ov >= 0:
-				var authored_cd: int = int(wave.countdown) if "countdown" in wave else 0
-				if cd_ov != authored_cd:
+				var new_count: int = max(0, int(round(float(authored) * mult)))
+				# Effective count of 0 → remove the dead emitter at bake instead
+				# of persisting count=0. Otherwise zero-count emitters accumulate
+				# in .tres files as ghost rows that confuse the editor and the
+				# pressure model. See plan §#4.
+				if new_count <= 0:
 					out.append({
-						"kind": "countdown",
+						"kind": "remove_spawn",
 						"wave_list": wave_list,
 						"level_id": String(lvl.level_id),
 						"wave_idx": wi,
-						"wave": wave,
-						"authored": authored_cd,
-						"new_seconds": cd_ov,
+						"spawn_idx": si,
+						"spawn": spawn,
+						"authored": authored,
+					})
+				else:
+					out.append({
+						"kind": "count",
+						"wave_list": wave_list,
+						"level_id": String(lvl.level_id),
+						"wave_idx": wi,
+						"spawn_idx": si,
+						"spawn": spawn,
+						"authored": authored,
+						"mult": mult,
+						"new_count": new_count,
 					})
 			# Per-wave early-call window override → bakes to
 			# WaveData.early_call_window_sec (-1 = inherit level).
@@ -840,6 +875,25 @@ func _collect_wave_bake_deltas() -> Array:
 						"wave": wave,
 						"authored": authored_ec,
 						"new_seconds": ec_ov,
+					})
+			# Per-wave gold-per-sec override → bakes to
+			# WaveData.early_call_gold_per_sec (-1 = inherit level).
+			var gps_ov: float = BalanceOverrides.get_wave_gold_per_sec(
+				String(lvl.level_id), wi
+			)
+			if gps_ov >= 0.0:
+				var authored_gps: float = -1.0
+				if "early_call_gold_per_sec" in wave:
+					authored_gps = float(wave.early_call_gold_per_sec)
+				if absf(gps_ov - authored_gps) > 0.0001:
+					out.append({
+						"kind": "gold_per_sec",
+						"wave_list": wave_list,
+						"level_id": String(lvl.level_id),
+						"wave_idx": wi,
+						"wave": wave,
+						"authored": authored_gps,
+						"new_seconds": gps_ov,
 					})
 			# Interval + start_delay overrides per emitter (absolute seconds,
 			# sentinel -1 = use authored).
@@ -875,6 +929,19 @@ func _collect_wave_bake_deltas() -> Array:
 						"authored": float(spawn2.start_delay),
 						"new_seconds": dly_ov,
 					})
+		# Per-level authored starting gold — bakes to LevelNodeData.starting_gold
+		# so the level always starts with this exact value across sessions.
+		var sg_ov: int = BalanceOverrides.get_level_int(String(lvl.level_id), "starting_gold", -1)
+		if sg_ov >= 0:
+			var authored_sg: int = int(lvl.starting_gold) if "starting_gold" in lvl else -1
+			if sg_ov != authored_sg:
+				out.append({
+					"kind": "level_starting_gold",
+					"level_id": String(lvl.level_id),
+					"level_data": lvl,
+					"authored": authored_sg,
+					"new_value": sg_ov,
+				})
 	return out
 
 
@@ -888,6 +955,13 @@ func _unique_wave_list_count(deltas: Array) -> int:
 func _apply_wave_bake(deltas: Array) -> void:
 	var lists_touched: Dictionary = {}   # level_id → wave_list (for save)
 	var summary_lines: PackedStringArray = []
+	# Deferred removals: zero-count emitters get pruned AFTER all in-place
+	# edits have applied (otherwise spawn_idx shifts mid-iteration). Keyed by
+	# the WaveData node; each entry is the set of spawn indices to drop.
+	var pending_removals: Dictionary = {}
+	# Track whether any LevelNodeData was mutated; if so, save level_list.tres
+	# (the wrapper resource that owns each LevelNodeData as a sub-resource).
+	var level_list_dirty: bool = false
 	for d in deltas:
 		var kind: String = String(d.get("kind", "count"))
 		match kind:
@@ -900,15 +974,6 @@ func _apply_wave_bake(deltas: Array) -> void:
 					String(d.level_id), int(d.wave_idx) + 1, int(d.spawn_idx),
 					int(d.authored), int(d.new_count), float(d.mult),
 				])
-			"countdown":
-				var wave: Resource = d.wave
-				if wave == null:
-					continue
-				wave.set("countdown", float(d.new_seconds))
-				summary_lines.append("  %s W%d countdown  %ds → %ds" % [
-					String(d.level_id), int(d.wave_idx) + 1,
-					int(d.authored), int(d.new_seconds),
-				])
 			"early_call":
 				var wave_ec: Resource = d.wave
 				if wave_ec == null:
@@ -918,6 +983,16 @@ func _apply_wave_bake(deltas: Array) -> void:
 				summary_lines.append("  %s W%d early-call window  %s → %.0fs" % [
 					String(d.level_id), int(d.wave_idx) + 1,
 					auth_str, float(d.new_seconds),
+				])
+			"gold_per_sec":
+				var wave_gps: Resource = d.wave
+				if wave_gps == null:
+					continue
+				wave_gps.set("early_call_gold_per_sec", float(d.new_seconds))
+				var auth_gps_str: String = "inherit" if float(d.authored) < 0.0 else "%.1fg/s" % float(d.authored)
+				summary_lines.append("  %s W%d gold-per-sec  %s → %.1fg/s" % [
+					String(d.level_id), int(d.wave_idx) + 1,
+					auth_gps_str, float(d.new_seconds),
 				])
 			"interval":
 				var spawn3: Resource = d.spawn
@@ -937,7 +1012,51 @@ func _apply_wave_bake(deltas: Array) -> void:
 					String(d.level_id), int(d.wave_idx) + 1, int(d.spawn_idx),
 					float(d.authored), float(d.new_seconds),
 				])
+			"remove_spawn":
+				# Defer the actual remove until after the for-loop so spawn_idx
+				# stays stable for any sibling deltas in this wave.
+				var wave_for_removal: WaveData = d.wave_list.waves[int(d.wave_idx)]
+				if wave_for_removal == null:
+					continue
+				if not pending_removals.has(wave_for_removal):
+					pending_removals[wave_for_removal] = []
+				(pending_removals[wave_for_removal] as Array).append(int(d.spawn_idx))
+				summary_lines.append("  %s W%d emitter[%d] removed (count → 0)" % [
+					String(d.level_id), int(d.wave_idx) + 1, int(d.spawn_idx),
+				])
+			"level_starting_gold":
+				# Authored per-level starting gold — mutates LevelNodeData in
+				# place. The LevelList wrapper at res://ui/world_map/level_list.tres
+				# owns the LevelNodeData entries; saving the wrapper persists
+				# the change.
+				var lvl_node: Resource = d.level_data
+				if lvl_node == null:
+					continue
+				lvl_node.set("starting_gold", int(d.new_value))
+				level_list_dirty = true
+				var auth_sg_str: String = "default" if int(d.authored) < 0 else "%d" % int(d.authored)
+				summary_lines.append("  %s starting_gold  %s → %d" % [
+					String(d.level_id), auth_sg_str, int(d.new_value),
+				])
+				continue   # no wave_list to track for this kind
 		lists_touched[String(d.level_id)] = d.wave_list
+	# Apply deferred zero-count removals. Walk indices descending per-wave so
+	# earlier indices stay valid as later ones drop out.
+	for wave in pending_removals.keys():
+		var idxs: Array = pending_removals[wave]
+		idxs.sort()
+		idxs.reverse()
+		for sidx in idxs:
+			if int(sidx) >= 0 and int(sidx) < (wave as WaveData).spawns.size():
+				(wave as WaveData).spawns.remove_at(int(sidx))
+	# Fold in structurally-dirty levels (class/path swap, add/remove emitter).
+	# These have no slider deltas but the wave_list resource was mutated in
+	# place and must be saved to persist.
+	for lid in _structurally_dirty_levels.keys():
+		if lists_touched.has(lid):
+			continue
+		lists_touched[lid] = _structurally_dirty_levels[lid]
+		summary_lines.append("  %s  (wave structure mutated — class/path/add/remove)" % lid)
 	var save_failures: PackedStringArray = []
 	for lid in lists_touched.keys():
 		var wave_list: Resource = lists_touched[lid]
@@ -948,6 +1067,18 @@ func _apply_wave_bake(deltas: Array) -> void:
 		var err: int = ResourceSaver.save(wave_list, path)
 		if err != OK:
 			save_failures.append("%s (err %d)" % [lid, err])
+	# Persist LevelList wrapper if any LevelNodeData was mutated (currently
+	# only level_starting_gold). Each LevelNodeData lives as a sub-resource
+	# inside level_list.tres; saving the wrapper cascades the changes.
+	if level_list_dirty:
+		var ll_path: String = "res://ui/world_map/level_list.tres"
+		var ll_res: Resource = load(ll_path)
+		if ll_res != null:
+			var ll_err: int = ResourceSaver.save(ll_res, ll_path)
+			if ll_err != OK:
+				save_failures.append("level_list.tres (err %d)" % ll_err)
+		else:
+			save_failures.append("level_list.tres (load failed)")
 	print("[BalanceSliders/Bake] Wrote %d wave change(s) across %d wave-list(s):" % [
 		deltas.size(), lists_touched.size(),
 	])
@@ -956,9 +1087,38 @@ func _apply_wave_bake(deltas: Array) -> void:
 	if not save_failures.is_empty():
 		push_warning("[BalanceSliders/Bake] wave save failures: " + ", ".join(save_failures))
 	BalanceOverrides.reset_wave_overrides()
-	BalanceOverrides.reset_wave_countdown_overrides()
+	_structurally_dirty_levels.clear()
 	BalanceOverrides.reset_wave_timing_overrides()
 	BalanceOverrides.reset_wave_early_call_overrides()
+	BalanceOverrides.reset_wave_gold_per_sec_overrides()
+	# Level-wide overrides — starting_gold IS bakeable (handled above as
+	# kind:"level_starting_gold"); the rest (starting_lives, hp_mult,
+	# early_call_window) map to runtime-only state with no .tres field, so
+	# they silently keep affecting the next playtest after Bake unless reset.
+	# Surface only the truly non-bakeable ones via Toast, then wipe the slate.
+	var active_level_ovs: Dictionary = BalanceOverrides.get_active_level_overrides()
+	if not active_level_ovs.is_empty():
+		var n_levels: int = 0
+		for lid in active_level_ovs.keys():
+			var per: Dictionary = active_level_ovs[lid] as Dictionary
+			if per.is_empty():
+				continue
+			var non_bakeable_pairs: PackedStringArray = []
+			for k in per.keys():
+				if String(k) == "starting_gold":
+					continue   # baked; not stale
+				non_bakeable_pairs.append("%s=%s" % [String(k), str(per[k])])
+			if non_bakeable_pairs.is_empty():
+				continue
+			n_levels += 1
+			print("[BalanceSliders/Bake] reset level overrides on %s: %s" % [
+				String(lid), ", ".join(non_bakeable_pairs),
+			])
+		if n_levels > 0:
+			Toast.show_message("Bake: %d level override%s reset (not bakeable)" % [
+				n_levels, "" if n_levels == 1 else "s",
+			])
+		BalanceOverrides.reset_level_overrides()
 
 
 func _apply_bake(deltas: Array) -> void:
@@ -1294,7 +1454,11 @@ func _add_level_subgroup(lvl: Resource) -> void:
 		body.visible = not body.visible
 		hdr.text = ("▾ " if body.visible else "▸ ") + lvl.display_name + "   (" + lvl.level_id + ")")
 	# Three rows: starting_gold (int with -1 sentinel), starting_lives, hp_mult.
-	_add_level_int_slider(body, lvl.level_id, "starting_gold", -1, 2000, 25)
+	# Pass an effective_calc so the row surfaces the runtime starting-gold
+	# value (RunState + meta + global_add) when the override sits at -1.
+	# Resolves the "default = ?" question without a separate readout.
+	_add_level_int_slider(body, lvl.level_id, "starting_gold", -1, 2000, 1,
+		func(): return _compute_starting_gold(lvl))
 	_add_level_int_slider(body, lvl.level_id, "starting_lives", -1, 100, 1)
 	_add_level_float_slider(body, lvl.level_id, "hp_mult", 0.5, 3.0, 0.05)
 	# Early-call bonus window — caps `bonus = min(seconds_remaining, window)`.
@@ -1337,7 +1501,12 @@ func _add_wave_timeline_block(parent: VBoxContainer, lvl: Resource) -> void:
 	# per-wave detail card is read.
 	var overview: Control = _LevelOverviewChartScript.new()
 	charts_box.add_child(overview)
-	overview.set_data(wave_list, lvl, _compute_starting_gold(lvl))
+	# Compute pressure rows once for this level — shared by the overview
+	# strip and every per-wave header below. Cached on the screen via
+	# _pressure_for_level so this stays cheap on slider rerenders.
+	var pressure_rows: Array = _pressure_for_level(lvl, wave_list)
+	overview.set_data(wave_list, lvl, _compute_starting_gold(lvl),
+		_compute_saturation_gold(lvl, wave_list), pressure_rows)
 	_wave_charts.append({
 		"chart": overview, "is_overview": true,
 		"wave_list": wave_list, "level_data": lvl,
@@ -1354,87 +1523,199 @@ func _add_wave_timeline_block(parent: VBoxContainer, lvl: Resource) -> void:
 		charts_box.add_child(chart)
 		var supply: float = _compute_l1_dmg_per_gold(wave)
 		var gold: int = _compute_gold_at_wave_start(wave_list, i, lvl)
-		chart.set_data(wave, lvl, i, supply, gold, paths, level_final_gold)
+		# Compute next-wave early-call info (rendered as the in-spawn band on
+		# THIS chart's right end).
+		var has_next: bool = i + 1 < wave_list.waves.size() \
+				and wave_list.waves[i + 1] != null
+		var next_ec: float = 0.0
+		var next_ec_authored: float = 0.0
+		var next_rate: float = 1.0
+		var next_rate_authored: float = 1.0
+		if has_next:
+			var next_wave: WaveData = wave_list.waves[i + 1]
+			next_ec = _resolve_ec_window(lvl, next_wave, i + 1)
+			next_ec_authored = _authored_ec_window_for(lvl, next_wave)
+			next_rate = _resolve_gold_per_sec(lvl, next_wave, i + 1)
+			next_rate_authored = _authored_gold_per_sec_for(lvl, next_wave)
+		var p_actual: float = -1.0
+		var p_target: float = 0.0
+		var p_reason: String = ""
+		var p_fix: String = ""
+		if i < pressure_rows.size():
+			var row: Dictionary = pressure_rows[i]
+			p_actual = float(row.get("actual", -1.0))
+			p_target = float(row.get("target", 0.0))
+			p_reason = String(row.get("reason", ""))
+			p_fix = String(row.get("fix", ""))
+		chart.set_data(wave, lvl, i, supply, gold, paths, level_final_gold,
+			next_ec, next_ec_authored, next_rate, next_rate_authored, has_next,
+			p_actual, p_target, p_reason, p_fix)
 		_wave_charts.append({
 			"chart": chart, "wave_index": i, "level_data": lvl,
 			"wave_list": wave_list, "paths": paths,
 		})
-		_add_wave_emitter_editor(charts_box, wave, i, lvl)
+		# Click any 5s bucket in the chart's spawn-window region to open the
+		# per-class +/- popup. The signal carries wave_index so this handler
+		# can retrieve the right WaveData to mutate.
+		chart.bucket_clicked.connect(func(wi: int, bi: int, ts: float, te: float, sp: Vector2):
+			_show_bucket_popup(lvl, wave_list, wi, bi, ts, te, paths, sp))
+		# In-spawn band drag/wheel/right-click → mutate the NEXT wave's
+		# early-call window or gold-per-second. this_wave_idx + 1 = target.
+		var lvl_id_for_chart: String = String(lvl.level_id) if "level_id" in lvl else ""
+		chart.next_ec_window_changed.connect(func(this_wi: int, s: float):
+			BalanceOverrides.set_wave_early_call_window(lvl_id_for_chart, this_wi + 1, s)
+			_refresh_wave_charts())
+		chart.next_ec_gold_per_sec_changed.connect(func(this_wi: int, r: float):
+			BalanceOverrides.set_wave_gold_per_sec(lvl_id_for_chart, this_wi + 1, r)
+			_refresh_wave_charts())
+		chart.next_reset_requested.connect(func(this_wi: int, reset_window: bool, reset_rate: bool):
+			if reset_window:
+				BalanceOverrides.reset_wave_early_call_window(lvl_id_for_chart, this_wi + 1)
+			if reset_rate:
+				BalanceOverrides.reset_wave_gold_per_sec(lvl_id_for_chart, this_wi + 1)
+			_refresh_wave_charts())
+		# Auto-expand the emitter editor when this wave is meaningfully off
+		# its authored target. The boundary (|drift| > 0.25) matches the
+		# "dangerous" / "too easy" verdict bands. Waves on target stay
+		# collapsed to keep the screen scannable.
+		var auto_expand: bool = false
+		if i < pressure_rows.size():
+			var prow: Dictionary = pressure_rows[i]
+			if float(prow.get("target", 0.0)) > 0.0 and absf(float(prow.get("drift", 0.0))) > 0.25:
+				auto_expand = true
+		_add_wave_emitter_editor(charts_box, wave, i, lvl, auto_expand)
 
 
-# Per-wave emitter editor — collapsible row that lists each WaveSpawn with a
-# count slider. Edits write to BalanceOverrides.wave_overrides; charts redraw
-# live; Bake button writes back to the .tres. Read-only metadata (path_id,
-# interval, start_delay) is surfaced beside each slider so the designer can
-# see context without editing those fields (deferred to v2).
-func _add_wave_emitter_editor(parent: VBoxContainer, wave: WaveData, wave_idx: int, lvl: Resource) -> void:
-	if wave == null or wave.spawns.is_empty():
+# Per-wave emitter editor — collapsible row that lists each WaveSpawn with
+# class dropdown, path dropdown, count/rate/delay sliders, and a [×] remove
+# button. A [+ Add emitter] button at the bottom appends a default emitter.
+# Slider edits use BalanceOverrides; structural edits (class/path/add/remove)
+# mutate the WaveSpawn / WaveData in memory and mark the level dirty for
+# Bake. Charts redraw live on every change.
+func _add_wave_emitter_editor(parent: VBoxContainer, wave: WaveData, wave_idx: int, lvl: Resource,
+		start_expanded: bool = false) -> void:
+	if wave == null:
 		return
 	var toggle := Button.new()
-	toggle.text = "        ▸ Edit emitters (%d)" % wave.spawns.size()
 	toggle.flat = true
 	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	toggle.set("theme_override_font_sizes/font_size", 13)
 	toggle.modulate = Color(0.85, 0.95, 1.0)
 	var body := VBoxContainer.new()
 	body.set("theme_override_constants/separation", 2)
-	body.visible = false
+	# Auto-expand when the wave's verdict is bad (|drift| > 25%) so the
+	# count/rate/delay knobs are visible without a click. Manually toggling
+	# afterward still works normally.
+	body.visible = start_expanded
 	toggle.pressed.connect(func():
 		body.visible = not body.visible
-		toggle.text = ("        ▾ " if body.visible else "        ▸ ") \
-			+ "Edit emitters (%d)" % wave.spawns.size())
+		_update_emitter_toggle_text(toggle, body, wave))
 	parent.add_child(toggle)
 	parent.add_child(body)
-	# Countdown slider sits at the TOP of the emitter list — biggest pacing
-	# knob, designer hits it first. Sentinel -1 = "use authored".
-	_add_wave_countdown_slider(body, wave, lvl, wave_idx)
-	# Per-wave early-call window override (KR-style — different windows per
-	# wave intent). Sentinel -1 = "inherit level / authored chain".
+	_populate_emitter_editor_body(body, wave, lvl, wave_idx, toggle)
+
+
+# Tear down + rebuild the emitter editor body. Called once on initial render
+# and again from the [×]/[+]/dropdown callbacks after a structural edit. The
+# `rebuild` Callable created inside captures the same args, so callers don't
+# need to thread state through.
+func _populate_emitter_editor_body(body: VBoxContainer, wave: WaveData, lvl: Resource,
+		wave_idx: int, toggle: Button) -> void:
+	for c in body.get_children():
+		body.remove_child(c)
+		c.queue_free()
+	var rebuild := func() -> void:
+		_populate_emitter_editor_body(body, wave, lvl, wave_idx, toggle)
+		_refresh_wave_charts()
+	# Strip registry — collected as each emitter row is added. After any
+	# slider change, walk the registry and re-apply set_data on every strip
+	# so the wave window (a max() across all emitters) stays consistent
+	# across rows.
+	var strips: Array = []
+	var recompute_all_strips := func() -> void:
+		var window: float = _wave_spawn_window(wave, lvl, wave_idx)
+		for entry in strips:
+			var s: Control = entry.get("strip")
+			if s == null or not is_instance_valid(s):
+				continue
+			var ev: Dictionary = _effective_emitter_values(
+				entry.spawn, lvl, wave_idx, entry.spawn_idx
+			)
+			s.set_data(float(ev.start), float(ev.interval), int(ev.count),
+				max(window, 1.0), entry.color)
+	# Early-call window + gold-per-sec sliders for THIS wave. The previous
+	# chart's in-spawn band is the canonical edit surface, but the sliders
+	# stay as a precision-input alternative (and as the only editing surface
+	# for W1 — its band lives on no preceding chart since there is none).
 	_add_wave_early_call_slider(body, wave, lvl, wave_idx)
+	_add_wave_gold_per_sec_slider(body, wave, lvl, wave_idx)
+	var paths_for_dropdown: Array = _collect_paths_for_lvl(lvl)
 	for spawn_idx in range(wave.spawns.size()):
 		var spawn: Resource = wave.spawns[spawn_idx]
 		if spawn == null:
 			continue
-		_add_emitter_slider(body, spawn, lvl, wave_idx, spawn_idx)
+		_add_emitter_slider(body, spawn, lvl, wave_idx, spawn_idx, paths_for_dropdown,
+				wave, rebuild, strips, recompute_all_strips)
+	_add_emitter_add_button(body, wave, lvl, wave_idx, paths_for_dropdown, rebuild)
+	_update_emitter_toggle_text(toggle, body, wave)
+	# Initial strip render now that all emitters are registered.
+	recompute_all_strips.call()
 
 
-func _add_wave_countdown_slider(parent: VBoxContainer, wave: WaveData, lvl: Resource,
-		wave_idx: int) -> void:
-	var hb := HBoxContainer.new()
-	hb.set("theme_override_constants/separation", 12)
-	var name_lbl := Label.new()
-	name_lbl.text = "            countdown"
-	name_lbl.set("theme_override_font_sizes/font_size", 12)
-	name_lbl.custom_minimum_size = Vector2(180, 0)
-	var authored: int = int(wave.countdown) if "countdown" in wave else 0
-	var current: int = BalanceOverrides.get_wave_countdown(String(lvl.level_id), wave_idx)
-	var sld := HSlider.new()
-	sld.min_value = -1   # sentinel = use authored
-	sld.max_value = 60
-	sld.step = 1
-	sld.value = current
-	sld.custom_minimum_size = Vector2(240, 0)
-	sld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var val_lbl := Label.new()
-	val_lbl.text = ("default %ds" % authored) if current < 0 else "%ds  (authored %ds)" % [current, authored]
-	val_lbl.set("theme_override_font_sizes/font_size", 12)
-	val_lbl.custom_minimum_size = Vector2(160, 0)
-	# Right-side context label so the row layout matches emitter rows.
-	var meta_lbl := Label.new()
-	meta_lbl.text = "−1 = use authored"
-	meta_lbl.set("theme_override_font_sizes/font_size", 11)
-	meta_lbl.modulate = Color(0.55, 0.60, 0.68)
-	meta_lbl.custom_minimum_size = Vector2(220, 0)
-	sld.value_changed.connect(func(v: float):
-		var iv: int = int(v)
-		BalanceOverrides.set_wave_countdown(String(lvl.level_id), wave_idx, iv)
-		val_lbl.text = ("default %ds" % authored) if iv < 0 else "%ds  (authored %ds)" % [iv, authored]
-		_refresh_wave_charts())
-	hb.add_child(name_lbl)
-	hb.add_child(sld)
-	hb.add_child(val_lbl)
-	hb.add_child(meta_lbl)
-	parent.add_child(hb)
+# Effective spawn window for a wave = max over emitters of
+# (effective_start + (effective_count - 1) * effective_interval). Mirrors the
+# WaveTimelineChart's _spawn_window_sec but reads through BalanceOverrides so
+# the editor strips align with what the chart shows.
+func _wave_spawn_window(wave: WaveData, lvl: Resource, wave_idx: int) -> float:
+	if wave == null or wave.spawns.is_empty():
+		return 1.0
+	var window: float = 0.0
+	for si in range(wave.spawns.size()):
+		var spawn: Resource = wave.spawns[si]
+		if spawn == null:
+			continue
+		var ev: Dictionary = _effective_emitter_values(spawn, lvl, wave_idx, si)
+		var count: int = int(ev.count)
+		if count <= 0:
+			continue
+		var end_t: float = float(ev.start) + float(max(count - 1, 0)) * float(ev.interval)
+		if end_t > window:
+			window = end_t
+	return max(window, 1.0)
+
+
+func _update_emitter_toggle_text(toggle: Button, body: VBoxContainer, wave: WaveData) -> void:
+	var triangle: String = "▾ " if body.visible else "▸ "
+	toggle.text = "        " + triangle + "Edit emitters (%d)" % wave.spawns.size()
+
+
+# Collect path_ids for a level by loading the wave_list. Used to populate the
+# per-emitter path dropdown. Mirrors _collect_paths but takes a LevelNodeData.
+func _collect_paths_for_lvl(lvl: Resource) -> Array:
+	if lvl == null or not ("wave_list_path" in lvl):
+		return []
+	var wl: WaveList = load(String(lvl.wave_list_path))
+	if wl == null:
+		return []
+	var paths: Array = _collect_paths(wl)
+	if paths.is_empty():
+		paths = ["left"]   # sane fallback so the dropdown isn't empty
+	return paths
+
+
+# Resolve the spawn's enemy_scene to a class_key. Used to pre-select the class
+# dropdown. Mirrors the lookup in _add_emitter_slider but as a pure helper.
+func _class_key_for_spawn(spawn: Resource) -> String:
+	if spawn == null or spawn.enemy_scene == null:
+		return "basic"
+	var lower: String = String(spawn.enemy_scene.resource_path).to_lower()
+	if lower.contains("boss"): return "boss"
+	if lower.contains("scout"): return "scout"
+	if lower.contains("armor"): return "armored"
+	if lower.contains("flying"): return "flying"
+	if lower.contains("brute"): return "brute"
+	if lower.contains("healer"): return "healer"
+	return "basic"
 
 
 # Per-wave early-call window slider. Resolution chain (top wins):
@@ -1485,33 +1766,591 @@ func _add_wave_early_call_slider(parent: VBoxContainer, wave: WaveData, lvl: Res
 	parent.add_child(hb)
 
 
-func _add_emitter_slider(parent: VBoxContainer, spawn: Resource, lvl: Resource,
-		wave_idx: int, spawn_idx: int) -> void:
-	# Three rows per emitter: count (mult), rate (absolute s, sentinel-1), delay
-	# (absolute s, sentinel -1). Class name + path on the count row only;
-	# rate / delay rows indent further so the visual grouping is obvious.
-	var class_key: String = "basic"
-	if spawn.enemy_scene != null:
-		var lower: String = String(spawn.enemy_scene.resource_path).to_lower()
-		if lower.contains("boss"): class_key = "boss"
-		elif lower.contains("scout"): class_key = "scout"
-		elif lower.contains("armor"): class_key = "armored"
-		elif lower.contains("flying"): class_key = "flying"
-		elif lower.contains("brute"): class_key = "brute"
-		elif lower.contains("healer"): class_key = "healer"
-	_add_emitter_count_row(parent, spawn, lvl, wave_idx, spawn_idx, class_key)
-	_add_emitter_rate_row(parent, spawn, lvl, wave_idx, spawn_idx)
-	_add_emitter_delay_row(parent, spawn, lvl, wave_idx, spawn_idx)
-
-
-func _add_emitter_count_row(parent: VBoxContainer, spawn: Resource, lvl: Resource,
-		wave_idx: int, spawn_idx: int, class_key: String) -> void:
+# Per-wave gold-per-second rate. Bonus formula: overlap_seconds × gold_per_sec.
+# Resolution chain mirrors early-call window (wave override → wave authored →
+# level authored). Sentinel -1 = inherit.
+func _add_wave_gold_per_sec_slider(parent: VBoxContainer, wave: WaveData, lvl: Resource,
+		wave_idx: int) -> void:
 	var hb := HBoxContainer.new()
 	hb.set("theme_override_constants/separation", 12)
 	var name_lbl := Label.new()
-	name_lbl.text = "            %s   count" % class_key
+	name_lbl.text = "            gold per second"
 	name_lbl.set("theme_override_font_sizes/font_size", 12)
 	name_lbl.custom_minimum_size = Vector2(180, 0)
+	var fallback: float = 1.0
+	if "early_call_gold_per_sec" in lvl:
+		fallback = float(lvl.early_call_gold_per_sec)
+	if wave != null and "early_call_gold_per_sec" in wave and wave.early_call_gold_per_sec >= 0.0:
+		fallback = float(wave.early_call_gold_per_sec)
+	var current: float = BalanceOverrides.get_wave_gold_per_sec(String(lvl.level_id), wave_idx)
+	var sld := HSlider.new()
+	sld.min_value = -1.0   # sentinel = inherit chain
+	sld.max_value = 5.0
+	sld.step = 0.1
+	sld.value = current
+	sld.custom_minimum_size = Vector2(240, 0)
+	sld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var val_lbl := Label.new()
+	val_lbl.text = ("inherit %.1fg/s" % fallback) if current < 0.0 else "%.1fg/s  (inherit %.1fg/s)" % [current, fallback]
+	val_lbl.set("theme_override_font_sizes/font_size", 12)
+	val_lbl.custom_minimum_size = Vector2(160, 0)
+	var meta_lbl := Label.new()
+	meta_lbl.text = "−1 = inherit (level / authored)"
+	meta_lbl.set("theme_override_font_sizes/font_size", 11)
+	meta_lbl.modulate = Color(0.55, 0.60, 0.68)
+	meta_lbl.custom_minimum_size = Vector2(220, 0)
+	sld.value_changed.connect(func(v: float):
+		BalanceOverrides.set_wave_gold_per_sec(String(lvl.level_id), wave_idx, v)
+		val_lbl.text = ("inherit %.1fg/s" % fallback) if v < 0.0 else "%.1fg/s  (inherit %.1fg/s)" % [v, fallback]
+		_refresh_wave_charts())
+	hb.add_child(name_lbl)
+	hb.add_child(sld)
+	hb.add_child(val_lbl)
+	hb.add_child(meta_lbl)
+	parent.add_child(hb)
+
+
+# ─── Inter-wave gap card ───────────────────────────────────────────────────
+# Resolves the 4-step early-call window chain (matches
+# WaveManager._effective_early_call_window): wave debug override → wave
+# authored → level debug override → level authored.
+func _resolve_ec_window(lvl: Resource, wave: WaveData, wave_idx: int) -> float:
+	var lvl_id: String = String(lvl.level_id) if "level_id" in lvl else ""
+	var v: float = BalanceOverrides.get_wave_early_call_window(lvl_id, wave_idx)
+	if v >= 0.0:
+		return v
+	if wave != null and "early_call_window_sec" in wave and wave.early_call_window_sec >= 0.0:
+		return float(wave.early_call_window_sec)
+	var lv: int = BalanceOverrides.get_level_int(lvl_id, "early_call_window", -1)
+	if lv >= 0:
+		return float(lv)
+	if "early_call_window_sec" in lvl:
+		return float(lvl.early_call_window_sec)
+	return 10.0
+
+
+# Authored ec_window (skips debug overrides — used as the "(was Xs)" hint
+# on the gap card and the right-click "Reset" target).
+func _authored_ec_window_for(lvl: Resource, wave: WaveData) -> float:
+	if wave != null and "early_call_window_sec" in wave and wave.early_call_window_sec >= 0.0:
+		return float(wave.early_call_window_sec)
+	if "early_call_window_sec" in lvl:
+		return float(lvl.early_call_window_sec)
+	return 10.0
+
+
+# Mirrors the 4-step early-call window chain but for the gold-per-second
+# rate. Used by the chart's in-spawn band label and the right-click reset.
+func _resolve_gold_per_sec(lvl: Resource, wave: WaveData, wave_idx: int) -> float:
+	var lvl_id: String = String(lvl.level_id) if "level_id" in lvl else ""
+	var v: float = BalanceOverrides.get_wave_gold_per_sec(lvl_id, wave_idx)
+	if v >= 0.0:
+		return v
+	if wave != null and "early_call_gold_per_sec" in wave and wave.early_call_gold_per_sec >= 0.0:
+		return float(wave.early_call_gold_per_sec)
+	if "early_call_gold_per_sec" in lvl:
+		return float(lvl.early_call_gold_per_sec)
+	return 1.0
+
+
+func _authored_gold_per_sec_for(lvl: Resource, wave: WaveData) -> float:
+	if wave != null and "early_call_gold_per_sec" in wave and wave.early_call_gold_per_sec >= 0.0:
+		return float(wave.early_call_gold_per_sec)
+	if "early_call_gold_per_sec" in lvl:
+		return float(lvl.early_call_gold_per_sec)
+	return 1.0
+
+
+# ─── Bucket-click popup (Variant B) ────────────────────────────────────────
+# Click any 5s bucket on the chart → popup with one row per enemy class
+# showing current count in that bucket and [−] [+] buttons. Direct-manipulation
+# alternative to the slider editor — designer thinks "more X at Y time on Z
+# path" and the popup translates to per-emitter mutations.
+
+# Resolves the path used when creating new emitters from the popup. Defaults
+# to the path picker's current selection (from popup state) or the first
+# authored path in the wave when state is missing.
+func _bucket_popup_default_path(paths: Array, wave: WaveData) -> String:
+	# Prefer a path that already has at least one emitter in this wave; falls
+	# back to the chart's path list (paths-in-level).
+	if wave != null:
+		for spawn in wave.spawns:
+			if spawn != null and spawn.path_id != "":
+				return String(spawn.path_id)
+	if not paths.is_empty():
+		return String(paths[0])
+	return "left"
+
+
+# Build the popup, populate per-class rows, show centered on the click.
+# Mutations write through BalanceOverrides (count_mult) when an existing
+# emitter contributes; create new WaveSpawns when no emitter targets this
+# bucket-class on the chosen path.
+func _show_bucket_popup(lvl: Resource, wave_list: WaveList,
+		wave_index: int, _bucket_idx: int, t_start: float, t_end: float,
+		paths: Array, screen_pos: Vector2) -> void:
+	if lvl == null or wave_list == null:
+		return
+	if wave_index < 0 or wave_index >= wave_list.waves.size():
+		return
+	var wave: WaveData = wave_list.waves[wave_index]
+	if wave == null:
+		return
+	# Tear down any existing popup so back-to-back clicks don't stack.
+	for c in get_children():
+		if c is PopupPanel and c.name == "BucketPopup":
+			c.queue_free()
+	var popup := PopupPanel.new()
+	popup.name = "BucketPopup"
+	add_child(popup)
+	var vb := VBoxContainer.new()
+	vb.set("theme_override_constants/separation", 4)
+	popup.add_child(vb)
+	# Header: "W3 · 30-35s on bl_plank"
+	var path_picker := OptionButton.new()
+	path_picker.set("theme_override_font_sizes/font_size", 12)
+	for i in range(paths.size()):
+		path_picker.add_item(String(paths[i]), i)
+	# Default selection: first path that has any emitter in the wave.
+	var default_path: String = _bucket_popup_default_path(paths, wave)
+	for i in range(paths.size()):
+		if String(paths[i]) == default_path:
+			path_picker.select(i)
+			break
+	var header := Label.new()
+	header.text = "W%d · %.0f-%.0fs · path:" % [wave_index + 1, t_start, t_end]
+	header.set("theme_override_font_sizes/font_size", 13)
+	header.modulate = Color(0.85, 0.95, 1.0)
+	var header_row := HBoxContainer.new()
+	header_row.set("theme_override_constants/separation", 8)
+	header_row.add_child(header)
+	header_row.add_child(path_picker)
+	vb.add_child(header_row)
+	var sep := HSeparator.new()
+	vb.add_child(sep)
+	# Per-class rows.
+	var rows: Dictionary = {}   # class_key → {count_lbl, minus_btn}
+	for class_key in _CLASS_KEYS:
+		var row := HBoxContainer.new()
+		row.set("theme_override_constants/separation", 8)
+		var class_lbl := Label.new()
+		class_lbl.text = class_key
+		class_lbl.set("theme_override_font_sizes/font_size", 12)
+		class_lbl.custom_minimum_size = Vector2(80, 0)
+		var color: Color = _EMITTER_STRIP_COLORS.get(class_key, Color(0.65, 0.65, 0.70))
+		class_lbl.modulate = color
+		var count_lbl := Label.new()
+		count_lbl.set("theme_override_font_sizes/font_size", 12)
+		count_lbl.custom_minimum_size = Vector2(40, 0)
+		var minus_btn := Button.new()
+		minus_btn.text = "−"
+		minus_btn.set("theme_override_font_sizes/font_size", 14)
+		minus_btn.custom_minimum_size = Vector2(28, 28)
+		var plus_btn := Button.new()
+		plus_btn.text = "+"
+		plus_btn.set("theme_override_font_sizes/font_size", 14)
+		plus_btn.custom_minimum_size = Vector2(28, 28)
+		row.add_child(class_lbl)
+		row.add_child(count_lbl)
+		row.add_child(minus_btn)
+		row.add_child(plus_btn)
+		vb.add_child(row)
+		rows[class_key] = {"count_lbl": count_lbl, "minus_btn": minus_btn, "plus_btn": plus_btn}
+		minus_btn.pressed.connect(func():
+			var pid: String = path_picker.get_item_text(path_picker.selected)
+			_bucket_popup_decrement(lvl, wave, wave_index, t_start, t_end, pid, class_key)
+			_refresh_bucket_popup_counts(rows, wave, lvl, wave_index, t_start, t_end,
+				path_picker.get_item_text(path_picker.selected)))
+		plus_btn.pressed.connect(func():
+			var pid: String = path_picker.get_item_text(path_picker.selected)
+			_bucket_popup_increment(lvl, wave, wave_index, t_start, t_end, pid, class_key)
+			_refresh_bucket_popup_counts(rows, wave, lvl, wave_index, t_start, t_end,
+				path_picker.get_item_text(path_picker.selected)))
+	# Path picker change → refresh row counts so they reflect the new path.
+	path_picker.item_selected.connect(func(_idx: int):
+		_refresh_bucket_popup_counts(rows, wave, lvl, wave_index, t_start, t_end,
+			path_picker.get_item_text(path_picker.selected)))
+	# Initial counts.
+	_refresh_bucket_popup_counts(rows, wave, lvl, wave_index, t_start, t_end, default_path)
+	# Show the popup near the click. Godot positions at the top-left corner;
+	# clamp to screen so it doesn't go off-edge.
+	var win: Window = get_window()
+	var pos: Vector2i = Vector2i(screen_pos)
+	if win != null:
+		pos += win.position
+	popup.popup(Rect2i(pos, Vector2i(0, 0)))
+
+
+# Walk wave.spawns, count enemies in [t_start, t_end) on the given path per
+# class. Result keyed by class_key. Reads through BalanceOverrides so the
+# count reflects what the chart shows.
+func _bucket_class_counts(wave: WaveData, lvl: Resource, wave_idx: int,
+		t_start: float, t_end: float, path_id: String) -> Dictionary:
+	var counts: Dictionary = {}
+	for ck in _CLASS_KEYS:
+		counts[ck] = 0
+	if wave == null:
+		return counts
+	for si in range(wave.spawns.size()):
+		var spawn: Resource = wave.spawns[si]
+		if spawn == null or String(spawn.path_id) != path_id:
+			continue
+		var ev: Dictionary = _effective_emitter_values(spawn, lvl, wave_idx, si)
+		var count: int = int(ev.count)
+		if count <= 0:
+			continue
+		var class_key: String = _class_key_for_spawn(spawn)
+		var start: float = float(ev.start)
+		var interval: float = float(ev.interval)
+		# Count spawns whose firing time falls in [t_start, t_end).
+		for i in range(count):
+			var t: float = start + float(i) * interval
+			if t >= t_start and t < t_end:
+				counts[class_key] = int(counts[class_key]) + 1
+	return counts
+
+
+func _refresh_bucket_popup_counts(rows: Dictionary, wave: WaveData, lvl: Resource,
+		wave_idx: int, t_start: float, t_end: float, path_id: String) -> void:
+	var counts: Dictionary = _bucket_class_counts(wave, lvl, wave_idx, t_start, t_end, path_id)
+	for class_key in rows.keys():
+		var n: int = int(counts.get(class_key, 0))
+		var entry: Dictionary = rows[class_key]
+		var lbl: Label = entry.get("count_lbl")
+		var minus: Button = entry.get("minus_btn")
+		if lbl != null:
+			lbl.text = str(n)
+			lbl.modulate = Color(0.95, 0.95, 0.95) if n > 0 else Color(0.45, 0.47, 0.52)
+		if minus != null:
+			minus.disabled = (n <= 0)
+
+
+# Find an existing emitter that fires AT LEAST ONE spawn in [t_start, t_end)
+# on the given path with the given class. Returns spawn_idx or -1.
+func _find_contributing_emitter(wave: WaveData, lvl: Resource, wave_idx: int,
+		t_start: float, t_end: float, path_id: String, class_key: String) -> int:
+	if wave == null:
+		return -1
+	for si in range(wave.spawns.size()):
+		var spawn: Resource = wave.spawns[si]
+		if spawn == null or String(spawn.path_id) != path_id:
+			continue
+		if _class_key_for_spawn(spawn) != class_key:
+			continue
+		var ev: Dictionary = _effective_emitter_values(spawn, lvl, wave_idx, si)
+		var count: int = int(ev.count)
+		if count <= 0:
+			continue
+		var start: float = float(ev.start)
+		var interval: float = float(ev.interval)
+		for i in range(count):
+			var t: float = start + float(i) * interval
+			if t >= t_start and t < t_end:
+				return si
+	return -1
+
+
+# +1 in this bucket: prefer extending an existing emitter targeting this
+# bucket; else create a new WaveSpawn at start_delay = t_start, count = 1.
+const _BUCKET_MIN_INTERVAL: float = 0.05
+
+
+# Stricter sibling of _find_contributing_emitter — matches only emitters that
+# are FULLY CONTAINED in [t_start, t_end] (the bucket-bound shape created by
+# the popup itself). Wide-span authored emitters that happen to spawn into
+# this bucket are NOT matched, so popup clicks never extend their tails.
+func _find_bucket_emitter(wave: WaveData, lvl: Resource, wave_idx: int,
+		t_start: float, t_end: float, path_id: String, class_key: String) -> int:
+	if wave == null:
+		return -1
+	for si in range(wave.spawns.size()):
+		var spawn: Resource = wave.spawns[si]
+		if spawn == null or String(spawn.path_id) != path_id:
+			continue
+		if _class_key_for_spawn(spawn) != class_key:
+			continue
+		var ev: Dictionary = _effective_emitter_values(spawn, lvl, wave_idx, si)
+		var count: int = int(ev.count)
+		if count <= 0:
+			continue
+		var start: float = float(ev.start)
+		var interval: float = float(ev.interval)
+		# Containment: starts at-or-just-after t_start, last spawn at-or-before t_end.
+		if start < t_start - 0.001 or start > t_start + 0.5:
+			continue
+		var last_t: float = start + float(max(count - 1, 0)) * interval
+		if last_t <= t_end + 0.001:
+			return si
+	return -1
+
+
+# Pack `target_count` evenly into [t_start, t_end] for an emitter at spawn_idx.
+# Writes BalanceOverrides for count_mult / interval / start_delay so the
+# emitter's spawn schedule stays inside the bucket. Returns false when the
+# required interval would dip below _BUCKET_MIN_INTERVAL (caller toasts).
+func _pack_emitter_into_bucket(spawn: Resource, lvl: Resource, wave_idx: int,
+		spawn_idx: int, t_start: float, t_end: float, target_count: int) -> bool:
+	var lvl_id: String = String(lvl.level_id)
+	var authored: int = int(spawn.count)
+	if authored <= 0:
+		authored = 1  # guard against authored=0 emitters; mult math needs a non-zero base
+	if target_count <= 0:
+		BalanceOverrides.set_wave_count_mult(lvl_id, wave_idx, spawn_idx, 0.0)
+		return true
+	# Compute the spacing that fits target_count spawns inside [t_start, t_end].
+	# count==1 → no second spawn, any positive interval works (use bucket width
+	# so the editor's strip looks sane).
+	var bucket_w: float = max(0.01, t_end - t_start)
+	var required_interval: float = bucket_w
+	if target_count >= 2:
+		required_interval = bucket_w / float(target_count - 1)
+	if required_interval < _BUCKET_MIN_INTERVAL:
+		return false
+	BalanceOverrides.set_wave_count_mult(lvl_id, wave_idx, spawn_idx,
+		float(target_count) / float(authored))
+	BalanceOverrides.set_wave_interval(lvl_id, wave_idx, spawn_idx, required_interval)
+	BalanceOverrides.set_wave_delay(lvl_id, wave_idx, spawn_idx, t_start)
+	return true
+
+
+func _bucket_popup_increment(lvl: Resource, wave: WaveData, wave_idx: int,
+		t_start: float, t_end: float, path_id: String, class_key: String) -> void:
+	var si: int = _find_bucket_emitter(wave, lvl, wave_idx, t_start, t_end, path_id, class_key)
+	if si >= 0:
+		var spawn: Resource = wave.spawns[si]
+		var ev: Dictionary = _effective_emitter_values(spawn, lvl, wave_idx, si)
+		if not _pack_emitter_into_bucket(spawn, lvl, wave_idx, si, t_start, t_end,
+				int(ev.count) + 1):
+			Toast.show_message("Bucket is full")
+			return
+	else:
+		# Create a new bucket-bound emitter with count=1 anchored at t_start.
+		# Subsequent +1 clicks will find this emitter via _find_bucket_emitter
+		# and pack the new spawns in via _pack_emitter_into_bucket.
+		var scene_path: String = String(_CLASS_TO_SCENE_PATH.get(class_key, ""))
+		if scene_path == "":
+			return
+		var ps: PackedScene = load(scene_path)
+		if ps == null:
+			return
+		var ws := WaveSpawn.new()
+		ws.path_id = path_id
+		ws.enemy_scene = ps
+		ws.count = 1
+		ws.interval = max(_BUCKET_MIN_INTERVAL, t_end - t_start)
+		ws.start_delay = t_start
+		wave.spawns.append(ws)
+		_mark_level_dirty(lvl)
+		# New class may have entered the wave — invalidate per-class caches.
+		for entry in _wave_charts:
+			var ch: Control = entry.get("chart")
+			if ch != null and is_instance_valid(ch) and ch.has_method("clear_enemy_caches"):
+				ch.clear_enemy_caches()
+	_rebuild_emitter_editor_for_wave(wave_idx)
+	_refresh_wave_charts()
+
+
+# −1 in this bucket: locate the bucket-bound emitter and drop one spawn,
+# repacking the remaining count into the bucket. Wide-span authored emitters
+# are intentionally ignored — the popup never destructively edits authored
+# content.
+func _bucket_popup_decrement(lvl: Resource, wave: WaveData, wave_idx: int,
+		t_start: float, t_end: float, path_id: String, class_key: String) -> void:
+	var si: int = _find_bucket_emitter(wave, lvl, wave_idx, t_start, t_end, path_id, class_key)
+	if si < 0:
+		return
+	var spawn: Resource = wave.spawns[si]
+	var ev: Dictionary = _effective_emitter_values(spawn, lvl, wave_idx, si)
+	var current: int = int(ev.count)
+	if current <= 0:
+		return
+	# Always succeeds when target_count <= current (intervals only ever grow).
+	_pack_emitter_into_bucket(spawn, lvl, wave_idx, si, t_start, t_end, current - 1)
+	_rebuild_emitter_editor_for_wave(wave_idx)
+	_refresh_wave_charts()
+
+
+# Locate the per-wave emitter editor body for this wave_idx and rebuild it
+# (so the count slider + timing label reflect the new mult). The editor body
+# isn't tracked in a registry — find it via the chart entry's `wave_index`.
+# For now, just refresh the charts and let the user re-expand the editor;
+# next session can wire a per-wave editor registry if friction surfaces.
+func _rebuild_emitter_editor_for_wave(_wave_idx: int) -> void:
+	# Sliders auto-recompute when re-expanded; popup-driven changes just
+	# refresh the chart and (next click) the popup row counts. No-op for now.
+	pass
+
+
+func _add_emitter_slider(parent: VBoxContainer, spawn: Resource, lvl: Resource,
+		wave_idx: int, spawn_idx: int, paths: Array, wave: WaveData,
+		rebuild: Callable, strips: Array, recompute_all_strips: Callable) -> void:
+	# Three rows per emitter: count (mult), rate (absolute s, sentinel-1), delay
+	# (absolute s, sentinel -1), then a tick-mark timeline strip showing this
+	# emitter's spawn schedule across the wave window.
+	#
+	# `timing_lbl` shows "t=0.0s→10.5s" — first/last spawn times for the
+	# emitter, computed from effective count × interval + start_delay. Rendered
+	# inside the count row but updated by ALL three sliders (count/rate/delay)
+	# via the shared `recompute_timing` Callable. The same Callable also
+	# triggers a strip-wide redraw because the wave window (max across
+	# emitters) can grow when any emitter's count/rate/delay changes.
+	var timing_lbl := Label.new()
+	timing_lbl.set("theme_override_font_sizes/font_size", 11)
+	timing_lbl.modulate = Color(0.55, 0.60, 0.68)
+	timing_lbl.custom_minimum_size = Vector2(120, 0)
+	var recompute_timing := func() -> void:
+		timing_lbl.text = _emitter_timing_text(spawn, lvl, wave_idx, spawn_idx)
+		recompute_all_strips.call()
+	recompute_timing.call()
+	var count_row: Dictionary = _add_emitter_count_row(parent, spawn, lvl, wave_idx, spawn_idx,
+			paths, wave, rebuild, timing_lbl, recompute_timing)
+	var rate_row: Dictionary = _add_emitter_rate_row(parent, spawn, lvl, wave_idx, spawn_idx,
+			recompute_timing)
+	var delay_row: Dictionary = _add_emitter_delay_row(parent, spawn, lvl, wave_idx, spawn_idx,
+			recompute_timing)
+	# Per-emitter timeline strip — tick marks at every effective spawn time
+	# along the wave's spawn window. set_data is called immediately by the
+	# initial recompute_all_strips() invocation back in _populate_emitter_editor_body.
+	var strip_row := HBoxContainer.new()
+	strip_row.set("theme_override_constants/separation", 8)
+	strip_row.add_child(_indent_spacer(160))
+	var strip: Control = _EmitterTimelineStripScript.new()
+	strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	strip.custom_minimum_size = Vector2(0, 18)
+	strip_row.add_child(strip)
+	parent.add_child(strip_row)
+	var class_key: String = _class_key_for_spawn(spawn)
+	var color: Color = _EMITTER_STRIP_COLORS.get(class_key, Color(0.65, 0.65, 0.70))
+	strips.append({
+		"strip": strip,
+		"spawn": spawn,
+		"spawn_idx": spawn_idx,
+		"color": color,
+	})
+	# Hook the strip's drag signal: write overrides + sync slider widgets
+	# (without retriggering their value_changed) + redraw siblings + chart.
+	strip.values_changed.connect(func(new_start: float, new_interval: float, new_count: int):
+		_apply_strip_drag(spawn, lvl, wave_idx, spawn_idx,
+			new_start, new_interval, new_count,
+			count_row, rate_row, delay_row,
+			timing_lbl, recompute_all_strips))
+
+
+# Apply a drag-induced change from EmitterTimelineStrip.values_changed.
+# Writes overrides, syncs the three slider widgets (set_value_no_signal so the
+# value_changed callbacks don't refire), updates val_lbls, and refreshes
+# sibling strips + the chart. Mirrors what the slider value_changed callbacks
+# do but driven from the strip drag.
+func _apply_strip_drag(spawn: Resource, lvl: Resource, wave_idx: int, spawn_idx: int,
+		new_start: float, new_interval: float, new_count: int,
+		count_row: Dictionary, rate_row: Dictionary, delay_row: Dictionary,
+		timing_lbl: Label, recompute_all_strips: Callable) -> void:
+	var lvl_id: String = String(lvl.level_id)
+	# Count → multiplier override (relative to authored). Guard /0 for
+	# authored=0 emitters by treating that as "any new_count is just the mult".
+	var authored_count: int = int(spawn.count)
+	var new_mult: float = 1.0
+	if authored_count > 0:
+		new_mult = float(new_count) / float(authored_count)
+	BalanceOverrides.set_wave_count_mult(lvl_id, wave_idx, spawn_idx, new_mult)
+	# Interval / delay → absolute-second overrides.
+	BalanceOverrides.set_wave_interval(lvl_id, wave_idx, spawn_idx, new_interval)
+	BalanceOverrides.set_wave_delay(lvl_id, wave_idx, spawn_idx, new_start)
+	# Sync slider widgets without retriggering their value_changed callbacks.
+	var count_sld: HSlider = count_row.get("slider")
+	var count_val_lbl: Label = count_row.get("val_lbl")
+	if count_sld != null and is_instance_valid(count_sld):
+		count_sld.set_value_no_signal(new_count)
+	if count_val_lbl != null and is_instance_valid(count_val_lbl):
+		count_val_lbl.text = "%d  (×%.2f)" % [new_count, new_mult]
+	var rate_sld: HSlider = rate_row.get("slider")
+	var rate_val_lbl: Label = rate_row.get("val_lbl")
+	var rate_authored: float = float(rate_row.get("authored", 0.0))
+	if rate_sld != null and is_instance_valid(rate_sld):
+		rate_sld.set_value_no_signal(new_interval)
+	if rate_val_lbl != null and is_instance_valid(rate_val_lbl):
+		rate_val_lbl.text = "%.1fs  (authored %.1fs)" % [new_interval, rate_authored]
+	var delay_sld: HSlider = delay_row.get("slider")
+	var delay_val_lbl: Label = delay_row.get("val_lbl")
+	var delay_authored: float = float(delay_row.get("authored", 0.0))
+	if delay_sld != null and is_instance_valid(delay_sld):
+		delay_sld.set_value_no_signal(new_start)
+	if delay_val_lbl != null and is_instance_valid(delay_val_lbl):
+		delay_val_lbl.text = "%.1fs  (authored %.1fs)" % [new_start, delay_authored]
+	# Refresh the timing summary on the count row + redraw all strips (window
+	# may have grown) + redraw the chart card above.
+	if timing_lbl != null and is_instance_valid(timing_lbl):
+		timing_lbl.text = _emitter_timing_text(spawn, lvl, wave_idx, spawn_idx)
+	recompute_all_strips.call()
+	_refresh_wave_charts()
+
+
+# Resolve effective count / interval / start_delay for an emitter through the
+# BalanceOverrides chain. count = authored × count_mult; interval and
+# start_delay use sentinel -1 = "use authored". Used by the timing-label
+# helper and (later) the per-emitter timeline strip.
+func _effective_emitter_values(spawn: Resource, lvl: Resource,
+		wave_idx: int, spawn_idx: int) -> Dictionary:
+	var lvl_id: String = String(lvl.level_id)
+	var count_mult: float = BalanceOverrides.get_wave_count_mult(lvl_id, wave_idx, spawn_idx)
+	var count: int = max(0, int(round(float(spawn.count) * count_mult)))
+	var int_ov: float = BalanceOverrides.get_wave_interval(lvl_id, wave_idx, spawn_idx)
+	var interval: float = float(spawn.interval) if int_ov < 0.0 else int_ov
+	var dly_ov: float = BalanceOverrides.get_wave_delay(lvl_id, wave_idx, spawn_idx)
+	var start: float = float(spawn.start_delay) if dly_ov < 0.0 else dly_ov
+	return {"count": count, "interval": interval, "start": start}
+
+
+func _emitter_timing_text(spawn: Resource, lvl: Resource,
+		wave_idx: int, spawn_idx: int) -> String:
+	var ev: Dictionary = _effective_emitter_values(spawn, lvl, wave_idx, spawn_idx)
+	var count: int = int(ev.count)
+	if count <= 0:
+		return "—"
+	var start: float = float(ev.start)
+	if count == 1:
+		return "t=%.1fs" % start
+	var end_t: float = start + float(count - 1) * float(ev.interval)
+	return "t=%.1fs→%.1fs" % [start, end_t]
+
+
+func _add_emitter_count_row(parent: VBoxContainer, spawn: Resource, lvl: Resource,
+		wave_idx: int, spawn_idx: int, paths: Array, wave: WaveData,
+		rebuild: Callable, timing_lbl: Label, recompute_timing: Callable) -> Dictionary:
+	var hb := HBoxContainer.new()
+	hb.set("theme_override_constants/separation", 8)
+	# Class dropdown (basic / scout / armored / flying / healer / brute / boss).
+	# Swapping mutates spawn.enemy_scene in place; charts redraw live; Bake
+	# persists. No override layer — restart Godot to discard.
+	var class_dd := OptionButton.new()
+	class_dd.set("theme_override_font_sizes/font_size", 12)
+	class_dd.custom_minimum_size = Vector2(110, 0)
+	var current_class: String = _class_key_for_spawn(spawn)
+	for i in range(_CLASS_KEYS.size()):
+		class_dd.add_item(_CLASS_KEYS[i], i)
+		if _CLASS_KEYS[i] == current_class:
+			class_dd.select(i)
+	class_dd.item_selected.connect(func(idx: int):
+		var key: String = _CLASS_KEYS[idx]
+		var scene_path: String = String(_CLASS_TO_SCENE_PATH.get(key, ""))
+		if scene_path == "":
+			return
+		var ps: PackedScene = load(scene_path)
+		if ps == null:
+			return
+		spawn.enemy_scene = ps
+		_mark_level_dirty(lvl)
+		# Class swap can cascade chart caches (EHP per class), so clear them.
+		for entry in _wave_charts:
+			var ch: Control = entry.get("chart")
+			if ch != null and is_instance_valid(ch) and ch.has_method("clear_enemy_caches"):
+				ch.clear_enemy_caches()
+		rebuild.call())
+	# "count" label + slider.
+	var name_lbl := Label.new()
+	name_lbl.text = "count"
+	name_lbl.set("theme_override_font_sizes/font_size", 12)
+	name_lbl.custom_minimum_size = Vector2(60, 0)
 	var authored: int = int(spawn.count)
 	var current_mult: float = BalanceOverrides.get_wave_count_mult(
 		String(lvl.level_id), wave_idx, spawn_idx
@@ -1522,33 +2361,119 @@ func _add_emitter_count_row(parent: VBoxContainer, spawn: Resource, lvl: Resourc
 	sld.max_value = max(authored * 3, 50)
 	sld.step = 1
 	sld.value = current_abs
-	sld.custom_minimum_size = Vector2(240, 0)
+	sld.custom_minimum_size = Vector2(180, 0)
 	sld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var val_lbl := Label.new()
 	val_lbl.text = "%d  (×%.2f)" % [current_abs, current_mult]
 	val_lbl.set("theme_override_font_sizes/font_size", 12)
 	val_lbl.custom_minimum_size = Vector2(110, 0)
-	# Path label on the count row only — emitter identity context.
-	var meta_lbl := Label.new()
-	meta_lbl.text = String(spawn.path_id)
-	meta_lbl.set("theme_override_font_sizes/font_size", 11)
-	meta_lbl.modulate = Color(0.55, 0.60, 0.68)
-	meta_lbl.custom_minimum_size = Vector2(220, 0)
+	# Path dropdown — pick which Path2D this emitter spawns on.
+	var path_dd := OptionButton.new()
+	path_dd.set("theme_override_font_sizes/font_size", 12)
+	path_dd.custom_minimum_size = Vector2(110, 0)
+	var current_path: String = String(spawn.path_id)
+	var seen_current: bool = false
+	for i in range(paths.size()):
+		path_dd.add_item(String(paths[i]), i)
+		if String(paths[i]) == current_path:
+			path_dd.select(i)
+			seen_current = true
+	if not seen_current and current_path != "":
+		# Spawn references a path not used elsewhere in the level — surface it
+		# anyway so the dropdown reflects reality.
+		path_dd.add_item(current_path, paths.size())
+		path_dd.select(paths.size())
+	path_dd.item_selected.connect(func(idx: int):
+		var new_path: String = path_dd.get_item_text(idx)
+		spawn.path_id = new_path
+		_mark_level_dirty(lvl)
+		_refresh_wave_charts())
+	# [×] remove button.
+	var rm_btn := Button.new()
+	rm_btn.text = "×"
+	rm_btn.tooltip_text = "Remove this emitter from the wave"
+	rm_btn.set("theme_override_font_sizes/font_size", 14)
+	rm_btn.custom_minimum_size = Vector2(28, 28)
+	rm_btn.pressed.connect(func():
+		# Removing shifts every spawn_idx > this one — clear all per-emitter
+		# overrides for this wave to avoid stale-index drift.
+		BalanceOverrides.clear_wave_emitter_overrides(String(lvl.level_id), wave_idx)
+		wave.spawns.remove_at(spawn_idx)
+		_mark_level_dirty(lvl)
+		rebuild.call())
 	sld.value_changed.connect(func(v: float):
 		var iv: int = int(v)
 		var m: float = (float(iv) / float(authored)) if authored > 0 else 1.0
 		BalanceOverrides.set_wave_count_mult(String(lvl.level_id), wave_idx, spawn_idx, m)
 		val_lbl.text = "%d  (×%.2f)" % [iv, m]
+		recompute_timing.call()
 		_refresh_wave_charts())
+	hb.add_child(_indent_spacer(160))
+	hb.add_child(class_dd)
+	hb.add_child(path_dd)
 	hb.add_child(name_lbl)
 	hb.add_child(sld)
 	hb.add_child(val_lbl)
-	hb.add_child(meta_lbl)
+	hb.add_child(timing_lbl)
+	hb.add_child(rm_btn)
+	parent.add_child(hb)
+	return {"slider": sld, "val_lbl": val_lbl, "authored": authored}
+
+
+# Reserve horizontal space matching the previous fixed-indent label width so
+# the count/rate/delay rows still line up. Returns a Control with min_size.
+func _indent_spacer(width: int) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(width, 0)
+	return c
+
+
+# [+ Add emitter] button rendered at the bottom of each wave's emitter list.
+# Appends a WaveSpawn with sane defaults: basic enemy on the first path, count=8,
+# interval=1.5s, start_delay=0.0. Designer can then adjust via the new row.
+func _add_emitter_add_button(parent: VBoxContainer, wave: WaveData, lvl: Resource,
+		_wave_idx: int, paths: Array, rebuild: Callable) -> void:
+	var hb := HBoxContainer.new()
+	hb.set("theme_override_constants/separation", 8)
+	hb.add_child(_indent_spacer(160))
+	var btn := Button.new()
+	btn.text = "+ Add emitter"
+	btn.set("theme_override_font_sizes/font_size", 12)
+	btn.modulate = Color(0.7, 0.95, 0.7)
+	btn.flat = true
+	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	btn.pressed.connect(func():
+		var spawn := WaveSpawn.new()
+		spawn.path_id = String(paths[0]) if not paths.is_empty() else "left"
+		spawn.enemy_scene = load(String(_CLASS_TO_SCENE_PATH["basic"]))
+		spawn.count = 8
+		spawn.interval = 1.5
+		spawn.start_delay = 0.0
+		wave.spawns.append(spawn)
+		_mark_level_dirty(lvl)
+		rebuild.call())
+	hb.add_child(btn)
 	parent.add_child(hb)
 
 
+# Mark a level's wave_list as structurally changed so Bake includes it in the
+# save list even when no slider deltas exist for it.
+func _mark_level_dirty(lvl: Resource) -> void:
+	if lvl == null or not ("level_id" in lvl) or not ("wave_list_path" in lvl):
+		return
+	var lid: String = String(lvl.level_id)
+	if lid == "":
+		return
+	if _structurally_dirty_levels.has(lid):
+		return
+	var wl: Resource = load(String(lvl.wave_list_path))
+	if wl == null:
+		return
+	_structurally_dirty_levels[lid] = wl
+
+
 func _add_emitter_rate_row(parent: VBoxContainer, spawn: Resource, lvl: Resource,
-		wave_idx: int, spawn_idx: int) -> void:
+		wave_idx: int, spawn_idx: int, recompute_timing: Callable) -> Dictionary:
 	var hb := HBoxContainer.new()
 	hb.set("theme_override_constants/separation", 12)
 	var name_lbl := Label.new()
@@ -1578,16 +2503,18 @@ func _add_emitter_rate_row(parent: VBoxContainer, spawn: Resource, lvl: Resource
 	sld.value_changed.connect(func(v: float):
 		BalanceOverrides.set_wave_interval(String(lvl.level_id), wave_idx, spawn_idx, v)
 		val_lbl.text = ("default %.1fs" % authored) if v < 0.0 else "%.1fs  (authored %.1fs)" % [v, authored]
+		recompute_timing.call()
 		_refresh_wave_charts())
 	hb.add_child(name_lbl)
 	hb.add_child(sld)
 	hb.add_child(val_lbl)
 	hb.add_child(meta_lbl)
 	parent.add_child(hb)
+	return {"slider": sld, "val_lbl": val_lbl, "authored": authored}
 
 
 func _add_emitter_delay_row(parent: VBoxContainer, spawn: Resource, lvl: Resource,
-		wave_idx: int, spawn_idx: int) -> void:
+		wave_idx: int, spawn_idx: int, recompute_timing: Callable) -> Dictionary:
 	var hb := HBoxContainer.new()
 	hb.set("theme_override_constants/separation", 12)
 	var name_lbl := Label.new()
@@ -1617,12 +2544,14 @@ func _add_emitter_delay_row(parent: VBoxContainer, spawn: Resource, lvl: Resourc
 	sld.value_changed.connect(func(v: float):
 		BalanceOverrides.set_wave_delay(String(lvl.level_id), wave_idx, spawn_idx, v)
 		val_lbl.text = ("default %.1fs" % authored) if v < 0.0 else "%.1fs  (authored %.1fs)" % [v, authored]
+		recompute_timing.call()
 		_refresh_wave_charts())
 	hb.add_child(name_lbl)
 	hb.add_child(sld)
 	hb.add_child(val_lbl)
 	hb.add_child(meta_lbl)
 	parent.add_child(hb)
+	return {"slider": sld, "val_lbl": val_lbl, "authored": authored}
 
 
 # Total cumulative gold the player would hold at end-of-level if every enemy
@@ -1749,12 +2678,46 @@ func _compute_l1_dmg_per_gold(wave: WaveData) -> float:
 # missing here — a player who spent meta-gold on +50 starting gold saw the
 # chart anchored at 100g while the runtime started them at 150g.
 func _compute_starting_gold(lvl: Resource) -> int:
+	# Resolution chain mirrors RunState.reset_for_level():
+	#   1. debug slider override > 2. authored LevelNodeData.starting_gold >
+	#   3. STARTING_GOLD baseline + meta + global add.
 	var per_level_g: int = BalanceOverrides.get_level_int(String(lvl.level_id), "starting_gold", -1)
 	if per_level_g >= 0:
 		return per_level_g
+	if lvl != null and "starting_gold" in lvl and int(lvl.starting_gold) >= 0:
+		return int(lvl.starting_gold)
 	return RunState.STARTING_GOLD \
 		+ int(MetaProgression.get_upgrade_bonus(MetaProgression.MOD_STARTING_GOLD)) \
 		+ BalanceOverrides.get_starting_gold_add()
+
+
+# Coverage-driven saturation gold for the LevelOverviewChart marker.
+# Greedy-spends across the level's tower spots in 100g steps and returns
+# the gold value at which marginal damage drops below 5% of the peak step.
+# Returns 0 if the level has no scene_path or anything fails — chart
+# suppresses the marker on 0. Recomputed per slider tick (cost ~5-15 ms);
+# cheap enough for a debug tool. See balance/audit/CoverageReport for the
+# full plateau curve this collapses to a single number.
+func _compute_saturation_gold(lvl: Resource, wave_list: WaveList) -> int:
+	if lvl == null or wave_list == null:
+		return 0
+	var scene_path: String = String(lvl.scene_path) if "scene_path" in lvl else ""
+	if scene_path == "":
+		return 0
+	var profiles: Array = WaveDamageSimulator.build_tower_profiles()
+	if profiles.is_empty():
+		return 0
+	var coverage_rows: Array = []
+	for p in profiles:
+		coverage_rows.append({
+			"tower_id": p["tower_id"],
+			"tier_key": p["tier_key"],
+			"range": p["attack_range"],
+		})
+	var coverage_matrix: Dictionary = CoverageAnalyzer.build_coverage_matrix(scene_path, coverage_rows)
+	if coverage_matrix.is_empty():
+		return 0
+	return WaveDamageSimulator.saturation_gold(wave_list.waves, coverage_matrix, profiles)
 
 
 # Cumulative natural gold available at the start of `wave_index`. Sums the
@@ -1772,31 +2735,70 @@ func _compute_gold_at_wave_start(wave_list: WaveList, wave_index: int, lvl: Reso
 
 
 func _add_level_int_slider(parent: VBoxContainer, level_id: String, key: String,
-		rmin: int, rmax: int, rstep: int) -> void:
+		rmin: int, rmax: int, rstep: int, effective_calc: Callable = Callable()) -> void:
+	# Row layout: [name] [slider] [SpinBox] [effective hint]
+	# SpinBox is the precision input (typed value, ±1 steps); the slider
+	# remains for coarse drag. effective_calc, when supplied, computes the
+	# value the runtime will actually use after fallback chain — surfaced
+	# as a grey "= 100g" hint when the override is at -1 (default sentinel).
 	var hb := HBoxContainer.new()
 	hb.set("theme_override_constants/separation", 12)
 	var name_lbl := Label.new()
 	name_lbl.text = "    " + key + " (-1 = default)"
 	name_lbl.set("theme_override_font_sizes/font_size", 13)
 	name_lbl.custom_minimum_size = Vector2(260, 0)
+	var initial: int = BalanceOverrides.get_level_int(level_id, key, rmin)
 	var sld := HSlider.new()
 	sld.min_value = rmin
 	sld.max_value = rmax
 	sld.step = rstep
-	sld.value = float(BalanceOverrides.get_level_int(level_id, key, rmin))
+	sld.value = float(initial)
 	sld.custom_minimum_size = Vector2(280, 0)
 	sld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var spin := SpinBox.new()
+	spin.min_value = rmin
+	spin.max_value = rmax
+	spin.step = rstep
+	spin.value = float(initial)
+	spin.custom_minimum_size = Vector2(96, 0)
+	# Hint label: "= 100g" / "= default" — only visible when effective_calc
+	# was supplied AND the override is currently at the -1 sentinel.
+	var hint_lbl := Label.new()
+	hint_lbl.set("theme_override_font_sizes/font_size", 12)
+	hint_lbl.modulate = Color(0.65, 0.70, 0.78)
+	hint_lbl.custom_minimum_size = Vector2(120, 0)
+	hint_lbl.visible = effective_calc.is_valid()
+	# val_lbl preserved for legacy enumeration via _level_value_labels — now
+	# echoes the SpinBox so it stays in sync without being the editable widget.
 	var val_lbl := Label.new()
-	val_lbl.text = "default" if int(sld.value) < 0 else str(int(sld.value))
 	val_lbl.set("theme_override_font_sizes/font_size", 13)
-	val_lbl.custom_minimum_size = Vector2(80, 0)
-	sld.value_changed.connect(func(v: float):
-		var iv: int = int(v)
+	val_lbl.modulate = Color(0.85, 0.85, 0.85)
+	val_lbl.custom_minimum_size = Vector2(0, 0)
+	val_lbl.visible = false
+	var refresh_hint := func() -> void:
+		if not effective_calc.is_valid():
+			return
+		var eff: int = int(effective_calc.call())
+		hint_lbl.text = "= %d" % eff
+	var apply := func(iv: int) -> void:
 		BalanceOverrides.set_level_value(level_id, key, iv)
 		val_lbl.text = "default" if iv < 0 else str(iv)
-		_refresh_wave_charts())
+		refresh_hint.call()
+		_refresh_wave_charts()
+	sld.value_changed.connect(func(v: float):
+		var iv: int = int(v)
+		spin.set_value_no_signal(float(iv))
+		apply.call(iv))
+	spin.value_changed.connect(func(v: float):
+		var iv: int = int(v)
+		sld.set_value_no_signal(float(iv))
+		apply.call(iv))
+	refresh_hint.call()
+	val_lbl.text = "default" if initial < 0 else str(initial)
 	hb.add_child(name_lbl)
 	hb.add_child(sld)
+	hb.add_child(spin)
+	hb.add_child(hint_lbl)
 	hb.add_child(val_lbl)
 	parent.add_child(hb)
 	_level_value_labels[level_id + "|" + key] = val_lbl
@@ -1804,29 +2806,46 @@ func _add_level_int_slider(parent: VBoxContainer, level_id: String, key: String,
 
 func _add_level_float_slider(parent: VBoxContainer, level_id: String, key: String,
 		rmin: float, rmax: float, rstep: float) -> void:
+	# Same SpinBox + slider pattern as the int variant, but no effective-value
+	# hint — float overrides (hp_mult) IS the effective value when set.
 	var hb := HBoxContainer.new()
 	hb.set("theme_override_constants/separation", 12)
 	var name_lbl := Label.new()
 	name_lbl.text = "    " + key + " (1.0 = identity)"
 	name_lbl.set("theme_override_font_sizes/font_size", 13)
 	name_lbl.custom_minimum_size = Vector2(260, 0)
+	var initial: float = BalanceOverrides.get_level_float(level_id, key, 1.0)
 	var sld := HSlider.new()
 	sld.min_value = rmin
 	sld.max_value = rmax
 	sld.step = rstep
-	sld.value = BalanceOverrides.get_level_float(level_id, key, 1.0)
+	sld.value = initial
 	sld.custom_minimum_size = Vector2(280, 0)
 	sld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var spin := SpinBox.new()
+	spin.min_value = rmin
+	spin.max_value = rmax
+	spin.step = rstep
+	spin.value = initial
+	spin.custom_minimum_size = Vector2(96, 0)
 	var val_lbl := Label.new()
-	val_lbl.text = "%.2f" % sld.value
+	val_lbl.text = "%.2f" % initial
 	val_lbl.set("theme_override_font_sizes/font_size", 13)
-	val_lbl.custom_minimum_size = Vector2(80, 0)
-	sld.value_changed.connect(func(v: float):
+	val_lbl.modulate = Color(0.85, 0.85, 0.85)
+	val_lbl.visible = false
+	var apply := func(v: float) -> void:
 		BalanceOverrides.set_level_value(level_id, key, v)
 		val_lbl.text = "%.2f" % v
-		_refresh_wave_charts())
+		_refresh_wave_charts()
+	sld.value_changed.connect(func(v: float):
+		spin.set_value_no_signal(v)
+		apply.call(v))
+	spin.value_changed.connect(func(v: float):
+		sld.set_value_no_signal(v)
+		apply.call(v))
 	hb.add_child(name_lbl)
 	hb.add_child(sld)
+	hb.add_child(spin)
 	hb.add_child(val_lbl)
 	parent.add_child(hb)
 	_level_value_labels[level_id + "|" + key] = val_lbl
@@ -2130,10 +3149,36 @@ func _refresh_all_metrics() -> void:
 	_refresh_wave_charts()
 
 
+# Per-level coverage-weighted pressure cache. Cleared at the top of
+# _refresh_wave_charts so slider edits force a recompute. Within one
+# refresh pass the cache is hit once per chart entry, so the simulator
+# runs at most N times per slider tick (one per distinct level shown).
+var _pressure_cache: Dictionary = {}
+
+
+# Cached lookup of canonical pressure rows for the chosen level. Builds
+# the coverage matrix + tower profiles + greedy spend per wave inside
+# WaveDamageSimulator.pressure_per_wave. Returns [] on missing inputs;
+# callers must tolerate empty arrays.
+func _pressure_for_level(lvl: Resource, wave_list: WaveList) -> Array:
+	if lvl == null or wave_list == null or wave_list.waves.is_empty():
+		return []
+	var key: String = String(lvl.level_id) if "level_id" in lvl else String(lvl.resource_path)
+	if _pressure_cache.has(key):
+		return _pressure_cache[key]
+	var rows: Array = WaveDamageSimulator.pressure_per_wave(
+		wave_list.waves, lvl, String(lvl.scene_path), _compute_starting_gold(lvl))
+	_pressure_cache[key] = rows
+	return rows
+
+
 # Re-feeds each chart with the current override-adjusted supply/gold so a
 # slider tweak (cost_mult, starting_gold, hp_mult, etc.) updates the chart
 # in place without rebuilding the level section.
 func _refresh_wave_charts() -> void:
+	# Slider may have moved since the cache was last populated — drop it
+	# so canonical pressure recomputes for every chart in this pass.
+	_pressure_cache.clear()
 	for entry in _wave_charts:
 		var chart: Control = entry.get("chart")
 		if chart == null or not is_instance_valid(chart):
@@ -2145,7 +3190,9 @@ func _refresh_wave_charts() -> void:
 		# Overview chart has a different signature than per-wave detail charts —
 		# branch so a single _wave_charts array can hold both kinds.
 		if entry.get("is_overview", false):
-			chart.set_data(wave_list, lvl, _compute_starting_gold(lvl))
+			chart.set_data(wave_list, lvl, _compute_starting_gold(lvl),
+				_compute_saturation_gold(lvl, wave_list),
+				_pressure_for_level(lvl, wave_list))
 			continue
 		var idx: int = int(entry.get("wave_index", 0))
 		var paths: Array = entry.get("paths", [])
@@ -2154,9 +3201,38 @@ func _refresh_wave_charts() -> void:
 		var wave: WaveData = wave_list.waves[idx]
 		if wave == null:
 			continue
+		# Resolve next-wave early-call info (rendered as the in-spawn band).
+		var has_next: bool = idx + 1 < wave_list.waves.size() \
+				and wave_list.waves[idx + 1] != null
+		var next_ec: float = 0.0
+		var next_ec_authored: float = 0.0
+		var next_rate: float = 1.0
+		var next_rate_authored: float = 1.0
+		if has_next:
+			var next_wave: WaveData = wave_list.waves[idx + 1]
+			next_ec = _resolve_ec_window(lvl, next_wave, idx + 1)
+			next_ec_authored = _authored_ec_window_for(lvl, next_wave)
+			next_rate = _resolve_gold_per_sec(lvl, next_wave, idx + 1)
+			next_rate_authored = _authored_gold_per_sec_for(lvl, next_wave)
+		# Coverage-weighted pressure for this wave (Tuning Console). Empty
+		# rows when the simulator can't compute (missing scene_path / no
+		# profiles); chart falls back to the legacy ratio header.
+		var pressure_rows: Array = _pressure_for_level(lvl, wave_list)
+		var p_actual: float = -1.0
+		var p_target: float = 0.0
+		var p_reason: String = ""
+		var p_fix: String = ""
+		if idx < pressure_rows.size():
+			var row: Dictionary = pressure_rows[idx]
+			p_actual = float(row.get("actual", -1.0))
+			p_target = float(row.get("target", 0.0))
+			p_reason = String(row.get("reason", ""))
+			p_fix = String(row.get("fix", ""))
 		chart.set_data(wave, lvl, idx, _compute_l1_dmg_per_gold(wave),
 			_compute_gold_at_wave_start(wave_list, idx, lvl), paths,
-			_compute_level_final_gold(wave_list, lvl))
+			_compute_level_final_gold(wave_list, lvl),
+			next_ec, next_ec_authored, next_rate, next_rate_authored, has_next,
+			p_actual, p_target, p_reason, p_fix)
 
 
 func _refresh_tier_metrics(tower: TowerData, tier_key: String) -> void:

@@ -3152,3 +3152,46 @@ Tightened the new coverage-weighted balance report so it produces actionable pac
 - `balance/audit/CoverageReport.gd`: added a "What this means" diagnosis block that summarizes trivial/dangerous wave counts, average natural pressure, and the gold plateau. The per-wave table now spends naturally available gold at each wave start instead of using the same slider gold for every wave; slider/curve remain sandbox views.
 
 **Verification:** Godot CLI was not available in this shell (`godot` not on PATH), so this pass is code-reviewed only. Open Coverage Report from WorldMap in the editor and check Level1/Level5 before trusting the numbers.
+
+---
+
+## 2026-05-10 — WaveCallIndicator owns spawn-point UI; dead-code cleanup
+
+Player-visible bug: on Level 5 the orange Send-Wave badge was rendering on top of two permanent yellow arrows at the path entrances (`tl_plank`, `bl_plank`). Investigation found three systems competing for the same job — only one of them current — so the fix was to consolidate down to one and prune the rest.
+
+**1. Three systems for one job.** [map/SpawnMarker.gd](map/SpawnMarker.gd) drew a yellow arrow + grey enemy-icon circle in *world space* via `_draw()`, on every `SpawnMarker.tscn` instance under `<Level>/SpawnMarkers/`. Always visible, on every level. `ui/SpawnIndicator.gd` (CanvasLayer 6) tried to do the same in screen space but was hardcoded to `find_child("Level1", ...)` AND listened to `wave_countdown_started`, a signal that's been dead since the overlap-only redesign — effectively a no-op. The current system, [ui/WaveCallIndicator.gd](ui/WaveCallIndicator.gd) (CanvasLayer 7), draws the pulsing orange Send-Wave badge during pre-W1 and the last N seconds of every wave's spawn, anchored at the SpawnMarker world position projected to screen. Layered on top of the always-on yellow arrow → the visual stack the user reported.
+
+**2. Option A — WaveCallIndicator owns spawn-point UI.** Considered keeping a faint always-on world-space pip; rejected because two systems for one concept always drift back to two clear systems within a few iterations. Closer to Kingdom Rush's *"marker IS the button, transient by design"* and removes one whole system worth of bit-rot risk.
+
+**3. SpawnMarker `_draw()` gated to `Engine.is_editor_hint()`.** Authors still need the yellow arrow visible while placing markers in the 2D editor, so the script (which is `@tool`) early-returns from `_draw()` at runtime only. Editor preview unchanged. File header rewritten to describe the marker's current role: authoring anchor for the per-path Send-Wave badge, with the editor preview as a side benefit. `direction_degrees` and `enemy_icon_color` exports are now editor-only fields in effect — kept because they drive the editor preview.
+
+**4. SpawnIndicator deleted.** `ui/SpawnIndicator.gd` and its `.uid` removed; `Main.tscn` and `balance/test_range/TestRange.tscn` both stripped of the `SpawnIndicator` CanvasLayer + ext_resource (TestRange would have errored on load otherwise — caught during impl, not in the original plan). WaveCallIndicator's `_ensure_level()` walks the scene tree for any node implementing BaseLevel's `get_path_by_id` + `get_path_ids` API, so it's already level-agnostic and works on L1–L5 + future levels with no per-level wiring.
+
+**5. Dead-code follow-up in the wave-call subsystem.** Audit found three confirmed-dead identifiers and two stale comments downstream of the deletion:
+- `WaveManager.is_countdown_active()` — pre-overlap-redesign compat shim with zero callers anywhere.
+- `EventBus.wave_countdown_started(duration)` — signal with no emitters and (after SpawnIndicator's deletion) no listeners.
+- `RunStats._ready` and `_on_wave_started` comments still named the dead signal — rewritten to describe the overlap redesign without naming a non-existent signal.
+
+Effectively-dead-but-kept-on-purpose: `WaveCallIndicator.DEBUG_PRINT` block (flipped from `true` to `false`; cheap to re-enable next time the gate misbehaves) and `WaveManager.seconds_left_in_current_spawn()` public wrapper (only called inside the disabled DEBUG block; deleting it would break the toggle without saving meaningful complexity). `EventBus.endless_wave_started` is emit-only with no connectors but is part of the working endless-mode subsystem — kept as a future hook for endless UI / leaderboards.
+
+**6. CLAUDE.md updated.** UI-on-CanvasLayers table now lists `WaveCallIndicator` on layer 7. The SpawnIndicator paragraph is replaced with a paragraph describing WaveCallIndicator as the sole spawn-point UI and explaining that SpawnMarker children act as authoring anchors only.
+
+**Modified:**
+- [map/SpawnMarker.gd](map/SpawnMarker.gd) — `_draw()` early-returns at runtime via `Engine.is_editor_hint()`; file header rewritten
+- [main/Main.tscn](main/Main.tscn) — removed `SpawnIndicator` CanvasLayer + ext_resource
+- [balance/test_range/TestRange.tscn](balance/test_range/TestRange.tscn) — same removal (would have broken on load otherwise)
+- [ui/WaveCallIndicator.gd](ui/WaveCallIndicator.gd) — `DEBUG_PRINT = false`; trimmed dangling `(matches SpawnIndicator)` parenthetical
+- [autoloads/WaveManager.gd](autoloads/WaveManager.gd) — deleted dead `is_countdown_active()`
+- [autoloads/EventBus.gd](autoloads/EventBus.gd) — deleted dead `signal wave_countdown_started(duration)`
+- [autoloads/RunStats.gd](autoloads/RunStats.gd) — rewrote two stale comments that named the deleted signal
+- [CLAUDE.md](CLAUDE.md) — UI-on-CanvasLayers table + spawn-point paragraph
+
+**Deleted:**
+- `ui/SpawnIndicator.gd` (149 lines) + `.uid`
+
+**Risks:**
+- TestRange now has zero spawn-point UI at runtime (no WaveCallIndicator wiring there; SpawnMarker no longer self-draws). Test Range uses manual Spawn 1 / Spawn Pack buttons rather than waves, so a spawn-point cue isn't load-bearing — but if playtesters miss it, restore a faint world-space dot scoped to TestRange only.
+- Hidden SpawnMarkers (`visible = false`) still register in WaveCallIndicator's anchor cache because the cache reads `global_position` without checking visibility. Edge case; unlikely in authored scenes.
+- `WaveManager.countdown_total()` / `countdown_remaining()` keep their pre-redesign names while wrapping new "early-call window / spawn-window remaining" math. Renaming forces callsite churn in WaveCallIndicator without behavior change — left alone until the misnomer next causes confusion.
+
+**Verification:** Code committed in `83b37c1`. Runtime eyes-on-device pending — open each level (L1–L5) in Godot's 2D editor and confirm the yellow SpawnMarker preview still renders for authoring; then play each level and confirm no yellow arrows show at runtime, the orange Send-Wave badge appears at every spawn point during pre-W1 grace + the last N seconds of every wave's spawn, and the badge tracks the spawn point as the camera pans (clamping to the screen edge when the spawn is off-screen).

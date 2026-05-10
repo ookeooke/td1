@@ -186,13 +186,6 @@ func seconds_left_in_current_spawn() -> float:
 	return _seconds_left_in_current_spawn()
 
 
-func is_countdown_active() -> bool:
-	# Compat shim — there's no countdown phase anymore. Returns true when
-	# the early-call window is OPEN so HUD code that gated visibility on
-	# "is countdown active?" still works in the new semantics.
-	return early_call_available()
-
-
 func countdown_total() -> float:
 	# Compat shim — total = effective early-call window of the next wave.
 	if _all_waves_launched:

@@ -28,7 +28,7 @@ const TR_ZONE: Vector2 = Vector2(160, 140)
 const BR_ZONE: Vector2 = Vector2(220, 220)
 const ZONE_PAD: float = 8.0               # extra clearance around the badge
 
-const EDGE_MARGIN: float = 70.0           # screen-edge clamp (matches SpawnIndicator)
+const EDGE_MARGIN: float = 70.0           # screen-edge clamp
 
 # Two badges with screen-space centers within this distance get merged into
 # one larger grouped badge. Keeps multi-path waves whose entrances cluster
@@ -74,7 +74,7 @@ var _spawn_markers: Dictionary = {}
 
 # Debug: throttled diagnostic of the gate inputs. Set DEBUG_PRINT to false
 # (or delete the block in _refresh_state) once W2 is verified working.
-const DEBUG_PRINT: bool = true
+const DEBUG_PRINT: bool = false
 var _last_debug_msec: int = 0
 
 

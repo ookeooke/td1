@@ -1,9 +1,11 @@
 @tool
 extends Node2D
 
-# Edge-of-screen indicator showing where the next wave will spawn.
-# Phase 3 scope: static visual only. Phase 11 wires show/hide to wave events
-# and feeds next-enemy icon from wave data.
+# Authoring anchor for the per-path Send-Wave badge. WaveCallIndicator
+# (CanvasLayer 7) reads `global_position` keyed by `path_id` to position
+# the badge. `_draw()` is gated to `Engine.is_editor_hint()` so the yellow
+# arrow + enemy-icon preview is visible only when designing the level in
+# the 2D editor — never at runtime.
 
 @export var path_id: String = ""
 @export_range(0.0, 360.0) var direction_degrees: float = 0.0
@@ -15,6 +17,12 @@ func _ready() -> void:
 
 
 func _draw() -> void:
+	# Editor-only: authors need the arrow visible while placing the marker in
+	# the 2D editor. At runtime the WaveCallIndicator badge (CanvasLayer 7)
+	# owns the spawn-point UI — drawing here would just stack a permanent
+	# yellow arrow under the badge.
+	if not Engine.is_editor_hint():
+		return
 	var rad := deg_to_rad(direction_degrees)
 	var dir := Vector2(cos(rad), sin(rad))
 	var perp := Vector2(-dir.y, dir.x)

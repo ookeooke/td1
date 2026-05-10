@@ -11,7 +11,6 @@
 [ext_resource type="Script" path="res://map/GameCamera.gd" id="13_camera"]
 [ext_resource type="PackedScene" path="res://ui/SkillBar.tscn" id="10_skillbar"]
 [ext_resource type="PackedScene" path="res://ui/PauseMenu.tscn" id="12_pause"]
-[ext_resource type="Script" path="res://ui/SpawnIndicator.gd" id="14_spawnindicator"]
 
 [node name="TestRange" type="Node2D"]
 script = ExtResource("1_main")
@@ -44,17 +43,6 @@ map_path = NodePath("../TestRangeMap")
 visible = false
 
 [node name="GameOverScreen" parent="." instance=ExtResource("7_gameover")]
-
-[node name="SpawnIndicator" type="CanvasLayer" parent="."]
-follow_viewport_enabled = false
-script = ExtResource("14_spawnindicator")
-
-[node name="DrawLayer" type="Control" parent="SpawnIndicator"]
-layout_mode = 3
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-mouse_filter = 2
 
 [node name="PauseMenu" parent="." instance=ExtResource("12_pause")]
 

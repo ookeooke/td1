@@ -269,14 +269,14 @@ All UI is on CanvasLayers, independent of Camera2D. **Must set `follow_viewport_
 | Layer | UI |
 |---|---|
 | 0 | HUD (gold, lives, wave, speed, pause) |
-| 6 | SpawnIndicator (screen-edge spawn arrows) |
+| 7 | WaveCallIndicator (spawn-anchored Send-Wave badge) |
 | 8 | SkillBar (bottom-right portrait cluster + 2 skill slots) |
 | 10 | TowerRadialMenu (radial ring at spot: build / upgrade / sell / target / rally) |
 | 20 | PauseMenu, GameOverScreen |
 
 **Safe area:** `SafeAreaMargin.gd` (extends MarginContainer) sits at the root of HUD and SkillBar CanvasLayers. Sets `theme_override_constants/margin_*` from `DisplayUtils.get_safe_insets()` — Godot's layout engine pushes all children inward. Recalculates on window resize. Safe area math uses `DisplayServer.screen_get_size()` (NOT `window_get_size()`) because `get_display_safe_area()` returns screen-space coordinates.
 
-**SpawnIndicator:** Replaces world-space SpawnMarkers. Projects spawn world positions to screen coordinates via `get_canvas_transform()`, draws arrows at screen edges when off-screen.
+**Spawn-point UI is owned by WaveCallIndicator alone.** SpawnMarker children under `<Level>/SpawnMarkers/` are anchor positions only — their `_draw()` is gated to `Engine.is_editor_hint()` so the yellow arrow + enemy icon shows up in the 2D editor (level-author affordance) but not at runtime. WaveCallIndicator (CanvasLayer 7) reads `SpawnMarker.global_position` per `path_id`, projects to screen each frame, clamps 70px from viewport edges, and pushes out of HUD reserved zones. The badge is the only spawn-point visual the player sees, and it shows only during pre-W1 grace and the last N seconds of each wave's spawn (CORE RULE 19).
 
 ---
 

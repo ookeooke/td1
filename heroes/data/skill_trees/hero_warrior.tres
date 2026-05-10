@@ -1,0 +1,159 @@
+[gd_resource type="Resource" script_class="HeroSkillTreeData" format=3]
+
+[ext_resource type="Script" path="res://heroes/HeroSkillTreeData.gd" id="1_tree"]
+[ext_resource type="Script" path="res://heroes/HeroSkillNodeData.gd" id="2_node"]
+[ext_resource type="Script" path="res://systems/abilities/RegenAbility.gd" id="3_regen"]
+[ext_resource type="Script" path="res://systems/abilities/LifestealAbility.gd" id="4_lifesteal"]
+[ext_resource type="Script" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="5_bonusdmg"]
+[ext_resource type="Script" path="res://systems/abilities/StatModifierAbility.gd" id="6_statmod"]
+[ext_resource type="Script" path="res://heroes/skills/SkillModData.gd" id="7_mod"]
+
+[sub_resource type="Resource" id="ability_endurance"]
+script = ExtResource("3_regen")
+heal_amount = 2.0
+ability_id = "warrior_endurance"
+trigger = 1
+interval = 2.0
+
+[sub_resource type="Resource" id="node_endurance_r1"]
+script = ExtResource("2_node")
+node_id = "warrior_endurance_r1"
+node_name = "Endurance"
+description = "Passively regenerate 2 HP every 2 seconds."
+kind = 1
+target_id = "warrior_endurance"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_endurance")
+
+[sub_resource type="Resource" id="ability_vampiric"]
+script = ExtResource("4_lifesteal")
+ability_id = "warrior_lifesteal"
+trigger = 3
+
+[sub_resource type="Resource" id="node_vampiric_r1"]
+script = ExtResource("2_node")
+node_id = "warrior_vampiric_r1"
+node_name = "Vampiric Strike"
+description = "Each attack heals the Knight for 2 HP."
+kind = 1
+target_id = "warrior_vampiric"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_vampiric")
+
+[sub_resource type="Resource" id="ability_heavy_blows"]
+script = ExtResource("5_bonusdmg")
+bonus_damage = 4.0
+ability_id = "warrior_heavy_blows"
+trigger = 3
+
+[sub_resource type="Resource" id="node_heavy_blows_r1"]
+script = ExtResource("2_node")
+node_id = "warrior_heavy_blows_r1"
+node_name = "Heavy Blows"
+description = "+4 bonus physical damage on every attack."
+kind = 1
+target_id = "warrior_heavy_blows"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String](["warrior_vampiric_r1"])
+ability = SubResource("ability_heavy_blows")
+
+[sub_resource type="Resource" id="node_summon_soldiers_r2"]
+script = ExtResource("2_node")
+node_id = "summon_soldiers_r2"
+node_name = "Summon Soldiers"
+description = "Summon Soldiers cools down 15% faster."
+kind = 0
+target_id = "summon_soldiers"
+rank = 2
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_bless_r2"]
+script = ExtResource("2_node")
+node_id = "bless_r2"
+node_name = "Bless"
+description = "Bless cools down 15% faster."
+kind = 0
+target_id = "bless"
+rank = 2
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_shield_bash_r2"]
+script = ExtResource("2_node")
+node_id = "shield_bash_r2"
+node_name = "Shield Bash"
+description = "Shield Bash cools down 15% faster."
+kind = 0
+target_id = "shield_bash"
+rank = 2
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_shield_bash_r3"]
+script = ExtResource("2_node")
+node_id = "shield_bash_r3"
+node_name = "Shield Bash"
+description = "Shield Bash deals 25% more damage."
+kind = 0
+target_id = "shield_bash"
+rank = 3
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["shield_bash_r2"])
+
+[sub_resource type="Resource" id="mod_shield_bash_cleave"]
+script = ExtResource("7_mod")
+mod_id = "shield_bash_cleave"
+mod_name = "Cleaving Strike"
+description = "+40% AoE radius, -25% damage. Catch more enemies, hit each one less hard."
+scaling = {"aoe_radius_mult": 1.4, "damage_mult": 0.75}
+
+[sub_resource type="Resource" id="node_shield_bash_mod_cleave"]
+script = ExtResource("2_node")
+node_id = "shield_bash_mod_cleave"
+node_name = "Mod: Cleaving Strike"
+description = "Shield Bash gains +40% AoE but loses 25% damage."
+kind = 2
+target_id = "shield_bash"
+rank = 1
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String](["shield_bash_r2"])
+ability = SubResource("mod_shield_bash_cleave")
+
+[sub_resource type="Resource" id="ability_stalwart_defender"]
+script = ExtResource("6_statmod")
+ability_id = "warrior_stalwart_defender"
+trigger = 0
+armor_flat = 0.05
+damage_pct = 0.05
+
+[sub_resource type="Resource" id="node_stalwart_defender_r1"]
+script = ExtResource("2_node")
+node_id = "warrior_stalwart_defender_r1"
+node_name = "Stalwart Defender"
+description = "+5% armor and +5% damage. Always-on."
+kind = 1
+target_id = "warrior_stalwart_defender"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_stalwart_defender")
+
+[resource]
+script = ExtResource("1_tree")
+hero_id = "hero_warrior"
+nodes = Array[Resource]([SubResource("node_endurance_r1"), SubResource("node_vampiric_r1"), SubResource("node_heavy_blows_r1"), SubResource("node_stalwart_defender_r1"), SubResource("node_summon_soldiers_r2"), SubResource("node_bless_r2"), SubResource("node_shield_bash_r2"), SubResource("node_shield_bash_r3"), SubResource("node_shield_bash_mod_cleave")])

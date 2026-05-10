@@ -229,7 +229,7 @@ func _refresh_nav_badges() -> void:
 	for s in equipped:
 		if s != "":
 			skill_count += 1
-	_set_nav_badge("skills", "%d/%d" % [skill_count, LoadoutState.EQUIPPED_SKILL_SLOTS])
+	_set_nav_badge("skills", "%d/%d" % [skill_count, LoadoutState.get_active_slot_cap(LoadoutState.selected_hero_id)])
 	var stars: int = 0
 	if has_node("/root/MetaProgression") and MetaProgression.has_method("get_available_stars"):
 		stars = int(MetaProgression.get_available_stars())
@@ -556,7 +556,7 @@ func _refresh_hero_hall() -> void:
 			stars = int(MetaProgression.get_available_stars())
 		_hall_ready_label.text = "Equipment   %d / %d\nSkills      %d / %d\nTalents     %d ★" % [
 			equipped_items, total_slots,
-			skill_count, LoadoutState.EQUIPPED_SKILL_SLOTS,
+			skill_count, LoadoutState.get_active_slot_cap(hid),
 			stars,
 		]
 	# Passives — list ability names if authored.
@@ -626,7 +626,10 @@ func _open_sub_view(kind: String) -> void:
 		"equipment":
 			_embed_screen("res://ui/EquipmentScreen.tscn")
 		"talents":
-			_embed_screen("res://ui/TalentScreen.tscn")
+			# Phase 1 — sidebar tab still labeled "Talents" for muscle-memory;
+			# embeds the skill-tree screen. Save-version bump v4→v5 migrated
+			# legacy talent purchases into PASSIVE_RANK nodes on the tree.
+			_embed_screen("res://ui/HeroSkillTreeScreen.tscn")
 		_:
 			pass
 
@@ -766,7 +769,9 @@ func _build_skills_subview() -> void:
 	equipped_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	equipped_row.add_theme_constant_override("separation", 16)
 	vbox.add_child(equipped_row)
-	for slot_idx in LoadoutState.EQUIPPED_SKILL_SLOTS:
+	# Phase 3B — render only the slots the current hero level has unlocked.
+	# get_active_slot_cap returns 2 (L1-L7) or 3 (L8+).
+	for slot_idx in LoadoutState.get_active_slot_cap(LoadoutState.selected_hero_id):
 		var slot := _SkillSlot.new()
 		slot.setup(slot_idx, self)
 		equipped_row.add_child(slot)

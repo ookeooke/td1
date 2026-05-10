@@ -31,6 +31,10 @@ const MOD_SOLDIER_HEALTH: int = 7
 
 const LEADERBOARD_MAX_ENTRIES: int = 20
 
+# Preloaded so the Kind enum is accessible from autoload code that compiles
+# before the class_name registry (autoloads load before scene scripts).
+const _HeroSkillNodeDataScript = preload("res://heroes/HeroSkillNodeData.gd")
+
 # Progression state — survives level restarts and scene transitions. Only
 # cleared by a full reset(). SaveManager (Phase 27) reads/writes these
 # dictionaries on boot / on level-complete.
@@ -66,6 +70,14 @@ var level_endless_best_scores: Dictionary = {}   # level_id -> int
 # { "level": int, "xp": int }. Previously per-run on BaseHero — migrated here
 # so progression survives runs. SaveManager persists the whole dict.
 var hero_progress: Dictionary = {}
+# Phase 1 — per-hero skill-point pool. +1 granted on every level-up; spent on
+# HeroSkillNodeData purchases. Keyed by hero_id → unspent int.
+var hero_skill_points: Dictionary = {}
+# Phase 1 — per-hero purchased node ranks. {hero_id → {node_id: rank_purchased}}.
+# `rank_purchased` is the rank value of the highest-rank node bought for that
+# id. Cumulative tree: R2 implies R1, so a runtime ability stacker iterates all
+# tree nodes whose `rank` <= purchased rank.
+var hero_skill_nodes: Dictionary = {}
 # Local leaderboard — top 20 entries, sorted descending. Each entry:
 # { "name": String, "score": int, "wave": int }
 # Phase 33 online: replace with HTTP fetch from a leaderboard service.
@@ -105,6 +117,8 @@ func reset() -> void:
 	unlocked_content = []
 	hero_talents = {}
 	hero_progress = {}
+	hero_skill_points = {}
+	hero_skill_nodes = {}
 	level_best_times = {}
 	level_endless_best_scores = {}
 
@@ -343,6 +357,104 @@ func _ensure_hero_progress_entry(hero_id: String) -> void:
 		hero_progress[hero_id] = {"level": 1, "xp": 0}
 
 
+# ── Hero skill-tree progression ─────────────────────────────────────────
+#
+# Phase 1 — node graph progression. One point per level-up, spent on
+# HeroSkillNodeData entries authored on the hero's HeroSkillTreeData. Two
+# state dicts (hero_skill_points, hero_skill_nodes) are persisted by
+# SaveManager; this section is the only writer. Cumulative tree: buying R2
+# implies R1, so runtime stack iterators check `rank_purchased >= node.rank`.
+
+func get_skill_points(hero_id: String) -> int:
+	return int(hero_skill_points.get(hero_id, 0))
+
+
+func add_hero_skill_points(hero_id: String, count: int) -> void:
+	if hero_id == "" or count == 0:
+		return
+	hero_skill_points[hero_id] = get_skill_points(hero_id) + count
+	EventBus.hero_skill_points_changed.emit(hero_id, get_skill_points(hero_id))
+
+
+func get_purchased_rank(hero_id: String, node_id: String) -> int:
+	if not hero_skill_nodes.has(hero_id):
+		return 0
+	var d: Dictionary = hero_skill_nodes[hero_id]
+	return int(d.get(node_id, 0))
+
+
+# Highest purchased rank across all PASSIVE_RANK nodes that target this
+# passive_id. BaseHero uses this to decide how many ranks of the stacked
+# ability to push onto AbilityHost on spawn.
+func get_purchased_passive_rank(hero_id: String, passive_id: String) -> int:
+	return _highest_purchased_rank(hero_id, _HeroSkillNodeDataScript.Kind.PASSIVE_RANK, passive_id)
+
+
+# Phase 2 — same shape, ACTIVE_RANK nodes. BaseHero uses this to look up
+# rank scaling on SkillData at cast time. R1 is implicit (every authored
+# skill is at rank 1 by default), so a hero who never bought any ACTIVE_RANK
+# nodes still gets at least 1.
+func get_purchased_skill_rank(hero_id: String, skill_id: String) -> int:
+	return maxi(1, _highest_purchased_rank(hero_id, _HeroSkillNodeDataScript.Kind.ACTIVE_RANK, skill_id))
+
+
+# Internal: highest rank purchased across all nodes of `kind` matching
+# `target_id`. Returns 0 if nothing matches (caller decides whether to clamp
+# to 1 for R1-implicit semantics).
+func _highest_purchased_rank(hero_id: String, kind: int, target_id: String) -> int:
+	var tree: Resource = ContentRegistry.find_skill_tree(hero_id)
+	if tree == null:
+		return 0
+	var best: int = 0
+	for n in tree.nodes:
+		if n == null or not ("kind" in n):
+			continue
+		if int(n.kind) != kind:
+			continue
+		if String(n.target_id) != target_id:
+			continue
+		if get_purchased_rank(hero_id, String(n.node_id)) >= int(n.rank):
+			best = maxi(best, int(n.rank))
+	return best
+
+
+# Inspectable purchase check — returns {ok, reason} so the UI can dim the
+# BUY button AND tooltip the rejection reason ("0 points available",
+# "Reach Lv 4 first", "Buy Rank 1 first").
+func can_purchase_node(hero_id: String, node_id: String) -> Dictionary:
+	var tree: Resource = ContentRegistry.find_skill_tree(hero_id)
+	if tree == null:
+		return {"ok": false, "reason": "no skill tree"}
+	var node: Resource = tree.find_node(node_id)
+	if node == null:
+		return {"ok": false, "reason": "unknown node"}
+	if get_purchased_rank(hero_id, node_id) >= int(node.rank):
+		return {"ok": false, "reason": "already purchased"}
+	if get_skill_points(hero_id) < int(node.point_cost):
+		return {"ok": false, "reason": "not enough points"}
+	if get_hero_level(hero_id) < int(node.level_required):
+		return {"ok": false, "reason": "level too low"}
+	for pid in node.prerequisite_ids:
+		if get_purchased_rank(hero_id, String(pid)) < 1:
+			return {"ok": false, "reason": "missing prerequisite"}
+	return {"ok": true, "reason": ""}
+
+
+func purchase_node(hero_id: String, node_id: String) -> bool:
+	var check: Dictionary = can_purchase_node(hero_id, node_id)
+	if not check.ok:
+		return false
+	var tree: Resource = ContentRegistry.find_skill_tree(hero_id)
+	var node: Resource = tree.find_node(node_id)
+	hero_skill_points[hero_id] = get_skill_points(hero_id) - int(node.point_cost)
+	if not hero_skill_nodes.has(hero_id):
+		hero_skill_nodes[hero_id] = {}
+	hero_skill_nodes[hero_id][node_id] = int(node.rank)
+	EventBus.hero_node_purchased.emit(hero_id, node_id)
+	EventBus.hero_skill_points_changed.emit(hero_id, get_skill_points(hero_id))
+	return true
+
+
 func add_hero_xp(hero_id: String, amount: int) -> int:
 	# Returns the new level (possibly unchanged). Caller reads hero_progress
 	# afterward for the new xp value. Handles multi-level catch-up if amount
@@ -369,6 +481,10 @@ func add_hero_xp(hero_id: String, amount: int) -> int:
 		xp -= needed
 		lvl += 1
 		EventBus.hero_leveled_up.emit(lvl)
+		# Phase 1 — one hero point per level-up. Granted here (not in
+		# BaseHero) so a level-up via debug grant or save migration also
+		# adds points, not just earned XP in-level.
+		add_hero_skill_points(hero_id, 1)
 	if lvl >= hero_data.max_level:
 		xp = 0
 	entry["level"] = lvl

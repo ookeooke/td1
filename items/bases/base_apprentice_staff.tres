@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=4 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+[ext_resource type="Texture2D" path="res://items/art/base_apprentice_staff.jpg" id="3_tex"]
+
+[sub_resource type="Resource" id="Impl_ApprenticeStaff_Dmg"]
+script = ExtResource("2_mod")
+ability_id = "impl_apprentice_staff_dmg"
+trigger = 7
+damage_flat = 3.0
+
+[sub_resource type="Resource" id="Impl_ApprenticeStaff_Skill"]
+script = ExtResource("2_mod")
+ability_id = "impl_apprentice_staff_skill"
+trigger = 7
+skill_power_pct = 0.05
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_apprentice_staff"
+base_name = "Apprentice Staff"
+slot = 0
+rarity = 1
+icon_glyph = "sword"
+icon_color = Color(0.6, 0.5, 0.85, 1)
+icon_texture = ExtResource("3_tex")
+hero_restriction = Array[String]([])
+level_requirement = 1
+implicit_abilities = Array[Resource]([SubResource("Impl_ApprenticeStaff_Dmg"), SubResource("Impl_ApprenticeStaff_Skill")])
+affix_slots = 1
+allowed_affix_pools = Array[String](["pool_weapon_offensive"])
+drop_weight = 0.8
+min_wave = 2
+grid_height = 2
+description = "Carved birch tipped with copper. The tip hums when a spell is near."

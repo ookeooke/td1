@@ -1,0 +1,147 @@
+[gd_resource type="Resource" script_class="HeroSkillTreeData" format=3]
+
+[ext_resource type="Script" path="res://heroes/HeroSkillTreeData.gd" id="1_tree"]
+[ext_resource type="Script" path="res://heroes/HeroSkillNodeData.gd" id="2_node"]
+[ext_resource type="Script" path="res://systems/abilities/RegenAbility.gd" id="3_regen"]
+[ext_resource type="Script" path="res://systems/abilities/LifestealAbility.gd" id="4_lifesteal"]
+[ext_resource type="Script" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="5_bonusdmg"]
+[ext_resource type="Script" path="res://heroes/skills/SkillModData.gd" id="6_mod"]
+
+[sub_resource type="Resource" id="ability_meditation"]
+script = ExtResource("3_regen")
+ability_id = "mage_meditation"
+trigger = 1
+interval = 3.0
+
+[sub_resource type="Resource" id="node_meditation_r1"]
+script = ExtResource("2_node")
+node_id = "mage_meditation_r1"
+node_name = "Meditation"
+description = "Passively regenerate 3 HP every 3 seconds."
+kind = 1
+target_id = "mage_meditation"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_meditation")
+
+[sub_resource type="Resource" id="ability_siphon"]
+script = ExtResource("4_lifesteal")
+heal_amount = 3.0
+ability_id = "mage_siphon"
+trigger = 3
+
+[sub_resource type="Resource" id="node_siphon_r1"]
+script = ExtResource("2_node")
+node_id = "mage_siphon_r1"
+node_name = "Arcane Siphon"
+description = "Each attack heals the Mage for 3 HP."
+kind = 1
+target_id = "mage_siphon"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String](["mage_meditation_r1"])
+ability = SubResource("ability_siphon")
+
+[sub_resource type="Resource" id="ability_arcane_power"]
+script = ExtResource("5_bonusdmg")
+bonus_damage = 5.0
+bonus_damage_type = 1
+ability_id = "mage_arcane_power"
+trigger = 3
+
+[sub_resource type="Resource" id="node_arcane_power_r1"]
+script = ExtResource("2_node")
+node_id = "mage_arcane_power_r1"
+node_name = "Arcane Power"
+description = "+5 bonus magic damage on every attack."
+kind = 1
+target_id = "mage_arcane_power"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_arcane_power")
+
+[sub_resource type="Resource" id="node_fireball_r2"]
+script = ExtResource("2_node")
+node_id = "fireball_r2"
+node_name = "Fireball"
+description = "Fireball cools down 15% faster."
+kind = 0
+target_id = "fireball"
+rank = 2
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_fireball_r3"]
+script = ExtResource("2_node")
+node_id = "fireball_r3"
+node_name = "Fireball"
+description = "Fireball deals 20% more damage."
+kind = 0
+target_id = "fireball"
+rank = 3
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["fireball_r2"])
+
+[sub_resource type="Resource" id="mod_fireball_wider"]
+script = ExtResource("6_mod")
+mod_id = "fireball_wider_blast"
+mod_name = "Wider Blast"
+description = "+30% AoE radius, -20% damage. Trade punch for coverage."
+scaling = {"aoe_radius_mult": 1.3, "damage_mult": 0.8}
+
+[sub_resource type="Resource" id="node_fireball_mod_wider"]
+script = ExtResource("2_node")
+node_id = "fireball_mod_wider"
+node_name = "Mod: Wider Blast"
+description = "Fireball gains +30% AoE radius but loses 20% damage."
+kind = 2
+target_id = "fireball"
+rank = 1
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String](["fireball_r2"])
+ability = SubResource("mod_fireball_wider")
+
+[sub_resource type="Resource" id="mod_fireball_quick"]
+script = ExtResource("6_mod")
+mod_id = "fireball_quick_cast"
+mod_name = "Quick Cast"
+description = "-25% cooldown, -15% damage. Spam fireballs at lower potency."
+scaling = {"cooldown_mult": 0.75, "damage_mult": 0.85}
+
+[sub_resource type="Resource" id="node_fireball_mod_quick"]
+script = ExtResource("2_node")
+node_id = "fireball_mod_quick"
+node_name = "Mod: Quick Cast"
+description = "Fireball cools down 25% faster but deals 15% less damage."
+kind = 2
+target_id = "fireball"
+rank = 1
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String](["fireball_r2"])
+ability = SubResource("mod_fireball_quick")
+
+[sub_resource type="Resource" id="node_mana_shield_r2"]
+script = ExtResource("2_node")
+node_id = "mana_shield_r2"
+node_name = "Mana Shield"
+description = "Mana Shield cools down 15% faster."
+kind = 0
+target_id = "mana_shield"
+rank = 2
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+
+[resource]
+script = ExtResource("1_tree")
+hero_id = "hero_mage"
+nodes = Array[Resource]([SubResource("node_meditation_r1"), SubResource("node_siphon_r1"), SubResource("node_arcane_power_r1"), SubResource("node_fireball_r2"), SubResource("node_fireball_r3"), SubResource("node_fireball_mod_wider"), SubResource("node_fireball_mod_quick"), SubResource("node_mana_shield_r2")])

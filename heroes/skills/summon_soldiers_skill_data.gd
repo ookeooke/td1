@@ -34,7 +34,7 @@ const _FAN_CENTER: float = -PI * 0.5
 @export var spread_radius: float = 35.0
 
 
-func apply(hero: Node, target) -> void:
+func apply(hero: Node, target, _ctx: Dictionary = {}) -> void:
 	if hero == null or not is_instance_valid(hero):
 		return
 	if soldier_scene == null or soldier_data == null:

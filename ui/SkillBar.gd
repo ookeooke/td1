@@ -38,10 +38,27 @@ const TARGET_TAP_TOLERANCE: float = 80.0
 const PORTRAIT_CENTER: Vector2 = Vector2(170.0, 330.0)
 const SLOT_RADIUS: float = 115.0
 const SLOT_HALF_EXTENT: Vector2 = Vector2(40.0, 40.0)
-const SLOT_POSITIONS: Array[Vector2] = [
-	Vector2(59.0, 300.0)  - SLOT_HALF_EXTENT,  # Slot 0 — left of portrait (-165°)
-	Vector2(140.0, 219.0) - SLOT_HALF_EXTENT,  # Slot 1 — upper-left of portrait (-105°)
+# Phase 3B — slot positions split by cap. 2-slot loadouts (L1-L7) use the
+# original endpoints (-165°, -105°). 3-slot loadouts (L8+) keep those
+# endpoints and add a middle slot at -135° so the same skill stays at the
+# same physical position on level-up. Endpoints match the original 2-slot
+# arc to the pixel: cos/sin of -165° / -105° around (170, 330) yield
+# (59, 300) and (140, 219) respectively.
+const _SLOT_POSITIONS_2: Array[Vector2] = [
+	Vector2(59.0, 300.0)  - SLOT_HALF_EXTENT,
+	Vector2(140.0, 219.0) - SLOT_HALF_EXTENT,
 ]
+const _SLOT_POSITIONS_3: Array[Vector2] = [
+	Vector2(59.0, 300.0)  - SLOT_HALF_EXTENT,
+	Vector2(89.0, 249.0)  - SLOT_HALF_EXTENT,  # Slot middle — -135°
+	Vector2(140.0, 219.0) - SLOT_HALF_EXTENT,
+]
+
+
+func _slot_positions_for_cap(cap: int) -> Array[Vector2]:
+	if cap >= 3:
+		return _SLOT_POSITIONS_3
+	return _SLOT_POSITIONS_2
 
 @onready var cluster: Control = %Cluster
 
@@ -97,13 +114,15 @@ func _rebuild_buttons() -> void:
 	_buttons.clear()
 	if _hero == null or _hero.data == null:
 		return
-	# Phase 48 — render the per-hero equipped loadout (length 3) instead of
-	# every authored skill. The button's `idx` stays as the index into
-	# data.skills so the hero's parallel _skill_cooldowns / get_skill_data
-	# accessors keep working unchanged. Empty slots get an EmptySkillSlot
-	# placeholder so the cluster always reads as 3 tiles.
+	# Phase 48 / 3B — render the per-hero equipped loadout. Cap is dynamic:
+	# 2 slots at L1-L7, 3 slots at L8+ (LoadoutState.get_active_slot_cap).
+	# The button's `idx` stays as the index into data.skills so the hero's
+	# parallel _skill_cooldowns / get_skill_data accessors keep working.
+	# Empty slots get an EmptySkillSlot placeholder so the cluster always
+	# reads as N tiles.
 	var equipped: Array[String] = LoadoutState.get_equipped_skills(_hero.data.hero_id)
-	for slot_idx in SLOT_POSITIONS.size():
+	var positions: Array[Vector2] = _slot_positions_for_cap(equipped.size())
+	for slot_idx in positions.size():
 		var skill_id: String = equipped[slot_idx] if slot_idx < equipped.size() else ""
 		var slot: Control
 		if skill_id == "":
@@ -118,7 +137,7 @@ func _rebuild_buttons() -> void:
 				slot.setup(_hero, idx)
 				slot.triggered.connect(_on_skill_button_pressed)
 				_buttons.append(slot)
-		slot.position = SLOT_POSITIONS[slot_idx]
+		slot.position = positions[slot_idx]
 		slot.size = Vector2(80.0, 80.0)
 		cluster.add_child(slot)
 

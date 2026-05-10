@@ -78,6 +78,16 @@ signal hero_skill_unlocked(hero_id, skill_id)
 # Fired by LoadoutState.set_equipped_skill() when the loadout changes.
 # SkillBar listens to rebuild the in-level slot cluster.
 signal hero_skill_equipped(hero_id, slot, skill_id)
+# Phase 1 — per-hero skill-tree progression. Mirrors hero_skill_equipped:
+# - hero_skill_points_changed fires on grant (level-up) and spend (purchase).
+# - hero_node_purchased fires when MetaProgression.purchase_node succeeds.
+# - hero_passive_equipped fires when LoadoutState.set_equipped_passive succeeds.
+signal hero_skill_points_changed(hero_id, points)
+signal hero_node_purchased(hero_id, node_id)
+signal hero_passive_equipped(hero_id, slot, passive_id)
+# Phase 2C — fired by LoadoutState.set_chosen_mod when the player toggles
+# which owned mod is active for a skill.
+signal hero_skill_mod_chosen(hero_id, skill_id, mod_id)
 
 # Game modes
 signal endless_wave_started(wave_number)

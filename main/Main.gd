@@ -58,6 +58,15 @@ func _enter_tree() -> void:
 
 
 func _ready() -> void:
+	# Defensive reset of tree-wide state that survives a scene change.
+	# PauseMenu / GameOverScreen restart paths already unpause + normalise
+	# time_scale before SceneManager.goto, but if any future entry point
+	# forgets, the new level would start frozen with no Send-Wave button
+	# (the pre-W1 polling depends on Engine.time_scale-aware deltas). These
+	# two lines are idempotent on a fresh boot — costs nothing, closes the
+	# class of bug.
+	get_tree().paused = false
+	Engine.time_scale = 1.0
 	EventBus.wave_started.connect(_on_wave_started)
 	EventBus.wave_completed.connect(_on_wave_completed)
 	EventBus.all_waves_completed.connect(_on_all_waves_completed)

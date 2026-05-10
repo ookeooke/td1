@@ -10,8 +10,13 @@
 #                                 every hero, AAA-style stash)
 #   hero_equipment[hero_id]   -> Dict[slot_str -> uid]  ("0".."5" keys; 6
 #                                 slots) — references shared_inventory uids
-#   round_pickups             -> Array[ItemInstance]    (this-run-only; merged
-#                                 into shared_inventory on level_completed)
+#   round_pickups             -> Array[ItemInstance]    DEPRECATED. Was a
+#                                 this-run-only buffer that flushed on
+#                                 level_completed. Pickups now commit
+#                                 directly to shared_inventory inside
+#                                 add_to_round so they survive defeat /
+#                                 restart / game close. Field kept empty
+#                                 for save-format stability.
 #   starter_gear_granted      -> Array[String]          (hero_ids that already
 #                                 received their starter pack — never re-grant)
 #
@@ -107,23 +112,31 @@ func from_save_dict(d: Dictionary) -> void:
 # -- Round lifecycle --------------------------------------------------------
 
 func add_to_round(instance) -> void:
+	# Commits the pickup directly to shared_inventory and saves immediately so
+	# the item survives any exit path: defeat, restart, game close, crash. The
+	# old behaviour (buffer in `round_pickups`, flush on level_completed) lost
+	# pickups on close-mid-level because `round_pickups` was never persisted.
+	# add_to_shared handles the MAX_INVENTORY_SIZE cap by auto-selling overflow
+	# at half price into meta_gold (with a Toast), so this never silently fails.
 	if instance == null:
 		return
-	round_pickups.append(instance)
+	add_to_shared(instance)
 	# Phase E4 — first-time encounter unlocks the encyclopedia entry.
 	# MetaProgression.try_unlock_encyclopedia is idempotent (skips if already in).
 	if instance.base_id != "":
 		MetaProgression.try_unlock_encyclopedia(instance.base_id)
 	EventBus.item_picked_up.emit(instance)
 	EventBus.inventory_changed.emit()
+	SaveManager.save_game()
 
 
 func commit_round() -> void:
-	# IA-2 — drops are now hero-agnostic. They flow into the shared pool
-	# regardless of which hero was on the level (the player can browse them
-	# from any hero afterward, gated by hero_restriction at equip time).
-	# IA-3 — each entry routes through `add_to_shared` which enforces the
-	# capacity cap (auto-sells overflow at half price).
+	# Vestigial post-pickup-time-persistence: add_to_round commits directly,
+	# so round_pickups should always be empty here. Kept on the level_completed
+	# wire for safety (e.g. third-party code that still routes through the old
+	# buffered API). The end-of-level ground sweep happens in
+	# _on_level_completed via ItemPickupManager.collect_all_pending — those
+	# late-collected items go through add_to_round and persist immediately.
 	if round_pickups.is_empty():
 		return
 	for inst in round_pickups:

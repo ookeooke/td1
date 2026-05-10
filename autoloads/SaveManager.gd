@@ -27,7 +27,13 @@ const SAVE_PATH: String = "user://save.json"
 # v4 — Phase 49 added grid placement (grid_row/col on ItemInstance, footprint
 # on ItemBase). Migration is implicit: legacy items deserialize at -1/-1 and
 # InventoryManager._reflow_unplaced() lays them onto the grid on load.
-const SAVE_VERSION: int = 4
+# v5 — Phase 1 (skill-tree node graph) replaced star-purchased TalentData with
+# hero-points-per-level node purchases. Migration: each entry in hero_talents
+# becomes a PASSIVE_RANK r1 node in hero_skill_nodes, the corresponding
+# passive auto-equips into the hero's passive loadout, and hero_talents is
+# cleared so abilities don't apply twice. Star refund is implicit:
+# get_spent_talent_stars reads from the now-empty hero_talents dict.
+const SAVE_VERSION: int = 5
 
 # Forward-only migration chain. Index N migrates v(N+1) → v(N+2). The chain
 # is empty today because every prior version transition (v1→v2→v3→v4) was
@@ -38,6 +44,8 @@ const SAVE_VERSION: int = 4
 # Test seam: tests overwrite this array with synthetic mutators to exercise
 # the chain logic without needing a real schema bump.
 var _migrations: Array[Callable] = []
+# Populated in _ready (method-bound Callables can't be initialised at class
+# scope because `self` isn't bound yet). Index N migrates v(N+1) → v(N+2).
 
 # Phase 48 — monotonic UID counter for ItemInstance. Issued only by
 # issue_uid(); persisted in the save file so it survives restarts. Never
@@ -48,6 +56,15 @@ var next_uid: int = 1
 
 
 func _ready() -> void:
+	# Migration table — index N migrates v(N+1) → v(N+2). Empty Callables
+	# mark transitions that were implicit-on-load and need no executable
+	# step (v1→v2 / v2→v3 / v3→v4). Method-bound Callables go here.
+	_migrations = [
+		Callable(),                # v1→v2 (implicit)
+		Callable(),                # v2→v3 (implicit, InventoryManager)
+		Callable(),                # v3→v4 (implicit, grid placement)
+		_migrate_v4_to_v5,         # v4→v5 (talent → skill-tree node graph)
+	]
 	load_game()
 	EventBus.level_completed.connect(_on_level_completed)
 	EventBus.encyclopedia_entry_unlocked.connect(_on_encyclopedia_unlocked)
@@ -121,6 +138,8 @@ func _save_to_path(path: String) -> void:
 		"unlocked_content": MetaProgression.unlocked_content,
 		"hero_talents": MetaProgression.hero_talents,
 		"hero_progress": MetaProgression.hero_progress,
+		"hero_skill_points": MetaProgression.hero_skill_points,
+		"hero_skill_nodes": MetaProgression.hero_skill_nodes,
 		"level_best_times": MetaProgression.level_best_times,
 		"level_endless_best_scores": MetaProgression.level_endless_best_scores,
 		# Persistent inventory-sell currency. Additive — older saves load it
@@ -133,6 +152,8 @@ func _save_to_path(path: String) -> void:
 		"selected_tower_ids": LoadoutState.selected_tower_ids,
 		"tower_slot_cap": LoadoutState.tower_slot_cap,
 		"hero_equipped_skills": LoadoutState.hero_equipped_skills,
+		"hero_equipped_passives": LoadoutState.hero_equipped_passives,
+		"hero_skill_mods": LoadoutState.hero_skill_mods,
 		# SaveManager-owned counter.
 		"next_uid": next_uid,
 		# Stable hash of the authored content set (hero/tower/enemy ids).
@@ -268,6 +289,23 @@ func _load_from_path(path: String) -> void:
 					"level": int(entry_in.get("level", 1)),
 					"xp": int(entry_in.get("xp", 0)),
 				}
+	# Phase 1 — skill-tree progression. Both dicts default to empty so older
+	# saves load cleanly (the player has 0 points + no purchased nodes until
+	# they level up). Missing keys are NOT a migration trigger.
+	if data.has("hero_skill_points") and data.hero_skill_points is Dictionary:
+		MetaProgression.hero_skill_points = {}
+		for hero_id in data.hero_skill_points:
+			MetaProgression.hero_skill_points[hero_id] = int(data.hero_skill_points[hero_id])
+	if data.has("hero_skill_nodes") and data.hero_skill_nodes is Dictionary:
+		MetaProgression.hero_skill_nodes = {}
+		for hero_id in data.hero_skill_nodes:
+			var node_map_in: Variant = data.hero_skill_nodes[hero_id]
+			if not (node_map_in is Dictionary):
+				continue
+			var node_map: Dictionary = {}
+			for node_id in node_map_in:
+				node_map[str(node_id)] = int(node_map_in[node_id])
+			MetaProgression.hero_skill_nodes[hero_id] = node_map
 	# Phase Sell — meta-gold (default 0 if save predates this field).
 	MetaProgression.meta_gold = int(data.get("meta_gold", 0))
 	# WorldMap unlock celebration handoff (default "" for old saves).
@@ -312,6 +350,26 @@ func _load_from_path(path: String) -> void:
 				for sid in data.hero_equipped_skills[hero_id]:
 					arr.append(str(sid))
 			LoadoutState.hero_equipped_skills[hero_id] = arr
+	# Phase 1 — equipped passives. Same shape as equipped skills.
+	if data.has("hero_equipped_passives") and data.hero_equipped_passives is Dictionary:
+		LoadoutState.hero_equipped_passives = {}
+		for hero_id in data.hero_equipped_passives:
+			var arr_p: Array = []
+			if data.hero_equipped_passives[hero_id] is Array:
+				for pid in data.hero_equipped_passives[hero_id]:
+					arr_p.append(str(pid))
+			LoadoutState.hero_equipped_passives[hero_id] = arr_p
+	# Phase 2C — chosen skill mods. {hero_id → {skill_id → mod_id}}.
+	if data.has("hero_skill_mods") and data.hero_skill_mods is Dictionary:
+		LoadoutState.hero_skill_mods = {}
+		for hero_id in data.hero_skill_mods:
+			var per_in: Variant = data.hero_skill_mods[hero_id]
+			if not (per_in is Dictionary):
+				continue
+			var per_hero: Dictionary = {}
+			for skill_id in per_in:
+				per_hero[str(skill_id)] = str(per_in[skill_id])
+			LoadoutState.hero_skill_mods[hero_id] = per_hero
 	# ── SaveManager-owned ─────────────────────────────────────────────
 	if data.has("next_uid"):
 		next_uid = int(data.next_uid)
@@ -339,6 +397,50 @@ func _run_migrations(data: Dictionary, from_version: int) -> void:
 			continue
 		print("[SaveManager] migrating save v%d → v%d" % [i + 1, i + 2])
 		fn.call(data)
+
+
+# v4 → v5 migrator — talent purchases become skill-tree node purchases.
+# Each entry in hero_talents maps 1:1 to the matching PASSIVE_RANK r1 node
+# (talent_id == passive_id; node_id == "<talent_id>_r1" by tree-authoring
+# convention). The migrated passive auto-equips into the next empty slot so
+# the player's prior setup keeps working. hero_talents is cleared on the
+# data dict (NOT regenerated by save_game post-migration because we return
+# an empty dict from MetaProgression after load), so abilities don't apply
+# twice. Stars spent on talents are implicitly refunded —
+# get_spent_talent_stars sees an empty dict and returns 0.
+func _migrate_v4_to_v5(data: Dictionary) -> void:
+	if not data.has("hero_talents") or not (data.hero_talents is Dictionary):
+		return
+	var nodes_dict: Variant = data.get("hero_skill_nodes", {})
+	if not (nodes_dict is Dictionary):
+		nodes_dict = {}
+	var equipped_dict: Variant = data.get("hero_equipped_passives", {})
+	if not (equipped_dict is Dictionary):
+		equipped_dict = {}
+	var migrated: int = 0
+	for hero_id in data.hero_talents:
+		var talents: Variant = data.hero_talents[hero_id]
+		if not (talents is Array):
+			continue
+		var hero_nodes: Variant = nodes_dict.get(hero_id, {})
+		if not (hero_nodes is Dictionary):
+			hero_nodes = {}
+		var hero_equipped: Variant = equipped_dict.get(hero_id, [])
+		if not (hero_equipped is Array):
+			hero_equipped = []
+		for talent_id in talents:
+			var node_id: String = "%s_r1" % str(talent_id)
+			hero_nodes[node_id] = 1
+			if not (str(talent_id) in hero_equipped):
+				hero_equipped.append(str(talent_id))
+			migrated += 1
+		nodes_dict[str(hero_id)] = hero_nodes
+		equipped_dict[str(hero_id)] = hero_equipped
+	data["hero_skill_nodes"] = nodes_dict
+	data["hero_equipped_passives"] = equipped_dict
+	data["hero_talents"] = {}
+	if migrated > 0:
+		print("[SaveManager] v4→v5 migrated %d talents → skill-tree nodes" % migrated)
 
 
 # Stable hash of the content set the registry currently authors. Fast-path:
@@ -382,7 +484,7 @@ func _purge_orphaned_content(data: Dictionary) -> void:
 		for tid in data.selected_tower_ids:
 			swept.append(str(tid) if tower_ok.call(str(tid)) else "")
 		data["selected_tower_ids"] = swept
-	for hero_dict_key in ["hero_progress", "hero_equipped_skills", "hero_talents"]:
+	for hero_dict_key in ["hero_progress", "hero_equipped_skills", "hero_talents", "hero_skill_points", "hero_skill_nodes", "hero_equipped_passives", "hero_skill_mods"]:
 		if data.has(hero_dict_key) and data[hero_dict_key] is Dictionary:
 			var d: Dictionary = data[hero_dict_key]
 			for hid in d.keys():

@@ -15,3 +15,4 @@ target_type = 1
 aoe_radius = 90.0
 vfx_scene = ExtResource("2_vfx")
 description = "Hurl a fireball — magic damage to every enemy in a small radius around the tap."
+rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.2}]

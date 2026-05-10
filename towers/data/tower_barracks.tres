@@ -15,16 +15,16 @@ cost = 100
 sell_value = 75
 tint = Color(1.15, 1.05, 0.85, 1)
 soldier_data_override = ExtResource("5_elite")
-soldier_rally_range = 285.0
+soldier_rally_range = 250.0
 
 [sub_resource type="Resource" id="BarracksUpg_L3"]
 script = ExtResource("4_upg")
 upgrade_name = "Veteran Garrison"
-cost = 140
+cost = 150
 sell_value = 130
 tint = Color(1.25, 1, 0.65, 1)
 soldier_data_override = ExtResource("7_vet")
-soldier_rally_range = 300.0
+soldier_rally_range = 270.0
 
 [resource]
 script = ExtResource("1_data")
@@ -35,12 +35,12 @@ pictogram = "shield"
 damage = 0.0
 attack_range = 0.0
 attack_speed = 0.0
-cost = 70
+cost = 65
 sell_value = 40
 level_upgrades = Array[Resource]([SubResource("BarracksUpg_L2"), SubResource("BarracksUpg_L3")])
 upgrade_cost_lvl2 = 90
 upgrade_cost_lvl3 = 140
 soldier_scene = ExtResource("2_soldier")
 soldier_data = ExtResource("3_soldata")
-soldier_rally_range = 210.0
+soldier_rally_range = 200.0
 encyclopedia_entry = "Trains militia to block ground enemies. Cannot stop flying."

@@ -18,3 +18,4 @@ skill_id = "mana_shield"
 cooldown = 20.0
 target_type = 2
 description = "Arcane barrier that regenerates 4 HP per second for 8 seconds."
+rank_scaling = [{"cooldown_mult": 0.85}]

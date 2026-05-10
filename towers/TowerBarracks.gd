@@ -49,7 +49,7 @@ func _ready() -> void:
 	_slot_positions = _build_slot_positions(_flag_offset)
 	EventBus.soldier_died.connect(_on_soldier_died)
 	EventBus.barracks_rally_move_requested.connect(_on_rally_move_requested)
-	for i in _effective_soldier_data().max_count:
+	for i in _effective_max_count(_effective_soldier_data()):
 		_spawn_soldier(i)
 	_construct_t = _TowerAnimScript.CONSTRUCTION_DURATION
 	modulate.a = 0.0
@@ -101,6 +101,22 @@ func _current_tier_key() -> String:
 	return "l2" if level >= 2 else "l1"
 
 
+# Override-aware effective squad size. Reads soldier_count_mult from
+# BalanceOverrides and floors to int. Used by the spawn loop, the squad-color
+# accent, and every stats-line display so the panel slider, the in-level UI,
+# and the actual squad on-map all agree. Min 0; cap at 10 to keep degenerate
+# slider values from instantiating hundreds of soldiers.
+func _effective_max_count(sd: Resource) -> int:
+	if sd == null:
+		return 0
+	var base: int = int(sd.max_count)
+	if data == null or data.tower_id == "":
+		return base
+	var m: float = _BalanceOverrides.get_tower_mult(
+		data.tower_id, _current_tier_key(), "soldier_count_mult")
+	return clampi(int(round(float(base) * m)), 0, 10)
+
+
 func get_sell_value() -> int:
 	var ov: Resource = _level_override()
 	if ov != null and ov.sell_value > 0:
@@ -148,7 +164,7 @@ func upgrade() -> bool:
 	_slot_positions = _build_slot_positions(_flag_offset)
 	var sd: Resource = _effective_soldier_data()
 	if sd != null:
-		for i in sd.max_count:
+		for i in _effective_max_count(sd):
 			_spawn_soldier(i)
 	_upgrade_t = _TowerAnimScript.UPGRADE_DURATION
 	queue_redraw()
@@ -180,7 +196,7 @@ func get_stats_line() -> String:
 	var squad: int = 0
 	var hp: int = 0
 	if sd != null:
-		squad = int(sd.max_count)
+		squad = _effective_max_count(sd)
 		hp = int(sd.max_health)
 	return "Rally %d   Squad %d   HP %d" % [
 		int(_effective_rally_range()),
@@ -191,7 +207,7 @@ func get_stats_line() -> String:
 
 func get_preview_stats() -> Array:
 	var sd: Resource = _effective_soldier_data()
-	var squad: float = float(sd.max_count) if sd != null else 0.0
+	var squad: float = float(_effective_max_count(sd)) if sd != null else 0.0
 	var hp: float = float(sd.max_health) if sd != null else 0.0
 	var dmg: float = float(sd.damage) if sd != null and "damage" in sd else 0.0
 	var rows: Array = [
@@ -279,6 +295,13 @@ func _spawn_soldier(slot_index: int) -> void:
 		if personal.visual != null:
 			personal.visual.accent_band_color = _squad_color()
 		soldier.data = personal
+	# Stamp barracks identity onto the soldier so it can resolve debug-only
+	# stat multipliers (HP / damage / attack_speed) keyed by (tower_id,
+	# tier_key) in BalanceOverrides. Empty string in production = no-op
+	# (BaseSoldier._soldier_mult returns 1.0 when tower_id is empty).
+	if data != null and "tower_id" in data:
+		soldier.tower_id = String(data.tower_id)
+		soldier.tier_key = _current_tier_key()
 	add_child(soldier)
 	soldier.global_position = global_position
 	if soldier.has_method("setup"):
@@ -316,6 +339,10 @@ func _on_soldier_died(soldier: Node) -> void:
 	var sd: Resource = _effective_soldier_data()
 	if sd != null and "respawn_time" in sd:
 		respawn_time = sd.respawn_time
+	# Apply debug-only respawn-time multiplier (e.g. ×0.5 to halve gap).
+	if data != null and data.tower_id != "":
+		respawn_time *= _BalanceOverrides.get_tower_mult(
+			data.tower_id, _current_tier_key(), "soldier_respawn_mult")
 	_respawn_after(respawn_time, slot)
 
 

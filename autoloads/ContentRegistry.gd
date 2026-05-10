@@ -34,6 +34,13 @@ const _HERO_PATHS: Array[String] = [
 	"res://heroes/data/hero_mage.tres",
 ]
 
+# Phase 1 — per-hero skill trees (node-graph progression). Filename basename
+# matches hero_id so _assert_ids catches drift.
+const _SKILL_TREE_PATHS: Array[String] = [
+	"res://heroes/data/skill_trees/hero_warrior.tres",
+	"res://heroes/data/skill_trees/hero_mage.tres",
+]
+
 # Phase 48 — loot system content. ItemBase templates back all dropped
 # ItemInstance runtime objects; AffixData templates are rolled into
 # instances at drop time; AffixPool groups affixes into pool_id buckets.
@@ -79,6 +86,7 @@ const _AFFIX_PATHS: Array[String] = [
 var enemies: Array[Resource] = []
 var towers: Array[Resource] = []
 var heroes: Array[Resource] = []
+var skill_trees: Array[Resource] = []  # Phase 1 — one HeroSkillTreeData per hero
 var upgrades: Array[Resource] = []  # populated by UpgradeTree scene (inline sub_resources)
 var item_bases: Array[Resource] = []
 var affixes: Array[Resource] = []
@@ -97,12 +105,13 @@ func _ready() -> void:
 	enemies = _load_catalog(_ENEMY_PATHS, "enemies")
 	towers = _load_catalog(_TOWER_PATHS, "towers")
 	heroes = _load_catalog(_HERO_PATHS, "heroes")
+	skill_trees = _load_catalog(_SKILL_TREE_PATHS, "skill_trees")
 	item_bases = _load_catalog(_ITEM_BASE_PATHS, "item_bases")
 	affixes = _load_catalog(_AFFIX_PATHS, "affixes")
 	affix_pools = _load_catalog(_AFFIX_POOL_PATHS, "affix_pools")
 	levels = _load_levels()
-	print("[ContentRegistry] loaded — %d enemies, %d towers, %d heroes, %d item_bases, %d affixes, %d pools, %d levels" % [
-		enemies.size(), towers.size(), heroes.size(),
+	print("[ContentRegistry] loaded — %d enemies, %d towers, %d heroes, %d trees, %d item_bases, %d affixes, %d pools, %d levels" % [
+		enemies.size(), towers.size(), heroes.size(), skill_trees.size(),
 		item_bases.size(), affixes.size(), affix_pools.size(), levels.size(),
 	])
 	_validate_ids()
@@ -151,6 +160,7 @@ func _validate_ids() -> void:
 	_assert_ids(enemies, "enemy_id")
 	_assert_ids(towers, "tower_id")
 	_assert_ids(heroes, "hero_id")
+	_assert_ids(skill_trees, "hero_id")
 	_assert_ids(item_bases, "base_id")
 	_assert_ids(affixes, "affix_id")
 	_assert_ids(affix_pools, "pool_id")
@@ -213,6 +223,13 @@ func find_hero(id: String) -> Resource:
 	for h in heroes:
 		if h != null and "hero_id" in h and h.hero_id == id:
 			return h
+	return null
+
+
+func find_skill_tree(hero_id: String) -> Resource:
+	for t in skill_trees:
+		if t != null and "hero_id" in t and t.hero_id == hero_id:
+			return t
 	return null
 
 

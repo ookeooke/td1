@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://dhkkla25ah1bs" path="res://heroes/HeroData.gd" id="1_data"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_summon_soldiers.tres" id="2_summon"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_bless.tres" id="3_bless"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_shield_bash.tres" id="4_bash"]
 [ext_resource type="Script" uid="uid://yklkyt4lmkcv" path="res://progression/TalentData.gd" id="5_talent"]
 [ext_resource type="Script" uid="uid://dlq0ex8y336kj" path="res://systems/abilities/LifestealAbility.gd" id="6_lifesteal"]
 [ext_resource type="Script" uid="uid://c7gd214j4vheq" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="7_bonusdmg"]
@@ -64,7 +65,7 @@ attack_damage = 6.0
 attack_range = 75.0
 move_speed = 220.0
 armor = 0.25
-skills = Array[Resource]([ExtResource("2_summon"), ExtResource("3_bless")])
+skills = Array[Resource]([ExtResource("2_summon"), ExtResource("3_bless"), ExtResource("4_bash")])
 talents = Array[Resource]([SubResource("Talent_Endurance"), SubResource("Talent_Vampiric"), SubResource("Talent_HeavyBlows")])
 visual = ExtResource("9_vis")
 starter_items = Array[Resource]([ExtResource("10_s_sword"), ExtResource("11_s_tunic"), ExtResource("12_s_charm")])

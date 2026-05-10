@@ -78,7 +78,7 @@ var _spawn_markers: Dictionary = {}
 
 # Debug: throttled diagnostic of the gate inputs. Toggle to true to log
 # the gate state once per second; off in production.
-const DEBUG_PRINT: bool = false
+const DEBUG_PRINT: bool = true
 var _last_debug_msec: int = 0
 
 

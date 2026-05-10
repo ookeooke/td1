@@ -156,6 +156,7 @@ var _modifier_sources: Array = []
 # death so passives like "on-kill: +5% damage for 3 s" can hook in later.
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
+const _HeroSkillNodeDataScript := preload("res://heroes/HeroSkillNodeData.gd")
 var _ability_host: RefCounted = null
 
 @onready var attack_range_area: Area2D = $AttackRange
@@ -180,7 +181,7 @@ func _ready() -> void:
 	recompute_stats()
 	current_health = _effective_max_health()
 	var atk_circle := CircleShape2D.new()
-	atk_circle.radius = data.attack_range
+	atk_circle.radius = get_effective_attack_range()
 	attack_range_shape.shape = atk_circle
 	# EngageRange — block-claim radius (see _effective_engage_radius). Decoupled
 	# from attack_range so ranged heroes attack at distance without locking
@@ -190,7 +191,7 @@ func _ready() -> void:
 	engage_range_shape.shape = engage_circle
 	# SeekRange — hero auto-walks toward enemies in this larger radius.
 	var seek_circle := CircleShape2D.new()
-	seek_circle.radius = data.attack_range * SEEK_RANGE_MULTIPLIER
+	seek_circle.radius = get_effective_attack_range() * SEEK_RANGE_MULTIPLIER
 	seek_range_shape.shape = seek_circle
 	_skill_cooldowns.resize(data.skills.size())
 	_skill_cooldowns.fill(0.0)
@@ -198,12 +199,15 @@ func _ready() -> void:
 	if "abilities" in data:
 		for ability in data.abilities:
 			_ability_host.add_ability(ability)
-	# Phase 40: push purchased talents' abilities onto the hero.
-	if "talents" in data and data.hero_id in MetaProgression.hero_talents:
-		var purchased_ids: Array = MetaProgression.hero_talents[data.hero_id]
-		for talent in data.talents:
-			if talent != null and talent.talent_id in purchased_ids and talent.ability != null:
-				_ability_host.add_ability(talent.ability.duplicate())
+	# Phase 1 — push every PASSIVE_RANK node ability for each equipped passive.
+	# Cumulative tree: if the player owns R1 + R2 of a passive, both abilities
+	# stack on the host. Each ability is duplicate()d so per-hero state (e.g.
+	# RegenAbility's tick timer) is isolated.
+	#
+	# Legacy talents (Phase 40) are auto-migrated to skill-tree nodes by
+	# SaveManager._migrate_v4_to_v5 on first v5 load, so MetaProgression.
+	# hero_talents is empty in steady state — no need to read it here.
+	_apply_equipped_passives()
 	# Phase 48: push equipped items' abilities through AbilityHost.equip_ability
 	# so ON_EQUIP fires, StatModifierAbility joins the modifier stack, and
 	# recompute_stats rebuilds current_stats with item contributions.
@@ -231,21 +235,60 @@ func _ready() -> void:
 
 func _seed_base_stats() -> void:
 	# Called on ready and whenever a permanent base value changes (level-up,
-	# permanent upgrade purchase). Seeds base_stats from HeroData with the
-	# per-level growth curves and account-wide upgrade multipliers already
-	# baked in — those are "permanent" sources and don't belong in the
-	# modifier stack.
+	# permanent upgrade purchase). Delegates to compute_base_stats so the
+	# dressing-room preview (EquipmentScreen) and the runtime hero compute
+	# the same numbers from the same code.
 	if data == null:
 		base_stats.clear()
 		return
-	var hp_mult: float = 1.0 + float(level - 1) * LEVEL_HEALTH_GROWTH
-	var dmg_mult: float = 1.0 + float(level - 1) * LEVEL_DAMAGE_GROWTH
-	base_stats["max_health"] = float(data.max_health) * hp_mult
-	base_stats["damage"] = data.attack_damage * dmg_mult * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_HERO_DAMAGE)
-	base_stats["armor"] = data.armor
-	base_stats["attack_speed"] = data.attack_speed
-	base_stats["move_speed"] = data.move_speed
-	base_stats["xp_gain_mult"] = 1.0
+	base_stats = compute_base_stats(data, level)
+
+
+func _apply_equipped_passives() -> void:
+	# Phase 1 — walk the hero's skill tree, for each equipped passive_id push
+	# the abilities of every PASSIVE_RANK node whose rank has been purchased.
+	# Cumulative: R1 + R2 owned + R3 not owned → push R1's ability + R2's
+	# ability, skip R3. Each ability is duplicated so two heroes equipping
+	# the same passive don't share mutable per-instance state.
+	if _ability_host == null or data == null:
+		return
+	if not has_node("/root/ContentRegistry"):
+		return
+	var tree: Resource = ContentRegistry.find_skill_tree(data.hero_id)
+	if tree == null:
+		return
+	var equipped: Array[String] = LoadoutState.get_equipped_passives(data.hero_id)
+	for passive_id in equipped:
+		if passive_id == "":
+			continue
+		var purchased_rank: int = MetaProgression.get_purchased_passive_rank(data.hero_id, passive_id)
+		if purchased_rank <= 0:
+			continue
+		for node in tree.nodes_for_target(passive_id):
+			if node == null or not ("kind" in node):
+				continue
+			if int(node.kind) != _HeroSkillNodeDataScript.Kind.PASSIVE_RANK:
+				continue
+			if int(node.rank) > purchased_rank:
+				continue
+			if node.ability == null:
+				continue
+			_ability_host.add_ability(node.ability.duplicate())
+
+
+func _resize_range_shapes() -> void:
+	# Push current_stats range values back onto the Area2D collision shapes.
+	# Without this, an item with attack_range_pct lifts the number reported
+	# by get_stats_line() but the AttackRange / SeekRange / EngageRange Area2D
+	# radii stay at the L1 baked size — the stats card lies. Called whenever
+	# the modifier stack changes (equip / unequip / level-up).
+	var atk_range: float = get_effective_attack_range()
+	if attack_range_shape != null and attack_range_shape.shape is CircleShape2D:
+		(attack_range_shape.shape as CircleShape2D).radius = atk_range
+	if seek_range_shape != null and seek_range_shape.shape is CircleShape2D:
+		(seek_range_shape.shape as CircleShape2D).radius = atk_range * SEEK_RANGE_MULTIPLIER
+	if engage_range_shape != null and engage_range_shape.shape is CircleShape2D:
+		(engage_range_shape.shape as CircleShape2D).radius = get_effective_engage_radius()
 
 
 func register_modifier_source(m) -> void:
@@ -261,32 +304,90 @@ func unregister_modifier_source(m) -> void:
 func _refresh_health_after_modifier_change() -> void:
 	# Max HP went up or down — clamp current_health so equipping a +HP item
 	# doesn't auto-heal and unequipping one doesn't leave health above max.
+	# Also resize the Area2D radii so range/engage modifiers actually move
+	# the physical reach circles, not just the stats card.
 	if data == null:
 		return
 	var max_hp: int = _effective_max_health()
 	if current_health > max_hp:
 		current_health = max_hp
+	_resize_range_shapes()
 
 
 func recompute_stats() -> void:
-	# Rebuild current_stats from base + modifier stack. Additive flats apply
-	# first, then multiplicative pcts (product of (1 + pct)). Order is fixed
-	# so the same modifier set always yields the same current value.
-	current_stats.clear()
-	for key in base_stats.keys():
+	# Rebuild current_stats from base + modifier stack. Order is fixed so the
+	# same modifier set always yields the same current value: additive flats
+	# apply first, then multiplicative pcts as a product of (1 + pct).
+	current_stats = apply_modifiers(base_stats, _modifier_sources)
+
+
+# ---------------------------------------------------------------------------
+# Pure stat math — usable from a static context so EquipmentScreen and any
+# future dressing-room UI can preview "what stats WOULD be" without spawning
+# a BaseHero instance. The runtime _seed_base_stats / recompute_stats above
+# both delegate here so there is exactly one definition of the math.
+# ---------------------------------------------------------------------------
+
+static func compute_base_stats(hero_data: HeroData, level_arg: int) -> Dictionary:
+	# HeroData + level → permanent base values (per-level growth + account-
+	# wide upgrade multipliers baked in). No modifier stack here.
+	if hero_data == null:
+		return {}
+	var hp_mult: float = 1.0 + float(level_arg - 1) * LEVEL_HEALTH_GROWTH
+	var dmg_mult: float = 1.0 + float(level_arg - 1) * LEVEL_DAMAGE_GROWTH
+	return {
+		"max_health": float(hero_data.max_health) * hp_mult,
+		"damage": hero_data.attack_damage * dmg_mult * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_HERO_DAMAGE),
+		"armor": hero_data.armor,
+		"magic_resist": hero_data.magic_resist,
+		"attack_speed": hero_data.attack_speed,
+		"move_speed": hero_data.move_speed,
+		"attack_range": hero_data.attack_range,
+		"xp_gain_mult": 1.0,
+		"skill_power": 1.0,
+	}
+
+
+static func apply_modifiers(base: Dictionary, modifier_sources: Array) -> Dictionary:
+	# base stats + ordered modifier sources → derived stats.
+	# Each source exposes optional `<key>_flat` / `<key>_pct` fields; reflection
+	# auto-discovers them. Adding a new stat key in compute_base_stats and a
+	# matching field on StatModifierAbility wires modifier paths up with no
+	# changes here.
+	var current: Dictionary = {}
+	for key in base.keys():
 		var flat_field: String = "%s_flat" % key
 		var pct_field: String = "%s_pct" % key
-		var v: float = float(base_stats[key])
+		var v: float = float(base[key])
 		var pct_product: float = 1.0
-		for m in _modifier_sources:
+		for m in modifier_sources:
 			if m == null:
 				continue
 			if flat_field in m:
 				v += float(m.get(flat_field))
 			if pct_field in m:
 				pct_product *= 1.0 + float(m.get(pct_field))
-		v *= pct_product
-		current_stats[key] = v
+		current[key] = v * pct_product
+	return current
+
+
+static func compute_stats_for(hero_data: HeroData, level_arg: int, equipped: Array) -> Dictionary:
+	# Dressing-room preview convenience: build full live stats from hero_data
+	# + level + equipped item instances. EquipmentScreen calls this; the
+	# runtime hero uses the two-step seed/recompute path above instead.
+	var base: Dictionary = compute_base_stats(hero_data, level_arg)
+	var mods: Array = []
+	for inst in equipped:
+		if inst == null:
+			continue
+		for ab in inst.build_runtime_abilities(ContentRegistry):
+			if ab != null:
+				mods.append(ab)
+	var current: Dictionary = apply_modifiers(base, mods)
+	# Derived DPS — kept here so dressing-room and any future "build summary"
+	# preview share the same definition of "DPS".
+	current["dps"] = float(current.get("damage", 0.0)) * float(current.get("attack_speed", 0.0))
+	return current
 
 
 func _effective_max_health() -> int:
@@ -300,6 +401,108 @@ func _effective_damage() -> float:
 	if data == null:
 		return 0.0
 	return float(current_stats.get("damage", data.attack_damage))
+
+
+# ---------------------------------------------------------------------------
+# Public Hero Indicator Interface — mirrors the Tower Indicator Interface
+# (CORE RULE 14). UI, DamageCalculator, and any cross-system reader call these
+# accessors instead of touching `data.X` directly. Each modifier-aware getter
+# returns `current_stats[key]` with a fallback to the authored baseline so a
+# parse-time/orphan hero (no _seed_base_stats yet) still returns sensible
+# numbers. Don't shadow these with `has_method` fallbacks at call sites — the
+# interface is guaranteed.
+# ---------------------------------------------------------------------------
+
+func get_effective_max_health() -> int:
+	return _effective_max_health()
+
+
+func get_current_health() -> int:
+	return current_health
+
+
+func get_effective_damage() -> float:
+	return _effective_damage()
+
+
+func get_effective_attack_speed() -> float:
+	if data == null:
+		return 0.0
+	return float(current_stats.get("attack_speed", data.attack_speed))
+
+
+func get_effective_attack_range() -> float:
+	if data == null:
+		return 0.0
+	return float(current_stats.get("attack_range", data.attack_range))
+
+
+func get_preview_range() -> float:
+	# RangePreview polymorphism — towers expose this name, heroes mirror it.
+	return get_effective_attack_range()
+
+
+func get_effective_armor() -> float:
+	if data == null:
+		return 0.0
+	return float(current_stats.get("armor", data.armor))
+
+
+func get_effective_magic_resist() -> float:
+	if data == null:
+		return 0.0
+	return float(current_stats.get("magic_resist", data.magic_resist))
+
+
+func get_effective_move_speed() -> float:
+	if data == null:
+		return 0.0
+	return float(current_stats.get("move_speed", data.move_speed))
+
+
+func get_effective_engage_radius() -> float:
+	return _effective_engage_radius()
+
+
+func get_effective_xp_gain_mult() -> float:
+	return float(current_stats.get("xp_gain_mult", 1.0))
+
+
+func get_effective_skill_power() -> float:
+	return float(current_stats.get("skill_power", 1.0))
+
+
+func get_level() -> int:
+	return level
+
+
+func get_xp_progress() -> Dictionary:
+	return {
+		"level": level,
+		"xp": current_xp,
+		"xp_needed": _xp_needed_for_next_level(),
+		"max_level": data.max_level if data != null else 0,
+	}
+
+
+func get_stats_line() -> String:
+	# Live, modifier-aware stats row. Mirrors TowerData.get_stats_line() field
+	# spacing (three spaces) so heroes and towers feel like one card style.
+	if data == null:
+		return ""
+	var dmg: int = int(round(get_effective_damage()))
+	var rng: int = int(round(get_effective_attack_range()))
+	var spd: float = get_effective_attack_speed()
+	var hp: int = get_current_health()
+	var max_hp: int = get_effective_max_health()
+	var arm: int = int(round(get_effective_armor() * 100.0))
+	var mr: int = int(round(get_effective_magic_resist() * 100.0))
+	var line: String = "Dmg %d   Rng %d   Spd %.1f   HP %d/%d   Arm %d%%" % [
+		dmg, rng, spd, hp, max_hp, arm
+	]
+	if mr > 0:
+		line += "   MR %d%%" % mr
+	return line
 
 
 func _tick_skill_cooldowns(delta: float) -> void:
@@ -322,12 +525,54 @@ func get_skill_data(idx: int) -> Resource:
 
 func get_skill_cooldown_fraction(idx: int) -> float:
 	# 0.0 = ready, 1.0 = just cast. UI radial overlay maps this to arc coverage.
+	# Uses the rank-scaled cooldown so the radial fills correctly when the
+	# player has bought R2/R3 (faster cycles).
 	var skill: Resource = get_skill_data(idx)
-	if skill == null or skill.cooldown <= 0.0:
+	if skill == null:
+		return 0.0
+	var cd: float = get_skill_effective_cooldown(idx)
+	if cd <= 0.0:
 		return 0.0
 	if idx >= _skill_cooldowns.size():
 		return 0.0
-	return clampf(_skill_cooldowns[idx] / skill.cooldown, 0.0, 1.0)
+	return clampf(_skill_cooldowns[idx] / cd, 0.0, 1.0)
+
+
+# Phase 2 — rank-scaled + mod-scaled cooldown. Reads MetaProgression for the
+# purchased ACTIVE_RANK and LoadoutState for the chosen MOD; both fold into
+# `cooldown_mult` on the cast ctx. UI radial overlay AND the actual timer
+# both go through this so they always agree.
+func get_skill_effective_cooldown(idx: int) -> float:
+	var skill: Resource = get_skill_data(idx)
+	if skill == null:
+		return 0.0
+	if data == null:
+		return float(skill.cooldown)
+	var ctx: Dictionary = _build_skill_ctx(skill)
+	return maxf(0.01, float(skill.cooldown) * float(ctx.get("cooldown_mult", 1.0)))
+
+
+# Build the cast-time context dict for a skill: rank-scaling deltas + chosen
+# mod's scaling. Single source of truth used by cast_skill AND
+# get_skill_effective_cooldown so the displayed cooldown matches the
+# applied cooldown.
+func _build_skill_ctx(skill: Resource) -> Dictionary:
+	if skill == null or data == null:
+		return {}
+	var rank: int = MetaProgression.get_purchased_skill_rank(data.hero_id, String(skill.skill_id))
+	var ctx: Dictionary = skill.get_effective_scaling(rank)
+	var chosen_mod_id: String = LoadoutState.get_chosen_mod(data.hero_id, String(skill.skill_id))
+	if chosen_mod_id == "":
+		return ctx
+	var mod: Resource = LoadoutState.find_skill_mod(data.hero_id, chosen_mod_id)
+	if mod == null or not ("scaling" in mod):
+		return ctx
+	for key in mod.scaling:
+		if String(key).ends_with("_mult"):
+			ctx[key] = float(ctx.get(key, 1.0)) * float(mod.scaling[key])
+		else:
+			ctx[key] = mod.scaling[key]
+	return ctx
 
 
 # CooldownButton provider contract — generic names so the same button
@@ -349,7 +594,7 @@ func get_skill_effective_range(idx: int) -> float:
 		return 0.0
 	if skill.skill_range > 0.0:
 		return skill.skill_range
-	return data.attack_range
+	return get_effective_attack_range()
 
 
 func set_skill_range_preview(radius: float) -> void:
@@ -375,10 +620,14 @@ func cast_skill(idx: int, target) -> bool:
 	var skill: Resource = get_skill_data(idx)
 	if skill == null:
 		return false
-	skill.apply(self, target)
-	_skill_cooldowns[idx] = skill.cooldown
+	# Phase 2 — single ctx built once: rank-scaling × chosen-mod scaling.
+	# Subclasses read `damage_mult`, `aoe_radius_mult`, `count_mult`, etc.
+	var ctx: Dictionary = _build_skill_ctx(skill)
+	skill.apply(self, target, ctx)
+	var effective_cd: float = get_skill_effective_cooldown(idx)
+	_skill_cooldowns[idx] = effective_cd
 	EventBus.hero_skill_used.emit(skill.skill_name)
-	EventBus.skill_cooldown_started.emit(skill.skill_name, skill.cooldown)
+	EventBus.skill_cooldown_started.emit(skill.skill_name, effective_cd)
 	# Cast pose — arm raised + body stretch for CAST_ANIM_DURATION so the
 	# skill activation reads as a deliberate cast rather than a silent
 	# instant. The cast direction faces the target when there is one.
@@ -411,12 +660,22 @@ func gain_xp(amount: int) -> void:
 	if level >= data.max_level:
 		return
 	# Phase 48: delegate to MetaProgression which owns the persistent dict + the
-	# level-up math (+ xp multiplier + hero_leveled_up signal). Then mirror
-	# the results back so combat code doesn't re-read MetaProgression each frame.
-	# MetaProgression.add_hero_xp already emits hero_xp_gained and hero_leveled_up
-	# signals itself — don't re-emit them here.
+	# level-up math (+ account-wide xp multiplier + hero_leveled_up signal). Then
+	# mirror the results back so combat code doesn't re-read MetaProgression each
+	# frame. MetaProgression.add_hero_xp already emits hero_xp_gained and
+	# hero_leveled_up — don't re-emit here.
+	#
+	# Two distinct multipliers stack here intentionally:
+	#   - get_effective_xp_gain_mult() = transient run-scoped buffs from items /
+	#     equipped passives (joins the modifier stack via current_stats).
+	#   - MOD_HERO_XP inside MetaProgression.add_hero_xp = permanent account-wide
+	#     meta upgrade (different seam, applied once at the call site there).
+	# Multiplying both isn't double-counting — they're different sources.
+	var scaled: int = int(ceil(float(amount) * get_effective_xp_gain_mult()))
+	if scaled <= 0:
+		return
 	var old_level: int = level
-	var new_level: int = MetaProgression.add_hero_xp(data.hero_id, amount)
+	var new_level: int = MetaProgression.add_hero_xp(data.hero_id, scaled)
 	level = new_level
 	current_xp = MetaProgression.get_hero_xp(data.hero_id)
 	while old_level < new_level:
@@ -427,9 +686,12 @@ func gain_xp(amount: int) -> void:
 func _level_up_apply() -> void:
 	# Runtime side of a level-up. MetaProgression already emitted hero_leveled_up
 	# and bumped the persistent entry; this method updates the live hero:
-	# re-seed base, recompute modifiers, heal to full.
+	# re-seed base, recompute modifiers, resize range shapes (so the next-level
+	# growth on attack_range/engage_radius reaches the Area2Ds, not just the
+	# stats card), heal to full.
 	_seed_base_stats()
 	recompute_stats()
+	_resize_range_shapes()
 	current_health = _effective_max_health()
 	queue_redraw()
 	print("[Hero] %s reached level %d" % [data.hero_name, level])
@@ -588,7 +850,7 @@ func _start_lunge(target_world_pos: Vector2) -> void:
 	# Cap duration so very fast attack_speed values don't truncate the lunge
 	# mid-animation — we want each swing's lunge to fully complete before
 	# the next one starts (would look like the hero stuttering forward).
-	var cooldown: float = 1.0 / maxf(0.01, data.attack_speed) if data != null else LUNGE_DURATION
+	var cooldown: float = 1.0 / maxf(0.01, get_effective_attack_speed()) if data != null else LUNGE_DURATION
 	_lunge_t = minf(LUNGE_DURATION, cooldown * 0.9)
 	queue_redraw()
 
@@ -644,7 +906,7 @@ func _move_step(delta: float) -> void:
 		change_state(State.IDLE)
 		return
 	var next_pos: Vector2 = nav_agent.get_next_path_position()
-	velocity = (next_pos - global_position).normalized() * data.move_speed
+	velocity = (next_pos - global_position).normalized() * get_effective_move_speed()
 
 
 func _find_nearest_enemy_in_area(area: Area2D) -> Node:
@@ -719,14 +981,15 @@ func _within_leash(target: Node) -> bool:
 #     hero's current approach vector, so casters don't walk into melee.
 func _engage_position_for(enemy: Node) -> Vector2:
 	var epos: Vector2 = enemy.global_position
-	if data.attack_range < RANGED_ATTACK_RANGE_THRESHOLD:
+	var atk_range: float = get_effective_attack_range()
+	if atk_range < RANGED_ATTACK_RANGE_THRESHOLD:
 		var dx: float = global_position.x - epos.x
 		var side: float = signf(dx) if absf(dx) > 5.0 else 1.0
 		return Vector2(epos.x + side * MELEE_ENGAGE_GAP_X, epos.y)
 	var to_hero: Vector2 = global_position - epos
 	if to_hero.length_squared() < 1.0:
 		to_hero = Vector2.RIGHT
-	return epos + to_hero.normalized() * (data.attack_range * 0.8)
+	return epos + to_hero.normalized() * (atk_range * 0.8)
 
 
 func _attack_step(delta: float) -> void:
@@ -769,7 +1032,7 @@ func _attack_step(delta: float) -> void:
 	_attack_cooldown -= delta
 	if _attack_cooldown > 0.0:
 		return
-	_attack_cooldown = 1.0 / maxf(0.01, data.attack_speed)
+	_attack_cooldown = 1.0 / maxf(0.01, get_effective_attack_speed())
 	_start_lunge(enemy.global_position)
 	var dmg: float = _effective_damage()
 	var dying: bool = enemy.state == BaseEnemy.State.DYING
@@ -947,7 +1210,7 @@ func _effective_engage_radius() -> float:
 	var authored: float = float(data.engage_radius) if "engage_radius" in data else 0.0
 	if authored > 0.0:
 		return authored
-	return minf(data.attack_range, DEFAULT_ENGAGE_RADIUS)
+	return minf(get_effective_attack_range(), DEFAULT_ENGAGE_RADIUS)
 
 
 # Drop every blocker claim we hold. Called on state exits from COMBAT,

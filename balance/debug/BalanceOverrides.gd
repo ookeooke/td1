@@ -238,7 +238,19 @@ static func reset() -> void:
 #   TowerData.get_stats_line / TowerUpgradeData.get_preview_stats (display)
 # ============================================================================
 
-const TOWER_STAT_KEYS: Array[String] = ["damage_mult", "range_mult", "speed_mult", "cost_mult"]
+const TOWER_STAT_KEYS: Array[String] = [
+	# Combat-tower stat multipliers — apply to TowerData / TowerUpgradeData fields.
+	# aoe_mult only matters for splash towers (aoe_radius > 0); non-AoE towers
+	# read this and ignore it (their effective_aoe_radius stays 0).
+	"damage_mult", "range_mult", "speed_mult", "cost_mult", "aoe_mult",
+	# Barracks-only stat multipliers — apply to the soldier the barracks spawns.
+	# Read by BaseSoldier (hp / damage / attack_speed) and TowerBarracks (respawn,
+	# squad size). Same per-tier scope so L1 militia and L3 veterans tune
+	# independently. count_mult applies to SoldierData.max_count then floors to
+	# int — drag to ×1.34 on a 3-soldier squad gets you 4 concurrent blockers.
+	"soldier_hp_mult", "soldier_damage_mult", "soldier_attack_speed_mult",
+	"soldier_respawn_mult", "soldier_count_mult",
+]
 const TOWER_TIER_KEYS: Array[String] = ["l1", "l2", "l3_linear", "branch_a", "branch_b"]
 
 

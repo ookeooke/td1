@@ -20,6 +20,14 @@ const LUNGE_DISTANCE: float = 12.0
 
 @export var data: Resource  # SoldierData — typed loosely until Godot indexes the class_name
 
+# Identity of the parent barracks — populated by TowerBarracks._spawn_soldier
+# so this instance can look up debug-only stat multipliers (HP / damage /
+# attack_speed) keyed by (tower_id, tier_key) in BalanceOverrides. Empty
+# strings = no overrides applied (production runtime / orphan spawns).
+var tower_id: String = ""
+var tier_key: String = ""
+const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
+
 var state: int = State.MOVING
 var current_health: int = 0
 var _effective_max_hp: int = 0  # set in _ready with upgrade multiplier
@@ -85,7 +93,9 @@ var _ability_host: RefCounted = null
 func _ready() -> void:
 	if data:
 		# Phase 28: permanent upgrade (Reinforced Walls / Soldier HP = type 7).
-		_effective_max_hp = int(ceil(float(data.max_health) * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_SOLDIER_HEALTH)))
+		_effective_max_hp = int(ceil(float(data.max_health) \
+			* MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_SOLDIER_HEALTH) \
+			* _soldier_mult("soldier_hp_mult")))
 		current_health = _effective_max_hp
 		var circle := CircleShape2D.new()
 		circle.radius = data.melee_range
@@ -108,6 +118,16 @@ func _ready() -> void:
 	var tint_amount: float = (v_seed - 0.5) * 0.10
 	_skin_tint = Color(1.0 + tint_amount, 1.0 + tint_amount * 0.6, 1.0 + tint_amount * 0.3, 1.0)
 	_prev_pos = global_position
+
+
+# Read a debug-only soldier-stat multiplier from BalanceOverrides keyed by
+# (tower_id, tier_key). Returns 1.0 (identity) for orphan spawns / production
+# runtime / when the stat hasn't been overridden — same convention as the
+# combat-tower mult getters in base_tower.gd.
+func _soldier_mult(stat: String) -> float:
+	if tower_id == "" or tier_key == "":
+		return 1.0
+	return _BalanceOverrides.get_tower_mult(tower_id, tier_key, stat)
 
 
 func setup(blocking_position: Vector2, flag_position: Vector2 = Vector2.INF) -> void:
@@ -283,12 +303,14 @@ func _attack_cycle(delta: float) -> void:
 	_attack_cooldown -= delta
 	if _attack_cooldown > 0.0:
 		return
-	_attack_cooldown = 1.0 / maxf(0.01, data.attack_speed)
+	var eff_atk_speed: float = data.attack_speed * _soldier_mult("soldier_attack_speed_mult")
+	_attack_cooldown = 1.0 / maxf(0.01, eff_atk_speed)
 	_start_lunge(enemy.global_position)
 	var pre_dying: bool = enemy.state == BaseEnemy.State.DYING
-	enemy.take_damage(data.attack_damage, DamageCalculator.DamageType.PHYSICAL, self)
+	var eff_dmg: float = data.attack_damage * _soldier_mult("soldier_damage_mult")
+	enemy.take_damage(eff_dmg, DamageCalculator.DamageType.PHYSICAL, self)
 	if _ability_host != null:
-		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_DEALT, {"target": enemy, "amount": data.attack_damage})
+		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_DEALT, {"target": enemy, "amount": eff_dmg})
 		if not pre_dying and enemy.state == BaseEnemy.State.DYING:
 			_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_KILL, {"victim": enemy})
 

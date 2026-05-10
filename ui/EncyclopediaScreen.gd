@@ -182,10 +182,7 @@ func _format_item(data: Resource) -> Dictionary:
 
 
 func _format_hero(data: Resource) -> Dictionary:
-	var stats: String = "HP %d  DMG %.0f  RNG %.0f  SPD %.1f  Armor %.0f%%" % [
-		data.max_health, data.attack_damage, data.attack_range,
-		data.attack_speed, data.armor * 100,
-	]
+	var stats: String = data.get_stats_line()
 	if data.skills.size() > 0:
 		var skill_names: PackedStringArray = []
 		for s in data.skills:

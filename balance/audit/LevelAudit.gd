@@ -128,7 +128,7 @@ func _render_loadout_summary() -> void:
 			ppt,
 			LoadoutState.selected_hero_id,
 			LoadoutState.selected_tower_ids.size(),
-			LoadoutState.EQUIPPED_SKILL_SLOTS,
+			LoadoutState.get_active_slot_cap(LoadoutState.selected_hero_id),
 		]
 	)
 	_add_text(

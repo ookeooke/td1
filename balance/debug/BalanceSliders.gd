@@ -643,7 +643,21 @@ const _STAT_TO_PROPERTY: Dictionary = {
 	"range_mult": "attack_range",
 	"speed_mult": "attack_speed",
 	"cost_mult": "cost",
+	"aoe_mult": "aoe_radius",
 }
+
+# Soldier mult → SoldierData field name. Bake writes onto the SoldierData
+# resource (or the per-tier soldier_data_override), not the TowerData.
+const _SOLDIER_STAT_TO_PROPERTY: Dictionary = {
+	"soldier_hp_mult":            "max_health",
+	"soldier_damage_mult":        "attack_damage",
+	"soldier_attack_speed_mult":  "attack_speed",
+	"soldier_respawn_mult":       "respawn_time",
+	"soldier_count_mult":         "max_count",
+}
+
+# Properties baked as int (rounded). Everything else baked as float.
+const _BAKE_INT_PROPERTIES: PackedStringArray = ["cost", "max_health", "max_count"]
 
 
 func _on_bake_pressed() -> void:
@@ -716,24 +730,33 @@ func _collect_bake_deltas() -> Array:
 	for tower in ContentRegistry.towers:
 		if tower == null or not (tower is TowerData):
 			continue
+		var stat_keys: Array = _stat_keys_for_tower(tower)
 		for tier_key in _TOWER_TIER_KEYS:
 			# Skip tiers that don't exist on this tower (e.g. branches when
 			# the tower has no L3 branches authored). _level_override_for
 			# returns null in that case.
 			if not _tier_exists(tower, tier_key):
 				continue
-			for stat in _TOWER_STAT_KEYS:
+			for stat in stat_keys:
 				var mult: float = BalanceOverrides.get_tower_mult(tower.tower_id, tier_key, stat)
 				if absf(mult - 1.0) < 0.0001:
 					continue
 				var authored: float = _authored_stat(tower, tier_key, stat)
 				if authored <= 0.0:
 					continue  # nothing to multiply against; skip silently
+				# Resolve target resource + property name. Combat stats land on
+				# TowerData / TowerUpgradeData; soldier stats land on the tier's
+				# SoldierData (or its override). Pre-resolve here so _apply_bake
+				# doesn't need to re-derive what _collect_* already knows.
+				var entry: Dictionary = _bake_target_and_property(tower, tier_key, stat)
+				if entry.is_empty() or entry.target == null:
+					continue
 				out.append({
 					"tower": tower,
 					"tier_key": tier_key,
 					"stat": stat,
-					"property": _bake_property_for(tower, stat),
+					"target": entry.target,
+					"property": entry.property,
 					"mult": mult,
 					"authored": authored,
 					"new_value": authored * mult,
@@ -741,15 +764,28 @@ func _collect_bake_deltas() -> Array:
 	return out
 
 
-# Resolve which authored field a stat-mult writes back to. The default
-# `_STAT_TO_PROPERTY` map is correct for combat towers, but barracks store
-# their range in `soldier_rally_range` (not `attack_range`, which stays 0).
-# Without this override the bake silently writes the rally value into a
-# field the runtime never reads, leaving barracks corrupted.
-func _bake_property_for(tower: TowerData, stat: String) -> String:
+# Resolve {target, property} for a (tower, tier_key, stat) bake. Combat-tower
+# stats land on TowerData (L1) or its TowerUpgradeData (L2/L3 overrides);
+# soldier stats land on the tier's SoldierData — either the per-tier
+# `soldier_data_override` (if authored) or the base `tower.soldier_data`.
+# Returns {} when no usable target exists (e.g. an L2 soldier mult on a
+# tower that has no soldier_data at all).
+func _bake_target_and_property(tower: TowerData, tier_key: String, stat: String) -> Dictionary:
+	if _SOLDIER_STAT_TO_PROPERTY.has(stat):
+		var sd: Resource = _soldier_data_for_tier(tower, tier_key)
+		if sd == null:
+			return {}
+		return {"target": sd, "property": String(_SOLDIER_STAT_TO_PROPERTY[stat])}
+	# Combat-tower stat. range_mult on barracks redirects to soldier_rally_range
+	# (the field the rally radius actually reads from); attack_range stays 0.
+	var prop: String
 	if stat == "range_mult" and tower.is_barracks():
-		return "soldier_rally_range"
-	return _STAT_TO_PROPERTY[stat]
+		prop = "soldier_rally_range"
+	else:
+		prop = String(_STAT_TO_PROPERTY.get(stat, ""))
+	if prop == "":
+		return {}
+	return {"target": _bake_target_for(tower, tier_key), "property": prop}
 
 
 # Resolve which tier exists on a given tower. L1 always exists; upgrades
@@ -1217,17 +1253,22 @@ func _apply_wave_bake(deltas: Array) -> void:
 
 func _apply_bake(deltas: Array) -> void:
 	var towers_touched: Dictionary = {}
+	# SoldierData resources that live as standalone .tres files (separate from
+	# their parent tower) need their own ResourceSaver pass. Sub-resource
+	# SoldierData living INSIDE a tower's .tres saves automatically via the
+	# parent-tower save below.
+	var external_resources_touched: Dictionary = {}   # path → Resource
 	var summary_lines: PackedStringArray = []
 	for d in deltas:
-		var target: Resource = _bake_target_for(d.tower, d.tier_key)
+		var target: Resource = d.target
 		if target == null:
 			continue
 		var prop: String = String(d.property)
 		var mult: float = float(d.mult)
 		var authored: float = float(d.authored)
 		var new_val: float = authored * mult
-		# cost is int; everything else float. Round cost to nearest int.
-		if prop == "cost":
+		# cost / max_health / max_count are int; everything else float.
+		if prop in _BAKE_INT_PROPERTIES:
 			var iv: int = int(round(new_val))
 			target.set(prop, iv)
 			summary_lines.append("  %s %s.%s  %d → %d (×%.2f)" % [
@@ -1239,6 +1280,13 @@ func _apply_bake(deltas: Array) -> void:
 				d.tower.tower_id, d.tier_key, prop, authored, new_val, mult,
 			])
 		towers_touched[d.tower.tower_id] = d.tower
+		# If the target is a separate .tres (its resource_path differs from
+		# the parent tower's path AND is non-empty), it needs its own save.
+		# Sub-resources stored inline in the tower .tres have empty paths.
+		var t_path: String = String(target.resource_path)
+		var p_path: String = String(d.tower.resource_path)
+		if t_path != "" and t_path != p_path:
+			external_resources_touched[t_path] = target
 	# Save each touched TowerData. ResourceSaver cascades sub-resource writes
 	# inline for resources that live as SubResource("...") in the parent .tres.
 	var save_failures: PackedStringArray = []
@@ -1251,6 +1299,13 @@ func _apply_bake(deltas: Array) -> void:
 		var err: int = ResourceSaver.save(tower, path)
 		if err != OK:
 			save_failures.append("%s (err %d)" % [tid, err])
+	# Save external sub-resources (e.g. SoldierData stored as its own .tres
+	# and referenced via ExtResource by the tower).
+	for ext_path in external_resources_touched.keys():
+		var res: Resource = external_resources_touched[ext_path]
+		var err2: int = ResourceSaver.save(res, ext_path)
+		if err2 != OK:
+			save_failures.append("%s (err %d)" % [ext_path, err2])
 	# Console summary — designer reads this to confirm what landed on disk.
 	print("[BalanceSliders/Bake] Wrote %d field(s) across %d tower(s):" % [
 		deltas.size(), towers_touched.size(),
@@ -1279,7 +1334,12 @@ func _apply_bake(deltas: Array) -> void:
 # preview. See balance/debug/BalanceOverrides.gd "tower_overrides" sub-dict.
 
 const _TOWER_TIER_KEYS := ["l1", "l2", "l3_linear", "branch_a", "branch_b"]
-const _TOWER_STAT_KEYS := ["damage_mult", "range_mult", "speed_mult", "cost_mult"]
+# aoe_mult is in the combat-tower list because it's a per-tier mult on a
+# TowerData / TowerUpgradeData field — same shape as the others. Towers with
+# aoe_radius == 0 (Archer, Mage, Ice) auto-skip the slider via the existing
+# `if authored <= 0.0` filter in _add_tower_tier_block. Only Artillery + any
+# AoE branches (e.g. Howitzer, Triple Cannon) actually render the slider.
+const _TOWER_STAT_KEYS := ["damage_mult", "range_mult", "speed_mult", "cost_mult", "aoe_mult"]
 
 # Target g/DPS bands per tier — sourced from balance/BALANCE.md §"Per-tower
 # g/DPS bands". Values inside the band paint green, ±20% paint yellow, beyond
@@ -1367,7 +1427,7 @@ func _add_tower_tier_block(parent: VBoxContainer, tower: TowerData, tier_key: St
 	tier_label.modulate = Color(0.8, 0.85, 0.8)
 	parent.add_child(tier_label)
 	_add_tier_header_row(parent, tower, tier_key)
-	for stat in _TOWER_STAT_KEYS:
+	for stat in _stat_keys_for_tower(tower):
 		var authored: float = _authored_stat(tower, tier_key, stat)
 		# Skip irrelevant stats (e.g. damage/speed on a barracks where
 		# tower.damage = 0). Keeps the panel honest.
@@ -1375,6 +1435,23 @@ func _add_tower_tier_block(parent: VBoxContainer, tower: TowerData, tier_key: St
 			continue
 		_add_tower_slider(parent, tower.tower_id, tier_key, stat, authored)
 	_add_tier_footer_row(parent, tower, tier_key)
+
+
+# Combat towers expose damage/range/speed/cost; barracks expose range/cost
+# plus 5 soldier-specific stats (HP, damage, atk_speed, respawn, squad size).
+# The two stat lists are disjoint apart from range_mult and cost_mult — both
+# kits read through the SAME tower_overrides storage, the only difference is
+# which sliders the panel shows for which tower type.
+const _BARRACKS_STAT_KEYS: Array[String] = [
+	"range_mult", "cost_mult",
+	"soldier_hp_mult", "soldier_damage_mult", "soldier_attack_speed_mult",
+	"soldier_respawn_mult", "soldier_count_mult",
+]
+
+func _stat_keys_for_tower(tower: TowerData) -> Array:
+	if tower != null and tower.is_barracks():
+		return _BARRACKS_STAT_KEYS
+	return _TOWER_STAT_KEYS
 
 
 # Pretty tier label for the panel — "L1" reads better than "l1", etc.
@@ -1430,6 +1507,35 @@ func _authored_stat(tower: TowerData, tier_key: String, stat: String) -> float:
 			if ov != null:
 				return float(ov.cost)
 			return float(tower.cost)
+		"aoe_mult":
+			# Splash radius — same inheritance as damage/range/speed: per-tier
+			# override > 0 wins, else base. Returns 0 for non-AoE towers so the
+			# slider auto-hides.
+			if ov != null and "aoe_radius" in ov and ov.aoe_radius > 0.0:
+				return ov.aoe_radius
+			return tower.aoe_radius
+	# Soldier stats — resolve through TowerUpgradeData.soldier_data_override
+	# → TowerData.soldier_data. Mirrors TowerBarracks._effective_soldier_data.
+	if not tower.is_barracks():
+		return 0.0
+	var sd: Resource = null
+	if ov != null and "soldier_data_override" in ov and ov.soldier_data_override != null:
+		sd = ov.soldier_data_override
+	if sd == null and tower.soldier_data != null:
+		sd = tower.soldier_data
+	if sd == null:
+		return 0.0
+	match stat:
+		"soldier_hp_mult":
+			return float(sd.max_health) if "max_health" in sd else 0.0
+		"soldier_damage_mult":
+			return float(sd.attack_damage) if "attack_damage" in sd else 0.0
+		"soldier_attack_speed_mult":
+			return float(sd.attack_speed) if "attack_speed" in sd else 0.0
+		"soldier_respawn_mult":
+			return float(sd.respawn_time) if "respawn_time" in sd else 0.0
+		"soldier_count_mult":
+			return float(sd.max_count) if "max_count" in sd else 0.0
 	return 0.0
 
 
@@ -1444,6 +1550,18 @@ func _step_for_stat(stat: String, authored: float) -> float:
 			return 0.05
 		"cost_mult":
 			return 5.0 if authored >= 50.0 else 1.0
+		"aoe_mult":
+			return 10.0
+		"soldier_hp_mult":
+			return 1.0
+		"soldier_damage_mult":
+			return 0.5 if authored < 20.0 else 1.0
+		"soldier_attack_speed_mult":
+			return 0.05
+		"soldier_respawn_mult":
+			return 0.5
+		"soldier_count_mult":
+			return 1.0
 	return 1.0
 
 
@@ -1458,6 +1576,18 @@ func _format_stat_value(stat: String, absolute: float, mult: float) -> String:
 			return "%.2f  (×%.2f)" % [absolute, mult]
 		"cost_mult":
 			return "%d g  (×%.2f)" % [int(round(absolute)), mult]
+		"aoe_mult":
+			return "%d r  (×%.2f)" % [int(round(absolute)), mult]
+		"soldier_hp_mult":
+			return "%d HP  (×%.2f)" % [int(round(absolute)), mult]
+		"soldier_damage_mult":
+			return "%.1f  (×%.2f)" % [absolute, mult]
+		"soldier_attack_speed_mult":
+			return "%.2f atk/s  (×%.2f)" % [absolute, mult]
+		"soldier_respawn_mult":
+			return "%.1fs  (×%.2f)" % [absolute, mult]
+		"soldier_count_mult":
+			return "%d  (×%.2f)" % [int(round(absolute)), mult]
 	return "%.2f" % absolute
 
 
@@ -1468,6 +1598,12 @@ func _stat_display_name(stat: String) -> String:
 		"range_mult":  return "Rng"
 		"speed_mult":  return "Spd"
 		"cost_mult":   return "Cost"
+		"aoe_mult":    return "AoE"
+		"soldier_hp_mult":           return "Sol HP"
+		"soldier_damage_mult":       return "Sol Dmg"
+		"soldier_attack_speed_mult": return "Sol Atk/s"
+		"soldier_respawn_mult":      return "Respawn"
+		"soldier_count_mult":        return "Squad"
 	return stat
 
 
@@ -3498,9 +3634,119 @@ func _refresh_wave_charts() -> void:
 			p_actual, p_target, p_reason, p_fix)
 
 
+# Resolve the SoldierData this barracks tier spawns. Mirrors
+# TowerBarracks._effective_soldier_data: per-tier override wins over the base
+# tower.soldier_data. Returns null when the tower has no soldier data at all.
+func _soldier_data_for_tier(tower: TowerData, tier_key: String) -> Resource:
+	if tower == null:
+		return null
+	var ov: Resource = null
+	match tier_key:
+		"l2":
+			if tower.level_upgrades.size() >= 1:
+				ov = tower.level_upgrades[0]
+		"l3_linear":
+			if tower.level_upgrades.size() >= 2:
+				ov = tower.level_upgrades[1]
+		"branch_a":
+			if tower.level_3_branches.size() >= 1:
+				ov = tower.level_3_branches[0]
+		"branch_b":
+			if tower.level_3_branches.size() >= 2:
+				ov = tower.level_3_branches[1]
+	if ov != null and "soldier_data_override" in ov and ov.soldier_data_override != null:
+		return ov.soldier_data_override
+	return tower.soldier_data
+
+
+# Compute the income-adjusted blocking-power metrics for a barracks tier.
+# Returns a Dict with sq_dps / eff_dps / gdps / uptime / eff_block / g_block.
+# Block uptime formula: HP / (HP + respawn × ref_enemy_dps_vs_soldier).
+# Effective block: count × max_block_targets × uptime.
+# g/Block = cumul_cost / eff_block — the cost-efficiency of *blocking*, the
+# canonical barracks balance metric (Kingdom Rush wiki / TDS analyses).
+func _barracks_metrics(tower: TowerData, tier_key: String) -> Dictionary:
+	var hp: float = _effective_stat(tower, tier_key, "soldier_hp_mult")
+	var dmg: float = _effective_stat(tower, tier_key, "soldier_damage_mult")
+	var atk: float = _effective_stat(tower, tier_key, "soldier_attack_speed_mult")
+	var resp: float = _effective_stat(tower, tier_key, "soldier_respawn_mult")
+	var count_raw: float = _effective_stat(tower, tier_key, "soldier_count_mult")
+	var count: int = clampi(int(round(count_raw)), 0, 10)
+	var sd: Resource = _soldier_data_for_tier(tower, tier_key)
+	var mbt: int = 1
+	if sd != null and "max_block_targets" in sd:
+		mbt = int(sd.max_block_targets)
+	var ref_dps: float = float(_get_model_config().ref_enemy_dps_vs_soldier)
+	var uptime: float = 0.0
+	if hp > 0.0:
+		uptime = hp / max(0.001, hp + resp * ref_dps)
+	var sq_dps: float = float(count) * dmg * atk
+	var eff_dps: float = sq_dps * uptime
+	var eff_block: float = float(count * mbt) * uptime
+	var cost: int = _effective_cumul_cost(tower, tier_key)
+	var gdps: float = (float(cost) / eff_dps) if eff_dps > 0.0 else 0.0
+	var g_block: float = (float(cost) / eff_block) if eff_block > 0.0 else 0.0
+	return {
+		"sq_dps": sq_dps, "eff_dps": eff_dps, "gdps": gdps,
+		"uptime": uptime, "eff_block": eff_block, "g_block": g_block,
+		"cost": cost,
+	}
+
+
+# Write barracks-specific metrics into the shared per-tier label slots. The
+# 8 widgets are reused 1:1 with new text, no layout changes needed.
+func _refresh_barracks_metrics(tower: TowerData, tier_key: String, labels: Dictionary) -> void:
+	var m: Dictionary = _barracks_metrics(tower, tier_key)
+	var sq_dps: float = float(m.get("sq_dps", 0.0))
+	var eff_dps: float = float(m.get("eff_dps", 0.0))
+	var gdps: float = float(m.get("gdps", 0.0))
+	var uptime: float = float(m.get("uptime", 0.0))
+	var eff_block: float = float(m.get("eff_block", 0.0))
+	var g_block: float = float(m.get("g_block", 0.0))
+	var cost: int = int(m.get("cost", 0))
+	if labels.has("dps"):
+		(labels["dps"] as Label).text = "Sq DPS n/a" if sq_dps <= 0.0 else "Sq DPS %.1f" % sq_dps
+	if labels.has("cost"):
+		(labels["cost"] as Label).text = "Cumul %dg" % cost
+	if labels.has("gdps"):
+		var gl: Label = labels["gdps"]
+		if gdps <= 0.0:
+			gl.text = "g/DPS n/a"
+			gl.modulate = Color(0.65, 0.65, 0.68)
+		else:
+			gl.text = "g/DPS %.1f" % gdps
+			gl.modulate = Color(0.85, 0.95, 0.85)
+	if labels.has("ttk"):
+		(labels["ttk"] as Label).text = "Eff DPS n/a" if eff_dps <= 0.0 else "Eff DPS %.1f" % eff_dps
+	if labels.has("cov"):
+		(labels["cov"] as Label).text = "Uptime %.0f%%" % (uptime * 100.0) if uptime > 0.0 else "Uptime n/a"
+	if labels.has("clear"):
+		(labels["clear"] as Label).text = "Eff Block %.2f" % eff_block if eff_block > 0.0 else "Eff Block n/a"
+	if labels.has("obs"):
+		var ol: Label = labels["obs"]
+		if g_block <= 0.0:
+			ol.text = "g/Block n/a"
+			ol.modulate = Color(0.65, 0.65, 0.68)
+		else:
+			ol.text = "g/Block %.0f" % g_block
+			ol.modulate = Color(0.85, 0.95, 0.85)
+	if labels.has("role"):
+		(labels["role"] as Label).text = "Role: block"
+	if labels.has("delta"):
+		(labels["delta"] as Label).text = _format_tier_delta(tower, tier_key)
+	if labels.has("compare"):
+		(labels["compare"] as Label).text = _format_tier_compare(tower, tier_key)
+
+
 func _refresh_tier_metrics(tower: TowerData, tier_key: String) -> void:
 	var labels: Dictionary = _tier_metric_labels.get(tower.tower_id + "|" + tier_key, {})
 	if labels.is_empty():
+		return
+	# Barracks repurposes the metric slots — same Label widgets, different
+	# numbers (Sq DPS / Eff DPS / g/DPS / Uptime / Eff Block / g/Block / Role).
+	# Combat path falls through to the existing DPS/TTK/Cov/Obs computation.
+	if tower.is_barracks():
+		_refresh_barracks_metrics(tower, tier_key, labels)
 		return
 	var dps: float = _effective_dps(tower, tier_key)
 	var cost: int = _effective_cumul_cost(tower, tier_key)
@@ -3647,37 +3893,71 @@ func _add_summary_row(tower: TowerData, tier_key: String) -> void:
 	name_l.text = tower.tower_name
 	var tier_l := _make_metric_label(80)
 	tier_l.text = _tier_display_name(tier_key)
-	var dps: float = _effective_dps(tower, tier_key)
-	var cost: int = _effective_cumul_cost(tower, tier_key)
-	var gdps: float = _effective_gdps(tower, tier_key)
-	var ttk: float = _ttk_basic_enemy(tower, tier_key)
 	var dps_l := _make_metric_label(70)
-	dps_l.text = "—" if dps <= 0.0 else "%.1f" % dps
 	var cost_l := _make_metric_label(70)
-	cost_l.text = "%dg" % cost
 	var gdps_l := _make_metric_label(110)
-	var arr: Array = _gdps_color_and_status(gdps, tier_key)
-	gdps_l.text = "—" if gdps <= 0.0 else "%.1f" % gdps
-	gdps_l.modulate = arr[0]
 	var ttk_l := _make_metric_label(70)
-	ttk_l.text = "—" if ttk <= 0.0 else "%.1fs" % ttk
-	var cov_v: float = _coverage_dps(tower, tier_key)
 	var cov_l := _make_metric_label(70)
-	cov_l.text = "—" if cov_v <= 0.0 else "%.2f" % cov_v
-	var clear_arr: Array = _clear_ok_status(tower, tier_key, ttk)
 	var clear_l := _make_metric_label(80)
-	clear_l.text = clear_arr[1]
-	clear_l.modulate = clear_arr[0]
 	var obs_l := _make_metric_label(140)
-	var obs_d: Dictionary = _observed_dps_for_tier(tower, tier_key)
-	var ratio: float = 0.0
-	if dps > 0.0 and float(obs_d.get("dps", 0.0)) > 0.0:
-		ratio = float(obs_d.dps) / dps
-	var obs_arr: Array = _obs_color_and_text(obs_d, ratio)
-	obs_l.text = obs_arr[1]
-	obs_l.modulate = obs_arr[0]
 	var role_l := _make_metric_label(280)
-	role_l.text = _role_tags_for_tier(tower, tier_key)
+	if tower.is_barracks():
+		# Barracks repurpose the same column slots: Sq DPS / Cumul / g/DPS /
+		# Uptime / Eff Block / g/Block / Role. Obs left "—" — RunStats has no
+		# observed-block telemetry today.
+		var m: Dictionary = _barracks_metrics(tower, tier_key)
+		var sq_dps: float = float(m.get("sq_dps", 0.0))
+		var b_gdps: float = float(m.get("gdps", 0.0))
+		var uptime: float = float(m.get("uptime", 0.0))
+		var eff_block: float = float(m.get("eff_block", 0.0))
+		var g_block: float = float(m.get("g_block", 0.0))
+		var b_cost: int = int(m.get("cost", 0))
+		dps_l.text = "—" if sq_dps <= 0.0 else "%.1f" % sq_dps
+		cost_l.text = "%dg" % b_cost
+		# Reuse the combat-tower band coloring on g/DPS — same target band
+		# (lower = better cost-efficiency). g/DPS for barracks usually lands
+		# OUTSIDE the band because eff_dps is gated by uptime, but the color
+		# still communicates "this is below/in/above what a combat tower would
+		# do per gold," which is a useful comparator.
+		var b_arr: Array = _gdps_color_and_status(b_gdps, tier_key)
+		gdps_l.text = "—" if b_gdps <= 0.0 else "%.1f" % b_gdps
+		gdps_l.modulate = b_arr[0]
+		ttk_l.text = "—" if uptime <= 0.0 else "%.0f%%" % (uptime * 100.0)
+		cov_l.text = "—" if eff_block <= 0.0 else "%.2f" % eff_block
+		# g/Block: the headline "gold to blocking power" cost. No published
+		# band yet (varies sharply by tier — L1 cheap, L3 expensive in raw
+		# block but adds DPS), so render uncolored.
+		clear_l.text = "—" if g_block <= 0.0 else "%.0fg/blk" % g_block
+		clear_l.modulate = Color(0.85, 0.95, 0.85)
+		obs_l.text = "—"
+		role_l.text = _role_tags_for_tier(tower, tier_key)
+		# Note in the role cell so the row is self-explanatory at a glance:
+		# "DPS" reads as Sq DPS, "TTK" as Uptime, "Cov" as Eff Block.
+		role_l.text = role_l.text + "  (DPS=Sq · TTK=Uptime · Cov=Eff Block · Clear=g/Block)"
+	else:
+		var dps: float = _effective_dps(tower, tier_key)
+		var cost: int = _effective_cumul_cost(tower, tier_key)
+		var gdps: float = _effective_gdps(tower, tier_key)
+		var ttk: float = _ttk_basic_enemy(tower, tier_key)
+		dps_l.text = "—" if dps <= 0.0 else "%.1f" % dps
+		cost_l.text = "%dg" % cost
+		var arr: Array = _gdps_color_and_status(gdps, tier_key)
+		gdps_l.text = "—" if gdps <= 0.0 else "%.1f" % gdps
+		gdps_l.modulate = arr[0]
+		ttk_l.text = "—" if ttk <= 0.0 else "%.1fs" % ttk
+		var cov_v: float = _coverage_dps(tower, tier_key)
+		cov_l.text = "—" if cov_v <= 0.0 else "%.2f" % cov_v
+		var clear_arr: Array = _clear_ok_status(tower, tier_key, ttk)
+		clear_l.text = clear_arr[1]
+		clear_l.modulate = clear_arr[0]
+		var obs_d: Dictionary = _observed_dps_for_tier(tower, tier_key)
+		var ratio: float = 0.0
+		if dps > 0.0 and float(obs_d.get("dps", 0.0)) > 0.0:
+			ratio = float(obs_d.dps) / dps
+		var obs_arr: Array = _obs_color_and_text(obs_d, ratio)
+		obs_l.text = obs_arr[1]
+		obs_l.modulate = obs_arr[0]
+		role_l.text = _role_tags_for_tier(tower, tier_key)
 	_summary_grid.add_child(name_l)
 	_summary_grid.add_child(tier_l)
 	_summary_grid.add_child(dps_l)

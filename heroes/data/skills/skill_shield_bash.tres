@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShieldBashSkillData" format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/shield_bash_skill_data.gd" id="1_bash"]
+
+[resource]
+script = ExtResource("1_bash")
+skill_name = "Shield Bash"
+skill_id = "shield_bash"
+skill_range = 100.0
+damage = 18.0
+damage_type = 0
+cooldown = 6.0
+target_type = 1
+aoe_radius = 60.0
+description = "Sweep your shield in front of you. Damages every enemy inside a small arc — physical, no resistance dodge."
+rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.25}]

@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=4 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+[ext_resource type="Texture2D" path="res://items/art/base_focus_hood.jpg" id="3_tex"]
+
+[sub_resource type="Resource" id="Impl_FocusHood"]
+script = ExtResource("2_mod")
+ability_id = "impl_focus_hood"
+trigger = 7
+skill_power_pct = 0.10
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_focus_hood"
+base_name = "Focus Hood"
+slot = 2
+rarity = 2
+icon_glyph = "shield"
+icon_color = Color(0.4, 0.45, 0.65, 1)
+icon_texture = ExtResource("3_tex")
+hero_restriction = Array[String]([])
+level_requirement = 1
+implicit_abilities = Array[Resource]([SubResource("Impl_FocusHood")])
+affix_slots = 2
+allowed_affix_pools = Array[String](["pool_armor_defensive", "pool_universal"])
+drop_weight = 0.5
+min_wave = 3
+description = "Indigo wool, lined with silver thread. The world quiets when it's drawn."

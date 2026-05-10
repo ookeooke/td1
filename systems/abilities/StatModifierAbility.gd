@@ -15,9 +15,15 @@ class_name StatModifierAbility
 @export var damage_flat: float = 0.0
 @export var damage_pct: float = 0.0
 @export var armor_flat: float = 0.0
+@export var armor_pct: float = 0.0
+@export var magic_resist_flat: float = 0.0
+@export var magic_resist_pct: float = 0.0
 @export var attack_speed_pct: float = 0.0
+@export var attack_range_pct: float = 0.0
 @export var move_speed_pct: float = 0.0
 @export var xp_gain_mult_pct: float = 0.0
+@export var skill_power_flat: float = 0.0
+@export var skill_power_pct: float = 0.0
 
 
 func apply(owner: Node, ctx: Dictionary) -> void:
@@ -25,19 +31,19 @@ func apply(owner: Node, ctx: Dictionary) -> void:
 		return
 	if not (owner.has_method("register_modifier_source") and owner.has_method("recompute_stats")):
 		return
-	# AbilityHost.equip_ability/unequip_ability passes {"phase": ON_EQUIP} or
-	# {"phase": ON_UNEQUIP}. Same ability instance handles both — we don't
-	# rely on the AbilityData.trigger field for equip lifecycle (see
-	# AbilityHost._safe_apply_phased).
+	# Two attachment paths register this ability:
+	#   - AbilityHost.equip_ability  (items)    → ctx = {"phase": ON_EQUIP}
+	#   - AbilityHost.add_ability    (passives) → ctx = {} when trigger=ON_SPAWN
+	# Only ON_UNEQUIP removes. Anything else registers — register_modifier_source
+	# short-circuits duplicates so re-registering on respawn is safe.
 	var phase: int = int(ctx.get("phase", -1))
-	match phase:
-		Trigger.ON_EQUIP:
-			owner.register_modifier_source(self)
-			owner.recompute_stats()
-			if owner.has_method("_refresh_health_after_modifier_change"):
-				owner._refresh_health_after_modifier_change()
-		Trigger.ON_UNEQUIP:
-			owner.unregister_modifier_source(self)
-			owner.recompute_stats()
-			if owner.has_method("_refresh_health_after_modifier_change"):
-				owner._refresh_health_after_modifier_change()
+	if phase == Trigger.ON_UNEQUIP:
+		owner.unregister_modifier_source(self)
+		owner.recompute_stats()
+		if owner.has_method("_refresh_health_after_modifier_change"):
+			owner._refresh_health_after_modifier_change()
+	else:
+		owner.register_modifier_source(self)
+		owner.recompute_stats()
+		if owner.has_method("_refresh_health_after_modifier_change"):
+			owner._refresh_health_after_modifier_change()

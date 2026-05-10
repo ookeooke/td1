@@ -14,7 +14,7 @@ const _AbilityDataScript: Script = preload("res://systems/AbilityData.gd")
 @export var buff_duration: float = 10.0
 
 
-func apply(hero: Node, _target) -> void:
+func apply(hero: Node, _target, _ctx: Dictionary = {}) -> void:
 	if hero == null or not is_instance_valid(hero):
 		return
 	if buff_ability == null:

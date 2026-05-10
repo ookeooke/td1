@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=4 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+[ext_resource type="Texture2D" path="res://items/art/base_apprentice_charm.jpg" id="3_tex"]
+
+[sub_resource type="Resource" id="Impl_ApprenticeCharm"]
+script = ExtResource("2_mod")
+ability_id = "impl_apprentice_charm"
+trigger = 7
+skill_power_pct = 0.08
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_apprentice_charm"
+base_name = "Apprentice Charm"
+slot = 5
+rarity = 1
+icon_glyph = "trinket_charm"
+icon_color = Color(0.55, 0.55, 0.95, 1)
+icon_texture = ExtResource("3_tex")
+hero_restriction = Array[String]([])
+level_requirement = 1
+implicit_abilities = Array[Resource]([SubResource("Impl_ApprenticeCharm")])
+affix_slots = 1
+allowed_affix_pools = Array[String](["pool_universal", "pool_armor_defensive"])
+drop_weight = 0.8
+min_wave = 2
+description = "A focus-stone for first-year casters. Ability blasts hit a touch harder."

@@ -882,15 +882,6 @@ func _on_slot_pressed(_signal_arg, slot_idx: int) -> void:
 
 
 # --- Stats panel (D4) -------------------------------------------------------
-# Mirrors BaseHero.recompute_stats so what's displayed here is what the hero
-# will actually have on spawn. Duplicated formulas are acceptable — the two
-# consumers (runtime hero, offline preview) have different lifecycles and
-# coupling them would tangle presentation logic with simulation logic.
-
-const _LEVEL_HEALTH_GROWTH: float = 0.15   # must match BaseHero
-const _LEVEL_DAMAGE_GROWTH: float = 0.10   # must match BaseHero
-
-
 # Phase 49 — Stats panel builder. Runs once at _ready, populates StatsPanel
 # with three section headers and 6 StatRow children (2 per section). After
 # this, _refresh_stats_panel just updates values + flashes the rows that
@@ -1201,42 +1192,9 @@ func _format_stat_diff(current_eq: Array, new_eq: Array) -> String:
 
 
 # Shared stat-computation core; _refresh_stats_panel + _format_stat_diff are
-# the formatters over this dict.
+# the formatters over this dict. Single source of truth lives on BaseHero —
+# this is just a thin caller so dressing-room preview and runtime hero use
+# identical math (Phase 0).
 func _compute_stats_dict(hero_data: Resource, equipped: Array) -> Dictionary:
 	var level: int = MetaProgression.get_hero_level(hero_data.hero_id)
-	var hp_mult: float = 1.0 + float(level - 1) * _LEVEL_HEALTH_GROWTH
-	var dmg_mult: float = 1.0 + float(level - 1) * _LEVEL_DAMAGE_GROWTH
-	var base_stats: Dictionary = {
-		"max_health": float(hero_data.max_health) * hp_mult,
-		"damage": hero_data.attack_damage * dmg_mult * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_HERO_DAMAGE),
-		"armor": hero_data.armor,
-		"magic_resist": float(hero_data.magic_resist) if "magic_resist" in hero_data else 0.0,
-		"attack_speed": hero_data.attack_speed,
-		"move_speed": hero_data.move_speed,
-		"xp_gain_mult": 1.0,
-	}
-	var mods: Array = []
-	for inst in equipped:
-		if inst == null:
-			continue
-		for ab in inst.build_runtime_abilities(ContentRegistry):
-			if ab != null:
-				mods.append(ab)
-	var current: Dictionary = {}
-	for key in base_stats.keys():
-		var flat_field: String = "%s_flat" % key
-		var pct_field: String = "%s_pct" % key
-		var v: float = float(base_stats[key])
-		var pct_product: float = 1.0
-		for m in mods:
-			if m == null:
-				continue
-			if flat_field in m:
-				v += float(m.get(flat_field))
-			if pct_field in m:
-				pct_product *= 1.0 + float(m.get(pct_field))
-		current[key] = v * pct_product
-	# Phase 53 — derived DPS for the POWER section. Computed AFTER mod resolution
-	# so flat/pct on damage and attack_speed both feed in.
-	current["dps"] = float(current.get("damage", 0.0)) * float(current.get("attack_speed", 0.0))
-	return current
+	return BaseHero.compute_stats_for(hero_data, level, equipped)

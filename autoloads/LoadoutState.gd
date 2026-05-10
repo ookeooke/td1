@@ -19,7 +19,22 @@ extends Node
 # entries = empty slots. Defaults to the four launch towers so an
 # uninitialised save still plays correctly.
 const TOWER_SLOT_MAX: int = 6
-const EQUIPPED_SKILL_SLOTS: int = 2
+# EQUIPPED_SKILL_SLOTS is the *maximum* — the per-hero cap is dynamic and
+# grows with hero level (see get_active_slot_cap). Phase 3B bumped the
+# absolute cap from 2 to 3 to support the L8 third-active-slot unlock.
+const EQUIPPED_SKILL_SLOTS: int = 3
+const ACTIVE_SLOT_UNLOCK_LEVELS: Array[int] = [1, 8]
+
+# Preloaded so the Kind enum is accessible from autoload code that compiles
+# before class_name registration completes (autoloads race the registry).
+const _HeroSkillNodeDataScript = preload("res://heroes/HeroSkillNodeData.gd")
+
+# Phase 1 — passive slot caps grow with hero level. Each threshold opens one
+# slot, so the cap = number of thresholds <= current level. Lv 1 = 1 slot,
+# Lv 4 = 2 slots, Lv 9 = 3 slots. Mirrors a SLOT_UNLOCK node grant in the
+# skill-tree node graph (the threshold list is the same numbers the
+# corresponding SLOT_UNLOCK nodes carry).
+const PASSIVE_SLOT_UNLOCK_LEVELS: Array[int] = [1, 4, 9]
 
 var selected_hero_id: String = "hero_warrior"
 var tower_slot_cap: int = 4
@@ -31,6 +46,17 @@ var selected_tower_ids: Array[String] = [
 # is Array[String] of length EQUIPPED_SKILL_SLOTS, with "" for empty slots.
 # Missing keys fall through to _default_equipped_for() (first N unlocked).
 var hero_equipped_skills: Dictionary = {}
+# Phase 1 — per-hero equipped passives. Keyed by hero_id; each value is
+# Array[String] of length get_passive_slot_cap(hero_id), with "" for empty
+# slots. Missing keys fall through to _default_equipped_passives_for() (first
+# N owned passives in tree order). Mirrors hero_equipped_skills end-to-end.
+var hero_equipped_passives: Dictionary = {}
+# Phase 2C — per-hero chosen skill mod, keyed (hero_id → {skill_id → mod_id}).
+# A mod is "owned" when its MOD node is purchased; "chosen" when the player
+# selects it as the active mod for that skill. Free toggle between owned
+# mods. Missing key = no mod active. Self-heal drops mod_ids the tree no
+# longer authors.
+var hero_skill_mods: Dictionary = {}
 
 
 func _ready() -> void:
@@ -47,6 +73,8 @@ func reset() -> void:
 	tower_slot_cap = 4
 	reset_loadout_to_default()
 	hero_equipped_skills = {}
+	hero_equipped_passives = {}
+	hero_skill_mods = {}
 
 
 # Returns the TowerData resources in loadout order for the unlocked slots.
@@ -114,6 +142,20 @@ func reset_loadout_to_default() -> void:
 # so the dict converges to a clean state. The previous version returned
 # the stale string verbatim, which surfaced in HeroesHub's Skills tab as
 # raw skill_id text ("rally", "shield_bash") for the equipped row.
+# Phase 3B — active-slot cap. Mirrors get_passive_slot_cap. L1+ = 2 slots,
+# L8+ = 3 slots. The constant EQUIPPED_SKILL_SLOTS (3) is the absolute max;
+# this returns the per-hero current cap.
+func get_active_slot_cap(hero_id: String) -> int:
+	if hero_id == "":
+		return ACTIVE_SLOT_UNLOCK_LEVELS.size()  # default to max for safety
+	var lvl: int = MetaProgression.get_hero_level(hero_id)
+	var cap: int = 0
+	for threshold in ACTIVE_SLOT_UNLOCK_LEVELS:
+		if lvl >= threshold:
+			cap += 1
+	return maxi(1, cap)
+
+
 func get_equipped_skills(hero_id: String) -> Array[String]:
 	# Defense in depth — never cache a default for a malformed hero_id.
 	# Without this guard, `WorldMap._refresh_heroes_button_dot` looping
@@ -124,13 +166,14 @@ func get_equipped_skills(hero_id: String) -> Array[String]:
 		for _i in EQUIPPED_SKILL_SLOTS:
 			empty.append("")
 		return empty
+	var cap: int = get_active_slot_cap(hero_id)
 	if not hero_equipped_skills.has(hero_id):
 		hero_equipped_skills[hero_id] = _default_equipped_for(hero_id)
 	var raw: Array = hero_equipped_skills[hero_id]
 	var authored: Array[String] = _authored_skill_ids(hero_id)
 	var out: Array[String] = []
 	var any_purged: bool = false
-	for i in EQUIPPED_SKILL_SLOTS:
+	for i in cap:
 		var sid: String = str(raw[i]) if i < raw.size() else ""
 		# Drop sids the hero no longer authors. Empty authored = ContentRegistry
 		# isn't ready yet (e.g. very early boot); skip the purge in that case
@@ -140,8 +183,10 @@ func get_equipped_skills(hero_id: String) -> Array[String]:
 			any_purged = true
 		out.append(sid)
 	# Persist the cleaned form so subsequent reads (and the next save)
-	# see the converged state rather than re-purging on every call.
-	if any_purged or raw.size() != EQUIPPED_SKILL_SLOTS:
+	# see the converged state rather than re-purging on every call. We size
+	# storage to cap (not constant) so a level-up that grows the cap pads
+	# with "" on the next read.
+	if any_purged or raw.size() != cap:
 		var stored: Array = []
 		for s in out:
 			stored.append(s)
@@ -201,7 +246,7 @@ func get_skills_unlocked_at_level(hero_id: String, level: int) -> Array[String]:
 # player doesn't lose a pick. Empty `skill_id` clears the slot. Returns
 # true if state actually changed (so the UI persists / redraws).
 func set_equipped_skill(hero_id: String, slot_idx: int, skill_id: String) -> bool:
-	if hero_id == "" or slot_idx < 0 or slot_idx >= EQUIPPED_SKILL_SLOTS:
+	if hero_id == "" or slot_idx < 0 or slot_idx >= get_active_slot_cap(hero_id):
 		return false
 	# Reject locked skills — defense in depth; the UI should never offer them.
 	if skill_id != "" and not (skill_id in get_unlocked_skill_ids(hero_id)):
@@ -242,12 +287,203 @@ func has_unequipped_skills(hero_id: String) -> bool:
 
 
 func _default_equipped_for(hero_id: String) -> Array:
-	# First EQUIPPED_SKILL_SLOTS unlocked skills (author order); pad with "".
+	# First N unlocked skills (author order, N = current active slot cap),
+	# pad with "" to cap. Resizes naturally on level-up because
+	# get_equipped_skills re-sizes against the live cap on every read.
 	var unlocked: Array[String] = get_unlocked_skill_ids(hero_id)
+	var cap: int = get_active_slot_cap(hero_id)
 	var out: Array = []
-	for i in EQUIPPED_SKILL_SLOTS:
+	for i in cap:
 		out.append(unlocked[i] if i < unlocked.size() else "")
 	return out
+
+
+# ── Equipped passives (Phase 1) ─────────────────────────────────────────
+#
+# Same shape as equipped skills, but the slot cap is dynamic (grows with hero
+# level) and the pool is the hero's HeroSkillTreeData.get_passive_ids(). A
+# passive is "owned" when MetaProgression.get_purchased_passive_rank > 0 —
+# only owned passives can occupy a slot.
+
+func get_passive_slot_cap(hero_id: String) -> int:
+	if hero_id == "":
+		return 1
+	var lvl: int = MetaProgression.get_hero_level(hero_id)
+	var cap: int = 0
+	for threshold in PASSIVE_SLOT_UNLOCK_LEVELS:
+		if lvl >= threshold:
+			cap += 1
+	return maxi(1, cap)
+
+
+# All passive_ids on the hero's tree (regardless of ownership). Used to
+# self-heal stale entries pointing at passives the tree no longer authors.
+func _authored_passive_ids(hero_id: String) -> Array[String]:
+	if not has_node("/root/ContentRegistry"):
+		return []
+	var tree: Resource = ContentRegistry.find_skill_tree(hero_id)
+	if tree == null or not tree.has_method("get_passive_ids"):
+		return []
+	return tree.get_passive_ids()
+
+
+func get_equipped_passives(hero_id: String) -> Array[String]:
+	if hero_id == "":
+		return []
+	var cap: int = get_passive_slot_cap(hero_id)
+	if not hero_equipped_passives.has(hero_id):
+		hero_equipped_passives[hero_id] = _default_equipped_passives_for(hero_id, cap)
+	var raw: Array = hero_equipped_passives[hero_id]
+	var pool: Array[String] = _authored_passive_ids(hero_id)
+	var out: Array[String] = []
+	var any_purged: bool = false
+	for i in cap:
+		var pid: String = str(raw[i]) if i < raw.size() else ""
+		# Drop pids the tree no longer authors. Empty pool = ContentRegistry
+		# isn't ready yet (early boot); skip the purge so a valid loadout
+		# isn't wiped while waiting for the registry.
+		if pid != "" and not pool.is_empty() and not (pid in pool):
+			pid = ""
+			any_purged = true
+		out.append(pid)
+	if any_purged or raw.size() != cap:
+		var stored: Array = []
+		for s in out:
+			stored.append(s)
+		hero_equipped_passives[hero_id] = stored
+	return out
+
+
+func set_equipped_passive(hero_id: String, slot_idx: int, passive_id: String) -> bool:
+	if hero_id == "":
+		return false
+	var cap: int = get_passive_slot_cap(hero_id)
+	if slot_idx < 0 or slot_idx >= cap:
+		return false
+	# Defense in depth — never equip an unowned passive. UI should grey out
+	# the entry already; this guards against stale callers.
+	if passive_id != "" and MetaProgression.get_purchased_passive_rank(hero_id, passive_id) == 0:
+		return false
+	var current: Array[String] = get_equipped_passives(hero_id)
+	var swap_from: int = -1
+	if passive_id != "":
+		var existing: int = current.find(passive_id)
+		if existing == slot_idx:
+			return false
+		if existing >= 0:
+			current[existing] = current[slot_idx]
+			swap_from = existing
+	current[slot_idx] = passive_id
+	var stored: Array = []
+	for s in current:
+		stored.append(s)
+	hero_equipped_passives[hero_id] = stored
+	EventBus.hero_passive_equipped.emit(hero_id, slot_idx, passive_id)
+	if swap_from >= 0:
+		EventBus.hero_passive_equipped.emit(hero_id, swap_from, current[swap_from])
+	return true
+
+
+func _default_equipped_passives_for(hero_id: String, cap: int) -> Array:
+	# First `cap` *owned* passives in tree order; pad with "". Owned = the
+	# player has purchased the R1 node for that passive_id.
+	var pool: Array[String] = _authored_passive_ids(hero_id)
+	var owned: Array[String] = []
+	for pid in pool:
+		if MetaProgression.get_purchased_passive_rank(hero_id, pid) > 0:
+			owned.append(pid)
+	var out: Array = []
+	for i in cap:
+		out.append(owned[i] if i < owned.size() else "")
+	return out
+
+
+# ── Chosen skill mods (Phase 2C) ────────────────────────────────────────
+#
+# A mod is "owned" when the player has purchased its MOD node. "Chosen"
+# when LoadoutState.hero_skill_mods[hero_id][skill_id] == mod_id. Buying a
+# mod doesn't auto-select; the player taps an OWNED mod card to make it
+# the active sidegrade for that skill. Free toggle between owned mods.
+
+func get_chosen_mod(hero_id: String, skill_id: String) -> String:
+	if hero_id == "" or skill_id == "":
+		return ""
+	if not hero_skill_mods.has(hero_id):
+		return ""
+	var per_hero: Dictionary = hero_skill_mods[hero_id]
+	var mod_id: String = str(per_hero.get(skill_id, ""))
+	if mod_id == "":
+		return ""
+	# Self-heal: if the chosen mod is no longer authored OR no longer owned,
+	# drop it. Mirrors get_equipped_passives' purge-on-read pattern.
+	if not _is_mod_owned(hero_id, mod_id):
+		per_hero.erase(skill_id)
+		return ""
+	return mod_id
+
+
+func set_chosen_mod(hero_id: String, skill_id: String, mod_id: String) -> bool:
+	if hero_id == "" or skill_id == "":
+		return false
+	if mod_id != "" and not _is_mod_owned(hero_id, mod_id):
+		return false
+	if not hero_skill_mods.has(hero_id):
+		hero_skill_mods[hero_id] = {}
+	var per_hero: Dictionary = hero_skill_mods[hero_id]
+	if str(per_hero.get(skill_id, "")) == mod_id:
+		return false
+	if mod_id == "":
+		per_hero.erase(skill_id)
+	else:
+		per_hero[skill_id] = mod_id
+	EventBus.hero_skill_mod_chosen.emit(hero_id, skill_id, mod_id)
+	return true
+
+
+# Find the SkillModData on the hero's tree for a given mod_id. The MOD node
+# carries the SkillModData on its `ability` field (one Resource slot serves
+# both kinds — see HeroSkillNodeData docstring). Returns null on miss.
+func find_skill_mod(hero_id: String, mod_id: String) -> Resource:
+	if hero_id == "" or mod_id == "":
+		return null
+	if not has_node("/root/ContentRegistry"):
+		return null
+	var tree: Resource = ContentRegistry.find_skill_tree(hero_id)
+	if tree == null:
+		return null
+	for node in tree.nodes:
+		if node == null or not ("kind" in node):
+			continue
+		if int(node.kind) != _HeroSkillNodeDataScript.Kind.MOD:
+			continue
+		var mod: Resource = node.ability
+		if mod == null or not ("mod_id" in mod):
+			continue
+		if String(mod.mod_id) == mod_id:
+			return mod
+	return null
+
+
+# True if the player owns the MOD node carrying this mod_id (i.e. purchased
+# the node at rank ≥ 1).
+func _is_mod_owned(hero_id: String, mod_id: String) -> bool:
+	if not has_node("/root/ContentRegistry"):
+		return false
+	var tree: Resource = ContentRegistry.find_skill_tree(hero_id)
+	if tree == null:
+		return false
+	for node in tree.nodes:
+		if node == null or not ("kind" in node):
+			continue
+		if int(node.kind) != _HeroSkillNodeDataScript.Kind.MOD:
+			continue
+		var mod: Resource = node.ability
+		if mod == null or not ("mod_id" in mod):
+			continue
+		if String(mod.mod_id) != mod_id:
+			continue
+		return MetaProgression.get_purchased_rank(hero_id, String(node.node_id)) >= 1
+	return false
 
 
 # ── Player Power Tier (PPT) ─────────────────────────────────────────────

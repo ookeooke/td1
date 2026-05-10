@@ -177,9 +177,15 @@ func get_effective_range() -> float:
 # TowerData.aoe_radius. Mirrors the damage/range/speed inheritance rule.
 func get_effective_aoe_radius() -> float:
 	var ov: Resource = _level_override()
+	var base_aoe: float = 0.0
 	if ov != null and "aoe_radius" in ov and ov.aoe_radius > 0.0:
-		return ov.aoe_radius
-	return data.aoe_radius if data != null else 0.0
+		base_aoe = ov.aoe_radius
+	elif data != null:
+		base_aoe = data.aoe_radius
+	if base_aoe <= 0.0 or data == null or data.tower_id == "":
+		return base_aoe
+	return base_aoe * _BalanceOverrides.get_tower_mult(
+		data.tower_id, _current_tier_key(), "aoe_mult")
 
 
 # Splash damage as a fraction of primary-target damage. Upgrade override

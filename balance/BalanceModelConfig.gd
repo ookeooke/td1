@@ -127,6 +127,14 @@ class_name BalanceModelConfig
 @export_group("Density")
 @export_range(0.0, 5.0, 0.05) var density_pressure_weight: float = 1.0
 
+# ── Barracks balance ─────────────────────────────────────────────────────
+# Reference incoming DPS used by the barracks block-uptime formula:
+#   uptime = HP / (HP + respawn × ref_dps)
+# 5.0 dmg/s ≈ a single basic enemy in melee (community baseline). Tune
+# upward for armored-heavy levels where soldiers face more incoming damage.
+@export_group("Barracks")
+@export_range(0.0, 50.0, 0.5) var ref_enemy_dps_vs_soldier: float = 5.0
+
 
 # Convenience: returns the default config when no .tres is provided. Used
 # as a safe fallback so callers never crash on null.

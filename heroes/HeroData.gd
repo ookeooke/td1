@@ -71,3 +71,20 @@ class_name HeroData
 @export_range(0.0, 1.0) var paperdoll_alpha: float = 0.35
 
 @export_multiline var encyclopedia_entry: String = ""
+
+
+# Build-preview stats row — pre-spawn (no current_health, no modifiers).
+# Mirrors TowerData.get_stats_line() spacing (three spaces between fields)
+# and BaseHero.get_stats_line() field order so the player reads the same
+# card in HeroesHub Hall, Encyclopedia, and the loadout screen.
+func get_stats_line() -> String:
+	var line: String = "Dmg %d   Rng %d   Spd %.1f   HP %d   Arm %d%%" % [
+		int(round(attack_damage)),
+		int(round(attack_range)),
+		attack_speed,
+		max_health,
+		int(round(armor * 100.0)),
+	]
+	if magic_resist > 0.0:
+		line += "   MR %d%%" % int(round(magic_resist * 100.0))
+	return line

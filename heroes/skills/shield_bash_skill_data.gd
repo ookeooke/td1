@@ -20,20 +20,25 @@ const _SlowEffectScript: Script = preload("res://systems/SlowEffect.gd")
 @export var vfx_scene: PackedScene
 
 
-func apply(hero: Node, target) -> void:
+func apply(hero: Node, target, ctx: Dictionary = {}) -> void:
 	if hero == null or not is_instance_valid(hero):
 		return
 	if target == null or not (target is Vector2):
 		return
 	var center: Vector2 = target
-	var r2: float = aoe_radius * aoe_radius
+	# Phase 2B/2C — rank + mod ctx multipliers. damage_mult / aoe_radius_mult
+	# arrive pre-merged from BaseHero._build_skill_ctx; subclass just folds
+	# them into the locals it actually uses.
+	var radius: float = aoe_radius * float(ctx.get("aoe_radius_mult", 1.0))
+	var r2: float = radius * radius
+	var dmg: float = damage * float(ctx.get("damage_mult", 1.0))
 	for enemy in hero.get_tree().get_nodes_in_group("enemies"):
 		if not (enemy is BaseEnemy):
 			continue
 		if enemy.state == BaseEnemy.State.DYING:
 			continue
 		if center.distance_squared_to(enemy.global_position) <= r2:
-			enemy.take_damage(damage, damage_type, hero)
+			enemy.take_damage(dmg, damage_type, hero)
 			if on_hit_slow_factor > 0.0 and on_hit_slow_duration > 0.0:
 				enemy.apply_status_effect(_SlowEffectScript.new(on_hit_slow_factor, on_hit_slow_duration))
 	# VFX — optional. Spawned after the damage pass so the visual impact
@@ -45,4 +50,4 @@ func apply(hero: Node, target) -> void:
 		if vfx is Node2D:
 			(vfx as Node2D).global_position = center
 		if vfx.has_method("setup"):
-			vfx.setup(aoe_radius)
+			vfx.setup(radius)

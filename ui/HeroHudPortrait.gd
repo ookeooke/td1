@@ -211,11 +211,7 @@ func _xp_fraction() -> float:
 func _hp_fraction() -> float:
 	if _hero == null or not is_instance_valid(_hero):
 		return 0.0
-	var max_hp: int = 1
-	if _hero.has_method("_effective_max_health"):
-		max_hp = maxi(1, _hero._effective_max_health())
-	elif _hero.data != null:
-		max_hp = maxi(1, _hero.data.max_health)
+	var max_hp: int = maxi(1, _hero.get_effective_max_health())
 	return clampf(float(_last_hp) / float(max_hp), 0.0, 1.0)
 
 

@@ -17,3 +17,4 @@ count = 2
 lifetime = 15.0
 spread_radius = 35.0
 description = "Tap any walkable spot to summon 2 militia there. They fight for 15 seconds before falling."
+rank_scaling = [{"cooldown_mult": 0.85}]

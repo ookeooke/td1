@@ -20,7 +20,7 @@ tint = Color(0.6, 1.15, 0.6, 1)
 [sub_resource type="Resource" id="ArcherBranch_Musketeer"]
 script = ExtResource("3_upg")
 upgrade_name = "Musketeer"
-damage = 23.99999999999998
+damage = 25.00000000000006
 attack_range = 290.0000000000002
 attack_speed = 0.7000000000000001
 cost = 170
@@ -32,7 +32,7 @@ script = ExtResource("3_upg")
 upgrade_name = "Archer L2"
 damage = 6.499999999999997
 attack_range = 289.9999999999992
-attack_speed = 1.35
+attack_speed = 1.3000000000000003
 cost = 80
 sell_value = 60
 tint = Color(1.05, 1, 0.85, 1)

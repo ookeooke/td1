@@ -54,6 +54,17 @@ const COL_BAR_OUTLINE: Color = Color(0, 0, 0, 0.35)   # 1px segment border for s
 # Supply line is a quiet *reference*, not an alarm. The bars do the alarming
 # (high stop = spike). Mirrors Grafana / Datadog threshold-line convention.
 const COL_SUPPLY_LINE: Color = Color(0.85, 0.88, 0.92, 0.55)
+# Per-segment fills for the stacked supply bands. Tower=green is the loudest
+# because it's usually the largest contributor; hero/skills/control are picked
+# to NOT collide with the enemy class palette below (yellow=scout, cyan=flying,
+# pink=boss already taken). Alpha is set per-band at draw time (floor faint,
+# actual stronger) so bars behind the bands stay legible.
+const COL_SUPPLY_TOWER:   Color = Color(0.45, 0.95, 0.55, 1.0)
+const COL_SUPPLY_HERO:    Color = Color(0.95, 0.65, 0.35, 1.0)
+const COL_SUPPLY_SKILLS:  Color = Color(0.55, 0.65, 0.95, 1.0)
+const COL_SUPPLY_CONTROL: Color = Color(0.85, 0.55, 0.95, 1.0)
+const COL_SUPPLY_TOP_FLOOR:  Color = Color(0.55, 0.85, 0.55, 0.60)
+const COL_SUPPLY_TOP_ACTUAL: Color = Color(0.45, 0.95, 0.55, 0.95)
 const COL_HEADER_OK: Color = Color(0.85, 0.95, 1.0)
 const COL_HEADER_WARN: Color = Color(0.95, 0.80, 0.45)
 const COL_FOOTER: Color = Color(0.65, 0.70, 0.78)
@@ -95,7 +106,12 @@ const ENEMY_PROGRESSION: Array[String] = [
 var _wave: WaveData = null
 var _level_data: Resource = null
 var _wave_index: int = 0
-var _l1_dmg_per_gold: float = 0.0
+# Two segmented supply dictionaries — keys: tower / hero / skills / control /
+# total — already scaled to per-bucket damage by the caller. _supply_floor is
+# the Naked Baseline reference (CORE RULE 18 floor); _supply_actual reflects
+# the live LoadoutState. Both populated by BalanceSliders via player_supply_vector.
+var _supply_floor: Dictionary = {}
+var _supply_actual: Dictionary = {}
 var _gold_at_start: int = 0
 var _paths_in_level: Array = []   # ordered list of path_ids in the level
 # Coverage-weighted pressure (canonical Tuning Console). -1.0 sentinel on
@@ -128,8 +144,12 @@ var _bucket_ehp: Array = []               # Array[float], length = _bucket_count
 var _bucket_ehp_by_class: Array = []      # Array[Dictionary], length = _bucket_count
 var _bucket_max_ehp: float = 0.0
 var _required_damage: float = 0.0
-var _supply_damage: float = 0.0           # total damage capacity over whole wave
-var _supply_per_bucket: float = 0.0       # supply normalized to per-bucket — drives chart Y axis
+# Cached peak supply totals (per-bucket, evaluated at the wave's END gold = the
+# highest point of the income-adjusted curve). Used by _draw_demand_bars to set
+# max_axis high enough that the sloped-band's peak doesn't pin to the chart
+# top. Static "at start" totals are computed on the fly for the header display.
+var _supply_floor_peak: float = 0.0
+var _supply_actual_peak: float = 0.0
 var _spawn_events: Array = []             # Array[{t: float, scene_path: String, path_id: String}]
 # Per-wave cumulative gold timeline. Each entry {t, cumul} is a gold-rise
 # event (one per enemy spawn = one bounty drop, plus wave.bounty at the end
@@ -203,7 +223,8 @@ func clear_enemy_caches() -> void:
 # across all per-wave cards so the gold polyline looks continuous when the
 # cards are stacked.
 func set_data(wave: WaveData, level_data: Resource, wave_index: int,
-		l1_dmg_per_gold: float, gold_at_start: int, paths_in_level: Array,
+		supply_floor: Dictionary, supply_actual: Dictionary,
+		gold_at_start: int, paths_in_level: Array,
 		level_final_gold: int = 0,
 		next_wave_ec_window: float = 0.0,
 		next_wave_authored_ec_window: float = 0.0,
@@ -217,7 +238,12 @@ func set_data(wave: WaveData, level_data: Resource, wave_index: int,
 	_wave = wave
 	_level_data = level_data
 	_wave_index = wave_index
-	_l1_dmg_per_gold = l1_dmg_per_gold
+	_supply_floor = supply_floor
+	_supply_actual = supply_actual
+	# Peaks are populated by _recompute once _gold_at_wave_end is known —
+	# they're sampled at wave-end gold and drive max_axis + the header line.
+	_supply_floor_peak = 0.0
+	_supply_actual_peak = 0.0
 	_gold_at_start = gold_at_start
 	_paths_in_level = paths_in_level
 	_level_final_gold = level_final_gold
@@ -252,7 +278,6 @@ func _recompute() -> void:
 	_gold_events.clear()
 	_gold_at_wave_end = _gold_at_start
 	_required_damage = 0.0
-	_supply_damage = 0.0
 	_spawn_window_sec = 0.0
 	_composition_summary = ""
 	_ratio_natural = 0.0
@@ -361,22 +386,26 @@ func _recompute() -> void:
 		running += bounty
 		_gold_events.append({"t": _spawn_window_sec, "cumul": running})
 	_gold_at_wave_end = running
-	# Required damage and supply. Sum bucket EHPs (override-aware) instead of
+	# Required damage. Sum bucket EHPs (override-aware) instead of
 	# bc.wave_required_damage which reads authored counts only — the count
 	# slider would otherwise show the wrong ratio.
 	_required_damage = 0.0
 	for v in _bucket_ehp:
 		_required_damage += float(v)
-	_supply_damage = _l1_dmg_per_gold * float(_gold_at_start)
-	# Per-5s-equivalent supply so bars and line share a Y axis. Bars are
-	# per-bucket EHP; line is "DPS budget × bucket length". Total-supply ratio
-	# is still shown in the header (apples-to-apples on the headline number).
-	if _spawn_window_sec > 0.0:
-		_supply_per_bucket = _supply_damage * (BUCKET_SEC / _spawn_window_sec)
-	else:
-		_supply_per_bucket = 0.0
-	if _required_damage > 0.0:
-		_ratio_natural = _supply_damage / _required_damage
+	# Income-adjusted supply peaks: evaluate at gold_at_wave_end (the highest
+	# point on the gold curve, hence the supply curve's ceiling). Drives the
+	# chart's max_axis so the band's peak doesn't pin to the chart top.
+	_supply_floor_peak = _supply_total_at_gold(_supply_floor, float(_gold_at_wave_end))
+	_supply_actual_peak = _supply_total_at_gold(_supply_actual, float(_gold_at_wave_end))
+	# Legacy ratio for the header fallback. Income-adjusted: take the AVERAGE
+	# of supply-at-start and supply-at-end (linear ramp approximation), scale
+	# up to the wave window, and compare to required damage. Better than the
+	# old "all gold up-front" total it replaces.
+	if _required_damage > 0.0 and _spawn_window_sec > 0.0:
+		var actual_at_start: float = _supply_total_at_gold(_supply_actual, float(_gold_at_start))
+		var avg_per_bucket: float = (actual_at_start + _supply_actual_peak) * 0.5
+		var actual_total: float = avg_per_bucket * (_spawn_window_sec / BUCKET_SEC)
+		_ratio_natural = actual_total / _required_damage
 	# Composition summary footer line.
 	var parts: PackedStringArray = []
 	for k in class_counts.keys():
@@ -386,6 +415,30 @@ func _recompute() -> void:
 		paths_used[String(ev.path_id)] = true
 	parts.append("%d path%s" % [paths_used.size(), "" if paths_used.size() == 1 else "s"])
 	_composition_summary = " · ".join(parts)
+
+
+# Sample cumulative gold at time t (seconds since wave start). Step function:
+# walks _gold_events (each = {t, cumul} bounty drop or wave-bounty event) and
+# returns the cumul value of the latest event with t_event <= t. Returns
+# _gold_at_start when t precedes the first event. Used by the sloped supply
+# band to know how much gold the player has accumulated at any moment.
+func _gold_at_time(t: float) -> float:
+	var g: float = float(_gold_at_start)
+	for ev in _gold_events:
+		if float(ev.t) > t:
+			break
+		g = float(ev.cumul)
+	return g
+
+
+# Resolve a supply Dictionary's total at a given gold level. Tower and control
+# scale linearly with gold (more gold → more towers → more DPS); hero and
+# skills are gold-independent constants. Per 5s bucket.
+func _supply_total_at_gold(d: Dictionary, gold: float) -> float:
+	return float(d.get("tower_per_gold",   0.0)) * gold \
+		+ float(d.get("control_per_gold", 0.0)) * gold \
+		+ float(d.get("hero_const",       0.0)) \
+		+ float(d.get("skills_const",     0.0))
 
 
 # Per-enemy physical EHP, cached by scene_path. Instantiates once per unique
@@ -525,7 +578,7 @@ func _draw() -> void:
 	_draw_fix_line(w)
 	_draw_bucket_backgrounds(spawn_x0, spawn_w)
 	_draw_demand_bars(spawn_x0, spawn_w)
-	_draw_supply_line(spawn_x0, spawn_w)
+	_draw_supply_bands(spawn_x0, spawn_w)
 	_draw_gold_curve(spawn_x0, spawn_w)
 	_draw_wave_start_line(spawn_x0)
 	_draw_path_lanes(spawn_x0, spawn_w)
@@ -582,8 +635,27 @@ func _draw_header(w: float, early_window: float) -> void:
 			flag = "  ⚠ supply<demand"
 			col = COL_HEADER_WARN
 		pressure_block = "ratio %s%s" % [ratio_str, flag]
-	var head: String = "W%d — %.0fs spawn window · req %.0f dmg · %s" % [
-		_wave_index + 1, _spawn_window_sec, _required_damage, pressure_block,
+	# Income-adjusted supply totals scaled back to the wave window for parity
+	# with req_dmg. Sloped band → two numbers: at-start (low) and at-end (peak).
+	# avg = (start + peak) / 2 ≈ total damage budget under the linear-ramp
+	# assumption. Per-bucket → window: × (spawn_window / BUCKET_SEC).
+	var window_ratio: float = _spawn_window_sec / BUCKET_SEC if _spawn_window_sec > 0.0 else 1.0
+	var supply_block: String = ""
+	if _supply_actual_peak > 0.0 or _supply_floor_peak > 0.0:
+		var actual_at_start: float = _supply_total_at_gold(_supply_actual, float(_gold_at_start)) * window_ratio
+		var actual_at_end: float = _supply_actual_peak * window_ratio
+		var floor_at_start: float = _supply_total_at_gold(_supply_floor, float(_gold_at_start)) * window_ratio
+		var floor_at_end: float = _supply_floor_peak * window_ratio
+		# Breakdown reported at WAVE END (the peak — the most informative point).
+		var t: float = float(_supply_actual.get("tower_per_gold",   0.0)) * float(_gold_at_wave_end) * window_ratio
+		var h: float = float(_supply_actual.get("hero_const",       0.0)) * window_ratio
+		var s: float = float(_supply_actual.get("skills_const",     0.0)) * window_ratio
+		var k: float = float(_supply_actual.get("control_per_gold", 0.0)) * float(_gold_at_wave_end) * window_ratio
+		supply_block = " · supply %.0f→%.0f [end: T %.0f H %.0f S %.0f C %.0f] vs floor %.0f→%.0f" % [
+			actual_at_start, actual_at_end, t, h, s, k, floor_at_start, floor_at_end,
+		]
+	var head: String = "W%d — %.0fs spawn window · req %.0f dmg%s · %s" % [
+		_wave_index + 1, _spawn_window_sec, _required_damage, supply_block, pressure_block,
 	]
 	if early_window > 0.0:
 		head += "   (%.0fs early-call · max bonus %.0fg)" % [early_window, early_window]
@@ -609,9 +681,12 @@ func _draw_bucket_backgrounds(spawn_x0: float, spawn_w: float) -> void:
 func _draw_demand_bars(spawn_x0: float, spawn_w: float) -> void:
 	if _bucket_count <= 0 or _bucket_max_ehp <= 0.0:
 		return
-	# Y-axis = damage per 5s bucket. Both bars and supply line live in this
-	# unit. Headroom = ×1.15 so neither extreme pins flush to the chart edge.
-	var max_axis: float = max(_bucket_max_ehp, _supply_per_bucket) * 1.15
+	# Y-axis = damage per 5s bucket. Bars and BOTH supply bands (floor and
+	# actual) live in this unit. Use the sloped bands' PEAK (= supply at
+	# wave-end gold) so the band's high point doesn't pin to the chart top.
+	# Headroom = ×1.15 so nothing pins to the edge.
+	var max_axis: float = max(_bucket_max_ehp,
+		max(_supply_floor_peak, _supply_actual_peak)) * 1.15
 	if max_axis <= 0.0:
 		return
 	var chart_h: float = CHART_BOTTOM - CHART_TOP
@@ -650,22 +725,98 @@ func _draw_demand_bars(spawn_x0: float, spawn_w: float) -> void:
 			cursor_y = seg_y
 
 
-func _draw_supply_line(spawn_x0: float, spawn_w: float) -> void:
-	# Quiet, dashed reference line — Grafana / Datadog convention. Bar color
-	# (magma high-stop) carries the alarm signal; the line itself is a static
-	# threshold the eye scans against. Single neutral color regardless of
-	# breach state — the breach is read off the bar tops, not the line.
-	if _supply_per_bucket <= 0.0:
+func _draw_supply_bands(spawn_x0: float, spawn_w: float) -> void:
+	# INCOME-ADJUSTED THEORETICAL SUPPLY. Two stacked sloped bands: a faint
+	# Naked Baseline floor and a stronger live-loadout actual. Each band's
+	# height at any time t = (gold_at_t × tower_per_gold) + (gold_at_t ×
+	# control_per_gold) + hero_const + skills_const. Tower and control segments
+	# rise with the gold curve (more bounties → more towers → more DPS); hero
+	# and skills sit underneath as constant slabs (loadout-fixed).
+	#
+	# Caveat: the gold curve models bounties as arriving at SPAWN time, not
+	# actual death time, so the slope is slightly optimistic at each wave's
+	# leading edge. Acceptable for a designer tool.
+	var max_axis: float = max(_bucket_max_ehp,
+		max(_supply_floor_peak, _supply_actual_peak)) * 1.15
+	if max_axis <= 0.0 or _bucket_count <= 0 or _spawn_window_sec <= 0.0:
 		return
-	var max_axis: float = max(_bucket_max_ehp, _supply_per_bucket) * 1.15
-	if max_axis <= 0.0:
+	# Floor band first so the actual band overlays it where they share y-range.
+	_draw_one_supply_band(spawn_x0, spawn_w, _supply_floor, max_axis,
+		0.10, COL_SUPPLY_TOP_FLOOR)
+	_draw_one_supply_band(spawn_x0, spawn_w, _supply_actual, max_axis,
+		0.22, COL_SUPPLY_TOP_ACTUAL)
+
+
+# Draw ONE income-adjusted supply band. For each 5s bucket [t_i, t_{i+1}]:
+# sample the gold curve at the bucket's MIDPOINT, compute supply at that gold,
+# and paint stacked tower/hero/skills/control segments up to that height.
+# Then draw a dashed polyline through the bucket BOUNDARIES showing the total
+# ceiling. Mid-vs-boundary mirrors the user's spec: filled = midpoint sample
+# (representative supply during that bucket); top line = boundary samples
+# (smooth ramp). A faint flat reference at supply-at-start helps debug whether
+# the slope is doing what we expect.
+func _draw_one_supply_band(spawn_x0: float, spawn_w: float, supply: Dictionary,
+		max_axis: float, alpha: float, top_color: Color) -> void:
+	var peak: float = _supply_total_at_gold(supply, float(_gold_at_wave_end))
+	if peak <= 0.0:
 		return
 	var chart_h: float = CHART_BOTTOM - CHART_TOP
-	var supply_y: float = CHART_BOTTOM - (_supply_per_bucket / max_axis) * (chart_h - 2.0)
-	draw_dashed_line(
-		Vector2(spawn_x0, supply_y), Vector2(spawn_x0 + spawn_w, supply_y),
-		COL_SUPPLY_LINE, 1.0, 4.0, true,
-	)
+	var bw: float = spawn_w / float(_bucket_count)
+	# Filled segments per bucket, sampled at midpoint.
+	for i in range(_bucket_count):
+		var t_mid: float = (float(i) + 0.5) * BUCKET_SEC
+		var gold_mid: float = _gold_at_time(t_mid)
+		# Stack bottom-up: tower (gold-scaled) → hero (const) → skills (const)
+		# → control (gold-scaled). Same order as the header breakdown.
+		var tower_v: float = float(supply.get("tower_per_gold",   0.0)) * gold_mid
+		var hero_v: float  = float(supply.get("hero_const",       0.0))
+		var skill_v: float = float(supply.get("skills_const",     0.0))
+		var ctrl_v: float  = float(supply.get("control_per_gold", 0.0)) * gold_mid
+		var segs: Array = [
+			[tower_v, COL_SUPPLY_TOWER],
+			[hero_v,  COL_SUPPLY_HERO],
+			[skill_v, COL_SUPPLY_SKILLS],
+			[ctrl_v,  COL_SUPPLY_CONTROL],
+		]
+		var bx: float = spawn_x0 + bw * float(i)
+		var cursor_y: float = CHART_BOTTOM
+		for seg in segs:
+			var v: float = float(seg[0])
+			if v <= 0.0:
+				continue
+			var seg_h: float = (v / max_axis) * (chart_h - 2.0)
+			if seg_h < 0.5:
+				continue
+			var seg_y: float = cursor_y - seg_h
+			var col: Color = seg[1]
+			col.a = alpha
+			draw_rect(Rect2(bx, seg_y, bw, seg_h), col, true)
+			cursor_y = seg_y
+	# Top dashed polyline through bucket boundaries — supply ceiling smooth ramp.
+	var poly: PackedVector2Array = []
+	for i in range(_bucket_count + 1):
+		var t_b: float = float(i) * BUCKET_SEC
+		var total_at_b: float = _supply_total_at_gold(supply, _gold_at_time(t_b))
+		var x: float = spawn_x0 + bw * float(i)
+		var y: float = CHART_BOTTOM - (total_at_b / max_axis) * (chart_h - 2.0)
+		poly.append(Vector2(x, y))
+	if poly.size() >= 2:
+		# Per-segment dashing so the polyline reads as a threshold, not a curve
+		# (matches the prior dashed flat line's visual language).
+		for i in range(poly.size() - 1):
+			draw_dashed_line(poly[i], poly[i + 1], top_color, 1.0, 4.0, true)
+	# Faint flat reference at supply-at-start — debug aid that lets the
+	# designer see the slope's *delta* relative to the legacy "all-gold-up-front"
+	# baseline. Half the alpha of the band's own top line.
+	var total_at_start: float = _supply_total_at_gold(supply, float(_gold_at_start))
+	if total_at_start > 0.0:
+		var ref_y: float = CHART_BOTTOM - (total_at_start / max_axis) * (chart_h - 2.0)
+		var ref_col: Color = top_color
+		ref_col.a *= 0.40
+		draw_dashed_line(
+			Vector2(spawn_x0, ref_y), Vector2(spawn_x0 + spawn_w, ref_y),
+			ref_col, 1.0, 8.0, true,
+		)
 
 
 func _draw_wave_start_line(spawn_x0: float) -> void:

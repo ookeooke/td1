@@ -57,6 +57,12 @@ var _levels: Array = []   # Array[LevelNodeData], populated from level_list.tres
 # slider change. Each entry: {chart, wave_index, level_data, wave_list,
 # paths_in_level}. v1 only populates this for Level 5.
 var _wave_charts: Array = []
+# Per-wave emitter editor registry — keyed by "<level_id>|<wave_idx>" so the
+# bucket popup's +/- can rebuild the visible editor body in place. Populated
+# in _add_wave_emitter_editor; cleared in _build_level_section. Entries hold
+# {body, wave, lvl, toggle}; readers must is_instance_valid() the Controls
+# because Godot frees them on level-section rebuild.
+var _emitter_editors: Dictionary = {}
 # Enemy overrides section — created programmatically in _build_enemy_section
 # and inserted into the same parent as %TowerSection. Keeping it out of the
 # .tscn lets the BalanceSliders scene stay editor-portable.
@@ -95,6 +101,20 @@ const _CLASS_TO_SCENE_PATH: Dictionary = {
 	"boss": "res://enemies/bosses/Boss1.tscn",
 }
 var _structurally_dirty_levels: Dictionary = {}   # level_id → wave_list Resource
+
+# Cached BalanceModelConfig (effective:theoretical ratio + segment weights).
+# Loaded lazily via _get_model_config; cleared on Reset so designers can edit
+# the .tres and see results without restarting Godot.
+const _BalanceModelConfigScript: GDScript = preload("res://balance/BalanceModelConfig.gd")
+const _MODEL_CONFIG_PATH: String = "res://balance/balance_model_config.tres"
+var _model_config: Resource = null
+
+# Naked Baseline tower set — the canonical default starter loadout. Hardcoded
+# (rather than "first 4 of ContentRegistry.towers") so the floor is reproducible
+# across content additions. CORE RULE 18.
+const _BASELINE_TOWER_IDS: PackedStringArray = [
+	"tower_archer", "tower_mage", "tower_artillery", "tower_barracks",
+]
 
 
 
@@ -310,7 +330,20 @@ func _refresh_readout() -> void:
 
 
 func _on_back() -> void:
-	SceneManager.goto("res://ui/WorldMap.tscn")
+	if _structurally_dirty_levels.is_empty():
+		SceneManager.goto("res://ui/WorldMap.tscn")
+		return
+	# Structural edits (class swaps, path swaps, add/remove emitter) are not
+	# persisted to user://debug_balance.json — they live only on the in-memory
+	# WaveData / WaveSpawn Resources until Bake. Leaving without confirming
+	# would silently keep them in cache (next session sees them as authored
+	# until Godot reloads), so prompt before discarding.
+	_confirm_discard_structural(
+		"Leave panel?",
+		"Discard and leave",
+		func():
+			_revert_structural_changes()
+			SceneManager.goto("res://ui/WorldMap.tscn"))
 
 
 func _on_play() -> void:
@@ -328,13 +361,69 @@ func _on_play() -> void:
 
 
 func _on_reset() -> void:
+	if _structurally_dirty_levels.is_empty():
+		_do_reset()
+		return
+	_confirm_discard_structural(
+		"Reset all overrides?",
+		"Discard and reset",
+		_do_reset)
+
+
+# Apply Reset semantics: clear the override layer + revert any in-memory
+# structural mutations + rebuild every section UI from defaults.
+func _do_reset() -> void:
 	BalanceOverrides.reset()
+	_revert_structural_changes()
+	# Drop the cached BalanceModelConfig so a designer who edited
+	# balance_model_config.tres mid-session sees the new weights after Reset
+	# (next supply computation re-loads from disk).
+	_model_config = null
 	_load_slider_values()
-	# Rebuild the tower + enemy + level sections so their sliders snap to defaults.
 	_build_tower_section()
 	_build_enemy_section()
 	_build_level_section()
 	_refresh_readout()
+
+
+# Class/path swaps + add/remove emitter mutate the in-memory WaveData /
+# WaveSpawn Resources directly; they don't live in BalanceOverrides. Force a
+# fresh load from disk for every dirty wave_list so its in-memory copy reverts
+# to authored. CACHE_MODE_REPLACE replaces the resource in Godot's cache, so
+# the next load(...) (e.g. inside _build_level_section's _add_wave_timeline_block)
+# picks up the disk-fresh copy. Without this, Reset would clear slider deltas
+# but silently keep structural edits — and a subsequent Bake would persist them.
+func _revert_structural_changes() -> void:
+	for lid in _structurally_dirty_levels.keys():
+		var wl_path: String = ""
+		for lvl in _levels:
+			if lvl != null and "level_id" in lvl and String(lvl.level_id) == lid \
+					and "wave_list_path" in lvl:
+				wl_path = String(lvl.wave_list_path)
+				break
+		if wl_path != "":
+			ResourceLoader.load(wl_path, "", ResourceLoader.CACHE_MODE_REPLACE)
+	_structurally_dirty_levels.clear()
+
+
+# Pop a 2-button confirm before doing something that would discard the in-
+# memory structural edits in `_structurally_dirty_levels`. The OK button runs
+# `on_discard` (which is responsible for both reverting and the follow-up
+# action — Reset or navigation). Cancel just dismisses; user can then click
+# Bake from the top bar to keep the changes before retrying.
+func _confirm_discard_structural(title: String, ok_text: String, on_discard: Callable) -> void:
+	var dlg := ConfirmationDialog.new()
+	dlg.title = title
+	var n: int = _structurally_dirty_levels.size()
+	var noun: String = "level" if n == 1 else "levels"
+	dlg.dialog_text = "Wave structure has changed in %d %s without Bake.\n\nDiscard the structural changes? Click Cancel and use Bake to keep them." % [n, noun]
+	dlg.ok_button_text = ok_text
+	dlg.confirmed.connect(func():
+		on_discard.call()
+		dlg.queue_free())
+	dlg.canceled.connect(func(): dlg.queue_free())
+	add_child(dlg)
+	dlg.popup_centered()
 
 
 # ── Enemy overrides section ─────────────────────────────────────────────
@@ -602,9 +691,14 @@ func _on_bake_pressed() -> void:
 					chart.clear_enemy_caches()
 		if not wave_deltas.is_empty() or has_structural:
 			_apply_wave_bake(wave_deltas)
-		# Final UI rebuild — both sections snap back to defaults; the wave
-		# charts pick up the new authored numbers via _refresh_wave_charts.
+		# Final UI rebuild — sections snap back to defaults; the wave charts
+		# pick up the new authored numbers via _refresh_wave_charts. The level
+		# section rebuild is required so per-emitter sliders re-read `authored`
+		# from the just-baked spawn.count (their value_changed closure caches
+		# `authored` at construction time and would otherwise compute the
+		# multiplier against the pre-bake count).
 		_build_enemy_section()
+		_build_level_section()
 		_refresh_wave_charts()
 		_refresh_readout()
 		dlg.queue_free())
@@ -1427,6 +1521,7 @@ func _build_level_section() -> void:
 		c.queue_free()
 	_level_value_labels.clear()
 	_wave_charts.clear()
+	_emitter_editors.clear()
 	var heading := Label.new()
 	heading.text = "Level overrides"
 	heading.set("theme_override_font_sizes/font_size", 22)
@@ -1466,10 +1561,9 @@ func _add_level_subgroup(lvl: Resource) -> void:
 	# 0 → early-call gives no gold (pure pressure / time-skip option).
 	# Sentinel -1 = use level_data.early_call_window_sec (authored, default 10).
 	_add_level_int_slider(body, lvl.level_id, "early_call_window", -1, 40, 1)
-	# v1: wave-timeline charts only for Level 5. Removing the guard extends to
-	# every level once the visual is validated.
-	if String(lvl.level_id) == "level_5":
-		_add_wave_timeline_block(body, lvl)
+	# Wave-timeline charts + per-emitter editor for every level. The earlier
+	# level_5-only gate was removed once the visual was validated in playtest.
+	_add_wave_timeline_block(body, lvl)
 	group.add_child(hdr)
 	group.add_child(body)
 	level_section.add_child(group)
@@ -1481,6 +1575,11 @@ func _add_wave_timeline_block(parent: VBoxContainer, lvl: Resource) -> void:
 		return
 	var paths: Array = _collect_paths(wave_list)
 	# Collapsible toggle so the level group doesn't balloon by default.
+	# Charts + emitter editor bodies are LAZY-BUILT on first expand: the
+	# constructor cost (~30+ Control nodes per level for L5-sized levels,
+	# multiplied across all 5 levels) was being paid even when every level
+	# row was collapsed. _built tracks whether _populate_wave_timeline_block
+	# has run for this toggle so re-expanding never doubles up children.
 	var toggle := Button.new()
 	toggle.text = "        ▸ Show wave timelines (%d)" % wave_list.waves.size()
 	toggle.flat = true
@@ -1490,12 +1589,23 @@ func _add_wave_timeline_block(parent: VBoxContainer, lvl: Resource) -> void:
 	var charts_box := VBoxContainer.new()
 	charts_box.set("theme_override_constants/separation", 6)
 	charts_box.visible = false
+	var built: Array = [false]  # boxed bool so the closure can mutate it
 	toggle.pressed.connect(func():
+		if not built[0]:
+			_populate_wave_timeline_block(charts_box, lvl, wave_list, paths)
+			built[0] = true
 		charts_box.visible = not charts_box.visible
 		toggle.text = ("        ▾ " if charts_box.visible else "        ▸ ") \
 			+ "Show wave timelines (%d)" % wave_list.waves.size())
 	parent.add_child(toggle)
 	parent.add_child(charts_box)
+
+
+# Build the overview chart + per-wave detail cards + per-wave emitter editors
+# inside `charts_box`. Split out from _add_wave_timeline_block so it can run
+# lazily on first toggle expand (see the `built` boxed flag in the caller).
+func _populate_wave_timeline_block(charts_box: VBoxContainer, lvl: Resource,
+		wave_list: WaveList, paths: Array) -> void:
 	# Overview chart at the top — shows level-arc EHP bars + cumulative gold
 	# curve so the spike-vs-rest pacing is visible at a glance before any
 	# per-wave detail card is read.
@@ -1521,8 +1631,14 @@ func _add_wave_timeline_block(parent: VBoxContainer, lvl: Resource) -> void:
 			continue
 		var chart: Control = _WaveTimelineChartScript.new()
 		charts_box.add_child(chart)
-		var supply: float = _compute_l1_dmg_per_gold(wave)
 		var gold: int = _compute_gold_at_wave_start(wave_list, i, lvl)
+		# Two income-adjusted supply dicts — Naked Baseline floor + live loadout
+		# actual. Carry per-gold coefficients (tower, control) + constants (hero,
+		# skills) so the chart can slope the band along the gold curve. Real
+		# wave index passed so timing/count overrides on W2+ don't read W1's
+		# values via _wave_spawn_window.
+		var supply_floor: Dictionary = _compute_baseline_supply(wave, lvl, i)
+		var supply_actual: Dictionary = _compute_loadout_supply(wave, lvl, i)
 		# Compute next-wave early-call info (rendered as the in-spawn band on
 		# THIS chart's right end).
 		var has_next: bool = i + 1 < wave_list.waves.size() \
@@ -1547,9 +1663,9 @@ func _add_wave_timeline_block(parent: VBoxContainer, lvl: Resource) -> void:
 			p_target = float(row.get("target", 0.0))
 			p_reason = String(row.get("reason", ""))
 			p_fix = String(row.get("fix", ""))
-		chart.set_data(wave, lvl, i, supply, gold, paths, level_final_gold,
-			next_ec, next_ec_authored, next_rate, next_rate_authored, has_next,
-			p_actual, p_target, p_reason, p_fix)
+		chart.set_data(wave, lvl, i, supply_floor, supply_actual, gold, paths,
+			level_final_gold, next_ec, next_ec_authored, next_rate, next_rate_authored,
+			has_next, p_actual, p_target, p_reason, p_fix)
 		_wave_charts.append({
 			"chart": chart, "wave_index": i, "level_data": lvl,
 			"wave_list": wave_list, "paths": paths,
@@ -1577,7 +1693,9 @@ func _add_wave_timeline_block(parent: VBoxContainer, lvl: Resource) -> void:
 		# Auto-expand the emitter editor when this wave is meaningfully off
 		# its authored target. The boundary (|drift| > 0.25) matches the
 		# "dangerous" / "too easy" verdict bands. Waves on target stay
-		# collapsed to keep the screen scannable.
+		# collapsed to keep the screen scannable. Now that the timeline block
+		# is lazy-built, this auto-expand only fires when the designer
+		# explicitly opens the level's timeline — which is the right time.
 		var auto_expand: bool = false
 		if i < pressure_rows.size():
 			var prow: Dictionary = pressure_rows[i]
@@ -1612,6 +1730,13 @@ func _add_wave_emitter_editor(parent: VBoxContainer, wave: WaveData, wave_idx: i
 		_update_emitter_toggle_text(toggle, body, wave))
 	parent.add_child(toggle)
 	parent.add_child(body)
+	# Register so bucket-popup +/- can rebuild this body in place via
+	# _rebuild_emitter_editor_for_wave. Key matches the lookup there.
+	var lvl_id_for_reg: String = String(lvl.level_id) if "level_id" in lvl else ""
+	if lvl_id_for_reg != "":
+		_emitter_editors[lvl_id_for_reg + "|" + str(wave_idx)] = {
+			"body": body, "wave": wave, "lvl": lvl, "toggle": toggle,
+		}
 	_populate_emitter_editor_body(body, wave, lvl, wave_idx, toggle)
 
 
@@ -2025,42 +2150,18 @@ func _refresh_bucket_popup_counts(rows: Dictionary, wave: WaveData, lvl: Resourc
 			minus.disabled = (n <= 0)
 
 
-# Find an existing emitter that fires AT LEAST ONE spawn in [t_start, t_end)
-# on the given path with the given class. Returns spawn_idx or -1.
-func _find_contributing_emitter(wave: WaveData, lvl: Resource, wave_idx: int,
-		t_start: float, t_end: float, path_id: String, class_key: String) -> int:
-	if wave == null:
-		return -1
-	for si in range(wave.spawns.size()):
-		var spawn: Resource = wave.spawns[si]
-		if spawn == null or String(spawn.path_id) != path_id:
-			continue
-		if _class_key_for_spawn(spawn) != class_key:
-			continue
-		var ev: Dictionary = _effective_emitter_values(spawn, lvl, wave_idx, si)
-		var count: int = int(ev.count)
-		if count <= 0:
-			continue
-		var start: float = float(ev.start)
-		var interval: float = float(ev.interval)
-		for i in range(count):
-			var t: float = start + float(i) * interval
-			if t >= t_start and t < t_end:
-				return si
-	return -1
-
-
-# +1 in this bucket: prefer extending an existing emitter targeting this
-# bucket; else create a new WaveSpawn at start_delay = t_start, count = 1.
 const _BUCKET_MIN_INTERVAL: float = 0.05
 
 
-# Stricter sibling of _find_contributing_emitter — matches only emitters that
-# are FULLY CONTAINED in [t_start, t_end] (the bucket-bound shape created by
-# the popup itself). Wide-span authored emitters that happen to spawn into
-# this bucket are NOT matched, so popup clicks never extend their tails.
-func _find_bucket_emitter(wave: WaveData, lvl: Resource, wave_idx: int,
-		t_start: float, t_end: float, path_id: String, class_key: String) -> int:
+# Walk wave.spawns and return the first one matching path + class whose schedule
+# satisfies the per-bucket predicate. `strict = true` requires FULL CONTAINMENT
+# in [t_start, t_end] (the bucket-bound shape created by the popup itself —
+# wide-span authored emitters never match). `strict = false` accepts ANY
+# emitter that fires at least one spawn into [t_start, t_end). The two named
+# wrappers below preserve the call-site readability.
+func _find_emitter(wave: WaveData, lvl: Resource, wave_idx: int,
+		t_start: float, t_end: float, path_id: String, class_key: String,
+		strict: bool) -> int:
 	if wave == null:
 		return -1
 	for si in range(wave.spawns.size()):
@@ -2075,13 +2176,45 @@ func _find_bucket_emitter(wave: WaveData, lvl: Resource, wave_idx: int,
 			continue
 		var start: float = float(ev.start)
 		var interval: float = float(ev.interval)
-		# Containment: starts at-or-just-after t_start, last spawn at-or-before t_end.
-		if start < t_start - 0.001 or start > t_start + 0.5:
-			continue
-		var last_t: float = start + float(max(count - 1, 0)) * interval
-		if last_t <= t_end + 0.001:
-			return si
+		if strict:
+			# Containment: starts at-or-just-after t_start, last spawn at-or-before t_end.
+			# 0.5s upper slack on the start forgives small repack drift on bucket-bound
+			# emitters that have been edited multiple times.
+			if start < t_start - 0.001 or start > t_start + 0.5:
+				continue
+			var last_t: float = start + float(max(count - 1, 0)) * interval
+			if last_t <= t_end + 0.001:
+				return si
+		else:
+			for i in range(count):
+				var t: float = start + float(i) * interval
+				if t >= t_start and t < t_end:
+					return si
 	return -1
+
+
+# Find an existing emitter that fires AT LEAST ONE spawn in [t_start, t_end)
+# on the given path with the given class. Returns spawn_idx or -1.
+#
+# Used by `_bucket_popup_decrement` as the fallback when no bucket-bound
+# emitter matches the click — it shaves one off the contributing emitter via
+# `set_wave_count_mult`. Note that interval and start_delay stay constant in
+# that path, so the LAST spawn in the schedule drops off (not the spawn that
+# happens to land in the clicked bucket). Visual feedback can therefore land
+# in a different bucket than the user pointed at; the success Toast in
+# `_bucket_popup_decrement` makes that explicit.
+func _find_contributing_emitter(wave: WaveData, lvl: Resource, wave_idx: int,
+		t_start: float, t_end: float, path_id: String, class_key: String) -> int:
+	return _find_emitter(wave, lvl, wave_idx, t_start, t_end, path_id, class_key, false)
+
+
+# Stricter sibling — matches only emitters FULLY CONTAINED in [t_start, t_end]
+# (the bucket-bound shape the popup itself creates). Wide-span authored
+# emitters that happen to spawn into this bucket are NOT matched, so popup
+# clicks never extend their tails.
+func _find_bucket_emitter(wave: WaveData, lvl: Resource, wave_idx: int,
+		t_start: float, t_end: float, path_id: String, class_key: String) -> int:
+	return _find_emitter(wave, lvl, wave_idx, t_start, t_end, path_id, class_key, true)
 
 
 # Pack `target_count` evenly into [t_start, t_end] for an emitter at spawn_idx.
@@ -2139,6 +2272,9 @@ func _bucket_popup_increment(lvl: Resource, wave: WaveData, wave_idx: int,
 		ws.count = 1
 		ws.interval = max(_BUCKET_MIN_INTERVAL, t_end - t_start)
 		ws.start_delay = t_start
+		# Mirror the decrement Toast contract — the chart updates visually but a
+		# brand-new emitter is easy to miss in a dense wave.
+		Toast.show_message("Added 1 %s to bucket" % class_key)
 		wave.spawns.append(ws)
 		_mark_level_dirty(lvl)
 		# New class may have entered the wave — invalidate per-class caches.
@@ -2146,39 +2282,69 @@ func _bucket_popup_increment(lvl: Resource, wave: WaveData, wave_idx: int,
 			var ch: Control = entry.get("chart")
 			if ch != null and is_instance_valid(ch) and ch.has_method("clear_enemy_caches"):
 				ch.clear_enemy_caches()
-	_rebuild_emitter_editor_for_wave(wave_idx)
+	_rebuild_emitter_editor_for_wave(lvl, wave_idx)
 	_refresh_wave_charts()
 
 
-# −1 in this bucket: locate the bucket-bound emitter and drop one spawn,
-# repacking the remaining count into the bucket. Wide-span authored emitters
-# are intentionally ignored — the popup never destructively edits authored
-# content.
+# −1 in this bucket: prefer dropping a spawn from a bucket-bound emitter (so
+# the repack via _pack_emitter_into_bucket keeps the emitter inside the
+# bucket). When no bucket-bound emitter exists, fall back to the looser
+# _find_contributing_emitter — any wide-span authored emitter whose schedule
+# lands a spawn in [t_start, t_end] — and shave one off via count_mult. The
+# fallback only mutates the override layer (Bake required to touch .tres),
+# so it stays non-destructive even though it touches authored content. Toast
+# when neither lookup matches so the user gets feedback instead of silence.
 func _bucket_popup_decrement(lvl: Resource, wave: WaveData, wave_idx: int,
 		t_start: float, t_end: float, path_id: String, class_key: String) -> void:
 	var si: int = _find_bucket_emitter(wave, lvl, wave_idx, t_start, t_end, path_id, class_key)
-	if si < 0:
-		return
-	var spawn: Resource = wave.spawns[si]
-	var ev: Dictionary = _effective_emitter_values(spawn, lvl, wave_idx, si)
-	var current: int = int(ev.count)
-	if current <= 0:
-		return
-	# Always succeeds when target_count <= current (intervals only ever grow).
-	_pack_emitter_into_bucket(spawn, lvl, wave_idx, si, t_start, t_end, current - 1)
-	_rebuild_emitter_editor_for_wave(wave_idx)
+	if si >= 0:
+		var spawn: Resource = wave.spawns[si]
+		var ev: Dictionary = _effective_emitter_values(spawn, lvl, wave_idx, si)
+		var current: int = int(ev.count)
+		if current <= 0:
+			return
+		# Always succeeds when target_count <= current (intervals only ever grow).
+		_pack_emitter_into_bucket(spawn, lvl, wave_idx, si, t_start, t_end, current - 1)
+	else:
+		var fb_si: int = _find_contributing_emitter(wave, lvl, wave_idx, t_start, t_end, path_id, class_key)
+		if fb_si < 0:
+			Toast.show_message("No %s to remove in this slot" % class_key)
+			return
+		var fb_spawn: Resource = wave.spawns[fb_si]
+		var fb_authored: int = max(1, int(fb_spawn.count))
+		var fb_ev: Dictionary = _effective_emitter_values(fb_spawn, lvl, wave_idx, fb_si)
+		var new_count: int = max(0, int(fb_ev.count) - 1)
+		BalanceOverrides.set_wave_count_mult(String(lvl.level_id), wave_idx, fb_si,
+			float(new_count) / float(fb_authored))
+		# Surface the side-effect: the change lands at the emitter's tail,
+		# which may be a different bucket than the one the user clicked.
+		Toast.show_message("Removed 1 %s (tail of emitter #%d)" % [class_key, fb_si + 1])
+	_rebuild_emitter_editor_for_wave(lvl, wave_idx)
 	_refresh_wave_charts()
 
 
-# Locate the per-wave emitter editor body for this wave_idx and rebuild it
-# (so the count slider + timing label reflect the new mult). The editor body
-# isn't tracked in a registry — find it via the chart entry's `wave_index`.
-# For now, just refresh the charts and let the user re-expand the editor;
-# next session can wire a per-wave editor registry if friction surfaces.
-func _rebuild_emitter_editor_for_wave(_wave_idx: int) -> void:
-	# Sliders auto-recompute when re-expanded; popup-driven changes just
-	# refresh the chart and (next click) the popup row counts. No-op for now.
-	pass
+# Locate the per-wave emitter editor body for this (level, wave) and rebuild
+# it in place so bucket-popup +/- shows new emitter rows + updated counts
+# without requiring the designer to collapse and re-expand the wave row.
+# Looked up via _emitter_editors registry populated in _add_wave_emitter_editor.
+# Silent no-op if the entry has been freed (e.g. level-section rebuild between
+# popup open and click) — designer's next expand will rebuild from scratch.
+func _rebuild_emitter_editor_for_wave(lvl: Resource, wave_idx: int) -> void:
+	if lvl == null or not ("level_id" in lvl):
+		return
+	var key: String = String(lvl.level_id) + "|" + str(wave_idx)
+	var entry: Dictionary = _emitter_editors.get(key, {})
+	if entry.is_empty():
+		return
+	var body: VBoxContainer = entry.get("body")
+	var toggle: Button = entry.get("toggle")
+	var wave: WaveData = entry.get("wave")
+	if body == null or not is_instance_valid(body) \
+			or toggle == null or not is_instance_valid(toggle) \
+			or wave == null:
+		_emitter_editors.erase(key)
+		return
+	_populate_emitter_editor_body(body, wave, lvl, wave_idx, toggle)
 
 
 func _add_emitter_slider(parent: VBoxContainer, spawn: Resource, lvl: Resource,
@@ -2293,7 +2459,15 @@ func _effective_emitter_values(spawn: Resource, lvl: Resource,
 		wave_idx: int, spawn_idx: int) -> Dictionary:
 	var lvl_id: String = String(lvl.level_id)
 	var count_mult: float = BalanceOverrides.get_wave_count_mult(lvl_id, wave_idx, spawn_idx)
-	var count: int = max(0, int(round(float(spawn.count) * count_mult)))
+	var authored_count: int = int(spawn.count)
+	# When authored is zero, treat the override as an absolute count (a
+	# multiplier has no meaning against zero). Mirrors the slider's write-side
+	# guard so an authored=0 emitter stays controllable from the panel.
+	var count: int
+	if authored_count <= 0:
+		count = max(0, int(round(count_mult)))
+	else:
+		count = max(0, int(round(float(authored_count) * count_mult)))
 	var int_ov: float = BalanceOverrides.get_wave_interval(lvl_id, wave_idx, spawn_idx)
 	var interval: float = float(spawn.interval) if int_ov < 0.0 else int_ov
 	var dly_ov: float = BalanceOverrides.get_wave_delay(lvl_id, wave_idx, spawn_idx)
@@ -2403,7 +2577,11 @@ func _add_emitter_count_row(parent: VBoxContainer, spawn: Resource, lvl: Resourc
 		rebuild.call())
 	sld.value_changed.connect(func(v: float):
 		var iv: int = int(v)
-		var m: float = (float(iv) / float(authored)) if authored > 0 else 1.0
+		# Guard authored=0 so the slider can still set an absolute count; otherwise
+		# (iv / 0) would force m=1.0 and the override would never take effect.
+		# _effective_emitter_values has the matching read-side guard.
+		var divisor: int = max(authored, 1)
+		var m: float = float(iv) / float(divisor)
 		BalanceOverrides.set_wave_count_mult(String(lvl.level_id), wave_idx, spawn_idx, m)
 		val_lbl.text = "%d  (×%.2f)" % [iv, m]
 		recompute_timing.call()
@@ -2635,38 +2813,117 @@ func _collect_paths(wave_list: WaveList) -> Array:
 	return ordered
 
 
-# Best L1 dmg-per-gold across the tower roster, evaluated over the wave's
-# spawn window. Naked Baseline floor — the supply line a default-loadout
-# player can theoretically buy. tower_damage_per_gold returns 0 for barracks.
+# ── Per-wave segmented supply helpers ──────────────────────────────────────
+# Replace the legacy "all gold spent on Archer L1" supply scalar with the
+# segmented BalanceCalculator.player_supply_vector output. Used by the chart
+# to draw two stacked bands: a Naked Baseline floor and the live loadout.
+
+func _get_model_config() -> Resource:
+	if _model_config != null:
+		return _model_config
+	if ResourceLoader.exists(_MODEL_CONFIG_PATH):
+		_model_config = load(_MODEL_CONFIG_PATH)
+	if _model_config == null:
+		# defaults() is a static factory on the script — call via the script
+		# constant rather than instantiating, to match SupplyDemandReport.
+		_model_config = _BalanceModelConfigScript.defaults()
+	return _model_config
+
+
+# Resolve the canonical "default 4 starter towers" loadout (CORE RULE 18).
+# Hardcoded by id list above so the floor stays reproducible across content
+# additions. Missing ids are skipped (e.g. mid-rename), which is fine — the
+# remaining towers still produce a representative baseline.
+func _baseline_loadout_towers() -> Array:
+	var out: Array = []
+	for tid in _BASELINE_TOWER_IDS:
+		var t: Resource = ContentRegistry.find_tower(tid)
+		if t != null:
+			out.append(t)
+	return out
+
+
+# Resolve LoadoutState's equipped skill ids back to the SkillData resources
+# carried on the hero's `skills` Array. player_supply_vector filters with
+# `if not (s is SkillData)` so handing it raw ids would silently zero out the
+# skills segment — match-by-skill_id is required.
+func _resolve_skill_data(hero: Resource, skill_ids: Array) -> Array:
+	var out: Array = []
+	if hero == null or not ("skills" in hero):
+		return out
+	var by_id: Dictionary = {}
+	for sk in hero.skills:
+		if sk == null or not ("skill_id" in sk):
+			continue
+		by_id[String(sk.skill_id)] = sk
+	for sid in skill_ids:
+		var resolved = by_id.get(String(sid), null)
+		if resolved != null:
+			out.append(resolved)
+	return out
+
+
+# Decompose a player_supply_vector result (totals over the wave window) into
+# the income-adjusted shape the chart needs: per-gold coefficients for the
+# gold-dependent segments (tower, control) + flat constants for the gold-
+# independent segments (hero, skills). The chart samples these at every gold-
+# curve event so the supply band slopes upward as bounties accumulate.
 #
-# Folds in per-tower L1 BalanceOverrides (damage_mult / speed_mult /
-# cost_mult) on top of the authored helper result, since
-# bc.tower_damage_per_gold reads the .tres values directly. Without this,
-# moving Archer L1 cost from 50→30 wouldn't lift the chart's supply line
-# even though the in-game build path correctly uses the override.
-func _compute_l1_dmg_per_gold(wave: WaveData) -> float:
-	var bc: GDScript = load("res://balance/BalanceCalculator.gd")
-	if bc == null:
-		return 0.0
-	var window_sec: float = max(20.0, bc.wave_duration(wave))
-	var best: float = 0.0
-	for t in ContentRegistry.towers:
-		if not (t is TowerData) or t.damage <= 0.0:
-			continue
-		var v: float = bc.tower_damage_per_gold(t, 0, window_sec)
-		if v <= 0.0 or t.tower_id == "":
-			continue
-		# Apply L1 overrides: dmg ↑ raises supply, spd ↑ raises supply,
-		# cost ↓ raises supply (dmg/g denominator shrinks → quotient grows).
-		var dmg_m: float = BalanceOverrides.get_tower_mult(t.tower_id, "l1", "damage_mult")
-		var spd_m: float = BalanceOverrides.get_tower_mult(t.tower_id, "l1", "speed_mult")
-		var cost_m: float = BalanceOverrides.get_tower_mult(t.tower_id, "l1", "cost_mult")
-		v *= dmg_m * spd_m
-		if cost_m > 0.0001:
-			v /= cost_m
-		if v > best:
-			best = v
-	return best
+# Caveat (acknowledged in the chart header): the gold curve currently models
+# kill bounties as arriving at SPAWN time, not actual death time. The slope
+# is therefore "income-adjusted theoretical supply" — slightly optimistic at
+# the leading edge of each wave. Acceptable for a designer tool.
+#
+# Reference-gold technique: call player_supply_vector with REF_GOLD = 1000,
+# then divide tower/control by REF_GOLD to get per-gold rates. Sidesteps the
+# gold_at_start = 0 / divide-by-zero failure mode the user flagged.
+const _SUPPLY_REF_GOLD: int = 1000
+
+func _vec_to_supply_dict(vec: Dictionary, window_sec: float, ref_gold: int) -> Dictionary:
+	var bucket_ratio: float = 5.0 / max(1.0, window_sec)
+	var ref_g_safe: float = float(max(1, ref_gold))
+	return {
+		# Per-bucket per-gold rates (multiply by gold_at_t to get absolute supply).
+		"tower_per_gold":   float(vec.get("segment_tower",   0.0)) * bucket_ratio / ref_g_safe,
+		"control_per_gold": float(vec.get("segment_control", 0.0)) * bucket_ratio / ref_g_safe,
+		# Gold-independent constants — hero base DPS and skill cooldown DPS.
+		"hero_const":       float(vec.get("segment_hero",    0.0)) * bucket_ratio,
+		"skills_const":     float(vec.get("segment_skills",  0.0)) * bucket_ratio,
+	}
+
+
+# Naked Baseline supply — warrior + 4 starter towers, no skills/items/talents.
+# Returns the per-gold coefficients dict (see _vec_to_supply_dict) so the chart
+# can plot a sloped band tracking the gold curve. CORE RULE 18 reference floor.
+func _compute_baseline_supply(wave: WaveData, lvl: Resource, wave_idx: int) -> Dictionary:
+	var hero: Resource = ContentRegistry.find_hero("hero_warrior")
+	# Naked Baseline = no skills equipped; pass empty so the segment is 0.
+	# (Authored hero.skills represents the catalog, not the equipped pair.)
+	var skills: Array = []
+	var towers: Array = _baseline_loadout_towers()
+	var window_sec: float = max(_wave_spawn_window(wave, lvl, wave_idx), 1.0)
+	if towers.is_empty():
+		return _vec_to_supply_dict({}, window_sec, _SUPPLY_REF_GOLD)
+	var vec: Dictionary = BalanceCalculator.player_supply_vector(
+		towers, hero, skills, _SUPPLY_REF_GOLD, window_sec, _get_model_config()
+	)
+	return _vec_to_supply_dict(vec, window_sec, _SUPPLY_REF_GOLD)
+
+
+# Live loadout supply. Falls back to baseline when LoadoutState has no hero /
+# no towers selected (e.g. fresh save before WorldMap visit).
+func _compute_loadout_supply(wave: WaveData, lvl: Resource, wave_idx: int) -> Dictionary:
+	var hero: Resource = ContentRegistry.find_hero(LoadoutState.selected_hero_id)
+	var towers: Array = LoadoutState.get_loadout_towers()
+	if hero == null or towers.is_empty():
+		return _compute_baseline_supply(wave, lvl, wave_idx)
+	var skill_ids: Array = LoadoutState.get_equipped_skills(hero.hero_id)
+	var skills: Array = _resolve_skill_data(hero, skill_ids)
+	var window_sec: float = max(_wave_spawn_window(wave, lvl, wave_idx), 1.0)
+	var vec: Dictionary = BalanceCalculator.player_supply_vector(
+		towers, hero, skills, _SUPPLY_REF_GOLD, window_sec, _get_model_config()
+	)
+	return _vec_to_supply_dict(vec, window_sec, _SUPPLY_REF_GOLD)
 
 
 # Override-adjusted starting gold for `lvl`. Per-level override wins when set;
@@ -3228,8 +3485,14 @@ func _refresh_wave_charts() -> void:
 			p_target = float(row.get("target", 0.0))
 			p_reason = String(row.get("reason", ""))
 			p_fix = String(row.get("fix", ""))
-		chart.set_data(wave, lvl, idx, _compute_l1_dmg_per_gold(wave),
-			_compute_gold_at_wave_start(wave_list, idx, lvl), paths,
+		var refresh_gold: int = _compute_gold_at_wave_start(wave_list, idx, lvl)
+		# Real wave index passed to the supply helpers so per-wave timing/count
+		# overrides apply to the spawn-window computation (W2+ would otherwise
+		# inherit W1's authored values via _wave_spawn_window).
+		var refresh_floor: Dictionary = _compute_baseline_supply(wave, lvl, idx)
+		var refresh_actual: Dictionary = _compute_loadout_supply(wave, lvl, idx)
+		chart.set_data(wave, lvl, idx, refresh_floor, refresh_actual,
+			refresh_gold, paths,
 			_compute_level_final_gold(wave_list, lvl),
 			next_ec, next_ec_authored, next_rate, next_rate_authored, has_next,
 			p_actual, p_target, p_reason, p_fix)

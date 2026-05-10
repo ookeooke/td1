@@ -9,7 +9,7 @@
 script = ExtResource("4_upg")
 upgrade_name = "Howitzer"
 damage = 100.0
-attack_range = 619.9999999999977
+attack_range = 625.0000000000025
 attack_speed = 0.4
 cost = 135
 sell_value = 130
@@ -28,7 +28,7 @@ tint = Color(1.15, 0.5, 0.3, 1)
 [sub_resource type="Resource" id="ArtilleryUpg_L2"]
 script = ExtResource("4_upg")
 upgrade_name = "Cannon"
-damage = 36.0
+damage = 34.99999999999999
 attack_range = 550.0000000000026
 attack_speed = 0.55
 cost = 160

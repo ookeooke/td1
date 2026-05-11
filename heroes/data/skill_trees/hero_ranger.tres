@@ -1,0 +1,417 @@
+[gd_resource type="Resource" script_class="HeroSkillTreeData" format=3]
+
+[ext_resource type="Script" path="res://heroes/HeroSkillTreeData.gd" id="1_tree"]
+[ext_resource type="Script" path="res://heroes/HeroSkillNodeData.gd" id="2_node"]
+[ext_resource type="Script" path="res://systems/abilities/RegenAbility.gd" id="3_regen"]
+[ext_resource type="Script" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="5_bonusdmg"]
+[ext_resource type="Script" path="res://systems/abilities/StatModifierAbility.gd" id="6_statmod"]
+[ext_resource type="Script" path="res://heroes/skills/SkillModData.gd" id="7_mod"]
+
+[sub_resource type="Resource" id="ability_eagle_eye"]
+script = ExtResource("6_statmod")
+ability_id = "ranger_eagle_eye"
+trigger = 0
+attack_range_pct = 0.15
+damage_pct = 0.05
+
+[sub_resource type="Resource" id="node_eagle_eye_r1"]
+script = ExtResource("2_node")
+node_id = "ranger_eagle_eye_r1"
+node_name = "Eagle Eye"
+description = "+15% attack range and +5% damage. Always-on."
+kind = 1
+target_id = "ranger_eagle_eye"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_eagle_eye")
+
+[sub_resource type="Resource" id="ability_pathfinder"]
+script = ExtResource("6_statmod")
+ability_id = "ranger_pathfinder"
+trigger = 0
+move_speed_pct = 0.15
+attack_speed_pct = 0.05
+
+[sub_resource type="Resource" id="node_pathfinder_r1"]
+script = ExtResource("2_node")
+node_id = "ranger_pathfinder_r1"
+node_name = "Pathfinder"
+description = "+15% move speed and +5% attack speed. Kite faster, fire faster."
+kind = 1
+target_id = "ranger_pathfinder"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_pathfinder")
+
+[sub_resource type="Resource" id="ability_finisher"]
+script = ExtResource("5_bonusdmg")
+ability_id = "ranger_finisher"
+trigger = 3
+bonus_damage = 4.0
+
+[sub_resource type="Resource" id="node_finisher_r1"]
+script = ExtResource("2_node")
+node_id = "ranger_finisher_r1"
+node_name = "Finisher"
+description = "+4 bonus physical damage on every basic attack."
+kind = 1
+target_id = "ranger_finisher"
+rank = 1
+point_cost = 1
+level_required = 2
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_finisher")
+
+[sub_resource type="Resource" id="ability_hunter_focus"]
+script = ExtResource("6_statmod")
+ability_id = "ranger_hunter_focus"
+trigger = 0
+damage_pct = 0.10
+cooldown_reduction_flat = 0.05
+
+[sub_resource type="Resource" id="node_hunter_focus_r1"]
+script = ExtResource("2_node")
+node_id = "ranger_hunter_focus_r1"
+node_name = "Hunter's Focus"
+description = "+10% damage and 5% skill cooldown reduction."
+kind = 1
+target_id = "ranger_hunter_focus"
+rank = 1
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String](["ranger_eagle_eye_r1"])
+ability = SubResource("ability_hunter_focus")
+
+[sub_resource type="Resource" id="node_volley_r2"]
+script = ExtResource("2_node")
+node_id = "volley_r2"
+node_name = "Volley"
+description = "Volley cools down 15% faster."
+kind = 0
+target_id = "volley"
+rank = 2
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_volley_r3"]
+script = ExtResource("2_node")
+node_id = "volley_r3"
+node_name = "Volley"
+description = "Volley deals 20% more damage."
+kind = 0
+target_id = "volley"
+rank = 3
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["volley_r2"])
+
+[sub_resource type="Resource" id="node_snare_trap_r2"]
+script = ExtResource("2_node")
+node_id = "snare_trap_r2"
+node_name = "Snare Trap"
+description = "Snare Trap cools down 15% faster."
+kind = 0
+target_id = "snare_trap"
+rank = 2
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="mod_volley_anti_air"]
+script = ExtResource("7_mod")
+mod_id = "volley_anti_air"
+mod_name = "Skyward Aim"
+description = "+30% damage to flying targets is implicit; this mod widens the volley arc by 40% at -25% damage. Cover more sky, hit each less hard."
+scaling = {"aoe_radius_mult": 1.4, "damage_mult": 0.75}
+
+[sub_resource type="Resource" id="node_volley_mod_anti_air"]
+script = ExtResource("2_node")
+node_id = "volley_mod_anti_air"
+node_name = "Mod: Skyward Aim"
+description = "Volley spreads farther but each arrow lands lighter."
+kind = 2
+target_id = "volley"
+rank = 1
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String](["volley_r2"])
+ability = SubResource("mod_volley_anti_air")
+
+[sub_resource type="Resource" id="ability_marksmans_guile"]
+script = ExtResource("6_statmod")
+ability_id = "ranger_marksmans_guile"
+trigger = 0
+armor_pct = 0.10
+magic_resist_pct = 0.10
+
+[sub_resource type="Resource" id="node_marksmans_guile_r1"]
+script = ExtResource("2_node")
+node_id = "ranger_marksmans_guile_r1"
+node_name = "Marksman's Guile"
+description = "+10% armor and +10% magic resist. Stay alive longer at range."
+kind = 1
+target_id = "ranger_marksmans_guile"
+rank = 1
+point_cost = 1
+level_required = 2
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_marksmans_guile")
+
+[sub_resource type="Resource" id="ability_wind_walker"]
+script = ExtResource("6_statmod")
+ability_id = "ranger_wind_walker"
+trigger = 0
+move_speed_pct = 0.20
+xp_gain_mult_pct = 0.10
+
+[sub_resource type="Resource" id="node_wind_walker_r1"]
+script = ExtResource("2_node")
+node_id = "ranger_wind_walker_r1"
+node_name = "Wind Walker"
+description = "+20% move speed and +10% XP gain. Cover more ground, level faster."
+kind = 1
+target_id = "ranger_wind_walker"
+rank = 1
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String](["ranger_pathfinder_r1"])
+ability = SubResource("ability_wind_walker")
+
+[sub_resource type="Resource" id="node_hunter_stance_r2"]
+script = ExtResource("2_node")
+node_id = "hunter_stance_r2"
+node_name = "Hunter's Stance"
+description = "Hunter's Stance cools down 15% faster."
+kind = 0
+target_id = "hunter_stance"
+rank = 2
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_hunter_stance_r3"]
+script = ExtResource("2_node")
+node_id = "hunter_stance_r3"
+node_name = "Hunter's Stance"
+description = "Hunter's Stance buff lasts 25% longer."
+kind = 0
+target_id = "hunter_stance"
+rank = 3
+point_cost = 1
+level_required = 7
+prerequisite_ids = Array[String](["hunter_stance_r2"])
+
+[sub_resource type="Resource" id="node_marked_shot_r2"]
+script = ExtResource("2_node")
+node_id = "marked_shot_r2"
+node_name = "Marked Shot"
+description = "Marked Shot cools down 15% faster."
+kind = 0
+target_id = "marked_shot"
+rank = 2
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_marked_shot_r3"]
+script = ExtResource("2_node")
+node_id = "marked_shot_r3"
+node_name = "Marked Shot"
+description = "Mark amplifies damage 15% more and lingers 20% longer."
+kind = 0
+target_id = "marked_shot"
+rank = 3
+point_cost = 1
+level_required = 7
+prerequisite_ids = Array[String](["marked_shot_r2"])
+
+[sub_resource type="Resource" id="node_falcon_storm_r2"]
+script = ExtResource("2_node")
+node_id = "falcon_storm_r2"
+node_name = "Falcon Storm"
+description = "Falcon Storm cools down 15% faster."
+kind = 0
+target_id = "falcon_storm"
+rank = 2
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_falcon_storm_r3"]
+script = ExtResource("2_node")
+node_id = "falcon_storm_r3"
+node_name = "Falcon Storm"
+description = "Each falcon strike deals 25% more damage and the storm gains an extra strike."
+kind = 0
+target_id = "falcon_storm"
+rank = 3
+point_cost = 1
+level_required = 8
+prerequisite_ids = Array[String](["falcon_storm_r2"])
+
+[sub_resource type="Resource" id="mod_falcon_storm_swarm"]
+script = ExtResource("7_mod")
+mod_id = "falcon_storm_swarm"
+mod_name = "Murmuration"
+description = "+50% strike count, -30% per-strike damage. A bigger flock that stings instead of slashes."
+scaling = {"count_mult": 1.5, "damage_mult": 0.7}
+
+[sub_resource type="Resource" id="node_falcon_storm_mod_swarm"]
+script = ExtResource("2_node")
+node_id = "falcon_storm_mod_swarm"
+node_name = "Mod: Murmuration"
+description = "Falcon Storm fires more strikes for less damage each."
+kind = 2
+target_id = "falcon_storm"
+rank = 1
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["falcon_storm_r2"])
+ability = SubResource("mod_falcon_storm_swarm")
+
+[sub_resource type="Resource" id="node_ranger_passive_slot_2"]
+script = ExtResource("2_node")
+node_id = "ranger_passive_slot_2"
+node_name = "★ Passive Slot 2"
+description = "A second passive slot opens at hero level 4. Auto-granted on level-up."
+kind = 3
+target_id = "passive_slot_2"
+rank = 1
+point_cost = 0
+level_required = 4
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_ranger_active_slot_3"]
+script = ExtResource("2_node")
+node_id = "ranger_active_slot_3"
+node_name = "★ Active Slot 3"
+description = "A third active-skill slot opens at hero level 8."
+kind = 3
+target_id = "active_slot_3"
+rank = 1
+point_cost = 0
+level_required = 8
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_ranger_passive_slot_3"]
+script = ExtResource("2_node")
+node_id = "ranger_passive_slot_3"
+node_name = "★ Passive Slot 3"
+description = "A third passive slot opens at hero level 9."
+kind = 3
+target_id = "passive_slot_3"
+rank = 1
+point_cost = 0
+level_required = 9
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="ability_predator"]
+script = ExtResource("6_statmod")
+ability_id = "ranger_predator_capstone"
+trigger = 0
+damage_pct = 0.20
+attack_speed_pct = 0.20
+move_speed_pct = 0.15
+
+[sub_resource type="Resource" id="node_predator_capstone"]
+script = ExtResource("2_node")
+node_id = "ranger_predator_capstone"
+node_name = "★ Predator ★"
+description = "CAPSTONE — +20% damage, +20% attack speed, +15% move speed. The complete hunter — strike fast, kite faster. Requires Volley mastered (R3)."
+kind = 4
+target_id = "ranger_predator_capstone"
+rank = 1
+point_cost = 1
+level_required = 10
+prerequisite_ids = Array[String](["volley_r3"])
+ability = SubResource("ability_predator")
+
+[sub_resource type="Resource" id="mod_snare_trap_bear"]
+script = ExtResource("7_mod")
+mod_id = "snare_trap_bear"
+mod_name = "Bear Trap"
+description = "+100% damage, -45% AoE radius. A vicious mechanical jaw that bites instead of a wide-net snare."
+scaling = {"damage_mult": 2.0, "aoe_radius_mult": 0.55}
+
+[sub_resource type="Resource" id="node_snare_trap_mod_bear"]
+script = ExtResource("2_node")
+node_id = "snare_trap_mod_bear"
+node_name = "Mod: Bear Trap"
+description = "Snare Trap becomes a hard-hitting choke point instead of a wide slow zone."
+kind = 2
+target_id = "snare_trap"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["snare_trap_r2"])
+ability = SubResource("mod_snare_trap_bear")
+
+[sub_resource type="Resource" id="mod_snare_trap_wide"]
+script = ExtResource("7_mod")
+mod_id = "snare_trap_wide"
+mod_name = "Wide Snare"
+description = "+50% AoE radius, -50% damage. Cover the whole road; pure crowd control with no kill power."
+scaling = {"aoe_radius_mult": 1.5, "damage_mult": 0.5}
+
+[sub_resource type="Resource" id="node_snare_trap_mod_wide"]
+script = ExtResource("2_node")
+node_id = "snare_trap_mod_wide"
+node_name = "Mod: Wide Snare"
+description = "Snare Trap covers more ground at the cost of damage — sidegrade to Bear Trap."
+kind = 2
+target_id = "snare_trap"
+rank = 1
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["snare_trap_r2"])
+ability = SubResource("mod_snare_trap_wide")
+
+[sub_resource type="Resource" id="mod_hunter_stance_adrenaline"]
+script = ExtResource("7_mod")
+mod_id = "hunter_stance_adrenaline"
+mod_name = "Adrenaline Rush"
+description = "+40% damage during the buff, -40% duration. Brief savagery — a 5-second peak instead of an 8-second sustain."
+scaling = {"damage_mult": 1.4, "duration_mult": 0.6}
+
+[sub_resource type="Resource" id="node_hunter_stance_mod_adrenaline"]
+script = ExtResource("2_node")
+node_id = "hunter_stance_mod_adrenaline"
+node_name = "Mod: Adrenaline Rush"
+description = "Hunter's Stance trades duration for raw burst damage."
+kind = 2
+target_id = "hunter_stance"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["hunter_stance_r2"])
+ability = SubResource("mod_hunter_stance_adrenaline")
+
+[sub_resource type="Resource" id="mod_marked_shot_death"]
+script = ExtResource("7_mod")
+mod_id = "marked_shot_death_mark"
+mod_name = "Death Mark"
+description = "+50% mark amplitude, -50% mark duration. A short, savage debuff instead of a long burning brand."
+scaling = {"damage_mult": 1.5, "duration_mult": 0.5}
+
+[sub_resource type="Resource" id="node_marked_shot_mod_death"]
+script = ExtResource("2_node")
+node_id = "marked_shot_mod_death"
+node_name = "Mod: Death Mark"
+description = "Marked Shot becomes a brief, devastating execute instead of a sustained tag."
+kind = 2
+target_id = "marked_shot"
+rank = 1
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["marked_shot_r2"])
+ability = SubResource("mod_marked_shot_death")
+
+[resource]
+script = ExtResource("1_tree")
+hero_id = "hero_ranger"
+nodes = Array[Resource]([SubResource("node_eagle_eye_r1"), SubResource("node_pathfinder_r1"), SubResource("node_finisher_r1"), SubResource("node_hunter_focus_r1"), SubResource("node_marksmans_guile_r1"), SubResource("node_wind_walker_r1"), SubResource("node_volley_r2"), SubResource("node_volley_r3"), SubResource("node_snare_trap_r2"), SubResource("node_volley_mod_anti_air"), SubResource("node_snare_trap_mod_bear"), SubResource("node_hunter_stance_r2"), SubResource("node_hunter_stance_r3"), SubResource("node_predator_capstone"), SubResource("node_marked_shot_r2"), SubResource("node_marked_shot_r3"), SubResource("node_snare_trap_mod_wide"), SubResource("node_hunter_stance_mod_adrenaline"), SubResource("node_marked_shot_mod_death"), SubResource("node_ranger_passive_slot_2"), SubResource("node_ranger_active_slot_3"), SubResource("node_ranger_passive_slot_3"), SubResource("node_falcon_storm_r2"), SubResource("node_falcon_storm_r3"), SubResource("node_falcon_storm_mod_swarm")])

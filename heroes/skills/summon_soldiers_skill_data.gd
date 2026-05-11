@@ -34,7 +34,7 @@ const _FAN_CENTER: float = -PI * 0.5
 @export var spread_radius: float = 35.0
 
 
-func apply(hero: Node, target, _ctx: Dictionary = {}) -> void:
+func apply(hero: Node, target, ctx: Dictionary = {}) -> void:
 	if hero == null or not is_instance_valid(hero):
 		return
 	if soldier_scene == null or soldier_data == null:
@@ -43,6 +43,11 @@ func apply(hero: Node, target, _ctx: Dictionary = {}) -> void:
 	var parent: Node = hero.get_tree().current_scene
 	if parent == null:
 		return
+	# Phase 3G — rank + mod ctx. Summon reads:
+	#   count_mult    → integer count of soldiers spawned (rounded, min 1)
+	#   duration_mult → lifetime each soldier survives before auto-despawn
+	var eff_count: int = maxi(1, int(round(float(count) * float(ctx.get("count_mult", 1.0)))))
+	var eff_lifetime: float = lifetime * float(ctx.get("duration_mult", 1.0))
 	# Spawn center: tap position when AREA-targeted, hero position otherwise.
 	# Lets the skill stay backwards-compatible with SELF-cast sites.
 	var spawn_center: Vector2 = hero.global_position
@@ -56,14 +61,14 @@ func apply(hero: Node, target, _ctx: Dictionary = {}) -> void:
 		var nav_map: RID = world_2d.navigation_map
 		if nav_map.is_valid():
 			spawn_center = NavigationServer2D.map_get_closest_point(nav_map, spawn_center)
-	for i in count:
+	for i in eff_count:
 		var soldier: CharacterBody2D = soldier_scene.instantiate()
 		soldier.data = soldier_data.duplicate(true)
 		# Add to the soldiers group so other systems (Bless, hero soldier-aura
 		# talents, splitting rules) treat them as friendly ground units.
 		soldier.add_to_group("soldiers")
 		parent.add_child(soldier)
-		var t: float = 0.5 if count <= 1 else float(i) / float(count - 1)
+		var t: float = 0.5 if eff_count <= 1 else float(i) / float(eff_count - 1)
 		var angle: float = _FAN_CENTER - _FAN_ARC * 0.5 + _FAN_ARC * t
 		var off: Vector2 = Vector2(cos(angle), sin(angle)) * spread_radius
 		var rally_pos: Vector2 = spawn_center + off
@@ -79,12 +84,12 @@ func apply(hero: Node, target, _ctx: Dictionary = {}) -> void:
 		var lifetime_ability: Resource = _LifetimeScript.new()
 		lifetime_ability.ability_id = "summon_lifetime"
 		lifetime_ability.trigger = _AbilityDataScript.Trigger.ON_SPAWN
-		lifetime_ability.duration = lifetime
+		lifetime_ability.duration = eff_lifetime
 		if "_ability_host" in soldier and soldier._ability_host != null:
 			soldier._ability_host.add_ability(lifetime_ability)
 	print("[Skill/Summon] %s summoned %d soldiers at %s for %.1fs" % [
 		hero.data.hero_name if hero.data != null else "?",
-		count,
+		eff_count,
 		spawn_center,
-		lifetime,
+		eff_lifetime,
 	])

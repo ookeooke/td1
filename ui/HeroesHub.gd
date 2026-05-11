@@ -18,6 +18,10 @@ extends Control
 # which the embedded screens already listen for.
 
 const _HeroSidebarButtonScript := preload("res://ui/HeroSidebarButton.gd")
+# Phase 3R-followup — preload so the Kind enum is resolvable regardless of
+# class_name registry order. Matches the pattern used in MetaProgression /
+# LoadoutState / HeroSkillTreeScreen.
+const _HeroSkillNodeDataScript := preload("res://heroes/HeroSkillNodeData.gd")
 
 # Phase 51 — sidebar size system. The 140-px sidebar replaces the prior
 # 304-px RosterRail; nav buttons and hero buttons share the touch-target
@@ -58,6 +62,16 @@ var _skills_equipped_slots: Array = []
 var _skills_available_grid: HFlowContainer = null
 var _skills_locked_grid: HFlowContainer = null
 var _skills_header_label: Label = null
+# Phase 3R-followup — picker redesign. Inspector panel on the right of the
+# tile grid; tracks the currently-inspected skill_id so the panel can
+# re-render on rank / mod / equip / passive changes without rebuilding the
+# whole sub-view. Selection survives slot equips / unequips.
+var _skills_inspector_panel: VBoxContainer = null
+var _selected_skill_id: String = ""
+# Phase 3R-followup — connected once and reused across sub-view rebuilds.
+# Tracked so we can re-disconnect on _close_sub_view; otherwise rebuilding
+# the Skills page would stack signal connections.
+var _skills_signals_connected: bool = false
 
 const _PORTRAIT_DRAW_SCALE: float = 5.5
 const _PORTRAIT_ANCHOR_FRACTION: float = 0.82
@@ -608,6 +622,9 @@ func _open_sub_view(kind: String) -> void:
 	_skills_available_grid = null
 	_skills_locked_grid = null
 	_skills_header_label = null
+	_skills_inspector_panel = null
+	_selected_skill_id = ""
+	_disconnect_skills_signals()
 
 	_current_sub = kind
 	hero_hall_view.visible = false
@@ -641,6 +658,9 @@ func _close_sub_view() -> void:
 	_skills_available_grid = null
 	_skills_locked_grid = null
 	_skills_header_label = null
+	_skills_inspector_panel = null
+	_selected_skill_id = ""
+	_disconnect_skills_signals()
 	_current_sub = ""
 	sub_view.visible = false
 	hero_hall_view.visible = true
@@ -743,13 +763,21 @@ const _SKILL_SLOT_SIZE: Vector2 = Vector2(180, 104)
 
 
 func _build_skills_subview() -> void:
+	# Phase 3R-followup — picker redesign:
+	#   • equipped slots row (top, centered) — existing _SkillSlot
+	#   • hint label
+	#   • HBox body:
+	#       LEFT: ScrollContainer wrapping AVAILABLE + LOCKED HFlowContainers
+	#       RIGHT: _skills_inspector_panel (fixed 540 wide) showing full effective specs
+	# Drag-and-drop continues to work through every tile / slot. Tile tap (no
+	# drag) now also selects the tile for the inspector via _on_tile_selected.
 	var vbox := VBoxContainer.new()
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	vbox.offset_left = 16
 	vbox.offset_top = 16
 	vbox.offset_right = -16
 	vbox.offset_bottom = -16
-	vbox.add_theme_constant_override("separation", 16)
+	vbox.add_theme_constant_override("separation", 12)
 	sub_view.add_child(vbox)
 
 	_skills_header_label = Label.new()
@@ -758,7 +786,7 @@ func _build_skills_subview() -> void:
 	vbox.add_child(_skills_header_label)
 
 	var hint := Label.new()
-	hint.text = "Tap or drag a skill into a slot."
+	hint.text = "Tap a skill to inspect. Drag onto a slot or use the equip button."
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_font_size_override("font_size", 13)
 	hint.add_theme_color_override("font_color", Color(0.55, 0.6, 0.7, 1.0))
@@ -777,20 +805,81 @@ func _build_skills_subview() -> void:
 		equipped_row.add_child(slot)
 		_skills_equipped_slots.append(slot)
 
-	_add_section_label(vbox, "AVAILABLE")
+	# Body: tile grid LEFT, inspector RIGHT.
+	var body := HBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 16)
+	vbox.add_child(body)
+
+	# LEFT: scrollable VBox with AVAILABLE + LOCKED grids.
+	var grid_scroll := ScrollContainer.new()
+	grid_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(grid_scroll)
+	var grid_vbox := VBoxContainer.new()
+	grid_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid_vbox.add_theme_constant_override("separation", 12)
+	grid_scroll.add_child(grid_vbox)
+	_add_section_label(grid_vbox, "AVAILABLE")
 	_skills_available_grid = HFlowContainer.new()
 	_skills_available_grid.alignment = HFlowContainer.ALIGNMENT_CENTER
 	_skills_available_grid.add_theme_constant_override("h_separation", 12)
 	_skills_available_grid.add_theme_constant_override("v_separation", 12)
-	vbox.add_child(_skills_available_grid)
-
-	_add_section_label(vbox, "LOCKED")
+	grid_vbox.add_child(_skills_available_grid)
+	_add_section_label(grid_vbox, "LOCKED")
 	_skills_locked_grid = HFlowContainer.new()
 	_skills_locked_grid.alignment = HFlowContainer.ALIGNMENT_CENTER
 	_skills_locked_grid.add_theme_constant_override("h_separation", 12)
 	_skills_locked_grid.add_theme_constant_override("v_separation", 12)
-	vbox.add_child(_skills_locked_grid)
+	grid_vbox.add_child(_skills_locked_grid)
 
+	# RIGHT: inspector panel — fixed 540 wide. Filled lazily by _refresh_inspector
+	# based on _selected_skill_id; until then renders a placeholder hint.
+	_skills_inspector_panel = VBoxContainer.new()
+	_skills_inspector_panel.custom_minimum_size = Vector2(540, 0)
+	_skills_inspector_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_skills_inspector_panel.add_theme_constant_override("separation", 6)
+	body.add_child(_skills_inspector_panel)
+
+	_connect_skills_signals()
+	_refresh_skills_subview()
+
+
+# Connect / disconnect EventBus refresh hooks. Connection state is tracked
+# so rebuilding the sub-view doesn't stack identical connections (would
+# fire _refresh_skills_subview multiple times per signal).
+func _connect_skills_signals() -> void:
+	if _skills_signals_connected:
+		return
+	_skills_signals_connected = true
+	# Rank purchase / mod choice / equip swap → re-render tiles + inspector
+	# so the "current rank" dots, mod chip, effective numbers stay live.
+	EventBus.hero_node_purchased.connect(_on_skills_state_changed)
+	EventBus.hero_skill_mod_chosen.connect(_on_skills_state_changed)
+	EventBus.hero_skill_equipped.connect(_on_skills_state_changed)
+	EventBus.hero_leveled_up.connect(_on_skills_state_changed)
+
+
+func _disconnect_skills_signals() -> void:
+	if not _skills_signals_connected:
+		return
+	_skills_signals_connected = false
+	if EventBus.hero_node_purchased.is_connected(_on_skills_state_changed):
+		EventBus.hero_node_purchased.disconnect(_on_skills_state_changed)
+	if EventBus.hero_skill_mod_chosen.is_connected(_on_skills_state_changed):
+		EventBus.hero_skill_mod_chosen.disconnect(_on_skills_state_changed)
+	if EventBus.hero_skill_equipped.is_connected(_on_skills_state_changed):
+		EventBus.hero_skill_equipped.disconnect(_on_skills_state_changed)
+	if EventBus.hero_leveled_up.is_connected(_on_skills_state_changed):
+		EventBus.hero_leveled_up.disconnect(_on_skills_state_changed)
+
+
+# All four EventBus payloads collapse to the same UI refresh — varargs swallow
+# whichever shape Godot delivers.
+func _on_skills_state_changed(_a = null, _b = null, _c = null) -> void:
+	if _skills_header_label == null:
+		return
 	_refresh_skills_subview()
 
 
@@ -824,7 +913,8 @@ func _refresh_skills_subview() -> void:
 	var unlocked: Array[String] = LoadoutState.get_unlocked_skill_ids(hid)
 	for sid in unlocked:
 		var tile := _SkillTile.new()
-		tile.setup(sid, _skill_name(hero_data, sid), false)
+		var srank: int = MetaProgression.get_purchased_skill_rank(hid, sid)
+		tile.setup(sid, _skill_name(hero_data, sid), false, srank, self)
 		_skills_available_grid.add_child(tile)
 
 	# Locked — skills not yet unlocked by level.
@@ -837,8 +927,328 @@ func _refresh_skills_subview() -> void:
 		if lr <= lvl:
 			continue
 		var tile := _SkillTile.new()
-		tile.setup(String(skill.skill_id), "??? Lv %d" % lr, true)
+		var lrank: int = MetaProgression.get_purchased_skill_rank(hid, String(skill.skill_id))
+		tile.setup(String(skill.skill_id), "??? Lv %d" % lr, true, lrank, self)
 		_skills_locked_grid.add_child(tile)
+
+	# Phase 3R-followup — refresh selection outline + inspector contents.
+	# Drop a stale _selected_skill_id that no longer belongs to this hero
+	# (e.g. hero switched in sidebar while a tile was selected).
+	if _selected_skill_id != "" and not _hero_owns_skill(hero_data, _selected_skill_id):
+		_selected_skill_id = ""
+	_refresh_skill_tile_selection()
+	_refresh_inspector()
+
+
+# True if the hero's authored skills array contains the given skill_id.
+func _hero_owns_skill(hero_data: Resource, skill_id: String) -> bool:
+	if hero_data == null or not ("skills" in hero_data):
+		return false
+	for skill in hero_data.skills:
+		if skill != null and String(skill.skill_id) == skill_id:
+			return true
+	return false
+
+
+# Called by _SkillTile on a tap (no drag). Selects the tile so the inspector
+# shows its full effective specs; tapping the same tile a second time
+# deselects (and the inspector returns to its placeholder).
+func _on_skill_tile_selected(skill_id: String) -> void:
+	if skill_id == _selected_skill_id:
+		_selected_skill_id = ""
+	else:
+		_selected_skill_id = skill_id
+	_refresh_skill_tile_selection()
+	_refresh_inspector()
+
+
+# Walk all tiles in both grids and update their selected outline so a fresh
+# selection visually clears the prior highlight.
+func _refresh_skill_tile_selection() -> void:
+	for grid in [_skills_available_grid, _skills_locked_grid]:
+		if grid == null:
+			continue
+		for child in grid.get_children():
+			if child is _SkillTile:
+				child.set_selected(child._skill_id == _selected_skill_id and _selected_skill_id != "")
+
+
+# Populate the inspector panel based on _selected_skill_id. Re-runs on every
+# refresh trigger so live changes (rank up, mod swap, equip) reflect.
+func _refresh_inspector() -> void:
+	if _skills_inspector_panel == null:
+		return
+	for child in _skills_inspector_panel.get_children():
+		child.queue_free()
+	var hid: String = LoadoutState.selected_hero_id
+	var hero_data: Resource = ContentRegistry.find_hero(hid)
+	if hero_data == null:
+		return
+	if _selected_skill_id == "":
+		var placeholder := Label.new()
+		placeholder.text = "Tap a skill on the left to inspect."
+		placeholder.add_theme_font_size_override("font_size", 14)
+		placeholder.add_theme_color_override("font_color", Color(0.55, 0.62, 0.74))
+		placeholder.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_skills_inspector_panel.add_child(placeholder)
+		return
+	var skill: Resource = null
+	for s in hero_data.skills:
+		if s != null and String(s.skill_id) == _selected_skill_id:
+			skill = s
+			break
+	if skill == null:
+		return
+	_inspector_show(skill, hid, hero_data)
+
+
+# Build the inspector content for a single skill. Layout (top→bottom):
+#   • Title row: skill name + rank dots
+#   • Badges row: damage_type + target_type + level_required gate (if not met)
+#   • Stat rows: Damage / Cooldown / Range / AoE (when present)
+#   • Rank progression block: what each purchased / next rank does
+#   • Mod chip + brief description (when chosen)
+#   • Description prose
+#   • Equip buttons (one per slot, disabled if locked)
+func _inspector_show(skill: Resource, hid: String, _hero_data: Resource) -> void:
+	var skill_id: String = String(skill.skill_id)
+	var hero_level: int = MetaProgression.get_hero_level(hid)
+	var rank: int = MetaProgression.get_purchased_skill_rank(hid, skill_id)
+	var lvl_req: int = int(skill.level_required) if "level_required" in skill else 1
+	var locked: bool = hero_level < lvl_req
+	# Title row: name (bold) + rank dots
+	var title := HBoxContainer.new()
+	title.add_theme_constant_override("separation", 12)
+	_skills_inspector_panel.add_child(title)
+	var name_lbl := Label.new()
+	name_lbl.text = String(skill.skill_name)
+	name_lbl.add_theme_font_size_override("font_size", 22)
+	name_lbl.add_theme_color_override("font_color", Color(0.95, 1.0, 0.85))
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_child(name_lbl)
+	var rank_lbl := Label.new()
+	rank_lbl.text = _rank_dots_text(rank)
+	rank_lbl.add_theme_font_size_override("font_size", 18)
+	rank_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	title.add_child(rank_lbl)
+	# Badges row: damage_type · target_type · (Lv gate if locked)
+	var badge_strs: PackedStringArray = []
+	if "damage_type" in skill:
+		badge_strs.append("Magic" if int(skill.damage_type) == 1 else "Physical")
+	if "target_type" in skill:
+		match int(skill.target_type):
+			0: badge_strs.append("SINGLE")
+			1: badge_strs.append("AREA")
+			2: badge_strs.append("SELF")
+	if locked:
+		badge_strs.append("Lv %d to unlock" % lvl_req)
+	var badges := Label.new()
+	badges.text = "  ·  ".join(badge_strs)
+	badges.add_theme_font_size_override("font_size", 13)
+	badges.add_theme_color_override("font_color", Color(0.65, 0.75, 0.90) if not locked else Color(0.85, 0.55, 0.55))
+	_skills_inspector_panel.add_child(badges)
+	# Effective stats — computed via the same ctx merge BaseHero.cast_skill uses.
+	var ctx: Dictionary = skill.get_effective_scaling(rank)
+	var mod_id: String = LoadoutState.get_chosen_mod(hid, skill_id)
+	var mod: Resource = LoadoutState.find_skill_mod(hid, mod_id) if mod_id != "" else null
+	if mod != null and "scaling" in mod:
+		for k in mod.scaling:
+			if String(k).ends_with("_mult"):
+				ctx[k] = float(ctx.get(k, 1.0)) * float(mod.scaling[k])
+			else:
+				ctx[k] = mod.scaling[k]
+	# Hero skill_power + CDR — read from the simulated full-stats dict so
+	# items + passives + capstones all fold in (matches BaseHero._build_skill_ctx
+	# behavior end-to-end).
+	var full_stats: Dictionary = _compute_effective_stats_for(hid)
+	var sp: float = float(full_stats.get("skill_power", 1.0))
+	if not is_equal_approx(sp, 1.0):
+		ctx["damage_mult"] = float(ctx.get("damage_mult", 1.0)) * sp
+	var cdr: float = clampf(float(full_stats.get("cooldown_reduction", 0.0)), 0.0, 0.5)
+	# Spacer.
+	var spacer1 := Control.new()
+	spacer1.custom_minimum_size = Vector2(0, 4)
+	_skills_inspector_panel.add_child(spacer1)
+	# Stat rows — keys/labels conditional on the skill class having that field.
+	var base_dmg: float = float(skill.damage) if "damage" in skill else 0.0
+	if base_dmg > 0.0:
+		var eff_dmg: float = base_dmg * float(ctx.get("damage_mult", 1.0))
+		_inspector_add_stat_row("Damage", "%.1f" % eff_dmg, "×%.2f" % float(ctx.get("damage_mult", 1.0)))
+	var base_cd: float = float(skill.cooldown) if "cooldown" in skill else 0.0
+	if base_cd > 0.0:
+		var cd_mult: float = float(ctx.get("cooldown_mult", 1.0))
+		var eff_cd: float = base_cd * cd_mult * (1.0 - cdr)
+		var cd_note: String = "×%.2f" % cd_mult
+		if cdr > 0.0:
+			cd_note += "  -%d%% CDR" % int(round(cdr * 100.0))
+		_inspector_add_stat_row("Cooldown", "%.1fs" % eff_cd, cd_note)
+	var base_rng: float = float(skill.skill_range) if "skill_range" in skill else 0.0
+	if base_rng > 0.0:
+		var rng_mult: float = float(ctx.get("range_mult", 1.0))
+		_inspector_add_stat_row("Range", "%d" % int(round(base_rng * rng_mult)), "×%.2f" % rng_mult)
+	if "aoe_radius" in skill and float(skill.aoe_radius) > 0.0:
+		var aoe_mult: float = float(ctx.get("aoe_radius_mult", 1.0))
+		var eff_aoe: float = float(skill.aoe_radius) * aoe_mult
+		_inspector_add_stat_row("AoE", "%d" % int(round(eff_aoe)), "×%.2f" % aoe_mult)
+	# Mod chip — visible only when a mod is owned + chosen for this skill.
+	if mod != null:
+		var spacer2 := Control.new()
+		spacer2.custom_minimum_size = Vector2(0, 4)
+		_skills_inspector_panel.add_child(spacer2)
+		var mod_row := HBoxContainer.new()
+		mod_row.add_theme_constant_override("separation", 8)
+		_skills_inspector_panel.add_child(mod_row)
+		var mod_lbl := Label.new()
+		mod_lbl.text = "Mod"
+		mod_lbl.add_theme_font_size_override("font_size", 13)
+		mod_lbl.add_theme_color_override("font_color", Color(0.55, 0.62, 0.74))
+		mod_lbl.custom_minimum_size = Vector2(80, 0)
+		mod_row.add_child(mod_lbl)
+		var mod_name := Label.new()
+		var mname: String = String(mod.mod_name) if "mod_name" in mod else String(mod.mod_id)
+		mod_name.text = "◉ %s" % mname
+		mod_name.add_theme_font_size_override("font_size", 14)
+		mod_name.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+		mod_row.add_child(mod_name)
+		if "description" in mod and String(mod.description) != "":
+			var mod_desc := Label.new()
+			mod_desc.text = String(mod.description)
+			mod_desc.add_theme_font_size_override("font_size", 12)
+			mod_desc.add_theme_color_override("font_color", Color(0.78, 0.82, 0.90))
+			mod_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_skills_inspector_panel.add_child(mod_desc)
+	# Description prose (word-wrapped in the 540-px column).
+	if "description" in skill and String(skill.description) != "":
+		var spacer3 := Control.new()
+		spacer3.custom_minimum_size = Vector2(0, 6)
+		_skills_inspector_panel.add_child(spacer3)
+		var desc := Label.new()
+		desc.text = String(skill.description)
+		desc.add_theme_font_size_override("font_size", 13)
+		desc.add_theme_color_override("font_color", Color(0.85, 0.90, 1.0))
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_skills_inspector_panel.add_child(desc)
+	# Equip buttons — one per active slot. Disabled if locked or already in
+	# that slot. Click commits via the same path drag-and-drop uses, then
+	# pushes the hub state save so quitting preserves the choice.
+	var spacer4 := Control.new()
+	spacer4.custom_minimum_size = Vector2(0, 10)
+	_skills_inspector_panel.add_child(spacer4)
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 8)
+	_skills_inspector_panel.add_child(btn_row)
+	var equipped: Array[String] = LoadoutState.get_equipped_skills(hid)
+	var cap: int = LoadoutState.get_active_slot_cap(hid)
+	for slot_idx in cap:
+		var btn := Button.new()
+		var already_here: bool = (slot_idx < equipped.size() and equipped[slot_idx] == skill_id)
+		if already_here:
+			btn.text = "✓ slot %d" % (slot_idx + 1)
+			btn.disabled = true
+		elif locked:
+			btn.text = "slot %d  (Lv %d)" % [slot_idx + 1, lvl_req]
+			btn.disabled = true
+		else:
+			btn.text = "→ slot %d" % (slot_idx + 1)
+		btn.pressed.connect(_on_inspector_equip.bind(slot_idx, skill_id))
+		btn_row.add_child(btn)
+
+
+func _inspector_add_stat_row(label: String, value: String, note: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	_skills_inspector_panel.add_child(row)
+	var name_lbl := Label.new()
+	name_lbl.text = label
+	name_lbl.add_theme_font_size_override("font_size", 13)
+	name_lbl.add_theme_color_override("font_color", Color(0.55, 0.62, 0.74))
+	name_lbl.custom_minimum_size = Vector2(80, 0)
+	row.add_child(name_lbl)
+	var val_lbl := Label.new()
+	val_lbl.text = value
+	val_lbl.add_theme_font_size_override("font_size", 16)
+	val_lbl.add_theme_color_override("font_color", Color(0.95, 0.98, 1.0))
+	val_lbl.custom_minimum_size = Vector2(120, 0)
+	row.add_child(val_lbl)
+	var note_lbl := Label.new()
+	note_lbl.text = note
+	note_lbl.add_theme_font_size_override("font_size", 12)
+	note_lbl.add_theme_color_override("font_color", Color(0.62, 0.68, 0.78))
+	row.add_child(note_lbl)
+
+
+func _on_inspector_equip(slot_idx: int, skill_id: String) -> void:
+	# Defense in depth — re-validate locked state since the button could have
+	# been re-enabled by a level-up between bind and click.
+	var hid: String = LoadoutState.selected_hero_id
+	if hid == "" or skill_id == "":
+		return
+	if not (skill_id in LoadoutState.get_unlocked_skill_ids(hid)):
+		return
+	LoadoutState.set_equipped_skill(hid, slot_idx, skill_id)
+	SaveManager.save_game()
+	# EventBus.hero_skill_equipped fires from set_equipped_skill →
+	# _on_skills_state_changed → _refresh_skills_subview; no manual call needed.
+
+
+# Rank-dot string for the title row. Empty rank renders three dim dots so
+# the row stays the same width across heroes.
+func _rank_dots_text(rank: int) -> String:
+	var out: String = ""
+	for i in 3:
+		out += "★" if i < rank else "☆"
+	return out
+
+
+# Simulated effective stats including items + equipped passives + capstones.
+# Mirrors BaseHero.compute_stats_for plus the tree-walk HeroTuning does in
+# its _compute_simulated_stats. Read-only, no instance allocation.
+func _compute_effective_stats_for(hid: String) -> Dictionary:
+	if hid == "":
+		return {}
+	var hero_data: Resource = ContentRegistry.find_hero(hid)
+	if hero_data == null:
+		return {}
+	var level: int = MetaProgression.get_hero_level(hid)
+	var base: Dictionary = BaseHero.compute_base_stats(hero_data, level)
+	var mods: Array = []
+	if has_node("/root/InventoryManager"):
+		for inst in InventoryManager.get_all_equipped(hid):
+			if inst == null:
+				continue
+			for ab in inst.build_runtime_abilities(ContentRegistry):
+				if ab != null:
+					mods.append(ab)
+	var tree: Resource = ContentRegistry.find_skill_tree(hid)
+	if tree != null:
+		# Equipped passives (mirrors BaseHero._apply_equipped_passives walk).
+		var equipped_passives: Array[String] = LoadoutState.get_equipped_passives(hid)
+		for passive_id in equipped_passives:
+			if passive_id == "":
+				continue
+			var rank: int = MetaProgression.get_purchased_passive_rank(hid, passive_id)
+			if rank <= 0:
+				continue
+			for node in tree.nodes_for_target(passive_id):
+				if node == null or not ("kind" in node):
+					continue
+				if int(node.kind) != _HeroSkillNodeDataScript.Kind.PASSIVE_RANK:
+					continue
+				if int(node.rank) > rank:
+					continue
+				if node.ability != null:
+					mods.append(node.ability)
+		# Capstones — purchased = active.
+		for node in tree.nodes:
+			if node == null or not ("kind" in node):
+				continue
+			if int(node.kind) != _HeroSkillNodeDataScript.Kind.CAPSTONE:
+				continue
+			if MetaProgression.get_purchased_rank(hid, String(node.node_id)) < int(node.rank):
+				continue
+			if node.ability != null:
+				mods.append(node.ability)
+	return BaseHero.apply_modifiers(base, mods)
 
 
 func _skill_name(hero_data: Resource, skill_id: String) -> String:
@@ -922,49 +1332,92 @@ class HallPortrait extends Control:
 
 class _SkillTile extends Control:
 	# Drag source — render as a clickable tile, return drag data when picked up.
+	# Phase 3R-followup — also: rank-dot row below the name, a gold "selected"
+	# outline driven by the hub's _selected_skill_id, and a tap-to-select
+	# release-event callback into the hub so the inspector picks up the choice.
 	const _SIZE: Vector2 = Vector2(180, 104)
 	const _BG_NORMAL: Color = Color(0.18, 0.24, 0.34, 1.0)
 	const _BG_LOCKED: Color = Color(0.10, 0.13, 0.18, 1.0)
 	const _BORDER: Color = Color(0.45, 0.50, 0.62, 1.0)
 	const _BORDER_LOCKED: Color = Color(0.30, 0.34, 0.42, 1.0)
+	const _BORDER_SELECTED: Color = Color(1.0, 0.85, 0.4, 1.0)
 	var _skill_id: String = ""
 	var _name: String = ""
 	var _locked: bool = false
+	var _rank: int = 0
+	var _selected: bool = false
+	var _hub: Node = null
 	func _init() -> void:
 		custom_minimum_size = _SIZE
+		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_default_cursor_shape = Control.CURSOR_DRAG
-	func setup(skill_id: String, display_name: String, locked: bool) -> void:
+	func setup(skill_id: String, display_name: String, locked: bool, rank: int = 0, hub: Node = null) -> void:
 		_skill_id = skill_id
 		_name = display_name
 		_locked = locked
-		mouse_default_cursor_shape = Control.CURSOR_FORBIDDEN if locked else Control.CURSOR_DRAG
+		_rank = rank
+		_hub = hub
+		mouse_default_cursor_shape = Control.CURSOR_FORBIDDEN if locked else Control.CURSOR_POINTING_HAND
+		queue_redraw()
+	func set_selected(v: bool) -> void:
+		if _selected == v:
+			return
+		_selected = v
 		queue_redraw()
 	func _get_drag_data(_at: Vector2) -> Variant:
 		if _locked or _skill_id == "":
 			return null
 		var preview := _SkillTile.new()
-		preview.setup(_skill_id, _name, false)
+		preview.setup(_skill_id, _name, false, _rank, null)
 		preview.size = _SIZE
 		preview.modulate = Color(1.0, 1.0, 1.0, 0.85)
 		set_drag_preview(preview)
 		return {"skill_id": _skill_id, "source": "available", "from_slot": -1}
+	func _gui_input(event: InputEvent) -> void:
+		# Tap (no drag) on a tile selects it for the inspector. Mirrors
+		# _SkillSlot's release-event idiom — Godot's drag system consumes
+		# release when drag fires, so a release reaching here means a clean
+		# tap. Locked tiles still select (inspector shows their specs +
+		# disabled equip buttons) so the player can plan ahead.
+		if event is InputEventScreenTouch:
+			if event.pressed:
+				return
+			if _skill_id != "" and _hub != null:
+				_hub._on_skill_tile_selected(_skill_id)
+				accept_event()
 	func _draw() -> void:
 		var rect := Rect2(Vector2.ZERO, size)
 		var bg: Color = _BG_LOCKED if _locked else _BG_NORMAL
-		var border: Color = _BORDER_LOCKED if _locked else _BORDER
+		var border: Color = _BORDER_SELECTED if _selected else (_BORDER_LOCKED if _locked else _BORDER)
+		var bw: float = 2.5 if _selected else 1.5
 		draw_rect(rect, bg, true)
-		draw_rect(rect, border, false, 1.5)
+		draw_rect(rect, border, false, bw)
 		var font: Font = get_theme_default_font()
 		if font == null:
 			return
 		var col: Color = Color(0.55, 0.6, 0.7, 1.0) if _locked else Color.WHITE
+		# Name (centered horizontally, slightly above center vertically so
+		# the rank dots fit below).
 		var label_size := font.get_string_size(_name, HORIZONTAL_ALIGNMENT_CENTER, -1.0, 16)
-		var pos := Vector2((size.x - label_size.x) * 0.5, size.y * 0.5 + 6.0)
-		draw_string(font, pos, _name, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 16, col)
+		var name_pos := Vector2((size.x - label_size.x) * 0.5, size.y * 0.5 - 2.0)
+		draw_string(font, name_pos, _name, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 16, col)
+		# Rank dots — skip on locked tiles (the lock label already steals
+		# the row). 0 dots renders three dim ☆ so the row stays the same
+		# height across un-purchased / partially-purchased / fully-purchased.
+		if not _locked:
+			var dots: String = ""
+			for i in 3:
+				dots += "★" if i < _rank else "☆"
+			var dot_size := font.get_string_size(dots, HORIZONTAL_ALIGNMENT_CENTER, -1.0, 14)
+			var dot_pos := Vector2((size.x - dot_size.x) * 0.5, size.y * 0.5 + 22.0)
+			draw_string(font, dot_pos, dots, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 14, Color(1.0, 0.85, 0.4))
 
 
 class _SkillSlot extends Control:
 	# Drop target. Tap (no drag) on a filled slot clears it.
+	# Phase 3R-followup — also renders the effective cooldown beneath the
+	# skill name when filled. Mirrors the inspector's cooldown math so the
+	# equipped row says exactly what the player will see in-level.
 	const _SIZE: Vector2 = Vector2(180, 104)
 	const _BG_EMPTY: Color = Color(0.10, 0.13, 0.18, 1.0)
 	const _BG_FILLED: Color = Color(0.20, 0.30, 0.46, 1.0)
@@ -973,6 +1426,8 @@ class _SkillSlot extends Control:
 	var _slot_idx: int = -1
 	var _skill_id: String = ""
 	var _name: String = ""
+	var _rank: int = 0
+	var _effective_cd: float = 0.0
 	var _hub: Node = null
 	func _init() -> void:
 		custom_minimum_size = _SIZE
@@ -984,10 +1439,29 @@ class _SkillSlot extends Control:
 	func set_skill(skill_id: String, hero_data: Resource) -> void:
 		_skill_id = skill_id
 		_name = ""
+		_rank = 0
+		_effective_cd = 0.0
 		if skill_id != "" and hero_data != null:
+			var hid: String = String(hero_data.hero_id)
+			_rank = MetaProgression.get_purchased_skill_rank(hid, skill_id)
 			for skill in hero_data.skills:
 				if skill != null and skill.skill_id == skill_id:
 					_name = String(skill.skill_name)
+					# Effective cooldown — same chain BaseHero._build_skill_ctx
+					# does so the picker and the in-level radial agree.
+					var ctx: Dictionary = skill.get_effective_scaling(_rank)
+					var mod_id: String = LoadoutState.get_chosen_mod(hid, skill_id)
+					var mod: Resource = LoadoutState.find_skill_mod(hid, mod_id) if mod_id != "" else null
+					if mod != null and "scaling" in mod:
+						for k in mod.scaling:
+							if String(k).ends_with("_mult"):
+								ctx[k] = float(ctx.get(k, 1.0)) * float(mod.scaling[k])
+					var base_cd: float = float(skill.cooldown) if "cooldown" in skill else 0.0
+					var cdr: float = 0.0
+					if _hub != null and _hub.has_method("_compute_effective_stats_for"):
+						var stats: Dictionary = _hub._compute_effective_stats_for(hid)
+						cdr = clampf(float(stats.get("cooldown_reduction", 0.0)), 0.0, 0.5)
+					_effective_cd = base_cd * float(ctx.get("cooldown_mult", 1.0)) * (1.0 - cdr)
 					break
 		queue_redraw()
 	func _get_drag_data(_at: Vector2) -> Variant:
@@ -1039,6 +1513,20 @@ class _SkillSlot extends Control:
 			return
 		var label: String = _name if filled else "+ Empty"
 		var col: Color = Color.WHITE if filled else Color(0.55, 0.6, 0.7, 1.0)
+		# Name — slightly above center to make room for the cooldown / dots row.
+		var name_y: float = size.y * 0.5 - 4.0 if filled else size.y * 0.5 + 6.0
 		var lbl_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_CENTER, -1.0, 16)
-		var pos := Vector2((size.x - lbl_size.x) * 0.5, size.y * 0.5 + 6.0)
+		var pos := Vector2((size.x - lbl_size.x) * 0.5, name_y)
 		draw_string(font, pos, label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 16, col)
+		if filled:
+			# Sub-row: rank dots on the left, effective cooldown on the right.
+			var dots: String = ""
+			for i in 3:
+				dots += "★" if i < _rank else "☆"
+			var sub_y: float = size.y * 0.5 + 20.0
+			draw_string(font, Vector2(12, sub_y), dots, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13, Color(1.0, 0.85, 0.4))
+			if _effective_cd > 0.0:
+				var cd_str: String = "%.1fs" % _effective_cd
+				var cd_size := font.get_string_size(cd_str, HORIZONTAL_ALIGNMENT_CENTER, -1.0, 13)
+				draw_string(font, Vector2(size.x - cd_size.x - 12, sub_y), cd_str,
+					HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13, Color(0.78, 0.88, 1.0))

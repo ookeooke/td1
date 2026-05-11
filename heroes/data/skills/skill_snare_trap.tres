@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ShieldBashSkillData" format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/shield_bash_skill_data.gd" id="1_bash"]
+
+[resource]
+script = ExtResource("1_bash")
+skill_name = "Snare Trap"
+skill_id = "snare_trap"
+skill_range = 280.0
+damage = 6.0
+damage_type = 0
+cooldown = 14.0
+target_type = 1
+aoe_radius = 95.0
+on_hit_slow_factor = 0.6
+on_hit_slow_duration = 4.0
+description = "Tap a spot to lay a snare — light damage and a 60% slow for 4s on every enemy in the radius. Utility over kill power."
+rank_scaling = [{"cooldown_mult": 0.85}]

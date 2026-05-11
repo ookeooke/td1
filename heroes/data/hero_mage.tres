@@ -1,16 +1,18 @@
-[gd_resource type="Resource" script_class="HeroData" load_steps=13 format=3 uid="uid://b1td1heromage"]
+[gd_resource type="Resource" script_class="HeroData" format=3]
 
-[ext_resource type="Script" uid="uid://dhkkla25ah1bs" path="res://heroes/HeroData.gd" id="1_data"]
+[ext_resource type="Script" path="res://heroes/HeroData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_fireball.tres" id="2_fireball"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_mana_shield.tres" id="4_shield"]
+[ext_resource type="Script" path="res://progression/TalentData.gd" id="5_talent"]
+[ext_resource type="Script" path="res://systems/abilities/RegenAbility.gd" id="6_regen"]
+[ext_resource type="Script" path="res://systems/abilities/LifestealAbility.gd" id="7_lifesteal"]
+[ext_resource type="Script" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="8_bonusdmg"]
+[ext_resource type="Resource" path="res://heroes/data/visual_mage.tres" id="9_vis"]
 [ext_resource type="Resource" path="res://items/bases/base_starter_sword.tres" id="10_s_sword"]
 [ext_resource type="Resource" path="res://items/bases/base_starter_tunic.tres" id="11_s_tunic"]
 [ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="12_s_charm"]
-[ext_resource type="Resource" path="res://heroes/data/skills/skill_fireball.tres" id="2_fireball"]
-[ext_resource type="Resource" uid="uid://bhbexkr1g636t" path="res://heroes/data/skills/skill_mana_shield.tres" id="4_shield"]
-[ext_resource type="Script" uid="uid://yklkyt4lmkcv" path="res://progression/TalentData.gd" id="5_talent"]
-[ext_resource type="Script" uid="uid://dttyqvth8occr" path="res://systems/abilities/RegenAbility.gd" id="6_regen"]
-[ext_resource type="Script" uid="uid://dlq0ex8y336kj" path="res://systems/abilities/LifestealAbility.gd" id="7_lifesteal"]
-[ext_resource type="Script" uid="uid://c7gd214j4vheq" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="8_bonusdmg"]
-[ext_resource type="Resource" uid="uid://3vv2r58lnaxo" path="res://heroes/data/visual_mage.tres" id="9_vis"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_frost_nova.tres" id="13_nova"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_meteor.tres" id="14_meteor"]
 
 [sub_resource type="Resource" id="MageRegen"]
 script = ExtResource("6_regen")
@@ -63,15 +65,15 @@ hero_id = "hero_mage"
 requires_unlock = true
 max_health = 40
 attack_damage = 4.0
-attack_range = 350.0
+attack_range = 240.0
 attack_speed = 0.8
 move_speed = 180.0
-armor = 0.05
-magic_resist = 0.3
+armor = 0.0
+magic_resist = 0.4
 damage_type = 1
 respawn_time = 35.0
 max_block_targets = 1
-skills = Array[Resource]([ExtResource("2_fireball"), ExtResource("4_shield")])
+skills = Array[Resource]([ExtResource("2_fireball"), ExtResource("4_shield"), ExtResource("13_nova"), ExtResource("14_meteor")])
 talents = Array[Resource]([SubResource("Talent_Meditation"), SubResource("Talent_Siphon"), SubResource("Talent_ArcanePower")])
 visual = ExtResource("9_vis")
 starter_items = Array[Resource]([ExtResource("10_s_sword"), ExtResource("11_s_tunic"), ExtResource("12_s_charm")])

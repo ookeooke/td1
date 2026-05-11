@@ -23,10 +23,19 @@ var _wave_list: Resource = null
 var _level: Node = null
 var _wave_index: int = -1
 var _active_spawners: int = 0
-var _alive_count: int = 0 # global counter, retained for backwards compat
 var _wave_active: bool = false # true while spawners running for current wave
 var _running: bool = false
 var _endless: bool = false
+# Monotonic session id — bumped on every start() / start_endless(). Each
+# _run_spawner coroutine captures the id at launch as `session_id` and bails
+# on resume if it no longer matches `_session_id`. Without this, a stale
+# spawner parked on `await create_timer().timeout` from a PRIOR run can wake
+# up AFTER PauseMenu's restart flow has already torn down (`stop()`) and
+# restarted (`start()` from the new Main scene), and clobber the fresh run's
+# state — most visibly by re-setting `_running = false` in the defensive
+# `is_instance_valid(_level/path)` branches, which is the bug that hid the
+# Send-Wave badge after Level 5 restart.
+var _session_id: int = 0
 # Per-wave alive counts and pending bounties. Enables overlap: wave N+1 can be
 # running while wave N's stragglers still die. Keys are 0-based wave indices.
 var _alive_per_wave: Dictionary = {} # wave_index → int
@@ -110,13 +119,16 @@ func start(wave_list: Resource, level: Node, early_call_window: float = 0.0,
 	if wave_list == null or wave_list.waves.is_empty():
 		push_error("[WaveManager] start: wave_list is empty or null")
 		return
+	# Bump session before any state clearing so stale spawners parked on
+	# await from the previous run bail on resume via the session_id guard.
+	_session_id += 1
 	_wave_list = wave_list
 	_level = level
 	_wave_index = -1
-	_alive_count = 0
 	_active_spawners = 0
 	_wave_active = false
 	_running = true
+	_endless = false
 	_endless_hp_scale = 1.0 # reset — campaign uses authored HP
 	_early_call_window = early_call_window
 	_default_gold_per_sec = early_call_gold_per_sec
@@ -124,6 +136,11 @@ func start(wave_list: Resource, level: Node, early_call_window: float = 0.0,
 	_pending_bounties.clear()
 	_pending_spawners_per_wave.clear()
 	_all_waves_launched = false
+	_current_spawn_window_sec = 0.0
+	_spawn_elapsed_game = 0.0
+	_pre_w1_pending = false
+	_pre_w1_pending_wave = null
+	_pre_w1_pending_path_ids = []
 	RunState.wave_number = 0
 	_begin_next_wave()
 
@@ -297,9 +314,10 @@ func _effective_early_call_window(target_wave_idx: int) -> float:
 
 
 func start_endless(level: Node) -> void:
+	# Bump session before any state clearing — same rationale as start().
+	_session_id += 1
 	_level = level
 	_wave_index = -1
-	_alive_count = 0
 	_active_spawners = 0
 	_wave_active = false
 	_endless = true
@@ -310,6 +328,11 @@ func start_endless(level: Node) -> void:
 	_pending_bounties.clear()
 	_pending_spawners_per_wave.clear()
 	_all_waves_launched = false
+	_current_spawn_window_sec = 0.0
+	_spawn_elapsed_game = 0.0
+	_pre_w1_pending = false
+	_pre_w1_pending_wave = null
+	_pre_w1_pending_path_ids = []
 	RunState.wave_number = 0
 	_begin_next_wave()
 
@@ -428,10 +451,11 @@ func _launch_wave(wave: Resource, path_ids: Array) -> void:
 	# spawn_idx is also captured here so per-emitter count overrides
 	# (BalanceOverrides.wave_overrides) can be applied inside _run_spawner.
 	for i in wave.spawns.size():
-		_run_spawner(wave.spawns[i], _wave_index, i)
+		_run_spawner(wave.spawns[i], _wave_index, i, _session_id)
 
 
-func _run_spawner(spawn: Resource, wave_idx_for_spawns: int, spawn_idx: int) -> void:
+func _run_spawner(spawn: Resource, wave_idx_for_spawns: int, spawn_idx: int,
+		session_id: int) -> void:
 	# Resolve override-aware start_delay (sentinel -1 = use authored).
 	# Mirrors the count override: identity in production via is_active().
 	var effective_delay: float = spawn.start_delay
@@ -442,6 +466,11 @@ func _run_spawner(spawn: Resource, wave_idx_for_spawns: int, spawn_idx: int) -> 
 		effective_delay = delay_ov
 	if effective_delay > 0.0:
 		await get_tree().create_timer(effective_delay).timeout
+	# Session guard — bail if this coroutine outlived its run (stop() →
+	# start() happened during the await). Without this, the writes below
+	# would corrupt the fresh run's state. See _session_id declaration.
+	if session_id != _session_id:
+		return
 	if not _running:
 		return
 	# Defensive: the level (and its Path2D children) may have been freed
@@ -449,8 +478,11 @@ func _run_spawner(spawn: Resource, wave_idx_for_spawns: int, spawn_idx: int) -> 
 	# menu. WaveManager is an autoload and survives, but its cached _level
 	# pointer becomes a freed reference. Use is_instance_valid here, not
 	# `!= null`, because Godot 4 doesn't auto-null vars to freed objects.
+	# We do NOT clear _running here — the session guard above already
+	# rejected stale-coroutine resumes; if we're past that gate and _level
+	# is freed mid-current-run, the bookkeeping unwind happens via stop()
+	# from whoever triggered the scene change.
 	if not is_instance_valid(_level):
-		_running = false
 		_spawner_done(wave_idx_for_spawns)
 		return
 	var path: Path2D = _level.get_path_by_id(spawn.path_id)
@@ -487,14 +519,21 @@ func _run_spawner(spawn: Resource, wave_idx_for_spawns: int, spawn_idx: int) -> 
 	# enemies to the wave it was AUTHORED for, keeping per-wave alive counts
 	# accurate. (Was a soft-lock vector — see Phase 56b notes.)
 	for i in count:
+		# Session guard runs FIRST so a stale coroutine never touches
+		# `path` / `_level` / RunState belonging to a fresh run. Mirrors
+		# the post-start_delay guard above.
+		if session_id != _session_id:
+			return
 		if not _running:
 			break
 		# Same teardown race as above: the inter-spawn `await` below can
 		# survive a level free, leaving `path` (and `_level`) as freed
 		# references. Bail out before spawn_enemy crashes on the freed
 		# Path2D — abort the whole loop since further spawns are pointless.
+		# We do NOT clear _running here (the session guard already caught
+		# the stale-coroutine case; a mid-current-run level-free is handled
+		# by whoever triggered the scene change calling stop()).
 		if not is_instance_valid(path) or not is_instance_valid(_level):
-			_running = false
 			break
 		spawn_enemy(path, spawn.path_id, spawn.enemy_scene, wave_idx_for_spawns)
 		if i < count - 1:
@@ -651,7 +690,6 @@ func get_next_wave_path_ids() -> Array:
 
 
 func _on_enemy_spawned(enemy: Node, _path_id: String) -> void:
-	_alive_count += 1
 	# Per-wave count uses the wave_index meta tagged at spawn time. Default
 	# to current _wave_index for ad-hoc spawns (Test Range, debug commands).
 	var wi: int = enemy.get_meta("wave_index", _wave_index) if enemy != null else _wave_index
@@ -682,7 +720,6 @@ func _count_enemy_exit(enemy: Node) -> void:
 	if enemy.get_meta("_wave_counted_exit", false):
 		return
 	enemy.set_meta("_wave_counted_exit", true)
-	_alive_count = maxi(0, _alive_count - 1)
 	var wi: int = enemy.get_meta("wave_index", -1)
 	if wi < 0:
 		return # untracked spawn (Test Range, etc.) — no bounty owed

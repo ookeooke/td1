@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShieldBashSkillData" format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/shield_bash_skill_data.gd" id="1_bash"]
+
+[resource]
+script = ExtResource("1_bash")
+skill_name = "Volley"
+skill_id = "volley"
+skill_range = 320.0
+damage = 16.0
+damage_type = 0
+cooldown = 8.0
+target_type = 1
+aoe_radius = 110.0
+description = "Loose a volley of arrows at the tap point — physical damage in a wide arc. Strong vs flying enemies in the AoE."
+rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.2}]

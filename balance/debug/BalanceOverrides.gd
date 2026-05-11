@@ -448,6 +448,159 @@ static func reset_enemy_overrides() -> void:
 
 
 # ============================================================================
+# Per-hero overrides — keyed by hero_id. Stat keys mirror EnemyData/TowerData
+# mult/add convention:
+#   hp_mult / damage_mult / range_mult / speed_mult / attack_speed_mult → ×
+#   armor_add / mag_res_add                                             → +
+#
+# Read sites (BaseHero):
+#   compute_base_stats — max_health (× hp_mult), damage (× damage_mult),
+#                        armor (+ armor_add), magic_resist (+ mag_res_add),
+#                        attack_speed (× attack_speed_mult),
+#                        move_speed (× speed_mult),
+#                        attack_range (× range_mult)
+# ============================================================================
+
+const HERO_STAT_KEYS: Array[String] = [
+	"hp_mult", "damage_mult", "range_mult",
+	"speed_mult", "attack_speed_mult",
+	"armor_add", "mag_res_add",
+]
+
+
+static func _hero_default_for(stat: String) -> float:
+	if stat == "armor_add" or stat == "mag_res_add":
+		return 0.0
+	return 1.0
+
+
+static func _ensure_hero_dict() -> Dictionary:
+	_ensure_loaded()
+	if not _cached.has("hero_overrides"):
+		_cached["hero_overrides"] = {}
+	return _cached["hero_overrides"]
+
+
+# Multiplier-style read. Returns 1.0 for *_mult and 0.0 for *_add when no
+# override is active, so the call site is always safe to multiply / add.
+static func get_hero_mult(hero_id: String, stat: String) -> float:
+	if not is_active() or hero_id == "":
+		return _hero_default_for(stat)
+	_ensure_loaded()
+	var h: Dictionary = _cached.get("hero_overrides", {})
+	var per_hero: Dictionary = h.get(hero_id, {})
+	return float(per_hero.get(stat, _hero_default_for(stat)))
+
+
+static func set_hero_mult(hero_id: String, stat: String, value: float) -> void:
+	if not is_active() or hero_id == "":
+		return
+	if not (stat in HERO_STAT_KEYS):
+		push_warning("[BalanceOverrides] unknown hero stat: %s" % stat)
+		return
+	var h: Dictionary = _ensure_hero_dict()
+	if not h.has(hero_id):
+		h[hero_id] = {}
+	h[hero_id][stat] = value
+	_save()
+
+
+static func any_hero_active() -> bool:
+	if not is_active():
+		return false
+	_ensure_loaded()
+	var h: Dictionary = _cached.get("hero_overrides", {})
+	for hid in h.keys():
+		var per_hero: Dictionary = h[hid]
+		for stat in HERO_STAT_KEYS:
+			if absf(float(per_hero.get(stat, _hero_default_for(stat))) - _hero_default_for(stat)) > 0.0001:
+				return true
+	return false
+
+
+static func reset_hero_overrides() -> void:
+	if not is_active():
+		return
+	_ensure_loaded()
+	_cached["hero_overrides"] = {}
+	_save()
+
+
+# ============================================================================
+# Per-skill overrides — keyed by skill_id. Applied via the same ctx-merge
+# infrastructure heroes use for rank/mod scaling, so any subclass that
+# already reads damage_mult / aoe_radius_mult / cooldown_mult / count_mult /
+# duration_mult inherits the slider effect at runtime. range_mult reads
+# directly in BaseHero.get_skill_effective_range (used pre-cast for
+# targeting preview, not via ctx).
+#
+# Read sites:
+#   BaseHero._build_skill_ctx — merges damage/cooldown/aoe_radius/count/
+#                               duration multipliers into the cast ctx.
+#   BaseHero.get_skill_effective_range — applies range_mult before the
+#                                        SkillBar previews the cast circle.
+# Bake sites:
+#   HeroTuningScreen — writes back to SkillData.damage / cooldown /
+#                      skill_range / aoe_radius (when present) via
+#                      ResourceSaver.save.
+# ============================================================================
+
+const SKILL_STAT_KEYS: Array[String] = [
+	"damage_mult", "cooldown_mult", "range_mult", "aoe_radius_mult",
+]
+
+
+static func _ensure_skill_dict() -> Dictionary:
+	_ensure_loaded()
+	if not _cached.has("skill_overrides"):
+		_cached["skill_overrides"] = {}
+	return _cached["skill_overrides"]
+
+
+static func get_skill_mult(skill_id: String, stat: String) -> float:
+	if not is_active() or skill_id == "":
+		return 1.0
+	_ensure_loaded()
+	var s: Dictionary = _cached.get("skill_overrides", {})
+	var per_skill: Dictionary = s.get(skill_id, {})
+	return float(per_skill.get(stat, 1.0))
+
+
+static func set_skill_mult(skill_id: String, stat: String, value: float) -> void:
+	if not is_active() or skill_id == "":
+		return
+	if not (stat in SKILL_STAT_KEYS):
+		push_warning("[BalanceOverrides] unknown skill stat: %s" % stat)
+		return
+	var s: Dictionary = _ensure_skill_dict()
+	if not s.has(skill_id):
+		s[skill_id] = {}
+	s[skill_id][stat] = value
+	_save()
+
+
+static func any_skill_active() -> bool:
+	if not is_active():
+		return false
+	_ensure_loaded()
+	var s: Dictionary = _cached.get("skill_overrides", {})
+	for sid in s.keys():
+		var per_skill: Dictionary = s[sid]
+		for stat in SKILL_STAT_KEYS:
+			if absf(float(per_skill.get(stat, 1.0)) - 1.0) > 0.0001:
+				return true
+	return false
+
+
+static func reset_skill_overrides() -> void:
+	if not is_active():
+		return
+	_ensure_loaded()
+	_cached["skill_overrides"] = {}
+	_save()
+
+
+# ============================================================================
 # Per-wave-spawn count overrides — keyed by (level_id → wave_idx → spawn_idx).
 # Stored as multiplier vs the authored WaveSpawn.count. 1.0 = identity, 0.0 =
 # emitter disabled, 2.0 = doubled. Applied at runtime by WaveManager._run_spawner

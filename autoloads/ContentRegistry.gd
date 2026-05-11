@@ -32,6 +32,7 @@ const _TOWER_PATHS: Array[String] = [
 const _HERO_PATHS: Array[String] = [
 	"res://heroes/data/hero_warrior.tres",
 	"res://heroes/data/hero_mage.tres",
+	"res://heroes/data/hero_ranger.tres",
 ]
 
 # Phase 1 — per-hero skill trees (node-graph progression). Filename basename
@@ -39,49 +40,22 @@ const _HERO_PATHS: Array[String] = [
 const _SKILL_TREE_PATHS: Array[String] = [
 	"res://heroes/data/skill_trees/hero_warrior.tres",
 	"res://heroes/data/skill_trees/hero_mage.tres",
+	"res://heroes/data/skill_trees/hero_ranger.tres",
 ]
 
 # Phase 48 — loot system content. ItemBase templates back all dropped
 # ItemInstance runtime objects; AffixData templates are rolled into
 # instances at drop time; AffixPool groups affixes into pool_id buckets.
-const _ITEM_BASE_PATHS: Array[String] = [
-	"res://items/bases/base_starter_sword.tres",
-	"res://items/bases/base_starter_tunic.tres",
-	"res://items/bases/base_starter_charm.tres",
-	# Phase B rollable bases — MAGIC (iron_sword, chain_mail) + RARE (amulet)
-	"res://items/bases/base_iron_sword.tres",
-	"res://items/bases/base_chain_mail.tres",
-	"res://items/bases/base_amulet_wisdom.tres",
-	# Phase E2 — rarity spread across all 5 tiers
-	"res://items/bases/base_wooden_sword.tres",    # 0 COMMON
-	"res://items/bases/base_leather_cap.tres",     # 1 MAGIC
-	"res://items/bases/base_steel_sword.tres",     # 2 RARE
-	"res://items/bases/base_plate_armor.tres",     # 2 RARE
-	"res://items/bases/base_elven_blade.tres",     # 3 EPIC
-	"res://items/bases/base_demon_core.tres",      # 4 LEGENDARY
-]
-
-const _AFFIX_POOL_PATHS: Array[String] = [
-	"res://items/pools/pool_universal.tres",
-	"res://items/pools/pool_weapon_offensive.tres",
-	"res://items/pools/pool_armor_defensive.tres",
-]
-
-const _AFFIX_PATHS: Array[String] = [
-	# Flat-value affixes
-	"res://items/affixes/affix_damage_flat.tres",
-	"res://items/affixes/affix_lifesteal.tres",
-	"res://items/affixes/affix_on_hit_bonus.tres",
-	"res://items/affixes/affix_hp_flat.tres",
-	"res://items/affixes/affix_armor_flat.tres",
-	"res://items/affixes/affix_regen.tres",
-	# Phase E1 — percentage-based affixes (display_scale=100)
-	"res://items/affixes/affix_damage_pct.tres",
-	"res://items/affixes/affix_hp_pct.tres",
-	"res://items/affixes/affix_attack_speed_pct.tres",
-	"res://items/affixes/affix_move_speed_pct.tres",
-	"res://items/affixes/affix_xp_gain_pct.tres",
-]
+#
+# Phase 49 — directory-globbed (was a hand-maintained Array[String]). Drop
+# any new .tres into the matching folder and it loads on next boot — no
+# autoload edit. Filenames sort lexicographically for deterministic load
+# order across machines / file systems. Loaded via _load_catalog_dir below.
+# CORE RULE 16's load() vs preload() rationale still applies: every file is
+# load()'d inside _ready(), never preloaded at class-body scope.
+const _ITEM_BASE_DIR: String = "res://items/bases/"
+const _AFFIX_DIR: String = "res://items/affixes/"
+const _AFFIX_POOL_DIR: String = "res://items/pools/"
 
 var enemies: Array[Resource] = []
 var towers: Array[Resource] = []
@@ -106,9 +80,9 @@ func _ready() -> void:
 	towers = _load_catalog(_TOWER_PATHS, "towers")
 	heroes = _load_catalog(_HERO_PATHS, "heroes")
 	skill_trees = _load_catalog(_SKILL_TREE_PATHS, "skill_trees")
-	item_bases = _load_catalog(_ITEM_BASE_PATHS, "item_bases")
-	affixes = _load_catalog(_AFFIX_PATHS, "affixes")
-	affix_pools = _load_catalog(_AFFIX_POOL_PATHS, "affix_pools")
+	item_bases = _load_catalog_dir(_ITEM_BASE_DIR, "item_bases")
+	affixes = _load_catalog_dir(_AFFIX_DIR, "affixes")
+	affix_pools = _load_catalog_dir(_AFFIX_POOL_DIR, "affix_pools")
 	levels = _load_levels()
 	print("[ContentRegistry] loaded — %d enemies, %d towers, %d heroes, %d trees, %d item_bases, %d affixes, %d pools, %d levels" % [
 		enemies.size(), towers.size(), heroes.size(), skill_trees.size(),
@@ -143,6 +117,31 @@ func _load_levels() -> Array[Resource]:
 func _load_catalog(paths: Array[String], label: String) -> Array[Resource]:
 	var out: Array[Resource] = []
 	for p in paths:
+		var r: Resource = load(p)
+		if r == null:
+			push_error("[ContentRegistry] failed to load %s: %s" % [label, p])
+			continue
+		out.append(r)
+	return out
+
+
+# Directory-glob loader. Lists every .tres in `dir`, sorts filenames
+# lexicographically (deterministic across platforms), and loads each.
+# Skips .import / .uid sidecars implicitly via the suffix filter. Adding
+# a new authored file requires zero autoload edits.
+func _load_catalog_dir(dir: String, label: String) -> Array[Resource]:
+	var out: Array[Resource] = []
+	var d: DirAccess = DirAccess.open(dir)
+	if d == null:
+		push_error("[ContentRegistry] failed to open %s dir: %s" % [label, dir])
+		return out
+	var files: Array[String] = []
+	for f in d.get_files():
+		if f.ends_with(".tres"):
+			files.append(f)
+	files.sort()
+	for f in files:
+		var p: String = dir + f
 		var r: Resource = load(p)
 		if r == null:
 			push_error("[ContentRegistry] failed to load %s: %s" % [label, p])

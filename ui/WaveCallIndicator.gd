@@ -31,6 +31,18 @@ const ZONE_PAD: float = 8.0               # extra clearance around the badge
 
 const EDGE_MARGIN: float = 70.0           # screen-edge clamp
 
+# Tap-vs-drag classifier — must match GameCamera's TAP_MAX_DISTANCE /
+# TAP_MAX_DURATION so a touch that the camera reads as a pan also gets
+# rejected here. Without this, the badge's _input (Phase 1, runs BEFORE the
+# camera's gesture classifier in Phase 4) would fire on the press-down of
+# a pan, accidentally launching W1 the first time the player drags near
+# the spawn portal at level start. See SESSIONS.md ab8a317 for the
+# regression this guard fixes.
+const TAP_COMMIT_MAX_DISTANCE: float = 12.0
+# UI buttons should tolerate a slightly slower finger than map taps. Drag
+# distance is the important pan guard; this limit only rejects long holds.
+const TAP_COMMIT_MAX_DURATION: float = 0.75
+
 # Two badges with screen-space centers within this distance get merged into
 # one larger grouped badge. Keeps multi-path waves whose entrances cluster
 # (e.g. both at the left edge) from rendering as visually-redundant pairs.
@@ -63,6 +75,25 @@ var _draw_node: Control = null
 var _active_badges: Array = []
 var _state: int = State.HIDDEN
 
+# Pending touch — populated on press-down inside a badge, committed on
+# release if the touch stayed within TAP_COMMIT_MAX_DISTANCE for less than
+# TAP_COMMIT_MAX_DURATION. Cleared if the touch drifts (player is panning)
+# or releases outside any badge. Index keyed by InputEventScreenTouch.index
+# so a multi-touch pinch over a badge doesn't accidentally commit.
+#   index → { start_pos: Vector2, start_msec: int, badge_idx: int }
+var _pending_taps: Dictionary = {}
+
+# PRE_W1 two-step commit. First tap on a badge during pre-W1 grace arms;
+# second tap commits (launches W1). Any confirmed map-tap elsewhere
+# disarms via the EventBus.map_tap_confirmed hook. Clears automatically
+# when _refresh_state observes a non-PRE_W1 state (W1 launched, scene
+# change, game over).
+#
+# OVERLAP keeps single-tap commit — reaction-time decision, arming would
+# feel sluggish there. The arming gate sits in the PRE_W1 branch of the
+# release handler, in front of the call_early_wave() commit.
+var _armed_pre_w1: bool = false
+
 # Cached labels resolved each _process from WaveManager.
 var _bonus: int = 0
 var _seconds_left: float = 0.0
@@ -78,7 +109,7 @@ var _spawn_markers: Dictionary = {}
 
 # Debug: throttled diagnostic of the gate inputs. Toggle to true to log
 # the gate state once per second; off in production.
-const DEBUG_PRINT: bool = true
+const DEBUG_PRINT: bool = false
 var _last_debug_msec: int = 0
 
 
@@ -95,6 +126,13 @@ func _ready() -> void:
 		_draw_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_draw_node)
 	_draw_node.draw.connect(_on_draw)
+	# Tap-elsewhere disarm. GameCamera's gesture classifier dispatches this
+	# whenever a press classifies as a tap (vs pan/pinch). We use it as a
+	# side-effect-only hook to clear _armed_pre_w1 — never claim the tap,
+	# so the same dispatch keeps flowing through SpotInputManager / BaseHero
+	# / HeroInputManager for normal map-tap handling (hero moves, spot menu
+	# opens). When _armed_pre_w1 is false, this is effectively a no-op.
+	EventBus.map_tap_confirmed.connect(_on_map_tap_disarm)
 
 
 func _ensure_level() -> void:
@@ -176,12 +214,18 @@ func _refresh_state() -> void:
 			])
 	if not WaveManager.early_call_available():
 		_state = State.HIDDEN
+		_armed_pre_w1 = false
 		return
 	_ensure_level()
 	if _level == null:
 		_state = State.HIDDEN
+		_armed_pre_w1 = false
 		return
 	_state = State.PRE_W1 if WaveManager.is_pre_w1_pending() else State.OVERLAP_CALLABLE
+	# Leaving PRE_W1 (W1 launched, or jumped straight to OVERLAP) clears the
+	# armed state so a stale arming doesn't follow the player into mid-game.
+	if _state != State.PRE_W1:
+		_armed_pre_w1 = false
 	_bonus = WaveManager.current_early_call_bonus()
 	_seconds_left = WaveManager.countdown_remaining()
 	_window = WaveManager.countdown_total()
@@ -272,24 +316,101 @@ func _avoid_zone(pos: Vector2, rect: Rect2) -> Vector2:
 func _input(event: InputEvent) -> void:
 	# Touch-only handling. emulate_touch_from_mouse turns PC clicks into
 	# InputEventScreenTouch, so handling mouse as well would double-fire.
-	if _state == State.HIDDEN or _active_badges.is_empty():
-		return
-	if event is InputEventScreenTouch and event.pressed:
-		var p: Vector2 = (event as InputEventScreenTouch).position
-		for b in _active_badges:
-			var hit_r: float = TAP_RADIUS * (GROUPED_RADIUS_MULT if b.grouped else 1.0)
-			if (b.screen_pos as Vector2).distance_to(p) <= hit_r:
-				# Single-tap commit: any tap on a visible badge calls the
-				# next wave. No off-screen pan-first safety — the camera
-				# stays put, the badge does its job.
-				WaveManager.call_early_wave()
-				get_viewport().set_input_as_handled()
+	#
+	# Pan-cancel guard: press-down arms a pending tap; release commits only
+	# if the touch stayed within TAP_COMMIT_MAX_DISTANCE for less than
+	# TAP_COMMIT_MAX_DURATION. Mirrors GameCamera's tap classifier so a
+	# drag-from-near-the-badge reads as a pan everywhere in the pipeline,
+	# not "tap" here and "pan" downstream.
+	if event is InputEventScreenTouch:
+		var te := event as InputEventScreenTouch
+		if te.pressed:
+			if _state == State.HIDDEN or _active_badges.is_empty():
 				return
+			var badge_idx: int = _badge_index_at(te.position)
+			if badge_idx < 0:
+				return
+			_pending_taps[te.index] = {
+				"start_pos": te.position,
+				"start_msec": Time.get_ticks_msec(),
+				"badge_idx": badge_idx,
+			}
+			# Don't consume on press — let the camera also see the touch so
+			# its gesture classifier can claim it for a pan/pinch if the
+			# player drags away. We only consume on a successful commit.
+			return
+		# Release.
+		if not _pending_taps.has(te.index):
+			return
+		var rec: Dictionary = _pending_taps[te.index]
+		_pending_taps.erase(te.index)
+		if _state == State.HIDDEN or _active_badges.is_empty():
+			return
+		var moved: float = (rec.start_pos as Vector2).distance_to(te.position)
+		var elapsed: float = float(Time.get_ticks_msec() - int(rec.start_msec)) / 1000.0
+		if moved > TAP_COMMIT_MAX_DISTANCE or elapsed > TAP_COMMIT_MAX_DURATION:
+			return # player panned or held — not a tap
+		# Re-check the release position is still inside a badge. Badges
+		# can shift between press and release (camera pan in-flight).
+		if _badge_index_at(te.position) < 0:
+			return
+		# PRE_W1 two-step commit: first tap arms; second tap launches W1.
+		# A visible 80 px touch target should behave like a button — eat
+		# the release so the camera never dispatches map_tap_confirmed
+		# and the hero doesn't ALSO move on this tap. OVERLAP keeps
+		# single-tap; reaction-time decision, arming would feel sluggish.
+		if _state == State.PRE_W1 and not _armed_pre_w1:
+			_armed_pre_w1 = true
+			if DEBUG_PRINT:
+				print("[WaveCallIndicator] ARM (PRE_W1, tap at %s)" % te.position)
+			get_viewport().set_input_as_handled()
+			return
+		if DEBUG_PRINT:
+			print("[WaveCallIndicator] COMMIT call_early_wave (state=%d armed=%s tap=%s)" % [
+				_state, _armed_pre_w1, te.position,
+			])
+		WaveManager.call_early_wave()
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventScreenDrag:
+		var de := event as InputEventScreenDrag
+		if not _pending_taps.has(de.index):
+			return
+		var rec2: Dictionary = _pending_taps[de.index]
+		var moved2: float = (rec2.start_pos as Vector2).distance_to(de.position)
+		if moved2 > TAP_COMMIT_MAX_DISTANCE:
+			_pending_taps.erase(de.index)
+
+
+# Returns the index of the first _active_badges entry whose hit-circle
+# contains `pos`, or -1 if none. Honors the grouped-badge radius multiplier.
+func _badge_index_at(pos: Vector2) -> int:
+	for i in _active_badges.size():
+		var b: Dictionary = _active_badges[i]
+		var hit_r: float = TAP_RADIUS * (GROUPED_RADIUS_MULT if b.grouped else 1.0)
+		if (b.screen_pos as Vector2).distance_to(pos) <= hit_r:
+			return i
+	return -1
+
+
+# EventBus.map_tap_confirmed listener. Side-effect only: clears the
+# armed-pre-W1 state when the player taps anywhere on the map (= any
+# confirmed tap that wasn't on the badge, since a release inside the
+# badge consumes the event in _input before the camera can classify it).
+# Does NOT claim the tap — the dispatch continues to other listeners
+# (hero move, tower spot, etc.).
+func _on_map_tap_disarm(_screen_pos: Vector2, _claim: RefCounted) -> void:
+	if DEBUG_PRINT and _armed_pre_w1:
+		print("[WaveCallIndicator] disarm (map tap at %s)" % _screen_pos)
+	_armed_pre_w1 = false
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	# PC hotkey W mirrors a tap. Gated on early_call_available so it's a no-op
-	# when there's nothing to call.
+	# when there's nothing to call. NOTE: W deliberately bypasses the PRE_W1
+	# two-step arming gate that the tap path enforces — a keyboard keypress is
+	# unambiguous (no underlying map-tap competing for the input), so requiring
+	# a second press would feel sluggish without adding any safety.
 	if event is InputEventKey:
 		var ke := event as InputEventKey
 		if ke.pressed and not ke.echo and ke.keycode == KEY_W:
@@ -306,9 +427,13 @@ func _on_draw() -> void:
 	# Pulse phase shared across badges so multi-path levels read as one
 	# coordinated signal rather than competing rhythms.
 	var t: float = float(Time.get_ticks_msec()) / 1000.0
-	var period: float = 1.0 if _state == State.PRE_W1 else 0.55
+	# Armed PRE_W1 pulses faster (matches the "hot" OVERLAP rhythm) so the
+	# player can see the first tap registered.
+	var armed: bool = _armed_pre_w1 and _state == State.PRE_W1
+	var period: float = 0.55 if armed else (1.0 if _state == State.PRE_W1 else 0.55)
 	var pulse: float = 0.5 + 0.5 * sin(t * (TAU / period))    # 0..1
-	var alpha: float = lerp(0.78, 1.0, pulse)
+	# Brighter alpha floor when armed so the badge reads "primed."
+	var alpha: float = lerp(0.92, 1.0, pulse) if armed else lerp(0.78, 1.0, pulse)
 	for b in _active_badges:
 		var radius: float = BADGE_RADIUS * (GROUPED_RADIUS_MULT if b.grouped else 1.0)
 		_draw_badge(b.screen_pos, radius, alpha, pulse)
@@ -332,9 +457,17 @@ func _draw_badge(pos: Vector2, radius: float, alpha: float, pulse: float) -> voi
 		Color(FILL_COLOR.r, FILL_COLOR.g, FILL_COLOR.b, FILL_COLOR.a * alpha))
 	_draw_node.draw_arc(pos, radius, 0.0, TAU, 64,
 		Color(RIM_COLOR.r, RIM_COLOR.g, RIM_COLOR.b, alpha), RIM_THICKNESS, true)
+	# Armed halo — scaled-down mirror of the radial menu's +7 px golden ring
+	# (RadialActionButton.gd:140-143). +4 px outer ring, half-opaque, sits
+	# outside the gold rim so it reads "primed, tap again to commit."
+	if _armed_pre_w1 and _state == State.PRE_W1:
+		_draw_node.draw_arc(pos, radius + 4.0, 0.0, TAU, 64,
+			Color(1.0, 0.95, 0.55, 0.45 * alpha), 3.0, true)
 	# Glyph: PRE_W1 = play triangle (start). OVERLAP = double-chevron (advance).
 	if _state == State.PRE_W1:
-		_draw_play_glyph(pos, radius, GLYPH_PRE_W1, alpha)
+		# Armed glyph shifts toward white so the "primed" state is unambiguous.
+		var pre_glyph: Color = Color(1.0, 1.0, 0.95) if _armed_pre_w1 else GLYPH_PRE_W1
+		_draw_play_glyph(pos, radius, pre_glyph, alpha)
 	else:
 		_draw_chevron_glyph(pos, radius, GLYPH_OVERLAP, alpha, pulse)
 	# Bonus chip + seconds text (OVERLAP only).

@@ -360,6 +360,8 @@ func _status_apply_color(effect_id: String) -> Color:
 			return Color(0.55, 0.85, 1.00)
 		"stun":
 			return Color(1.00, 0.85, 0.30)
+		"marked":
+			return Color(1.00, 0.40, 0.20)
 	return Color(1.00, 1.00, 1.00)
 
 
@@ -404,6 +406,16 @@ func get_effective_armor() -> float:
 	if data.enemy_id != "":
 		a += BalanceOverrides.get_enemy_mult(data.enemy_id, "armor_add")
 	return clampf(a, 0.0, 0.95)
+
+
+# Phase 3L — Marked-status amplifier. Returns the damage_taken_mult of the
+# active "marked" status effect, or 1.0 if no mark is active. DamageCalculator
+# applies this AFTER armor / magic_resist so the mark amplifies post-mitigation
+# damage uniformly across damage types.
+func get_damage_taken_mult() -> float:
+	if _effects.has("marked"):
+		return float(_effects["marked"].damage_taken_mult)
+	return 1.0
 
 
 func get_effective_magic_resist() -> float:
@@ -619,12 +631,16 @@ func _draw() -> void:
 	if _effects.has("stun") and data != null and data.visual != null:
 		UnitVisualDrawer.draw_stun_stars(self, data.visual, _status_ring_t)
 
-	# 7. Status rings (existing): slow + stun overlays.
+	# 7. Status rings: slow + stun + marked overlays. Marked uses an outer
+	# orange-red ring with 4 segments to read distinct from the existing
+	# slow (8-seg blue) and stun (6-seg yellow). Phase 3L addition.
 	var ring_r: float = (data.visual.radius if data != null and data.visual != null else 35.0) + 12.0
 	if _effects.has("slow"):
 		UnitVisualDrawer.draw_status_ring(self, ring_r, Color(0.2, 0.7, 1.0), 8, _status_ring_t * 1.5, 5.0)
 	if _effects.has("stun"):
 		UnitVisualDrawer.draw_status_ring(self, ring_r + 10.0, Color(1.0, 0.95, 0.2), 6, -_status_ring_t * 2.0, 5.0)
+	if _effects.has("marked"):
+		UnitVisualDrawer.draw_status_ring(self, ring_r + 20.0, Color(1.0, 0.4, 0.2), 4, _status_ring_t * 1.0, 5.0)
 	_draw_attack_telegraph(ring_r)
 	_draw_health_bar()
 

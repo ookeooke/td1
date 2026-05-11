@@ -288,6 +288,11 @@ func _load_from_path(path: String) -> void:
 				MetaProgression.hero_progress[hero_id] = {
 					"level": int(entry_in.get("level", 1)),
 					"xp": int(entry_in.get("xp", 0)),
+					# Phase 3R-followup — catch-up cursor for the per-level
+					# point + slot-unlock grants. Missing key (pre-fix saves)
+					# defaults to 0; sync_hero_progression_to_level walks any
+					# untraversed levels on load.
+					"last_synced_level": int(entry_in.get("last_synced_level", 0)),
 				}
 	# Phase 1 — skill-tree progression. Both dicts default to empty so older
 	# saves load cleanly (the player has 0 points + no purchased nodes until
@@ -375,6 +380,26 @@ func _load_from_path(path: String) -> void:
 		next_uid = int(data.next_uid)
 	# InventoryManager owns the shape of its fields.
 	InventoryManager.from_save_dict(data)
+	# Phase 3R-followup — catch-up sync. After all hero state is loaded, walk
+	# every known hero and sync skill points + SLOT_UNLOCK nodes up to current
+	# level. Idempotent via last_synced_level cursor — heroes already current
+	# pass through with no grants. Critical for v4→v5 migrated heroes whose
+	# pre-v5 levels never fired the per-level grant hooks.
+	#
+	# Followup-2 — guard against double-granting points for saves made AFTER
+	# hero points were tracked but BEFORE last_synced_level existed. Heuristic:
+	# if hero_skill_points already has an entry for the hero (any value),
+	# points were already being credited per level-up — fast-forward the
+	# cursor to current_level so the sync below is a no-op for these saves.
+	# A pre-points-system save has no hero_skill_points entry → cursor stays
+	# at 0 → sync grants the full retroactive batch.
+	for hero_id in MetaProgression.hero_progress.keys():
+		var entry: Dictionary = MetaProgression.hero_progress[hero_id]
+		if int(entry.get("last_synced_level", 0)) == 0 \
+				and MetaProgression.hero_skill_points.has(hero_id):
+			entry["last_synced_level"] = int(entry.get("level", 1))
+	for hero_id in MetaProgression.hero_progress.keys():
+		MetaProgression.sync_hero_progression_to_level(String(hero_id))
 	print("[SaveManager] loaded save v%d — stars=%s upgrades=%d" % [
 		version, str(MetaProgression.level_stars), MetaProgression.purchased_upgrades.size(),
 	])

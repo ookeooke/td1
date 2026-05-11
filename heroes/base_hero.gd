@@ -139,6 +139,19 @@ var _skill_cooldowns: Array[float] = []
 # player can see the cast reach. Reset to 0 on cancel / cast.
 var _skill_range_preview: float = 0.0
 
+# Phase 49 — fractional regen accumulator. health_regen is rolled in HP/sec
+# (typically 1..3); _physics_process accumulates rate*delta and heals an int
+# step whenever the accumulator crosses 1.0. Fractional remainder rolls over
+# so a 0.7/sec roll still heals 1 HP every ~1.4s, not zero.
+var _health_regen_accum: float = 0.0
+# Phase 3R-followup — out-of-combat gate for regen. take_damage() resets to 0;
+# _tick_health_regen accumulates delta and only heals once this exceeds the
+# threshold. Prevents melee heroes from out-regenerating sustained damage,
+# which was making them feel too strong vs the design intent of "kite a
+# little to recover, soak hits if you have armor."
+const REGEN_OUT_OF_COMBAT_DELAY: float = 3.0
+var _seconds_since_damage: float = 999.0
+
 # Phase 48 — Base + Modifier Stack stat pipeline (Unreal GAS-style).
 # `base_stats` holds permanent values (seeded from HeroData + level growth +
 # account-wide upgrade multipliers). `_modifier_sources` is the live stack of
@@ -157,7 +170,11 @@ var _modifier_sources: Array = []
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
 const _HeroSkillNodeDataScript := preload("res://heroes/HeroSkillNodeData.gd")
+# Phase 3R-followup-3 — debug-only slider overrides. is_active() short-circuits
+# in release builds, so the multiplications below are identity at zero cost.
+const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
 var _ability_host: RefCounted = null
+var _death_tween: Tween = null
 
 @onready var attack_range_area: Area2D = $AttackRange
 @onready var attack_range_shape: CollisionShape2D = $AttackRange/CollisionShape2D
@@ -274,6 +291,18 @@ func _apply_equipped_passives() -> void:
 			if node.ability == null:
 				continue
 			_ability_host.add_ability(node.ability.duplicate())
+	# Phase 3K — CAPSTONES are always-on once purchased, no equip slot needed.
+	# Walk the tree, push every CAPSTONE node whose rank is purchased.
+	for node in tree.nodes:
+		if node == null or not ("kind" in node):
+			continue
+		if int(node.kind) != _HeroSkillNodeDataScript.Kind.CAPSTONE:
+			continue
+		if MetaProgression.get_purchased_rank(data.hero_id, String(node.node_id)) < int(node.rank):
+			continue
+		if node.ability == null:
+			continue
+		_ability_host.add_ability(node.ability.duplicate())
 
 
 func _resize_range_shapes() -> void:
@@ -335,16 +364,31 @@ static func compute_base_stats(hero_data: HeroData, level_arg: int) -> Dictionar
 		return {}
 	var hp_mult: float = 1.0 + float(level_arg - 1) * LEVEL_HEALTH_GROWTH
 	var dmg_mult: float = 1.0 + float(level_arg - 1) * LEVEL_DAMAGE_GROWTH
+	# Phase 3R-followup-3 — debug slider overrides. Identity in release builds
+	# (BalanceOverrides.get_hero_mult returns 1.0 / 0.0 when is_active is false).
+	var hid: String = String(hero_data.hero_id)
+	var bo_hp: float = _BalanceOverrides.get_hero_mult(hid, "hp_mult")
+	var bo_dmg: float = _BalanceOverrides.get_hero_mult(hid, "damage_mult")
+	var bo_rng: float = _BalanceOverrides.get_hero_mult(hid, "range_mult")
+	var bo_spd: float = _BalanceOverrides.get_hero_mult(hid, "speed_mult")
+	var bo_atk_spd: float = _BalanceOverrides.get_hero_mult(hid, "attack_speed_mult")
+	var bo_armor: float = _BalanceOverrides.get_hero_mult(hid, "armor_add")
+	var bo_mag: float = _BalanceOverrides.get_hero_mult(hid, "mag_res_add")
 	return {
-		"max_health": float(hero_data.max_health) * hp_mult,
-		"damage": hero_data.attack_damage * dmg_mult * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_HERO_DAMAGE),
-		"armor": hero_data.armor,
-		"magic_resist": hero_data.magic_resist,
-		"attack_speed": hero_data.attack_speed,
-		"move_speed": hero_data.move_speed,
-		"attack_range": hero_data.attack_range,
+		"max_health": float(hero_data.max_health) * hp_mult * bo_hp,
+		"damage": hero_data.attack_damage * dmg_mult * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_HERO_DAMAGE) * bo_dmg,
+		"armor": clampf(hero_data.armor + bo_armor, 0.0, 0.95),
+		"magic_resist": clampf(hero_data.magic_resist + bo_mag, 0.0, 0.95),
+		"attack_speed": hero_data.attack_speed * bo_atk_spd,
+		"move_speed": hero_data.move_speed * bo_spd,
+		"attack_range": hero_data.attack_range * bo_rng,
 		"xp_gain_mult": 1.0,
 		"skill_power": 1.0,
+		# Phase 49 — additive stats. Reflective apply_modifiers() picks up
+		# `<key>_flat` from each modifier source. Default 0.0 so unequipped
+		# heroes regen nothing and have no CDR.
+		"health_regen": 0.0,
+		"cooldown_reduction": 0.0,
 	}
 
 
@@ -445,13 +489,20 @@ func get_preview_range() -> float:
 func get_effective_armor() -> float:
 	if data == null:
 		return 0.0
-	return float(current_stats.get("armor", data.armor))
+	# Clamp at 0.95 to match BaseEnemy.get_effective_armor — without this cap,
+	# stacked flat + pct armor from gear/passives/capstones could reach 1.0
+	# (full immunity to physical damage). DamageCalculator does its own 0..1
+	# clamp; the 0.95 here keeps the *visible* hero stat capped too so the
+	# stats card shows the truthful number.
+	return clampf(float(current_stats.get("armor", data.armor)), 0.0, 0.95)
 
 
 func get_effective_magic_resist() -> float:
 	if data == null:
 		return 0.0
-	return float(current_stats.get("magic_resist", data.magic_resist))
+	# Same 0.95 cap as armor / enemy mitigation. Prevents Mystic Resilience
+	# stacked with future MR gear from making the hero magic-immune.
+	return clampf(float(current_stats.get("magic_resist", data.magic_resist)), 0.0, 0.95)
 
 
 func get_effective_move_speed() -> float:
@@ -470,6 +521,17 @@ func get_effective_xp_gain_mult() -> float:
 
 func get_effective_skill_power() -> float:
 	return float(current_stats.get("skill_power", 1.0))
+
+
+func get_effective_health_regen() -> float:
+	return float(current_stats.get("health_regen", 0.0))
+
+
+# Capped at 0.5 (50%) so the largest possible loadout can't drop a 5s
+# cooldown below 2.5s. Items roll additive 0.03..0.08; 6 sources × 0.08
+# would otherwise yield a free-cast build.
+func get_effective_cooldown_reduction() -> float:
+	return clampf(float(current_stats.get("cooldown_reduction", 0.0)), 0.0, 0.5)
 
 
 func get_level() -> int:
@@ -517,6 +579,31 @@ func _tick_skill_cooldowns(delta: float) -> void:
 				EventBus.skill_ready.emit(skill.skill_name)
 
 
+func _tick_health_regen(delta: float) -> void:
+	if data == null:
+		return
+	# Phase 3R-followup — track time since last damage AND gate regen on it.
+	# Tick the timer regardless (capped at a sane upper bound); skip healing
+	# while the hero is still in the recently-hit window.
+	_seconds_since_damage = minf(_seconds_since_damage + delta, 1e6)
+	if _seconds_since_damage < REGEN_OUT_OF_COMBAT_DELAY:
+		return
+	var rate: float = get_effective_health_regen()
+	if rate <= 0.0:
+		return
+	_health_regen_accum += rate * delta
+	if _health_regen_accum < 1.0:
+		return
+	var max_hp: int = _effective_max_health()
+	if current_health >= max_hp:
+		_health_regen_accum = 0.0
+		return
+	var heal_step: int = int(_health_regen_accum)
+	_health_regen_accum -= float(heal_step)
+	current_health = mini(max_hp, current_health + heal_step)
+	queue_redraw()
+
+
 func get_skill_data(idx: int) -> Resource:
 	if data == null or idx < 0 or idx >= data.skills.size():
 		return null
@@ -549,7 +636,11 @@ func get_skill_effective_cooldown(idx: int) -> float:
 	if data == null:
 		return float(skill.cooldown)
 	var ctx: Dictionary = _build_skill_ctx(skill)
-	return maxf(0.01, float(skill.cooldown) * float(ctx.get("cooldown_mult", 1.0)))
+	# Item-rolled cooldown reduction stacks on top of rank/mod scaling.
+	# Same chokepoint drives both the timer and the radial-overlay display,
+	# so they can't disagree.
+	var cdr: float = get_effective_cooldown_reduction()
+	return maxf(0.01, float(skill.cooldown) * float(ctx.get("cooldown_mult", 1.0)) * (1.0 - cdr))
 
 
 # Build the cast-time context dict for a skill: rank-scaling deltas + chosen
@@ -561,17 +652,39 @@ func _build_skill_ctx(skill: Resource) -> Dictionary:
 		return {}
 	var rank: int = MetaProgression.get_purchased_skill_rank(data.hero_id, String(skill.skill_id))
 	var ctx: Dictionary = skill.get_effective_scaling(rank)
+	# Mod merge runs only when a mod is actually chosen; skill_power fold-in
+	# runs unconditionally below so unmodded skills still benefit from gear /
+	# passives / capstone skill_power. (Earlier draft had a `return ctx` here
+	# that skipped the fold-in for unmodded skills — fixed.)
 	var chosen_mod_id: String = LoadoutState.get_chosen_mod(data.hero_id, String(skill.skill_id))
-	if chosen_mod_id == "":
-		return ctx
-	var mod: Resource = LoadoutState.find_skill_mod(data.hero_id, chosen_mod_id)
-	if mod == null or not ("scaling" in mod):
-		return ctx
-	for key in mod.scaling:
-		if String(key).ends_with("_mult"):
-			ctx[key] = float(ctx.get(key, 1.0)) * float(mod.scaling[key])
-		else:
-			ctx[key] = mod.scaling[key]
+	if chosen_mod_id != "":
+		var mod: Resource = LoadoutState.find_skill_mod(data.hero_id, chosen_mod_id)
+		if mod != null and "scaling" in mod:
+			for key in mod.scaling:
+				if String(key).ends_with("_mult"):
+					ctx[key] = float(ctx.get(key, 1.0)) * float(mod.scaling[key])
+				else:
+					ctx[key] = mod.scaling[key]
+	# Phase 3R-followup-2 — fold skill_power into damage_mult. Items / passives
+	# / Mage capstone author skill_power_pct on StatModifierAbility, which
+	# raises current_stats["skill_power"] above the 1.0 baseline. Every skill
+	# already reads damage_mult from ctx, so multiplying skill_power in here
+	# is the single chokepoint that turns "staff +20% skill power" into a
+	# real 20% boost to Fireball / Meteor / Frost Nova damage — regardless of
+	# whether a mod is selected.
+	var sp: float = get_effective_skill_power()
+	if not is_equal_approx(sp, 1.0):
+		ctx["damage_mult"] = float(ctx.get("damage_mult", 1.0)) * sp
+	# Phase 3R-followup-3 — debug slider overrides for per-skill stats. Each
+	# value is identity (1.0) in release builds via BalanceOverrides.is_active
+	# short-circuit, so the multiplications are free when not actively used.
+	# range_mult is excluded here — it's consumed pre-cast (targeting
+	# preview), not via ctx; see get_skill_effective_range.
+	var skill_id: String = String(skill.skill_id)
+	for k in ["damage_mult", "cooldown_mult", "aoe_radius_mult"]:
+		var sv: float = _BalanceOverrides.get_skill_mult(skill_id, k)
+		if not is_equal_approx(sv, 1.0):
+			ctx[k] = float(ctx.get(k, 1.0)) * sv
 	return ctx
 
 
@@ -592,9 +705,11 @@ func get_skill_effective_range(idx: int) -> float:
 	var skill: Resource = get_skill_data(idx)
 	if skill == null:
 		return 0.0
+	# Phase 3R-followup-3 — slider override (identity 1.0 in release).
+	var rng_mult: float = _BalanceOverrides.get_skill_mult(String(skill.skill_id), "range_mult")
 	if skill.skill_range > 0.0:
-		return skill.skill_range
-	return get_effective_attack_range()
+		return skill.skill_range * rng_mult
+	return get_effective_attack_range() * rng_mult
 
 
 func set_skill_range_preview(radius: float) -> void:
@@ -817,6 +932,7 @@ func _physics_process(delta: float) -> void:
 			_facing_dir = to_t.normalized()
 	_prev_pos = global_position
 	_tick_skill_cooldowns(delta)
+	_tick_health_regen(delta)
 	if _ability_host != null:
 		_ability_host.tick(delta)
 	match state:
@@ -1036,11 +1152,35 @@ func _attack_step(delta: float) -> void:
 	_start_lunge(enemy.global_position)
 	var dmg: float = _effective_damage()
 	var dying: bool = enemy.state == BaseEnemy.State.DYING
-	enemy.take_damage(dmg, data.damage_type, self)
+	# Phase 3R-followup-3 — Ranger-style projectile firing. When the hero's
+	# HeroData authors a projectile_scene, spawn an Arrow (or other Arrow.gd
+	# Shape) targeting the enemy. Damage lands when the projectile reaches
+	# the target (Arrow._on_hit calls take_damage). For melee heroes
+	# (projectile_scene == null), the original instant-hit path runs.
+	#
+	# ON_HIT_DEALT / ON_KILL triggers still fire here in the projectile path
+	# so lifesteal / on-hit passives behave consistently with melee — the
+	# arrow's travel time is short (~200ms at speed 1250 over 280px) so the
+	# desync is negligible. If a passive needs strict on-arrival semantics
+	# (e.g. an explosive-on-arrival item), Arrow would need to call back
+	# into the source's AbilityHost — deferred until that need exists.
+	if data.projectile_scene != null:
+		var parent: Node = get_tree().current_scene
+		if parent != null:
+			var proj: Node2D = data.projectile_scene.instantiate()
+			parent.add_child(proj)
+			proj.global_position = global_position
+			if proj.has_method("setup"):
+				proj.setup(enemy, dmg, data.damage_type, self)
+	else:
+		enemy.take_damage(dmg, data.damage_type, self)
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_DEALT, {"target": enemy, "amount": dmg})
 		# Kill is inferred by post-hit state transition. BaseEnemy enters
-		# DYING inside take_damage when HP drops to 0.
+		# DYING inside take_damage when HP drops to 0. For the projectile
+		# path the kill detection runs on arrow arrival; we'll miss the
+		# trigger here, but ON_KILL passives are rare and the projectile
+		# itself records the damage downstream.
 		if not dying and enemy.state == BaseEnemy.State.DYING:
 			_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_KILL, {"victim": enemy})
 
@@ -1061,6 +1201,10 @@ func take_damage(amount: float, type: int, source: Node = null) -> void:
 	var final: float = DamageCalculator.calculate_damage(amount, type, self)
 	current_health -= int(ceil(final))
 	if final > 0.0:
+		# Phase 3R-followup — reset the regen out-of-combat timer. Health
+		# regen pauses for REGEN_OUT_OF_COMBAT_DELAY seconds after every hit
+		# landed; the hero must disengage to start ticking HP back up.
+		_seconds_since_damage = 0.0
 		_hit_flash_t = HIT_FLASH_DURATION
 		# Hit-stop on both this hero and the source (universal action-game
 		# device — adds weight to every hit landed on the hero).
@@ -1111,12 +1255,14 @@ func _die() -> void:
 	# TWEEN_PAUSE_PROCESS so a death that triggers game_over still finishes
 	# the animation past the pause.
 	var drift_dir: float = 1.0 if randf() > 0.5 else -1.0
-	var tween: Tween = create_tween().set_parallel(true)
-	tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	tween.tween_property(self, "rotation", drift_dir * deg_to_rad(75.0), 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.tween_property(self, "position:y", position.y + 28.0, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tween.tween_property(self, "modulate:a", 0.0, 0.30).set_delay(0.10)
-	tween.chain().tween_callback(_on_death_drift_done)
+	if _death_tween != null and _death_tween.is_valid():
+		_death_tween.kill()
+	_death_tween = create_tween().set_parallel(true)
+	_death_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_death_tween.tween_property(self, "rotation", drift_dir * deg_to_rad(75.0), 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_death_tween.tween_property(self, "position:y", position.y + 28.0, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_death_tween.tween_property(self, "modulate:a", 0.0, 0.30).set_delay(0.10)
+	_death_tween.chain().tween_callback(_on_death_drift_done)
 	# Schedule respawn. HeroData.respawn_time (default 30s). Timer honors
 	# the paused SceneTree (process_always defaults to false), so tactical
 	# pause freezes the countdown — fair to the player.
@@ -1125,9 +1271,12 @@ func _die() -> void:
 
 
 func _on_death_drift_done() -> void:
+	if state != State.DEAD:
+		return
 	visible = false
 	rotation = 0.0
 	modulate.a = 1.0
+	_death_tween = null
 
 
 func _respawn() -> void:
@@ -1155,6 +1304,9 @@ func _respawn() -> void:
 	global_position = spawn_pos
 	_rally_position = spawn_pos
 	current_health = _effective_max_health()
+	if _death_tween != null and _death_tween.is_valid():
+		_death_tween.kill()
+		_death_tween = null
 	# Reset any leftover state from the death-drift tween in case respawn
 	# fires before the drift's 0.4s completion (short respawn_time edge case).
 	rotation = 0.0
@@ -1286,6 +1438,16 @@ func _draw() -> void:
 		var alpha: float = _move_marker_t * 0.85
 		draw_arc(local_target, radius, 0.0, TAU, 24,
 			Color(0.4, 1.0, 0.45, alpha), 2.0 * zs)
+	# Phase 3R-followup-3 — attack-range ring for ranged heroes. A faint
+	# always-on ring at get_effective_attack_range() so the player can read
+	# Mage (350) / Ranger (280) reach at a glance. Melee heroes (≤ ranged
+	# threshold) skip the ring — Knight at 75px doesn't need a visible
+	# circle around his swing. Cheap to draw (one arc) and queue_redraw
+	# already fires every frame for the hero in IDLE/COMBAT/MOVING.
+	var atk_r: float = get_effective_attack_range() if data != null else 0.0
+	if atk_r >= RANGED_ATTACK_RANGE_THRESHOLD:
+		draw_arc(Vector2.ZERO, atk_r, 0.0, TAU, 64,
+			Color(0.85, 0.92, 1.0, 0.22), 1.2 * zs)
 	# Skill targeting range circle (Phase 20) — drawn first.
 	if _skill_range_preview > 0.0:
 		draw_circle(Vector2.ZERO, _skill_range_preview, Color(1.0, 0.9, 0.3, 0.08))
@@ -1294,6 +1456,15 @@ func _draw() -> void:
 	# shadow can darken it slightly where they overlap.
 	if is_selected:
 		draw_arc(Vector2.ZERO, SELECTION_RING_RADIUS, 0, TAU, 32, Color(1.0, 0.95, 0.3, 0.85), 2.5 * zs)
+	# Phase 3N — buff aura. While any time-limited ability is active on the
+	# host (Hunter's Stance, Mana Shield, Bless self-cast), pulse a faint
+	# golden ring around the hero so the buff state is legible even when
+	# the player isn't watching the SkillBar cooldowns. Permanent passives
+	# / talents / capstones have duration = 0 and skip the aura.
+	if _ability_host != null and _ability_host.has_temp_buff():
+		var pulse: float = 0.7 + 0.3 * sin(_breath_t * 4.0)
+		draw_arc(Vector2.ZERO, SELECTION_RING_RADIUS - 8.0, 0, TAU, 24,
+			Color(1.0, 0.85, 0.35, 0.55 * pulse), 1.5 * zs)
 	# Ground shadow under the hero — anchored, doesn't bob with the body.
 	if data != null and data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
 		UnitVisualDrawer.draw_ground_shadow(self, data.visual)

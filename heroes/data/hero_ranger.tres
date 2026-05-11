@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="HeroData" format=3]
+
+[ext_resource type="Script" path="res://heroes/HeroData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_volley.tres" id="2_volley"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_snare_trap.tres" id="3_snare"]
+[ext_resource type="Resource" path="res://heroes/data/visual_ranger.tres" id="4_vis"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_sword.tres" id="5_s_sword"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_tunic.tres" id="6_s_tunic"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="7_s_charm"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_hunter_stance.tres" id="8_stance"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_marked_shot.tres" id="9_marked"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_falcon_storm.tres" id="10_falcon"]
+[ext_resource type="PackedScene" path="res://projectiles/Arrow.tscn" id="11_arrow"]
+
+[resource]
+script = ExtResource("1_data")
+hero_name = "Ranger"
+hero_id = "hero_ranger"
+requires_unlock = true
+power_tier = 2
+max_health = 50
+attack_damage = 1.0
+attack_range = 320.0
+engage_radius = 50.0
+attack_speed = 0.4
+move_speed = 250.0
+armor = 0.0
+respawn_time = 28.0
+max_block_targets = 1
+skills = Array[Resource]([ExtResource("2_volley"), ExtResource("3_snare"), ExtResource("8_stance"), ExtResource("9_marked"), ExtResource("10_falcon")])
+visual = ExtResource("4_vis")
+projectile_scene = ExtResource("11_arrow")
+starter_items = Array[Resource]([ExtResource("5_s_sword"), ExtResource("6_s_tunic"), ExtResource("7_s_charm")])
+encyclopedia_entry = "Ranged hunter. Multi-shot volleys clear groups; snares lock down ground enemies for the towers to finish. Light armor, fragile in melee — kite, don't tank."

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="FalconStormSkillData" format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/falcon_storm_skill_data.gd" id="1_falcon"]
+
+[resource]
+script = ExtResource("1_falcon")
+skill_name = "Falcon Storm"
+skill_id = "falcon_storm"
+skill_range = 360.0
+damage = 14.0
+damage_type = 0
+cooldown = 24.0
+target_type = 1
+level_required = 8
+aoe_radius = 130.0
+tick_count = 5
+tick_interval = 0.6
+description = "Summon a flock of falcons — 5 strikes over 3 seconds at the tap point. Physical damage per strike, scales fastest with rank-3 damage boost."
+rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.25, "count_mult": 1.2}]

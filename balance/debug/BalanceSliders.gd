@@ -67,6 +67,11 @@ var _emitter_editors: Dictionary = {}
 # and inserted into the same parent as %TowerSection. Keeping it out of the
 # .tscn lets the BalanceSliders scene stay editor-portable.
 var _enemy_section: VBoxContainer = null
+# Phase 3R-followup-3 — hero overrides section. Same pattern as enemies:
+# created programmatically, inserted below the tower section (or enemy
+# section). HeroData has flat stats (no tier complexity), so the structure
+# is simpler than towers.
+var _hero_section: VBoxContainer = null
 # Per-tower-tier value labels keyed by "tower_id|tier|stat" so refresh after
 # Reset can rewrite them in place without rebuilding the whole subtree.
 var _tower_value_labels: Dictionary = {}
@@ -128,6 +133,7 @@ func _ready() -> void:
 	_connect_sliders()
 	_build_tower_section()
 	_build_enemy_section()
+	_build_hero_section()
 	_build_level_section()
 	_refresh_readout()
 
@@ -382,6 +388,7 @@ func _do_reset() -> void:
 	_load_slider_values()
 	_build_tower_section()
 	_build_enemy_section()
+	_build_hero_section()
 	_build_level_section()
 	_refresh_readout()
 
@@ -455,6 +462,19 @@ const _ENEMY_STAT_DEFS: Array = [
 	{"key": "speed_mult",   "mode": "mult", "label": "Speed",  "prop": "move_speed"},
 	{"key": "damage_mult",  "mode": "mult", "label": "Damage", "prop": "attack_damage"},
 	{"key": "gold_mult",    "mode": "mult", "label": "Gold",   "prop": "gold_worth"},
+]
+
+# Phase 3R-followup-3 — per-hero stat overrides. Same shape as enemy defs:
+# key = override-dict key, mode = "mult" (×) or "add" (+), label = UI text,
+# prop = the HeroData field the bake writes back into.
+const _HERO_STAT_DEFS: Array = [
+	{"key": "hp_mult",            "mode": "mult", "label": "HP",         "prop": "max_health"},
+	{"key": "armor_add",          "mode": "add",  "label": "Armor",      "prop": "armor"},
+	{"key": "mag_res_add",        "mode": "add",  "label": "MagRes",     "prop": "magic_resist"},
+	{"key": "speed_mult",         "mode": "mult", "label": "MoveSpeed",  "prop": "move_speed"},
+	{"key": "attack_speed_mult",  "mode": "mult", "label": "AtkSpeed",   "prop": "attack_speed"},
+	{"key": "damage_mult",        "mode": "mult", "label": "Damage",     "prop": "attack_damage"},
+	{"key": "range_mult",         "mode": "mult", "label": "Range",      "prop": "attack_range"},
 ]
 
 
@@ -615,6 +635,160 @@ func _enemy_step_for(stat_key: String, authored: float) -> float:
 	return 1.0
 
 
+# ── Hero overrides section (Phase 3R-followup-3) ────────────────────────
+#
+# Mirrors the enemy section: one collapsible subgroup per hero, one slider
+# per stat in _HERO_STAT_DEFS. set_hero_mult / get_hero_mult persist to
+# user://debug_balance.json under the "hero_overrides" sub-dict; Bake walks
+# the deltas and writes them into the authored hero_*.tres via
+# ResourceSaver. Heroes have flat stats (no tier complexity), so the
+# structure is one slider per (hero × stat) — no nested tier loop.
+
+func _build_hero_section() -> void:
+	if _hero_section == null:
+		_hero_section = VBoxContainer.new()
+		_hero_section.set("theme_override_constants/separation", 4)
+		var parent: Node = tower_section.get_parent()
+		if parent != null:
+			parent.add_child(_hero_section)
+			# Insert directly below the enemy section (which itself sits below
+			# the tower section). If the enemy section isn't built yet, fall
+			# back to right after the tower section.
+			var anchor: Node = _enemy_section if _enemy_section != null else tower_section
+			parent.move_child(_hero_section, anchor.get_index() + 1)
+	for c in _hero_section.get_children():
+		c.queue_free()
+	var heading := Label.new()
+	heading.text = "Hero overrides — per-hero multipliers (1.0 = no change)"
+	heading.set("theme_override_font_sizes/font_size", 22)
+	heading.modulate = Color(0.6, 1.0, 0.7, 1)
+	_hero_section.add_child(heading)
+	# Order matches ContentRegistry's hero list — warrior, mage, ranger.
+	for hero in ContentRegistry.heroes:
+		if hero == null or not ("hero_id" in hero) or String(hero.hero_id) == "":
+			continue
+		_add_hero_subgroup(hero)
+
+
+func _add_hero_subgroup(hero: Resource) -> void:
+	var group := VBoxContainer.new()
+	group.set("theme_override_constants/separation", 2)
+	var hdr := Button.new()
+	var hname: String = String(hero.hero_name) if "hero_name" in hero else String(hero.hero_id)
+	hdr.text = "▸ %s   (%s)" % [hname, hero.hero_id]
+	hdr.flat = true
+	hdr.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	hdr.set("theme_override_font_sizes/font_size", 18)
+	hdr.modulate = Color(0.85, 1.0, 0.92)
+	var body := VBoxContainer.new()
+	body.set("theme_override_constants/separation", 2)
+	body.visible = false
+	hdr.pressed.connect(func():
+		body.visible = not body.visible
+		hdr.text = ("▾ " if body.visible else "▸ ") + hname + "   (" + String(hero.hero_id) + ")")
+	for stat_def in _HERO_STAT_DEFS:
+		var prop: String = String(stat_def.prop)
+		if not (prop in hero):
+			continue
+		var authored: float = float(hero.get(prop))
+		_add_hero_slider(body, String(hero.hero_id), stat_def, authored)
+	group.add_child(hdr)
+	group.add_child(body)
+	_hero_section.add_child(group)
+
+
+func _add_hero_slider(parent: VBoxContainer, hero_id: String, stat_def: Dictionary, authored: float) -> void:
+	var stat_key: String = String(stat_def.key)
+	var mode: String = String(stat_def.mode)
+	var label: String = String(stat_def.label)
+	# Mult-mode skill_data values can be authored at 0 (e.g. basic-attack
+	# damage on a pure-summoner hero). Render as a static placeholder so the
+	# slider can't move off zero; bake-then-edit gives the player an out.
+	if mode == "mult" and authored <= 0.0:
+		var hb_skip := HBoxContainer.new()
+		hb_skip.set("theme_override_constants/separation", 12)
+		var nl := Label.new()
+		nl.text = "        " + label
+		nl.set("theme_override_font_sizes/font_size", 13)
+		nl.custom_minimum_size = Vector2(220, 0)
+		var vl := Label.new()
+		vl.text = "—  (no authored value)"
+		vl.set("theme_override_font_sizes/font_size", 13)
+		vl.modulate = Color(0.55, 0.60, 0.68)
+		hb_skip.add_child(nl)
+		hb_skip.add_child(vl)
+		parent.add_child(hb_skip)
+		return
+	var current_override: float = BalanceOverrides.get_hero_mult(hero_id, stat_key)
+	var current_abs: float
+	var sld_min: float
+	var sld_max: float
+	var sld_step: float
+	if mode == "mult":
+		current_abs = authored * current_override
+		sld_min = 0.0
+		sld_max = max(authored * 3.0, authored + 1.0)
+		sld_step = _hero_step_for(stat_key, authored)
+	else:
+		# Additive — slider works in absolute clamp 0..0.95 to match the
+		# DamageCalculator / BaseHero accessor cap.
+		current_abs = clampf(authored + current_override, 0.0, 0.95)
+		sld_min = 0.0
+		sld_max = 0.95
+		sld_step = 0.05
+	var hb := HBoxContainer.new()
+	hb.set("theme_override_constants/separation", 12)
+	var name_lbl := Label.new()
+	name_lbl.text = "        " + label
+	name_lbl.set("theme_override_font_sizes/font_size", 13)
+	name_lbl.custom_minimum_size = Vector2(220, 0)
+	var sld := HSlider.new()
+	sld.min_value = sld_min
+	sld.max_value = sld_max
+	sld.step = sld_step
+	sld.value = current_abs
+	sld.custom_minimum_size = Vector2(280, 0)
+	sld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var val_lbl := Label.new()
+	val_lbl.text = _format_hero_value(stat_key, mode, current_abs, current_override)
+	val_lbl.set("theme_override_font_sizes/font_size", 13)
+	val_lbl.custom_minimum_size = Vector2(140, 0)
+	sld.value_changed.connect(func(v: float):
+		var ov: float
+		if mode == "mult":
+			ov = (v / authored) if authored > 0.0 else 1.0
+		else:
+			ov = v - authored
+		BalanceOverrides.set_hero_mult(hero_id, stat_key, ov)
+		val_lbl.text = _format_hero_value(stat_key, mode, v, ov))
+	hb.add_child(name_lbl)
+	hb.add_child(sld)
+	hb.add_child(val_lbl)
+	parent.add_child(hb)
+
+
+func _hero_step_for(stat_key: String, authored: float) -> float:
+	match stat_key:
+		"hp_mult":            return 1.0 if authored < 50.0 else 5.0
+		"speed_mult":         return 5.0
+		"damage_mult":        return 0.25 if authored < 10.0 else 0.5
+		"range_mult":         return 5.0 if authored < 100.0 else 10.0
+		"attack_speed_mult":  return 0.05
+	return 1.0
+
+
+func _format_hero_value(stat_key: String, mode: String, absolute: float, override: float) -> String:
+	if mode == "add":
+		return "%.2f  (%+.2f)" % [absolute, override]
+	match stat_key:
+		"hp_mult":           return "%d  (×%.2f)" % [int(round(absolute)), override]
+		"damage_mult":       return "%.1f  (×%.2f)" % [absolute, override]
+		"range_mult":        return "%d  (×%.2f)" % [int(round(absolute)), override]
+		"speed_mult":        return "%d  (×%.2f)" % [int(round(absolute)), override]
+		"attack_speed_mult": return "%.2f  (×%.2f)" % [absolute, override]
+	return "%.2f  (×%.2f)" % [absolute, override]
+
+
 func _format_enemy_value(stat_key: String, mode: String, absolute: float, override: float) -> String:
 	if mode == "add":
 		return "%.2f  (%+.2f)" % [absolute, override]
@@ -663,9 +837,10 @@ const _BAKE_INT_PROPERTIES: PackedStringArray = ["cost", "max_health", "max_coun
 func _on_bake_pressed() -> void:
 	var tower_deltas: Array = _collect_bake_deltas()
 	var enemy_deltas: Array = _collect_enemy_bake_deltas()
+	var hero_deltas: Array = _collect_hero_bake_deltas()
 	var wave_deltas: Array = _collect_wave_bake_deltas()
 	var has_structural: bool = not _structurally_dirty_levels.is_empty()
-	if tower_deltas.is_empty() and enemy_deltas.is_empty() \
+	if tower_deltas.is_empty() and enemy_deltas.is_empty() and hero_deltas.is_empty() \
 			and wave_deltas.is_empty() and not has_structural:
 		Toast.show_message("No overrides to bake — all sliders at default")
 		return
@@ -677,6 +852,10 @@ func _on_bake_pressed() -> void:
 	if not enemy_deltas.is_empty():
 		bits.append("%d field(s) across %d enemy(ies)" % [
 			enemy_deltas.size(), _unique_enemy_count(enemy_deltas),
+		])
+	if not hero_deltas.is_empty():
+		bits.append("%d field(s) across %d hero(es)" % [
+			hero_deltas.size(), _unique_hero_count(hero_deltas),
 		])
 	if not wave_deltas.is_empty():
 		bits.append("%d wave change(s) across %d wave-list(s)" % [
@@ -691,6 +870,8 @@ func _on_bake_pressed() -> void:
 	dlg.confirmed.connect(func():
 		if not tower_deltas.is_empty():
 			_apply_bake(tower_deltas)
+		if not hero_deltas.is_empty():
+			_apply_hero_bake(hero_deltas)
 		if not enemy_deltas.is_empty():
 			_apply_enemy_bake(enemy_deltas)
 			# Drop cached EnemyData snapshots so post-bake reads pick up the
@@ -712,6 +893,7 @@ func _on_bake_pressed() -> void:
 		# `authored` at construction time and would otherwise compute the
 		# multiplier against the pre-bake count).
 		_build_enemy_section()
+		_build_hero_section()
 		_build_level_section()
 		_refresh_wave_charts()
 		_refresh_readout()
@@ -922,6 +1104,101 @@ func _apply_enemy_bake(deltas: Array) -> void:
 	if not save_failures.is_empty():
 		push_warning("[BalanceSliders/Bake] enemy save failures: " + ", ".join(save_failures))
 	BalanceOverrides.reset_enemy_overrides()
+
+
+# ── Hero bake (Phase 3R-followup-3) ─────────────────────────────────────
+#
+# Same pattern as enemies: walk every (hero × stat) pair, skip identity
+# overrides, apply non-identity ones to the authored HeroData property, then
+# ResourceSaver.save each touched hero_*.tres. Heroes have flat stats — no
+# tier dimension to iterate. armor / magic_resist are clamped to [0, 0.95]
+# at write time to match the BaseHero accessor cap.
+
+func _collect_hero_bake_deltas() -> Array:
+	var out: Array = []
+	for hero in ContentRegistry.heroes:
+		if hero == null or not ("hero_id" in hero) or String(hero.hero_id) == "":
+			continue
+		for stat_def in _HERO_STAT_DEFS:
+			var stat_key: String = String(stat_def.key)
+			var mode: String = String(stat_def.mode)
+			var prop: String = String(stat_def.prop)
+			if not (prop in hero):
+				continue
+			var override: float = BalanceOverrides.get_hero_mult(String(hero.hero_id), stat_key)
+			var default: float = 0.0 if mode == "add" else 1.0
+			if absf(override - default) < 0.0001:
+				continue
+			var authored: float = float(hero.get(prop))
+			var new_val: float
+			if mode == "mult":
+				if authored <= 0.0:
+					continue
+				new_val = authored * override
+			else:
+				new_val = clampf(authored + override, 0.0, 0.95)
+			out.append({
+				"hero": hero,
+				"stat_key": stat_key,
+				"mode": mode,
+				"property": prop,
+				"override": override,
+				"authored": authored,
+				"new_value": new_val,
+			})
+	return out
+
+
+func _unique_hero_count(deltas: Array) -> int:
+	var seen: Dictionary = {}
+	for d in deltas:
+		seen[d.hero.hero_id] = true
+	return seen.size()
+
+
+func _apply_hero_bake(deltas: Array) -> void:
+	var heroes_touched: Dictionary = {}
+	var summary_lines: PackedStringArray = []
+	for d in deltas:
+		var hero: Resource = d.hero
+		if hero == null:
+			continue
+		var prop: String = String(d.property)
+		var authored: float = float(d.authored)
+		var new_val: float = float(d.new_value)
+		# max_health is int on HeroData; the rest are float. Round ints.
+		if prop == "max_health":
+			var iv: int = int(round(new_val))
+			hero.set(prop, iv)
+			summary_lines.append("  %s %s  %d → %d (%s %.2f)" % [
+				hero.hero_id, prop, int(round(authored)), iv,
+				"+" if d.mode == "add" else "×", float(d.override),
+			])
+		else:
+			hero.set(prop, new_val)
+			summary_lines.append("  %s %s  %.2f → %.2f (%s %.2f)" % [
+				hero.hero_id, prop, authored, new_val,
+				"+" if d.mode == "add" else "×", float(d.override),
+			])
+		heroes_touched[String(hero.hero_id)] = hero
+	var save_failures: PackedStringArray = []
+	for hid in heroes_touched.keys():
+		var hero: Resource = heroes_touched[hid]
+		var path: String = String(hero.resource_path)
+		if path == "":
+			save_failures.append(hid + " (no resource_path)")
+			continue
+		var err: int = ResourceSaver.save(hero, path)
+		if err != OK:
+			save_failures.append("%s (err %d)" % [hid, err])
+	print("[BalanceSliders/Bake] Wrote %d hero field(s) across %d hero(es):" % [
+		deltas.size(), heroes_touched.size(),
+	])
+	for line in summary_lines:
+		print(line)
+	if not save_failures.is_empty():
+		push_warning("[BalanceSliders/Bake] hero save failures: " + ", ".join(save_failures))
+	BalanceOverrides.reset_hero_overrides()
 
 
 # Walk every level × wave for active wave-shape overrides. Each delta resolves

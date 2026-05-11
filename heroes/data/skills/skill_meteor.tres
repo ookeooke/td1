@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ShieldBashSkillData" format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/shield_bash_skill_data.gd" id="1_bash"]
+
+[resource]
+script = ExtResource("1_bash")
+skill_name = "Meteor"
+skill_id = "meteor"
+skill_range = 320.0
+damage = 60.0
+damage_type = 1
+cooldown = 30.0
+target_type = 1
+level_required = 6
+aoe_radius = 160.0
+description = "Drop a falling rock at the tap point — devastating magic damage in a wide AoE. Long cooldown."
+rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.25}]

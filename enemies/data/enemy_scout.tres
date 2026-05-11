@@ -11,6 +11,6 @@ max_health = 13
 move_speed = 155.0
 gold_worth = 1
 xp_worth = 8
-attack_damage = 0.0
+attack_damage = 1.5
 visual = ExtResource("2_vis")
 encyclopedia_entry = "Fast-moving goblin. Slips past slow towers — prioritize with fast shooters."

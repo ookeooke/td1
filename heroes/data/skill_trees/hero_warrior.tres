@@ -153,7 +153,254 @@ level_required = 1
 prerequisite_ids = Array[String]([])
 ability = SubResource("ability_stalwart_defender")
 
+[sub_resource type="Resource" id="ability_combat_veteran"]
+script = ExtResource("6_statmod")
+ability_id = "warrior_combat_veteran"
+trigger = 0
+attack_speed_pct = 0.10
+
+[sub_resource type="Resource" id="node_combat_veteran_r1"]
+script = ExtResource("2_node")
+node_id = "warrior_combat_veteran_r1"
+node_name = "Combat Veteran"
+description = "+10% attack speed. Always-on."
+kind = 1
+target_id = "warrior_combat_veteran"
+rank = 1
+point_cost = 1
+level_required = 2
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_combat_veteran")
+
+[sub_resource type="Resource" id="ability_resilient"]
+script = ExtResource("6_statmod")
+ability_id = "warrior_resilient"
+trigger = 0
+max_health_pct = 0.15
+
+[sub_resource type="Resource" id="node_resilient_r1"]
+script = ExtResource("2_node")
+node_id = "warrior_resilient_r1"
+node_name = "Resilient"
+description = "+15% maximum HP. Always-on."
+kind = 1
+target_id = "warrior_resilient"
+rank = 1
+point_cost = 1
+level_required = 2
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_resilient")
+
+[sub_resource type="Resource" id="ability_battle_rhythm"]
+script = ExtResource("6_statmod")
+ability_id = "warrior_battle_rhythm"
+trigger = 0
+cooldown_reduction_flat = 0.10
+health_regen_flat = 1.0
+
+[sub_resource type="Resource" id="node_battle_rhythm_r1"]
+script = ExtResource("2_node")
+node_id = "warrior_battle_rhythm_r1"
+node_name = "Battle Rhythm"
+description = "Skills cool down 10% faster and you regenerate 1 HP per second. Always-on."
+kind = 1
+target_id = "warrior_battle_rhythm"
+rank = 1
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_battle_rhythm")
+
+[sub_resource type="Resource" id="node_rally_cry_r2"]
+script = ExtResource("2_node")
+node_id = "rally_cry_r2"
+node_name = "Rally Cry"
+description = "Rally Cry cools down 15% faster."
+kind = 0
+target_id = "rally_cry"
+rank = 2
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="mod_bless_inspiring"]
+script = ExtResource("7_mod")
+mod_id = "bless_inspiring_cry"
+mod_name = "Inspiring Cry"
+description = "+50% radius, -30% damage bonus. Reach more allies, buff each less."
+scaling = {"radius_mult": 1.5, "damage_mult": 0.7}
+
+[sub_resource type="Resource" id="node_bless_mod_inspiring"]
+script = ExtResource("2_node")
+node_id = "bless_mod_inspiring"
+node_name = "Mod: Inspiring Cry"
+description = "Bless reaches farther but each ally gets less of a damage bump."
+kind = 2
+target_id = "bless"
+rank = 1
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String](["bless_r2"])
+ability = SubResource("mod_bless_inspiring")
+
+[sub_resource type="Resource" id="node_warrior_passive_slot_2"]
+script = ExtResource("2_node")
+node_id = "warrior_passive_slot_2"
+node_name = "★ Passive Slot 2"
+description = "A second passive slot opens at hero level 4. Auto-granted as you level up — no point cost."
+kind = 3
+target_id = "passive_slot_2"
+rank = 1
+point_cost = 0
+level_required = 4
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_warrior_active_slot_3"]
+script = ExtResource("2_node")
+node_id = "warrior_active_slot_3"
+node_name = "★ Active Slot 3"
+description = "A third active-skill slot opens at hero level 8. The SkillBar grows to fit."
+kind = 3
+target_id = "active_slot_3"
+rank = 1
+point_cost = 0
+level_required = 8
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_warrior_passive_slot_3"]
+script = ExtResource("2_node")
+node_id = "warrior_passive_slot_3"
+node_name = "★ Passive Slot 3"
+description = "A third passive slot opens at hero level 9. Mix three permanent buffs."
+kind = 3
+target_id = "passive_slot_3"
+rank = 1
+point_cost = 0
+level_required = 9
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="ability_iron_will"]
+script = ExtResource("6_statmod")
+ability_id = "warrior_iron_will_capstone"
+trigger = 0
+max_health_pct = 0.30
+armor_pct = 0.20
+damage_pct = 0.20
+
+[sub_resource type="Resource" id="node_iron_will_capstone"]
+script = ExtResource("2_node")
+node_id = "warrior_iron_will_capstone"
+node_name = "★ Iron Will ★"
+description = "CAPSTONE — +30% max HP, +20% armor, +20% damage. The Knight at his peak: living wall. Requires Shield Bash mastered (R3)."
+kind = 4
+target_id = "warrior_iron_will_capstone"
+rank = 1
+point_cost = 1
+level_required = 10
+prerequisite_ids = Array[String](["shield_bash_r3"])
+ability = SubResource("ability_iron_will")
+
+[sub_resource type="Resource" id="mod_bless_aegis_bond"]
+script = ExtResource("7_mod")
+mod_id = "bless_aegis_bond"
+mod_name = "Aegis Bond"
+description = "+50% duration, -25% damage bonus. A long-lasting, gentler blessing."
+scaling = {"duration_mult": 1.5, "damage_mult": 0.75}
+
+[sub_resource type="Resource" id="node_bless_mod_aegis"]
+script = ExtResource("2_node")
+node_id = "bless_mod_aegis"
+node_name = "Mod: Aegis Bond"
+description = "Bless lasts longer but each ally gets a smaller damage bump."
+kind = 2
+target_id = "bless"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["bless_r2"])
+ability = SubResource("mod_bless_aegis_bond")
+
+[sub_resource type="Resource" id="mod_rally_cry_berserker"]
+script = ExtResource("7_mod")
+mod_id = "rally_cry_berserker"
+mod_name = "Berserker's Cry"
+description = "+50% damage bonus, -30% duration. A short, savage burst instead of a sustained roar."
+scaling = {"damage_mult": 1.5, "duration_mult": 0.7}
+
+[sub_resource type="Resource" id="node_rally_cry_mod_berserker"]
+script = ExtResource("2_node")
+node_id = "rally_cry_mod_berserker"
+node_name = "Mod: Berserker's Cry"
+description = "Rally Cry trades duration for raw damage power."
+kind = 2
+target_id = "rally_cry"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["rally_cry_r2"])
+ability = SubResource("mod_rally_cry_berserker")
+
+[sub_resource type="Resource" id="mod_summon_reinforcements"]
+script = ExtResource("7_mod")
+mod_id = "summon_reinforcements"
+mod_name = "Reinforcements"
+description = "+50% soldier count, -30% lifetime. A bigger swarm that fades faster."
+scaling = {"count_mult": 1.5, "duration_mult": 0.7}
+
+[sub_resource type="Resource" id="node_summon_mod_reinforcements"]
+script = ExtResource("2_node")
+node_id = "summon_mod_reinforcements"
+node_name = "Mod: Reinforcements"
+description = "Summon Soldiers spawns more bodies that don't last as long."
+kind = 2
+target_id = "summon_soldiers"
+rank = 1
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String](["summon_soldiers_r2"])
+ability = SubResource("mod_summon_reinforcements")
+
+[sub_resource type="Resource" id="mod_summon_veteran"]
+script = ExtResource("7_mod")
+mod_id = "summon_veterans_call"
+mod_name = "Veteran's Call"
+description = "-50% soldier count, +75% lifetime. One veteran who stays vs many militia who fade."
+scaling = {"count_mult": 0.5, "duration_mult": 1.75}
+
+[sub_resource type="Resource" id="node_summon_mod_veteran"]
+script = ExtResource("2_node")
+node_id = "summon_mod_veteran"
+node_name = "Mod: Veteran's Call"
+description = "Summon fewer but more durable soldiers — sidegrade to Reinforcements."
+kind = 2
+target_id = "summon_soldiers"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["summon_soldiers_r2"])
+ability = SubResource("mod_summon_veteran")
+
+[sub_resource type="Resource" id="mod_shield_bash_battering"]
+script = ExtResource("7_mod")
+mod_id = "shield_bash_battering"
+mod_name = "Battering Ram"
+description = "-30% AoE radius, +40% damage. Concentrated single-target punch instead of crowd sweep."
+scaling = {"aoe_radius_mult": 0.7, "damage_mult": 1.4}
+
+[sub_resource type="Resource" id="node_shield_bash_mod_battering"]
+script = ExtResource("2_node")
+node_id = "shield_bash_mod_battering"
+node_name = "Mod: Battering Ram"
+description = "Shield Bash trades AoE radius for raw damage — sidegrade to Cleaving Strike."
+kind = 2
+target_id = "shield_bash"
+rank = 1
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String](["shield_bash_r2"])
+ability = SubResource("mod_shield_bash_battering")
+
 [resource]
 script = ExtResource("1_tree")
 hero_id = "hero_warrior"
-nodes = Array[Resource]([SubResource("node_endurance_r1"), SubResource("node_vampiric_r1"), SubResource("node_heavy_blows_r1"), SubResource("node_stalwart_defender_r1"), SubResource("node_summon_soldiers_r2"), SubResource("node_bless_r2"), SubResource("node_shield_bash_r2"), SubResource("node_shield_bash_r3"), SubResource("node_shield_bash_mod_cleave")])
+nodes = Array[Resource]([SubResource("node_endurance_r1"), SubResource("node_vampiric_r1"), SubResource("node_heavy_blows_r1"), SubResource("node_stalwart_defender_r1"), SubResource("node_combat_veteran_r1"), SubResource("node_resilient_r1"), SubResource("node_battle_rhythm_r1"), SubResource("node_summon_soldiers_r2"), SubResource("node_bless_r2"), SubResource("node_shield_bash_r2"), SubResource("node_shield_bash_r3"), SubResource("node_shield_bash_mod_cleave"), SubResource("node_shield_bash_mod_battering"), SubResource("node_rally_cry_r2"), SubResource("node_bless_mod_inspiring"), SubResource("node_bless_mod_aegis"), SubResource("node_rally_cry_mod_berserker"), SubResource("node_summon_mod_reinforcements"), SubResource("node_summon_mod_veteran"), SubResource("node_warrior_passive_slot_2"), SubResource("node_warrior_active_slot_3"), SubResource("node_warrior_passive_slot_3"), SubResource("node_iron_will_capstone")])

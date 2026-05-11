@@ -49,6 +49,17 @@ func _ready() -> void:
 		supply_demand_button.pressed.connect(_on_supply_demand)
 		coverage_button.pressed.connect(_on_coverage)
 		unlock_all_button.pressed.connect(_on_unlock_all)
+		# Phase 3R-followup-3 — Hero Tuning. Programmatic button lives next to
+		# BalanceSliders so the .tscn doesn't need an edit. Same debug gate as
+		# the rest; the scene file is also stripped on production export.
+		var hero_tuning_btn := Button.new()
+		hero_tuning_btn.text = "Hero Tuning"
+		hero_tuning_btn.tooltip_text = "Per-hero + per-skill stat sliders with bake-to-.tres. Debug-only."
+		hero_tuning_btn.pressed.connect(_on_hero_tuning)
+		var sib_parent: Node = balance_sliders_button.get_parent()
+		if sib_parent != null:
+			sib_parent.add_child(hero_tuning_btn)
+			sib_parent.move_child(hero_tuning_btn, balance_sliders_button.get_index() + 1)
 	else:
 		test_range_button.visible = false
 		balance_report_button.visible = false
@@ -174,6 +185,14 @@ func _on_balance_sliders() -> void:
 	SceneManager.goto("res://balance/debug/BalanceSliders.tscn")
 
 
+func _on_hero_tuning() -> void:
+	# Debug-only — focused panel for hero base stats + their skill stats
+	# (damage / cooldown / range / AoE). Mirrors BalanceSliders persistence
+	# (user://debug_balance.json) and bakes back into hero_*.tres /
+	# skill_*.tres via ResourceSaver. See balance/debug/HeroTuning.gd.
+	SceneManager.goto("res://balance/debug/HeroTuning.tscn")
+
+
 func _on_level_audit() -> void:
 	# Debug-only — cross-level hardness + PPT-drift table. Reads authored
 	# level_list.tres + per-level wave_list .tres files.
@@ -193,20 +212,69 @@ func _on_coverage() -> void:
 
 
 func _on_unlock_all() -> void:
-	# Debug-only — flips levels_unlocked[id] = true for every level in
-	# ContentRegistry. Persists via SaveManager. Campaign-mode only;
-	# Heroic/Iron still gate on stars / heroic_complete. Refreshes cards.
+	# Debug-only — total unlock + max-progression cheat. Phase 3R-followup
+	# extended this beyond levels to also: unlock every hero (IAP / star-gate
+	# bypass), bump every hero to max_level (granting full skill-point pool
+	# via the catch-up sync), and purchase every node in every skill tree
+	# (all passives, ranks, mods, capstones — slot unlocks already auto-grant
+	# from the level bump). Persists via SaveManager so quit-and-relaunch
+	# preserves the cheat state.
+	# 1. Levels
 	for lvl in ContentRegistry.levels:
 		if lvl == null or not ("level_id" in lvl) or lvl.level_id == "":
 			continue
 		MetaProgression.levels_unlocked[lvl.level_id] = true
+	# 2. Heroes (explicit unlock_content path — bypasses requires_unlock).
+	for hero in ContentRegistry.heroes:
+		if hero == null or not ("hero_id" in hero) or hero.hero_id == "":
+			continue
+		if not (hero.hero_id in MetaProgression.unlocked_content):
+			MetaProgression.unlocked_content.append(hero.hero_id)
+	# 3. Max-level every hero. The catch-up sync inside SaveManager.load_game
+	#    only runs on file load; here we call it directly after bumping each
+	#    hero's level so points + slot unlocks propagate immediately.
+	for hero in ContentRegistry.heroes:
+		if hero == null or not ("hero_id" in hero):
+			continue
+		var hid: String = String(hero.hero_id)
+		var max_lvl: int = int(hero.max_level) if "max_level" in hero else 10
+		if not MetaProgression.hero_progress.has(hid):
+			MetaProgression.hero_progress[hid] = {"level": 1, "xp": 0, "last_synced_level": 0}
+		MetaProgression.hero_progress[hid]["level"] = max_lvl
+		MetaProgression.hero_progress[hid]["xp"] = 0
+		MetaProgression.sync_hero_progression_to_level(hid)
+	# 4. Purchase every node in every tree. point_cost is paid (decremented)
+	#    by purchase_node; since we just topped up each hero to max_level, the
+	#    pool covers most rank/passive/mod combos. If a tree has more nodes
+	#    than max-level points, the cheat bypasses the cost gate by writing
+	#    directly into hero_skill_nodes (matching auto-purchase semantics).
+	for tree in ContentRegistry.skill_trees:
+		if tree == null or not ("hero_id" in tree):
+			continue
+		var tree_hid: String = String(tree.hero_id)
+		if not MetaProgression.hero_skill_nodes.has(tree_hid):
+			MetaProgression.hero_skill_nodes[tree_hid] = {}
+		var per_hero: Dictionary = MetaProgression.hero_skill_nodes[tree_hid]
+		for node in tree.nodes:
+			if node == null or not ("node_id" in node):
+				continue
+			var nid: String = String(node.node_id)
+			if per_hero.has(nid) and int(per_hero[nid]) >= int(node.rank):
+				continue
+			per_hero[nid] = int(node.rank)
+			EventBus.hero_node_purchased.emit(tree_hid, nid)
 	SaveManager.save_game()
 	_refresh_level_states()
 	# Re-run the auto-scroll so the view jumps to the now-highest unlocked
 	# level (otherwise the camera stays parked over L1 and the player can't
 	# tell that L4 became reachable).
 	_on_markers_built()
-	print("[WorldMap] unlock-all (debug) — %d levels unlocked" % ContentRegistry.levels.size())
+	# Re-render the heroes button dot (loadout indicator) and meta gold so
+	# the new unlocks surface in the worldmap chrome.
+	_refresh_heroes_button_dot()
+	print("[WorldMap] unlock-all (debug) — %d levels, %d heroes, all tree nodes purchased" % [
+		ContentRegistry.levels.size(), ContentRegistry.heroes.size(),
+	])
 
 
 func _build_level_entries() -> void:

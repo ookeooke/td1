@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://systems/abilities/LifestealAbility.gd" id="4_lifesteal"]
 [ext_resource type="Script" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="5_bonusdmg"]
 [ext_resource type="Script" path="res://heroes/skills/SkillModData.gd" id="6_mod"]
+[ext_resource type="Script" path="res://systems/abilities/StatModifierAbility.gd" id="7_statmod"]
 
 [sub_resource type="Resource" id="ability_meditation"]
 script = ExtResource("3_regen")
@@ -141,7 +142,271 @@ point_cost = 1
 level_required = 3
 prerequisite_ids = Array[String]([])
 
+[sub_resource type="Resource" id="node_frost_nova_r2"]
+script = ExtResource("2_node")
+node_id = "frost_nova_r2"
+node_name = "Frost Nova"
+description = "Frost Nova cools down 15% faster."
+kind = 0
+target_id = "frost_nova"
+rank = 2
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_frost_nova_r3"]
+script = ExtResource("2_node")
+node_id = "frost_nova_r3"
+node_name = "Frost Nova"
+description = "Frost Nova deals 20% more damage."
+kind = 0
+target_id = "frost_nova"
+rank = 3
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["frost_nova_r2"])
+
+[sub_resource type="Resource" id="ability_arcane_focus"]
+script = ExtResource("7_statmod")
+ability_id = "mage_arcane_focus"
+trigger = 0
+damage_pct = 0.07
+
+[sub_resource type="Resource" id="node_arcane_focus_r1"]
+script = ExtResource("2_node")
+node_id = "mage_arcane_focus_r1"
+node_name = "Arcane Focus"
+description = "+7% damage on every attack and skill. Always-on."
+kind = 1
+target_id = "mage_arcane_focus"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_arcane_focus")
+
+[sub_resource type="Resource" id="ability_glass_cannon"]
+script = ExtResource("7_statmod")
+ability_id = "mage_glass_cannon"
+trigger = 0
+damage_pct = 0.15
+max_health_pct = -0.10
+
+[sub_resource type="Resource" id="node_glass_cannon_r1"]
+script = ExtResource("2_node")
+node_id = "mage_glass_cannon_r1"
+node_name = "Glass Cannon"
+description = "+15% damage but -10% max HP. Hit harder, stay fragile."
+kind = 1
+target_id = "mage_glass_cannon"
+rank = 1
+point_cost = 1
+level_required = 2
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_glass_cannon")
+
+[sub_resource type="Resource" id="ability_mystic_resilience"]
+script = ExtResource("7_statmod")
+ability_id = "mage_mystic_resilience"
+trigger = 0
+magic_resist_pct = 0.20
+armor_pct = 0.05
+
+[sub_resource type="Resource" id="node_mystic_resilience_r1"]
+script = ExtResource("2_node")
+node_id = "mage_mystic_resilience_r1"
+node_name = "Mystic Resilience"
+description = "+20% magic resist and +5% armor. Soaks elemental hits."
+kind = 1
+target_id = "mage_mystic_resilience"
+rank = 1
+point_cost = 1
+level_required = 2
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_mystic_resilience")
+
+[sub_resource type="Resource" id="node_meteor_r2"]
+script = ExtResource("2_node")
+node_id = "meteor_r2"
+node_name = "Meteor"
+description = "Meteor cools down 15% faster."
+kind = 0
+target_id = "meteor"
+rank = 2
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_meteor_r3"]
+script = ExtResource("2_node")
+node_id = "meteor_r3"
+node_name = "Meteor"
+description = "Meteor deals 25% more damage."
+kind = 0
+target_id = "meteor"
+rank = 3
+point_cost = 1
+level_required = 7
+prerequisite_ids = Array[String](["meteor_r2"])
+
+[sub_resource type="Resource" id="node_mage_passive_slot_2"]
+script = ExtResource("2_node")
+node_id = "mage_passive_slot_2"
+node_name = "★ Passive Slot 2"
+description = "A second passive slot opens at hero level 4. Auto-granted on level-up."
+kind = 3
+target_id = "passive_slot_2"
+rank = 1
+point_cost = 0
+level_required = 4
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_mage_active_slot_3"]
+script = ExtResource("2_node")
+node_id = "mage_active_slot_3"
+node_name = "★ Active Slot 3"
+description = "A third active-skill slot opens at hero level 8."
+kind = 3
+target_id = "active_slot_3"
+rank = 1
+point_cost = 0
+level_required = 8
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_mage_passive_slot_3"]
+script = ExtResource("2_node")
+node_id = "mage_passive_slot_3"
+node_name = "★ Passive Slot 3"
+description = "A third passive slot opens at hero level 9."
+kind = 3
+target_id = "passive_slot_3"
+rank = 1
+point_cost = 0
+level_required = 9
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="ability_pyromancer"]
+script = ExtResource("7_statmod")
+ability_id = "mage_pyromancer_capstone"
+trigger = 0
+damage_pct = 0.25
+skill_power_pct = 0.20
+cooldown_reduction_flat = 0.10
+
+[sub_resource type="Resource" id="node_pyromancer_capstone"]
+script = ExtResource("2_node")
+node_id = "mage_pyromancer_capstone"
+node_name = "★ Pyromancer ★"
+description = "CAPSTONE — +25% damage, +20% skill power, +10% CDR. The arcane archetype reaching its zenith. Requires Fireball mastered (R3)."
+kind = 4
+target_id = "mage_pyromancer_capstone"
+rank = 1
+point_cost = 1
+level_required = 10
+prerequisite_ids = Array[String](["fireball_r3"])
+ability = SubResource("ability_pyromancer")
+
+[sub_resource type="Resource" id="mod_frost_nova_glacial"]
+script = ExtResource("6_mod")
+mod_id = "frost_nova_glacial_thaw"
+mod_name = "Glacial Thaw"
+description = "+30% AoE radius, +25% cooldown. A wider sheet of ice that takes longer to recharge."
+scaling = {"aoe_radius_mult": 1.3, "cooldown_mult": 1.25}
+
+[sub_resource type="Resource" id="node_frost_nova_mod_glacial"]
+script = ExtResource("2_node")
+node_id = "frost_nova_mod_glacial"
+node_name = "Mod: Glacial Thaw"
+description = "Frost Nova covers more ground in exchange for slower recast — sidegrade to Heart Strike."
+kind = 2
+target_id = "frost_nova"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["frost_nova_r2"])
+ability = SubResource("mod_frost_nova_glacial")
+
+[sub_resource type="Resource" id="mod_frost_nova_heart_strike"]
+script = ExtResource("6_mod")
+mod_id = "frost_nova_heart_strike"
+mod_name = "Heart Strike"
+description = "-30% AoE radius, +35% damage. Concentrated icicle instead of a wide burst."
+scaling = {"aoe_radius_mult": 0.7, "damage_mult": 1.35}
+
+[sub_resource type="Resource" id="node_frost_nova_mod_heart"]
+script = ExtResource("2_node")
+node_id = "frost_nova_mod_heart"
+node_name = "Mod: Heart Strike"
+description = "Frost Nova trades AoE width for raw damage."
+kind = 2
+target_id = "frost_nova"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["frost_nova_r2"])
+ability = SubResource("mod_frost_nova_heart_strike")
+
+[sub_resource type="Resource" id="mod_meteor_cataclysm"]
+script = ExtResource("6_mod")
+mod_id = "meteor_cataclysm"
+mod_name = "Cataclysm"
+description = "+50% AoE radius, -25% damage. Cover ground instead of dealing maximum punch."
+scaling = {"aoe_radius_mult": 1.5, "damage_mult": 0.75}
+
+[sub_resource type="Resource" id="node_meteor_mod_cataclysm"]
+script = ExtResource("2_node")
+node_id = "meteor_mod_cataclysm"
+node_name = "Mod: Cataclysm"
+description = "Meteor blankets a wider area for less per-target damage."
+kind = 2
+target_id = "meteor"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["meteor_r2"])
+ability = SubResource("mod_meteor_cataclysm")
+
+[sub_resource type="Resource" id="mod_mana_shield_extended"]
+script = ExtResource("6_mod")
+mod_id = "mana_shield_extended_ward"
+mod_name = "Extended Ward"
+description = "+50% buff duration, -25% cooldown speed. Longer protection at the cost of casting it less often."
+scaling = {"duration_mult": 1.5, "cooldown_mult": 1.25}
+
+[sub_resource type="Resource" id="node_mana_shield_mod_extended"]
+script = ExtResource("2_node")
+node_id = "mana_shield_mod_extended"
+node_name = "Mod: Extended Ward"
+description = "Mana Shield lasts longer but takes longer to come back."
+kind = 2
+target_id = "mana_shield"
+rank = 1
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String](["mana_shield_r2"])
+ability = SubResource("mod_mana_shield_extended")
+
+[sub_resource type="Resource" id="mod_mana_shield_quick"]
+script = ExtResource("6_mod")
+mod_id = "mana_shield_quick_ward"
+mod_name = "Quick Ward"
+description = "-30% cooldown, -40% duration. Cast it twice as often, lasts half as long. For panicked re-shielding."
+scaling = {"cooldown_mult": 0.7, "duration_mult": 0.6}
+
+[sub_resource type="Resource" id="node_mana_shield_mod_quick"]
+script = ExtResource("2_node")
+node_id = "mana_shield_mod_quick"
+node_name = "Mod: Quick Ward"
+description = "Mana Shield comes back faster but each one is brief — sidegrade to Extended Ward."
+kind = 2
+target_id = "mana_shield"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["mana_shield_r2"])
+ability = SubResource("mod_mana_shield_quick")
+
 [resource]
 script = ExtResource("1_tree")
 hero_id = "hero_mage"
-nodes = Array[Resource]([SubResource("node_meditation_r1"), SubResource("node_siphon_r1"), SubResource("node_arcane_power_r1"), SubResource("node_fireball_r2"), SubResource("node_fireball_r3"), SubResource("node_fireball_mod_wider"), SubResource("node_fireball_mod_quick"), SubResource("node_mana_shield_r2")])
+nodes = Array[Resource]([SubResource("node_meditation_r1"), SubResource("node_siphon_r1"), SubResource("node_arcane_power_r1"), SubResource("node_arcane_focus_r1"), SubResource("node_glass_cannon_r1"), SubResource("node_mystic_resilience_r1"), SubResource("node_fireball_r2"), SubResource("node_fireball_r3"), SubResource("node_fireball_mod_wider"), SubResource("node_fireball_mod_quick"), SubResource("node_mana_shield_r2"), SubResource("node_mana_shield_mod_extended"), SubResource("node_frost_nova_r2"), SubResource("node_frost_nova_r3"), SubResource("node_frost_nova_mod_heart"), SubResource("node_meteor_r2"), SubResource("node_meteor_r3"), SubResource("node_meteor_mod_cataclysm"), SubResource("node_mana_shield_mod_quick"), SubResource("node_frost_nova_mod_glacial"), SubResource("node_mage_passive_slot_2"), SubResource("node_mage_active_slot_3"), SubResource("node_mage_passive_slot_3"), SubResource("node_pyromancer_capstone")])

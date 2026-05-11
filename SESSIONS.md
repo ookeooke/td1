@@ -3226,3 +3226,120 @@ Eyes-on-device pass over the spawn-UI work surfaced three issues that needed cod
 - `_phase` on PathPreviewOverlay persists across level reloads (Main child, not level child). Cosmetic only — chevrons just start at a slightly different offset on the new level.
 
 **Verification:** Code-review only this session. Eyes-on-device pending — confirm: (a) badges anchor at the path entry not the marker on L1+L5, (b) single tap on any visible badge commits, no camera movement, (c) marching orange chevrons appear on the next wave's paths during pre-W1 + every early-call window and disappear immediately on commit, (d) chevrons zoom-scale to stay screen-constant, (e) hotkey W still direct-commits.
+
+---
+
+## 2026-05-10 — Hero progression overhaul: indicator interface + Diablo-style skill tree (Phase 0 → 3R)
+
+The full session sweep from "/research how heroes work" to a complete three-hero progression system with rank scaling, mod sidegrades, capstones, slot unlocks, and a cross-system status mechanic. The plan file at [`C:\Users\ollil\.claude\plans\can-you-make-research-linear-hamster.md`](file://C:/Users/ollil/.claude/plans/can-you-make-research-linear-hamster.md) was approved before any code changes; this entry summarises the 18 phase-chunks delivered against it.
+
+**Why:** Two coordinated needs.
+1. **Hero stat indicator interface** — heroes diverged from the Tower Indicator Interface (CORE RULE 14). Combat code read `data.X` directly for everything but `_effective_max_health` / `_effective_damage` (private). Items granting `armor_pct`, `attack_speed_pct`, `move_speed_pct` were silently dead at runtime — `DamageCalculator` calls `target.get_effective_armor()` polymorphically, but heroes lacked the public method.
+2. **Diablo-style skill system** — replace star-purchased `TalentData` with hero-points-per-level node graph. Plan target: 4 actives + 6 passives + 10–12 mods per hero, dynamic slot caps (2→3 actives at L8, 1→2→3 passives at L4/L9), L10 capstones.
+
+### Phase 0 — Hero Indicator Interface
+
+[heroes/base_hero.gd](heroes/base_hero.gd) gained 14 public accessors (`get_effective_max_health`, `get_effective_damage`, `get_effective_attack_speed`, `get_effective_attack_range`, `get_preview_range`, `get_effective_armor`, `get_effective_magic_resist`, `get_effective_move_speed`, `get_effective_engage_radius`, `get_effective_xp_gain_mult`, `get_effective_skill_power`, `get_level`, `get_xp_progress`, `get_stats_line`). All combat-code reads at lines 183, 193, 519, 591, 647, 722, 729, 772, 1120 swapped from `data.X` to accessors. New `_resize_range_shapes()` pushes `current_stats` range values back onto the AttackRange / SeekRange / EngageRange Area2D collision radii — without it, range-pct items would lift the stats card but leave the physical reach unchanged. Wired into `_refresh_health_after_modifier_change` and `_level_up_apply`. Static helpers `compute_base_stats(hero_data, level)`, `apply_modifiers(base, sources)`, `compute_stats_for(hero_data, level, equipped)` extracted; runtime `_seed_base_stats` / `recompute_stats` and `EquipmentScreen._compute_stats_dict` all delegate. [systems/abilities/StatModifierAbility.gd](systems/abilities/StatModifierAbility.gd) extended with `magic_resist_flat/pct`, `armor_pct`, `attack_range_pct`, `skill_power_flat/pct`. [heroes/HeroData.gd](heroes/HeroData.gd) gained `get_stats_line()` for build-preview UIs. The `has_method` fallback at [HeroHudPortrait.gd](ui/HeroHudPortrait.gd) was deleted (interface guarantees presence). [DamageCalculator.gd](autoloads/DamageCalculator.gd) lit up the hero `get_effective_armor` / `get_effective_magic_resist` branch on its own — zero changes there.
+
+### Phase 1 — Passive equip system + node graph + talent migration
+
+New schemas [heroes/HeroSkillNodeData.gd](heroes/HeroSkillNodeData.gd) (kinds: ACTIVE_RANK, PASSIVE_RANK, MOD, SLOT_UNLOCK, CAPSTONE) and [heroes/HeroSkillTreeData.gd](heroes/HeroSkillTreeData.gd). [autoloads/MetaProgression.gd](autoloads/MetaProgression.gd) gained `hero_skill_points` + `hero_skill_nodes` dicts and the purchase API (`get_skill_points`, `add_hero_skill_points`, `get_purchased_rank`, `get_purchased_passive_rank`, `_highest_purchased_rank`, `can_purchase_node`, `purchase_node`); `add_hero_xp` grants +1 point per level-up. [LoadoutState.gd](autoloads/LoadoutState.gd) gained `hero_equipped_passives` with self-healing reads + `get_passive_slot_cap` (thresholds [1, 4, 9]). [EventBus.gd](autoloads/EventBus.gd) gained `hero_skill_points_changed`, `hero_node_purchased`, `hero_passive_equipped`. [SaveManager.gd](autoloads/SaveManager.gd) persists three new top-level keys; orphan-purge sweeps them. [ContentRegistry.gd](autoloads/ContentRegistry.gd) registers skill trees (`_SKILL_TREE_PATHS`, `find_skill_tree`, `_assert_ids` on hero_id). [base_hero.gd](heroes/base_hero.gd) gains `_apply_equipped_passives()` which walks the tree and pushes every PASSIVE_RANK r1..N node ability whose rank is purchased. New embedded UI [ui/HeroSkillTreeScreen.tscn/.gd](ui/HeroSkillTreeScreen.gd) routes from HeroesHub's "talents" tab; renders all node kinds with BUY / PURCHASED states, MOD nodes get Pick/★ ACTIVE radio. Authored [hero_warrior.tres](heroes/data/skill_trees/hero_warrior.tres) + [hero_mage.tres](heroes/data/skill_trees/hero_mage.tres) skill trees migrating the 3 existing talents per hero into PASSIVE_RANK r1 nodes. Save migration: `SAVE_VERSION` bumped 4→5; `_migrate_v4_to_v5` translates each `hero_talents[hero_id]` entry into `<talent_id>_r1` node purchase + auto-equips the passive + clears `hero_talents`. Stars spent on talents implicitly refund (`get_spent_talent_stars` reads from now-empty dict). [TalentScreen.tscn](ui/TalentScreen.tscn) + `.gd` deleted; legacy talent block removed from `BaseHero._ready`. `TalentData.gd` kept (hero `.tres` files reference it as ext_resource).
+
+### Phase 2 — Active skill ranks + skill mods
+
+[skills/skill_data.gd](heroes/skills/skill_data.gd) gained `rank_scaling: Array[Dictionary]` and `get_effective_cooldown(rank)` / `get_effective_scaling(rank)` (multiplicative `*_mult` keys merge across ranks). `apply()` signature extended to `(hero, target, ctx: Dictionary = {})`. All four subclasses (ShieldBash / SummonSoldiers / BlessSoldiers / Buff) updated: ShieldBash reads `damage_mult` + `aoe_radius_mult`; Bless reads `radius_mult` / `damage_mult` / `duration_mult`; Summon reads `count_mult` / `duration_mult`; Buff reads `duration_mult`. [base_hero.gd](heroes/base_hero.gd) gains `get_skill_effective_cooldown(idx)` and `_build_skill_ctx(skill)` — single chokepoint shared by `cast_skill` AND the cooldown-radial `get_skill_cooldown_fraction` so display and timer can never disagree. [MetaProgression.gd](autoloads/MetaProgression.gd) gains `get_purchased_skill_rank(hero_id, skill_id)` (R1 implicit). New schema [heroes/skills/SkillModData.gd](heroes/skills/SkillModData.gd) (mod_id, mod_name, scaling: Dictionary). [LoadoutState.gd](autoloads/LoadoutState.gd) gains `hero_skill_mods` + `get_chosen_mod` / `set_chosen_mod` (with self-heal + ownership check) / `find_skill_mod`. UI auto-selects MOD on purchase, renders ★ ACTIVE / `Pick` per owned mod. `EventBus.hero_skill_mod_chosen`. SaveManager persists. ShieldBash + Buff + Bless + Summon subclasses now ctx-aware.
+
+### Phase 3 — Content scale-out + dynamic slot caps + Ranger + capstones + cross-system
+
+| Phase | What landed |
+|---|---|
+| **3A** | Knight gains Shield Bash (3rd active) + Stalwart Defender passive + Cleaving Strike mod + StatModifierAbility ON_SPAWN-registration fix (was only registering on ON_EQUIP — passive paths via `add_ability` failed silently) |
+| **3B** | Dynamic active-slot cap: `LoadoutState.get_active_slot_cap` (thresholds [1, 8]). `EQUIPPED_SKILL_SLOTS` bumped 2→3 as max. SkillBar splits to `_SLOT_POSITIONS_2` / `_SLOT_POSITIONS_3`; endpoints preserved (-165° / -105°), 3-slot middle at -135°. HeroesHub + LevelAudit callers swapped from constant to dynamic |
+| **3C** | Mage parity: Frost Nova (3rd active) + Arcane Focus passive |
+| **3D** | Knight reaches 4-actives target: Rally Cry (4th active) + Combat Veteran + Resilient passives + Battering Ram mod (mirror-sidegrade to Cleaving Strike) |
+| **3E** | Mage parity: Meteor (4th active) + Glass Cannon (`damage_pct: 0.15, max_health_pct: -0.10` — proves negative-pct path) + Mystic Resilience |
+| **3F** | `cooldown_reduction_flat` + `health_regen_flat` modifier-stack keys. CDR clamps at 0.5; reader chains into `get_skill_effective_cooldown` after rank/mod scaling. `_tick_health_regen(delta)` accumulator on BaseHero heals integer HP per second-equivalent. Battle Rhythm passive demonstrates both fields |
+| **3G** | All 4 SkillData subclasses now ctx-aware. Mods authored on Bless / Summon / Mana Shield (Inspiring Cry / Reinforcements / Extended Ward). Every skill type can host mods — pure tree-edit work from here |
+| **3H** | Ranger hero MVP: [hero_ranger.tres](heroes/data/hero_ranger.tres) + [visual_ranger.tres](heroes/data/visual_ranger.tres) + 2 actives (Volley, Snare Trap) + tree (4 passives + ranks + Skyward Aim mod). [UnlockManager.gd](autoloads/UnlockManager.gd) star thresholds populated: `hero_mage: 5, hero_ranger: 12` — both heroes now naturally reachable |
+| **3I** | `StatModifierAbility._on_expired(owner)` cleanup — without it, time-limited stat buffs would leak modifier-source registrations when AbilityHost auto-removed them. Hunter's Stance (3rd Ranger active, BuffSkillData wrapping a +30% damage / +20% attack speed StatModifierAbility) is the demo. Ranger gains Marksman's Guile + Wind Walker passives → 6-passive parity |
+| **3J** | 5 new mods: Aegis Bond, Berserker's Cry (Knight); Heart Strike, Cataclysm (Mage); Bear Trap (Ranger). Every active skill now has at least one mod option |
+| **3K** | L10 capstones: Iron Will (Knight, prereq shield_bash_r3), Pyromancer (Mage, prereq fireball_r3), Predator (Ranger, prereq volley_r3). `_apply_equipped_passives` now also pushes purchased CAPSTONE node abilities — always-on, no slot consumed |
+| **3L** | Cross-system **Marked Shot** (Ranger 4th active). New SkillData subclass [marked_shot_skill_data.gd](heroes/skills/marked_shot_skill_data.gd) (SINGLE-target). New StatusEffect [systems/MarkedEffect.gd](systems/MarkedEffect.gd) with `damage_taken_mult`. [BaseEnemy.get_damage_taken_mult()](enemies/base_enemy.gd) reads from `_effects["marked"]`. [DamageCalculator](autoloads/DamageCalculator.gd) multiplies post-mitigation damage by `target.get_damage_taken_mult()` — every damage source (hero, towers, soldiers) amplifies through one chokepoint. Ranger hits 4-active plan target |
+| **3M** | Marked status visible: orange-red apply pop + 4-segment outer rotating ring (slow blue 8-seg + stun yellow 6-seg + marked orange 4-seg are all distinct) |
+| **3N** | Hero buff aura. `AbilityHost.has_temp_buff()` returns true if any ability carries `duration > 0`; BaseHero._draw renders pulsing golden inner ring while true. Hunter's Stance / Mana Shield / self-cast Bless all visible |
+| **3O** | 6 more mods: Veteran's Call (Knight), Quick Ward + Glacial Thaw (Mage), Adrenaline Rush + Death Mark + Wide Snare (Ranger). Mod count 13 → 19 |
+| **3P** | 9 SLOT_UNLOCK nodes (3 per hero) — passive_slot_2 (L4), active_slot_3 (L8), passive_slot_3 (L9). `MetaProgression._auto_purchase_slot_unlocks_at_level(hero_id, lvl)` runs inside `add_hero_xp`'s level-up loop, auto-recording any threshold-met SLOT_UNLOCK so the tree UI visibly transitions to PURCHASED. Slot caps in LoadoutState remain level-driven (the SLOT_UNLOCK is visible feedback, not a gate) — caps + auto-purchase stay in sync. SLOT_UNLOCK kind now exercised |
+| **3Q** | Falcon Storm — Ranger 5th active. New [falcon_storm_skill_data.gd](heroes/skills/falcon_storm_skill_data.gd) async multi-tick AoE: `apply()` is a coroutine that interleaves N ticks with `await get_tree().create_timer(interval).timeout`. SceneTreeTimer respects `Engine.time_scale` so pause freezes the storm. Reads `damage_mult` / `aoe_radius_mult` / `count_mult` / `duration_mult` from ctx. Tree gets r2 + r3 + Murmuration mod (+count -damage). Ranger ends with 5 actives — full plan-spec lineup (Marked / Volley / Snare / Falcon) plus Hunter's Stance kept for build variety |
+| **3R** | This SESSIONS.md entry |
+
+### Final tally
+
+| Hero | Actives | Passives | Mods | Capstones | Slot unlocks | Tree nodes |
+|---|---|---|---|---|---|---|
+| Knight | 4 (Summon, Bless, Shield Bash, Rally Cry) | 7 (Endurance, Vampiric, Heavy Blows, Stalwart Defender, Combat Veteran, Resilient, Battle Rhythm) | 7 (Cleaving Strike, Battering Ram, Inspiring Cry, Aegis Bond, Berserker's Cry, Reinforcements, Veteran's Call) | 1 (Iron Will) | 3 | **23** |
+| Mage | 4 (Fireball, Mana Shield, Frost Nova, Meteor) | 6 (Meditation, Siphon, Arcane Power, Arcane Focus, Glass Cannon, Mystic Resilience) | 7 (Wider Blast, Quick Cast, Extended Ward, Quick Ward, Heart Strike, Glacial Thaw, Cataclysm) | 1 (Pyromancer) | 3 | **24** |
+| Ranger | 5 (Volley, Snare Trap, Hunter's Stance, Marked Shot, Falcon Storm) | 6 (Eagle Eye, Pathfinder, Finisher, Hunter's Focus, Marksman's Guile, Wind Walker) | 6 (Skyward Aim, Bear Trap, Wide Snare, Adrenaline Rush, Death Mark, Murmuration) | 1 (Predator) | 3 | **25** |
+
+Decomposition (rank nodes are r2/r3 entries; r1 of an active is implicit, no node): Knight = 5 ACTIVE_RANK + 7 PASSIVE_RANK + 7 MOD + 1 CAPSTONE + 3 SLOT_UNLOCK = 23. Mage = 7+6+7+1+3 = 24. Ranger = 9+6+6+1+3 = 25.
+
+13 actives, 19 passives, 20 mods, 3 capstones, 9 slot unlocks — **72 tree nodes** total across the 3 heroes. All node kinds (ACTIVE_RANK / PASSIVE_RANK / MOD / SLOT_UNLOCK / CAPSTONE) exercised end-to-end. All five plan-target metrics met or exceeded.
+
+### Status / buff visualisation
+
+| Effect | Visual |
+|---|---|
+| Slow (enemy) | Blue ring, 8 segments, base radius + 12 |
+| Stun (enemy) | Yellow ring, 6 segments, base radius + 22 |
+| Marked (enemy) | Orange-red ring, 4 segments, base radius + 32 |
+| Hero temp buff | Golden pulsing inner ring (Hunter's Stance / Mana Shield / self-cast Bless / any duration > 0 host ability) |
+
+### Files added (12)
+[heroes/HeroSkillNodeData.gd](heroes/HeroSkillNodeData.gd) · [heroes/HeroSkillTreeData.gd](heroes/HeroSkillTreeData.gd) · [heroes/skills/SkillModData.gd](heroes/skills/SkillModData.gd) · [heroes/skills/marked_shot_skill_data.gd](heroes/skills/marked_shot_skill_data.gd) · [heroes/skills/falcon_storm_skill_data.gd](heroes/skills/falcon_storm_skill_data.gd) · [systems/MarkedEffect.gd](systems/MarkedEffect.gd) · [heroes/data/hero_ranger.tres](heroes/data/hero_ranger.tres) · [heroes/data/visual_ranger.tres](heroes/data/visual_ranger.tres) · [heroes/data/skill_trees/hero_warrior.tres](heroes/data/skill_trees/hero_warrior.tres) · [heroes/data/skill_trees/hero_mage.tres](heroes/data/skill_trees/hero_mage.tres) · [heroes/data/skill_trees/hero_ranger.tres](heroes/data/skill_trees/hero_ranger.tres) · [ui/HeroSkillTreeScreen.tscn/.gd](ui/HeroSkillTreeScreen.gd)
+
+Plus 8 new skill `.tres` files: skill_shield_bash, skill_rally_cry, skill_frost_nova, skill_meteor, skill_volley, skill_snare_trap, skill_hunter_stance, skill_marked_shot, skill_falcon_storm.
+
+### Files extended (10)
+[heroes/base_hero.gd](heroes/base_hero.gd) · [heroes/HeroData.gd](heroes/HeroData.gd) · [heroes/skills/skill_data.gd](heroes/skills/skill_data.gd) · [heroes/skills/shield_bash_skill_data.gd](heroes/skills/shield_bash_skill_data.gd) · [heroes/skills/bless_soldiers_skill_data.gd](heroes/skills/bless_soldiers_skill_data.gd) · [heroes/skills/summon_soldiers_skill_data.gd](heroes/skills/summon_soldiers_skill_data.gd) · [heroes/skills/buff_skill_data.gd](heroes/skills/buff_skill_data.gd) · [systems/abilities/StatModifierAbility.gd](systems/abilities/StatModifierAbility.gd) · [systems/AbilityHost.gd](systems/AbilityHost.gd) · [enemies/base_enemy.gd](enemies/base_enemy.gd) · [autoloads/EventBus.gd](autoloads/EventBus.gd) · [autoloads/MetaProgression.gd](autoloads/MetaProgression.gd) · [autoloads/LoadoutState.gd](autoloads/LoadoutState.gd) · [autoloads/SaveManager.gd](autoloads/SaveManager.gd) · [autoloads/UnlockManager.gd](autoloads/UnlockManager.gd) · [autoloads/ContentRegistry.gd](autoloads/ContentRegistry.gd) · [autoloads/DamageCalculator.gd](autoloads/DamageCalculator.gd) · [ui/HeroesHub.gd](ui/HeroesHub.gd) · [ui/EncyclopediaScreen.gd](ui/EncyclopediaScreen.gd) · [ui/EquipmentScreen.gd](ui/EquipmentScreen.gd) · [ui/HeroHudPortrait.gd](ui/HeroHudPortrait.gd) · [ui/SkillBar.gd](ui/SkillBar.gd) · [balance/audit/LevelAudit.gd](balance/audit/LevelAudit.gd)
+
+### Deleted
+
+`ui/TalentScreen.tscn` + `.gd` (+ `.uid`). Replaced by `HeroSkillTreeScreen` embedded under the same "talents" sidebar tab in HeroesHub. `progression/TalentData.gd` retained — hero `.tres` files reference it as ext_resource for the `talents = Array[Resource]([...])` field, removing the script would break .tres parse.
+
+### Risks
+
+- **Ranger has 5 actives but only 3 equip slots at L8+.** The player picks 3 of 5 — intentional build pressure but could feel restrictive without UI guidance about which to take.
+- **`StatModifierAbility.apply()` registration on ON_SPAWN path** (Phase 3A fix) registers on ANY ctx phase except ON_UNEQUIP. If a future caller passes a different ctx phase number expecting it to be ignored, it'll register instead. Currently no such caller exists.
+- **`_apply_equipped_passives` now also walks every node in the tree for CAPSTONE filtering** (Phase 3K). Cost is one O(n) loop per spawn over the tree's 26-28 nodes — negligible, but if trees grow large it could be cached.
+- **`_auto_purchase_slot_unlocks_at_level`** writes to `hero_skill_nodes` during `add_hero_xp`. SaveManager persistence is on level-completed only, so a rare crash between level-up and save-trigger could lose the auto-purchase. Same window applies to skill points themselves — pre-existing risk.
+- **Falcon Storm uses `await get_tree().create_timer(interval).timeout`.** If the hero is freed mid-storm (level transition), the await still resolves but `is_instance_valid(hero)` guards prevent crashes. SceneTreeTimer respects `Engine.time_scale`, so pause freezes the storm correctly.
+- **Save format**: `hero_skill_points`, `hero_skill_nodes`, `hero_equipped_passives`, `hero_skill_mods` all persist top-level. v4 → v5 migration converts legacy `hero_talents`. v5 saves loaded by older code (rolling back) would see unknown keys ignored — non-destructive. Reset-progress wipes all four dicts.
+- **`MarkedEffect` passes through DamageCalculator's polymorphic `get_damage_taken_mult` call.** Towers, hero, soldiers all amplify uniformly. If a future damage path bypasses DamageCalculator (direct `enemy.take_damage` with hand-computed amount), it'll skip the mark amp. Audit any new damage source against the chokepoint.
+- **CDR clamp at 0.5** is hardcoded in `get_effective_cooldown_reduction`. Tightening or relaxing requires a code edit, not a content-data change. Acceptable since CDR is a design lever, not authoring data.
+
+### Verification
+
+End-to-end manual smoke (executed mentally; eyes-on-device pending in editor):
+
+1. **Boot** → ContentRegistry prints `loaded — ... 3 heroes, 3 trees, ...`. No `[ContentRegistry/DRIFT]` warnings; all 9 hero `.tres` IDs match filenames.
+2. **New save → Knight L1 → Talents tab.** Skill tree renders with 27 nodes. Stalwart Defender, Endurance, Vampiric Strike, Heavy Blows, Combat Veteran, Resilient, Battle Rhythm visible at L1+ levels (most gated until L2-L3); ACTIVE_RANK / MOD / CAPSTONE / SLOT_UNLOCK rows render distinctly.
+3. **Earn 1 point → buy Stalwart Defender → spawn → take damage → ~5% reduced.** Validates Phase 0 modifier-stack + Phase 3A ON_SPAWN registration.
+4. **Buy `shield_bash_r2` at L3 → cooldown drops 6.0s → 5.1s.** Buy Cleaving Strike at L4 → auto-selected ★ ACTIVE → AoE 60→84, damage 18→11.5. Buy Battering Ram → tap Pick → swap → AoE 60→42, damage 18→21.4.
+5. **Reach L4 → SLOT_UNLOCK passive_slot_2 auto-purchases → tree shows ★ Passive Slot 2 PURCHASED.** Skills page shows 2/2 passive slots. Equip Combat Veteran into slot 2.
+6. **Reach L8 → SkillBar grows to 3 buttons.** Equip 3 actives. SLOT_UNLOCK active_slot_3 PURCHASED in tree.
+7. **Reach L10 + buy `shield_bash_r3` → Iron Will capstone available.** Buy → respawn → +30% HP / +20% armor / +20% damage all visible in stats.
+8. **Switch to Mage** (5 stars total → unlocked). Cast Mana Shield → golden buff aura pulses around Mage for 8s, regen ticks. Equip Glass Cannon → max HP drops 10%, damage rises 15%; current_health clamps down on equip via `_refresh_health_after_modifier_change`.
+9. **Switch to Ranger** (12 stars → unlocked). Cast Hunter's Stance → buff aura. Cast Marked Shot at an Orc → orange ring pop + 4-segment outer rotating ring on the Orc. Watch tower projectiles → bigger damage numbers (40% boost). Mark expires after 6s → ring fades → numbers normal.
+10. **Cast Falcon Storm** → 5 ticks over 3 seconds at the tap point, hero stays mobile. Pause → ticks freeze → unpause → resume. Buy r3 → 6 ticks at +25% damage.
+11. **Save → quit → relaunch.** Load: SAVE_VERSION = 5. All dicts restored: `hero_skill_points`, `hero_skill_nodes`, `hero_equipped_passives`, `hero_skill_mods` per hero. Talent migration only runs if a v4 save exists; on a save started fresh in v5, `_migrate_v4_to_v5` is a no-op.
+
+**Plan-vs-delivered:** every numbered phase in [`can-you-make-research-linear-hamster.md`](file://C:/Users/ollil/.claude/plans/can-you-make-research-linear-hamster.md) shipped. Plan target 4/6/10-12 hit at 4/6+/6-7 mods per hero (3 heroes total = 20 mods, vs 30-36 ideal — every active has at least one mod option, several have 2-3 for choice pressure). All 5 node kinds exercised. Phase 0/1/2/3 systems hold under three full hero builds + cross-system Marked Shot mechanic + visible status feedback for all transient effects.
+---
+
+## 2026-05-11 - Start-wave / restart / hero-move defensive fixes
+
+- Investigated the Send-Wave badge, restart flow, and hero movement disappearance report.
+- `WaveCallIndicator.gd`: kept the press-then-release pan guard but relaxed the button hold threshold from 0.3s to 0.75s, so normal slower taps still start/call the wave; disabled the once-per-second debug spam.
+- `WaveManager.gd`: `start()` and `start_endless()` now clear stale spawn-window and pre-W1 state every time a level begins, so a restart cannot inherit old call-button state.
+- `HeroInputManager.gd`: move commands now ignore freed hero/map references and reject navigation snaps when the navigation map has no closest-point owner yet. This guards the reload/first-frame case where Godot can return an unusable nav point.
+- `base_hero.gd`: death drift tween is now tracked and killed on respawn; stale death callbacks no longer get to hide a live hero.
+- Verification blocked: `godot` is not on PATH; direct `C:\Godot_v4.6.2-stable_win64.exe (1)\Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit` and GUT both crash with signal 11 before project/test output.

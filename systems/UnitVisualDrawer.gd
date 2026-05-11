@@ -89,6 +89,13 @@ static func _draw_weapon_shape(ci: CanvasItem, v: UnitVisualData, angle: float, 
 				var near: Vector2 = forward * (body_r * 0.5) + lateral
 				var far: Vector2 = forward * reach_c + lateral
 				ci.draw_line(near, far, col, 2.5, true)
+		UnitVisualData.WeaponType.BOW:
+			# Arrow streak — single forward dart for the release "twang."
+			# Shorter near-end than SPEAR (the arrow leaves the bow, doesn't
+			# extend from it), longer reach to suggest the projectile flying.
+			var inner_b: Vector2 = Vector2.from_angle(angle) * (body_r * 0.4) * reach_factor
+			var outer_b: Vector2 = Vector2.from_angle(angle) * (body_r + 18.0) * reach_factor
+			ci.draw_line(inner_b, outer_b, col, 2.5, true)
 		_:
 			# SWORD (default) — 60° slash arc.
 			var reach: float = (body_r + 14.0) * reach_factor
@@ -272,6 +279,11 @@ static func _draw_weapon_glow(ci: CanvasItem, v: UnitVisualData, angle: float, b
 			for i in range(-1, 2):
 				var lateral: Vector2 = side * float(i) * 6.0
 				ci.draw_line(forward * (body_r * 0.45) + lateral, forward * reach_c + lateral, col, 6.0, true)
+		UnitVisualData.WeaponType.BOW:
+			# Wider under-glow for the arrow streak.
+			var inner_b: Vector2 = Vector2.from_angle(angle) * (body_r * 0.3) * reach_factor
+			var outer_b: Vector2 = Vector2.from_angle(angle) * (body_r + 22.0) * reach_factor
+			ci.draw_line(inner_b, outer_b, col, 5.5, true)
 		_:
 			var reach: float = (body_r + 16.0) * reach_factor
 			var half_span: float = PI / 3.0
@@ -591,6 +603,31 @@ static func _draw_held_weapon(ci: CanvasItem, v: UnitVisualData, shoulder: Vecto
 			# Claws are part of the hand — skip the held weapon. The arm tip
 			# already reads as a fist; nothing to draw.
 			return
+		UnitVisualData.WeaponType.BOW:
+			# Recurve bow held at the hand. Arc body curves forward (convex
+			# face down-range, toward the archer's target); string is a
+			# straight chord on the archer's side. Arc center sits BEHIND
+			# the hand along `-fwd` so the arc bulges forward through the
+			# hand position and ends symmetrically along the `side` axis.
+			var bow_color := Color(0.45, 0.30, 0.18)
+			var string_color := Color(0.92, 0.90, 0.78, 0.85)
+			var arc_radius: float = 26.0
+			var arc_center: Vector2 = hand - fwd * 17.0
+			var center_angle: float = atan2(fwd.y, fwd.x)
+			var half_span: float = PI * 0.45
+			ci.draw_arc(arc_center, arc_radius,
+				center_angle - half_span, center_angle + half_span,
+				14, bow_color, 3.0, true)
+			# String — chord between the two limb tips.
+			var ang_a: float = center_angle - half_span
+			var ang_b: float = center_angle + half_span
+			var tip_a: Vector2 = arc_center + Vector2(cos(ang_a), sin(ang_a)) * arc_radius
+			var tip_b: Vector2 = arc_center + Vector2(cos(ang_b), sin(ang_b)) * arc_radius
+			ci.draw_line(tip_a, tip_b, string_color, 1.5, true)
+			# Nocked arrow — a small forward stub from the hand for the
+			# "ready to fire" silhouette. Drawn only when the hand is roughly
+			# at rest; the swing-arc trail handles the in-flight visual.
+			ci.draw_line(hand - fwd * 3.0, hand + fwd * 12.0, Color(0.55, 0.40, 0.25), 1.8, true)
 		_:
 			# SWORD (default) — also serves as a serviceable club for orcs:
 			# rectangular shaft with a pommel and a wider blade body.

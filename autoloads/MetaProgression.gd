@@ -354,7 +354,15 @@ func get_hero_xp(hero_id: String) -> int:
 
 func _ensure_hero_progress_entry(hero_id: String) -> void:
 	if not hero_progress.has(hero_id):
-		hero_progress[hero_id] = {"level": 1, "xp": 0}
+		hero_progress[hero_id] = {"level": 1, "xp": 0, "last_synced_level": 1}
+	# Backfill the cursor on entries that were created before the field was
+	# added (post-load v4-migrated saves). Sync_hero_progression_to_level
+	# is idempotent, so leaving this at 0 wouldn't crash, but seeding to the
+	# current level matches the "this is a fresh entry, no catch-up needed"
+	# invariant for newly-discovered heroes.
+	var entry: Dictionary = hero_progress[hero_id]
+	if not entry.has("last_synced_level"):
+		entry["last_synced_level"] = int(entry.get("level", 1))
 
 
 # ── Hero skill-tree progression ─────────────────────────────────────────
@@ -440,6 +448,61 @@ func can_purchase_node(hero_id: String, node_id: String) -> Dictionary:
 	return {"ok": true, "reason": ""}
 
 
+# Phase 3R-followup — catch-up sync for heroes loaded from saves whose
+# level outpaces the per-level grants (talent migration v4→v5, or any path
+# where hero_progress.level was bumped without firing add_hero_xp's loop).
+# Tracked via `last_synced_level` cursor inside the hero_progress entry so
+# the discriminator persists and re-syncing is idempotent. Call from
+# SaveManager.load_game once per hero after hero_progress restores.
+func sync_hero_progression_to_level(hero_id: String) -> void:
+	if hero_id == "" or not hero_progress.has(hero_id):
+		return
+	if not has_node("/root/ContentRegistry"):
+		return  # tree lookup needs registry; defer until autoloads are ready
+	var entry: Dictionary = hero_progress[hero_id]
+	var target: int = int(entry.get("level", 1))
+	var cursor: int = int(entry.get("last_synced_level", 0))
+	if cursor >= target:
+		return
+	var granted: int = 0
+	while cursor < target:
+		cursor += 1
+		# L1 is the starting level; no per-level grant. Per-level grants
+		# begin at level 2 to match add_hero_xp's level-up loop semantics.
+		if cursor > 1:
+			add_hero_skill_points(hero_id, 1)
+			granted += 1
+		_auto_purchase_slot_unlocks_at_level(hero_id, cursor)
+	entry["last_synced_level"] = cursor
+	if granted > 0:
+		print("[MetaProgression] catch-up synced %s through L%d (+%d points)" % [hero_id, target, granted])
+
+
+# Phase 3P — auto-grant SLOT_UNLOCK nodes whose level threshold is met.
+# These are point_cost=0 progression markers; the slot caps in LoadoutState
+# already gate by hero level, so this just synchronises the tree UI's
+# PURCHASED state. Idempotent — already-recorded nodes are skipped.
+func _auto_purchase_slot_unlocks_at_level(hero_id: String, current_level: int) -> void:
+	var tree: Resource = ContentRegistry.find_skill_tree(hero_id)
+	if tree == null:
+		return
+	if not hero_skill_nodes.has(hero_id):
+		hero_skill_nodes[hero_id] = {}
+	var d: Dictionary = hero_skill_nodes[hero_id]
+	for n in tree.nodes:
+		if n == null or not ("kind" in n):
+			continue
+		if int(n.kind) != _HeroSkillNodeDataScript.Kind.SLOT_UNLOCK:
+			continue
+		if int(n.level_required) > current_level:
+			continue
+		var nid: String = String(n.node_id)
+		if d.has(nid):
+			continue
+		d[nid] = int(n.rank)
+		EventBus.hero_node_purchased.emit(hero_id, nid)
+
+
 func purchase_node(hero_id: String, node_id: String) -> bool:
 	var check: Dictionary = can_purchase_node(hero_id, node_id)
 	if not check.ok:
@@ -485,6 +548,14 @@ func add_hero_xp(hero_id: String, amount: int) -> int:
 		# BaseHero) so a level-up via debug grant or save migration also
 		# adds points, not just earned XP in-level.
 		add_hero_skill_points(hero_id, 1)
+		# Phase 3P — auto-purchase SLOT_UNLOCK nodes whose threshold is now met.
+		# Slot caps already gate by hero level in LoadoutState; this just keeps
+		# the skill-tree UI visibly in sync (the player sees "★ Slot Unlocked"
+		# rows transition from locked to purchased as they hit thresholds).
+		_auto_purchase_slot_unlocks_at_level(hero_id, lvl)
+		# Phase 3R-followup — bump the catch-up cursor inline so a save loaded
+		# fresh after this run won't re-grant points via sync_hero_progression.
+		entry["last_synced_level"] = lvl
 	if lvl >= hero_data.max_level:
 		xp = 0
 	entry["level"] = lvl

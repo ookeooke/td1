@@ -102,6 +102,17 @@ func trigger_event(event: int, ctx: Dictionary = {}) -> void:
 			_safe_apply(a, ctx)
 
 
+# Phase 3N — true if any ability on this host carries a positive duration
+# (time-limited buff like Hunter's Stance / Mana Shield / Bless self-cast).
+# BaseHero's _draw uses this to render a buff aura. Permanent abilities
+# (passives, talents) have duration = 0 and don't trigger the aura.
+func has_temp_buff() -> bool:
+	for a in _abilities:
+		if a != null and a.duration > 0.0:
+			return true
+	return false
+
+
 func _safe_apply(ability: Resource, ctx: Dictionary) -> void:
 	if owner == null or not is_instance_valid(owner):
 		return

@@ -23,7 +23,12 @@
 # the total-star count needed to unlock. Players don't "spend" stars on
 # these — reaching the threshold is enough (stars are spent on upgrades).
 var _star_thresholds: Dictionary = {
-	# "hero_mage": 5,  # uncomment to gate Mage behind 5 total campaign stars
+	# Phase 3H — both unlock-required heroes have natural progression gates.
+	# Mage opens after 5 stars (≈ clearing L1 fully + 2 more on L2). Ranger
+	# at 12 stars (mid-game, ≈ 4 levels averaged 3-star). Players don't spend
+	# stars on these — reaching the threshold is enough.
+	"hero_mage": 5,
+	"hero_ranger": 12,
 }
 
 

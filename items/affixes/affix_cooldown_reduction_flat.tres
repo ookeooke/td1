@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AffixData" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://dmke300jq3e47" path="res://items/AffixData.gd" id="1_affix"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+
+[sub_resource type="Resource" id="Tpl_CdrFlat"]
+script = ExtResource("2_mod")
+ability_id = "affix_tpl_cooldown_reduction_flat"
+trigger = 7
+cooldown_reduction_flat = 0.0
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = "affix_cooldown_reduction_flat"
+display_template = "+{value}% Cooldown Reduction"
+value_min = 0.03
+value_max = 0.08
+value_is_int = false
+display_scale = 100.0
+display_decimals = 0
+ability_template = SubResource("Tpl_CdrFlat")
+ability_value_property = "cooldown_reduction_flat"
+allowed_slots = Array[int]([])
+weight = 0.6

@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=4 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+[ext_resource type="Texture2D" path="res://items/art/base_guardian_greaves.jpg" id="3_tex"]
+
+[sub_resource type="Resource" id="Impl_GuardianGreaves_Hp"]
+script = ExtResource("2_mod")
+ability_id = "impl_guardian_greaves_hp"
+trigger = 7
+max_health_pct = 0.10
+
+[sub_resource type="Resource" id="Impl_GuardianGreaves_Armor"]
+script = ExtResource("2_mod")
+ability_id = "impl_guardian_greaves_armor"
+trigger = 7
+armor_flat = 0.04
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_guardian_greaves"
+base_name = "Guardian Greaves"
+slot = 4
+rarity = 3
+icon_glyph = "generic"
+icon_color = Color(0.85, 0.7, 0.35, 1)
+icon_texture = ExtResource("3_tex")
+hero_restriction = Array[String]([])
+level_requirement = 1
+implicit_abilities = Array[Resource]([SubResource("Impl_GuardianGreaves_Hp"), SubResource("Impl_GuardianGreaves_Armor")])
+affix_slots = 2
+allowed_affix_pools = Array[String](["pool_armor_defensive", "pool_universal"])
+drop_weight = 0.2
+min_wave = 4
+description = "Plate-banded boots forged for keep-watch. The wearer plants and holds."

@@ -26,11 +26,20 @@ const _AbilityDataScript: Script = preload("res://systems/AbilityData.gd")
 @export var buff_duration: float = 8.0
 
 
-func apply(hero: Node, _target, _ctx: Dictionary = {}) -> void:
+func apply(hero: Node, _target, ctx: Dictionary = {}) -> void:
 	if hero == null or not is_instance_valid(hero):
 		return
+	# Phase 2C/3G — rank + mod ctx multipliers. Bless reads:
+	#   radius_mult   → bless reach (find allies within X * mult)
+	#   damage_mult   → damage_bonus on each blessed ally
+	#   duration_mult → buff lifetime
+	# Subclass folds these into the locals it actually uses; passes the
+	# scaled values into _make_bless so each ally gets the right buff.
+	var eff_radius: float = radius * float(ctx.get("radius_mult", 1.0))
+	var eff_dmg_bonus: float = damage_bonus * float(ctx.get("damage_mult", 1.0))
+	var eff_duration: float = buff_duration * float(ctx.get("duration_mult", 1.0))
 	var hero_pos: Vector2 = hero.global_position
-	var r2: float = radius * radius
+	var r2: float = eff_radius * eff_radius
 	var blessed: int = 0
 	# Soldiers in radius.
 	for soldier in hero.get_tree().get_nodes_in_group("soldiers"):
@@ -42,30 +51,32 @@ func apply(hero: Node, _target, _ctx: Dictionary = {}) -> void:
 			continue
 		if not ("_ability_host" in soldier) or soldier._ability_host == null:
 			continue
-		soldier._ability_host.add_ability(_make_bless())
+		soldier._ability_host.add_ability(_make_bless(eff_dmg_bonus, eff_duration))
 		blessed += 1
 	# Hero himself — always within his own radius (distance = 0). Skipped
 	# silently if the hero lacks an _ability_host (shouldn't happen, but
 	# stays defensive).
 	if "_ability_host" in hero and hero._ability_host != null:
-		hero._ability_host.add_ability(_make_bless())
+		hero._ability_host.add_ability(_make_bless(eff_dmg_bonus, eff_duration))
 		blessed += 1
 	print("[Skill/Bless] %s blessed %d allies for %.1fs (+%.0f dmg, +%d HP)" % [
 		hero.data.hero_name if hero.data != null else "?",
 		blessed,
-		buff_duration,
-		damage_bonus,
+		eff_duration,
+		eff_dmg_bonus,
 		health_bonus,
 	])
 
 
 # Build a fresh bless ability instance per recipient so per-target revert
 # math stays isolated (see additive-stacking note in SoldierBlessAbility.gd).
-func _make_bless() -> Resource:
+# Effective damage_bonus + duration are pre-merged in apply() so the same
+# per-cast values reach every recipient.
+func _make_bless(eff_damage_bonus: float, eff_duration: float) -> Resource:
 	var bless: Resource = _BlessScript.new()
 	bless.ability_id = "soldier_bless"
 	bless.trigger = _AbilityDataScript.Trigger.ON_SPAWN
-	bless.duration = buff_duration
-	bless.damage_bonus = damage_bonus
+	bless.duration = eff_duration
+	bless.damage_bonus = eff_damage_bonus
 	bless.health_bonus = health_bonus
 	return bless

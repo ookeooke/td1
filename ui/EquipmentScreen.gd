@@ -128,16 +128,31 @@ const _STATS_LAYOUT: Array = [
 	# Health, the two headline numbers most useful for cross-item comparison.
 	# Magic Resist surfaced in DEFENSE; rows render but auto-hide when value
 	# rounds to 0 AND no equipped item modifies them (see _refresh_stats_panel).
+	# Phase 3R-followup — added health_regen + cooldown_reduction rows so the
+	# Phase 3F stats are legible on gear. skill_power deliberately omitted —
+	# see the comment block below _STATS_LAYOUT for the rationale.
 	["POWER",   [["dps", "DPS"], ["max_health", "Health"]]],
 	["OFFENSE", [["damage", "Damage"], ["attack_speed", "Atk Speed"]]],
-	["DEFENSE", [["armor", "Armor"], ["magic_resist", "Magic Resist"]]],
-	["UTILITY", [["move_speed", "Move Speed"], ["xp_gain_mult", "XP Gain"]]],
+	["DEFENSE", [["armor", "Armor"], ["magic_resist", "Magic Resist"], ["health_regen", "HP Regen"]]],
+	["UTILITY", [["move_speed", "Move Speed"], ["xp_gain_mult", "XP Gain"], ["cooldown_reduction", "Cooldown Reduction"]]],
 ]
+# skill_power is omitted from the visible stat rows by choice, not by missing
+# wiring: BaseHero._build_skill_ctx now folds skill_power into damage_mult,
+# so gear / passives / Mage's Pyromancer capstone all amplify skill damage
+# end-to-end. The omission is a display problem — current_stats["skill_power"]
+# baseline is 1.0 and there's no 1.0-aware display rule (vs the 0-baseline
+# stats which the _HIDE_WHEN_ZERO_KEYS rule handles cleanly). When a UX
+# pattern lands for "show as +N% above baseline, hide at baseline," re-add
+# ["skill_power", "Skill Power"] to _STATS_LAYOUT. The item-affix tooltip
+# (_format_ability_line) already renders skill_power_flat / skill_power_pct
+# on gear so the source is legible.
 # Stats that should hide when value rounds to 0 AND no equipped item modifies
 # them. Avoids showing "Mag Resist 0%" on heroes with no MR (Knight) while
 # still keeping the row visible for the Mage (intrinsic 30%) or any hero with
-# a Magic Resist affix equipped.
-const _HIDE_WHEN_ZERO_KEYS: Array[String] = ["magic_resist"]
+# a Magic Resist affix equipped. The Phase 3F additions (skill_power,
+# health_regen, cooldown_reduction) all default to 0 / 1 — hide when no
+# gear modifies them so the layout doesn't crowd a baseline build.
+const _HIDE_WHEN_ZERO_KEYS: Array[String] = ["magic_resist", "health_regen", "cooldown_reduction"]
 var _stat_rows: Dictionary = {}
 var _last_stats_dict: Dictionary = {}
 var _first_refresh: bool = true
@@ -998,6 +1013,14 @@ func _format_stat_value(key: String, value: float) -> String:
 			return "%d" % int(round(value))
 		"xp_gain_mult":
 			return "+%d%%" % int(round((value - 1.0) * 100.0))
+		"health_regen":
+			# Stored as HP/sec (1.0 = one HP per second). Show one decimal so
+			# fractional rolls (e.g. 0.5) render as "0.5/s" not "0/s".
+			return "%.1f/s" % value
+		"cooldown_reduction":
+			# Stored 0..0.5 (fraction). Display as percentage to match how the
+			# player reads CDR in every other ARPG.
+			return "%d%%" % int(round(value * 100.0))
 		_:
 			return "%.2f" % value
 
@@ -1018,6 +1041,10 @@ func _format_stat_delta(key: String, diff: float) -> String:
 		"attack_speed":
 			return "%+.2f/s" % diff
 		"xp_gain_mult":
+			return "%+d%%" % int(round(diff * 100.0))
+		"health_regen":
+			return "%+.1f/s" % diff
+		"cooldown_reduction":
 			return "%+d%%" % int(round(diff * 100.0))
 		_:
 			return "%+.2f" % diff
@@ -1123,9 +1150,20 @@ func _format_ability_line(ability: Resource) -> String:
 	_append_if_nonzero(parts, ability, "max_health_flat", "+%d Max HP")
 	_append_if_nonzero_pct(parts, ability, "max_health_pct", "+%d%% Max HP")
 	_append_if_nonzero(parts, ability, "armor_flat", "+%d%% Armor", 100.0)  # armor stored as 0-1 decimal
+	_append_if_nonzero_pct(parts, ability, "armor_pct", "+%d%% Armor")
+	_append_if_nonzero(parts, ability, "magic_resist_flat", "+%d%% Magic Resist", 100.0)
+	_append_if_nonzero_pct(parts, ability, "magic_resist_pct", "+%d%% Magic Resist")
 	_append_if_nonzero_pct(parts, ability, "attack_speed_pct", "+%d%% Atk Speed")
+	_append_if_nonzero_pct(parts, ability, "attack_range_pct", "+%d%% Range")
 	_append_if_nonzero_pct(parts, ability, "move_speed_pct", "+%d%% Move Speed")
 	_append_if_nonzero_pct(parts, ability, "xp_gain_mult_pct", "+%d%% XP Gain")
+	# Phase 3F additions — skill_power / health_regen / cooldown_reduction
+	# now drive real combat numbers; surfacing them here so item rolls are
+	# legible at a glance.
+	_append_if_nonzero(parts, ability, "skill_power_flat", "+%d Skill Power")
+	_append_if_nonzero_pct(parts, ability, "skill_power_pct", "+%d%% Skill Power")
+	_append_if_nonzero(parts, ability, "health_regen_flat", "+%d HP/s")
+	_append_if_nonzero(parts, ability, "cooldown_reduction_flat", "+%d%% CDR", 100.0)
 	_append_if_nonzero(parts, ability, "heal_amount", "+%d HP regen")
 	_append_if_nonzero(parts, ability, "bonus_damage", "+%d bonus on hit")
 	if parts.is_empty():

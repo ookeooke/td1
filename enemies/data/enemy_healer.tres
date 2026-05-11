@@ -1,8 +1,8 @@
-[gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://b1td1heal001"]
+[gd_resource type="Resource" script_class="EnemyData" format=3]
 
-[ext_resource type="Script" uid="uid://bfgo62wek7fpf" path="res://enemies/EnemyData.gd" id="1_data"]
-[ext_resource type="Script" uid="uid://cp02o50kiybdd" path="res://systems/abilities/HealAuraAbility.gd" id="2_healaura"]
-[ext_resource type="Resource" uid="uid://dfd0f5v4t0phs" path="res://enemies/data/visual_healer.tres" id="3_vis"]
+[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Script" path="res://systems/abilities/HealAuraAbility.gd" id="2_healaura"]
+[ext_resource type="Resource" path="res://enemies/data/visual_healer.tres" id="3_vis"]
 
 [sub_resource type="Resource" id="HealAura_1"]
 script = ExtResource("2_healaura")
@@ -15,7 +15,7 @@ script = ExtResource("1_data")
 enemy_id = "enemy_healer"
 enemy_name = "Shaman"
 max_health = 38
-move_speed = 75.0
+move_speed = 80.00000000000026
 magic_resist = 0.25
 gold_worth = 4
 xp_worth = 16

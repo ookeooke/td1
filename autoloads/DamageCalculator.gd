@@ -30,11 +30,19 @@ func calculate_damage(amount: float, type: int, target) -> float:
 		else:
 			magic_resist = clampf(target.data.magic_resist, 0.0, 1.0)
 
+	# Phase 3L — Marked / debuff amplifier. Multiplied AFTER armor/magic_resist
+	# so the mark amplifies post-mitigation damage uniformly across types.
+	# Falls through to 1.0 for targets without the accessor (heroes, soldiers).
+	var dmg_taken_mult: float = 1.0
+	if target and target.has_method("get_damage_taken_mult"):
+		dmg_taken_mult = target.get_damage_taken_mult()
+
+	var raw: float = amount
 	match type:
 		DamageType.PHYSICAL:
-			return amount * (1.0 - armor)
+			raw = amount * (1.0 - armor)
 		DamageType.MAGIC:
-			return amount * (1.0 - magic_resist)
+			raw = amount * (1.0 - magic_resist)
 		DamageType.TRUE:
-			return amount
-	return amount
+			raw = amount
+	return raw * dmg_taken_mult

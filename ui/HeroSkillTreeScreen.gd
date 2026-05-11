@@ -349,8 +349,13 @@ func _make_mod_status_widget(node: Resource) -> Control:
 		return active
 	var pick := Button.new()
 	pick.text = "Pick"
-	pick.pressed.connect(func(): LoadoutState.set_chosen_mod(_hero_id, skill_id, mod_id))
+	pick.pressed.connect(_on_pick_mod.bind(skill_id, mod_id))
 	return pick
+
+
+func _on_pick_mod(skill_id: String, mod_id: String) -> void:
+	if LoadoutState.set_chosen_mod(_hero_id, skill_id, mod_id):
+		_persist()
 
 
 func _make_stylebox(bg: Color, border: Color) -> StyleBoxFlat:
@@ -379,16 +384,17 @@ func _on_buy(node_id: String) -> void:
 	# PASSIVE_RANK / ACTIVE_RANK / SLOT_UNLOCK / CAPSTONE.
 	var tree: Resource = ContentRegistry.find_skill_tree(_hero_id)
 	if tree == null:
+		_persist()
 		return
 	var node: Resource = tree.find_node(node_id)
 	if node == null:
+		_persist()
 		return
-	if int(node.kind) != _HeroSkillNodeDataScript.Kind.MOD:
-		return
-	var mod: Resource = node.ability
-	if mod == null or not ("mod_id" in mod):
-		return
-	LoadoutState.set_chosen_mod(_hero_id, String(node.target_id), String(mod.mod_id))
+	if int(node.kind) == _HeroSkillNodeDataScript.Kind.MOD:
+		var mod: Resource = node.ability
+		if mod != null and "mod_id" in mod:
+			LoadoutState.set_chosen_mod(_hero_id, String(node.target_id), String(mod.mod_id))
+	_persist()
 
 
 func _equip_to_next_slot(passive_id: String) -> void:
@@ -397,6 +403,7 @@ func _equip_to_next_slot(passive_id: String) -> void:
 	for i in cap:
 		if equipped[i] == "":
 			LoadoutState.set_equipped_passive(_hero_id, i, passive_id)
+			_persist()
 			return
 	# No empty slot — replace the last slot. UX rationale: the player
 	# explicitly tapped an owned passive while equipped is full, so they
@@ -404,7 +411,19 @@ func _equip_to_next_slot(passive_id: String) -> void:
 	# preserving choice; a fuller "drag to a specific slot" pattern lands
 	# when drag support arrives.
 	LoadoutState.set_equipped_passive(_hero_id, cap - 1, passive_id)
+	_persist()
 
 
 func _unequip(slot_idx: int) -> void:
 	LoadoutState.set_equipped_passive(_hero_id, slot_idx, "")
+	_persist()
+
+
+# Persist on every tree mutation. Mirrors HeroesHub's save-on-equip pattern
+# for active skills — without these saves, points spent + nodes purchased +
+# equipped passives + chosen mods would all reset on the next reload. Test
+# Range guard inside SaveManager._save_to_path skips writes when the player
+# is in a sandbox run, so this is safe to call freely.
+func _persist() -> void:
+	if has_node("/root/SaveManager"):
+		SaveManager.save_game()

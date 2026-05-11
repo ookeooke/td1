@@ -49,6 +49,12 @@ class_name HeroData
 # hero's AbilityHost at gameplay start.
 @export var talents: Array[Resource] = []
 @export var visual: Resource  # UnitVisualData — drives _draw() when set
+# Phase 3R-followup-3 — optional projectile for basic attacks. When set,
+# _attack_step spawns this PackedScene's root and calls setup(target, damage,
+# damage_type, source) on it (mirroring BaseTower._fire_projectile). Use
+# res://projectiles/Arrow.tscn for the ranger archetype. Null = instant hit
+# (melee / instant magic strike). Mirrors TowerData.projectile_scene.
+@export var projectile_scene: PackedScene
 # Phase 48 — starter gear granted + auto-equipped the first time this hero
 # is played. Each entry is an ItemBase; InventoryManager.ensure_starter_gear
 # creates a zero-affix ItemInstance and slots it into the matching slot.

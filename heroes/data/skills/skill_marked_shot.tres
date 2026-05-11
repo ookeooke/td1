@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="MarkedShotSkillData" format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/marked_shot_skill_data.gd" id="1_marked"]
+
+[resource]
+script = ExtResource("1_marked")
+skill_name = "Marked Shot"
+skill_id = "marked_shot"
+skill_range = 360.0
+damage = 0.0
+damage_type = 0
+cooldown = 12.0
+target_type = 0
+level_required = 6
+damage_taken_mult = 1.4
+mark_duration = 6.0
+description = "Tag a single enemy. While marked, the target takes 40% more damage from every source — hero attacks, towers, soldiers. Mark lasts 6s."
+rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.15, "duration_mult": 1.2}]

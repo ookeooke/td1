@@ -9,7 +9,7 @@ enum Shape { CIRCLE, SQUARE }
 enum Accent { NONE, WEAPON_LINE, CROSSHAIR, WINGS, CROWN }
 # Drives draw_swing_arc_trail's silhouette. Default SWORD keeps the existing
 # 60° arc, so every existing .tres renders unchanged until explicitly updated.
-enum WeaponType { SWORD, SPEAR, STAFF, CLAWS }
+enum WeaponType { SWORD, SPEAR, STAFF, CLAWS, BOW }
 # Race tag selects the multi-part body silhouette (head, legs, optional tusks).
 # NONE = legacy single-shape draw, kept as fallback for any visual not migrated.
 enum Race { NONE, HUMAN, ORC, GOBLIN, TROLL, UNDEAD }

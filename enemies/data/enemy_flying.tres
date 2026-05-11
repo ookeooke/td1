@@ -1,7 +1,7 @@
-[gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://b1td1harpy001"]
+[gd_resource type="Resource" script_class="EnemyData" format=3]
 
-[ext_resource type="Script" uid="uid://bfgo62wek7fpf" path="res://enemies/EnemyData.gd" id="1_data"]
-[ext_resource type="Resource" uid="uid://ccwpk13iw55jr" path="res://enemies/data/visual_flying.tres" id="2_vis"]
+[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://enemies/data/visual_flying.tres" id="2_vis"]
 
 [resource]
 script = ExtResource("1_data")
@@ -10,7 +10,7 @@ enemy_name = "Harpy"
 max_health = 18
 move_speed = 125.0
 magic_resist = 0.3
-gold_worth = 1
+gold_worth = 2
 xp_worth = 8
 is_flying = true
 visual = ExtResource("2_vis")

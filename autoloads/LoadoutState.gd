@@ -556,15 +556,37 @@ func get_effective_ppt() -> float:
 		towers_count += 1
 	var towers_avg: float = (towers_total / float(towers_count)) if towers_count > 0 else 0.0
 	total += towers_avg * _PPT_W_TOWERS
-	# Bonus contributions from talents + meta-upgrades, capped together
+	# Bonus contributions from skill-tree purchases on the SELECTED hero, plus
+	# legacy talents (zero post-migration but still counted for un-migrated
+	# saves), plus meta upgrades. Scoped to selected_hero_id because PPT
+	# represents the *current run* loadout power — Mage's capstone shouldn't
+	# raise Knight's PPT when Knight is the selected hero. Nodes counted:
+	# any PASSIVE_RANK / MOD / CAPSTONE the player has purchased on the
+	# selected hero. SLOT_UNLOCK + bare ACTIVE_RANK don't count (they don't
+	# change combat numbers themselves).
+	var node_count: int = 0
 	var talent_count: int = 0
 	var upgrade_count: int = 0
 	if has_node("/root/MetaProgression"):
-		for hid in MetaProgression.hero_talents.keys():
-			var arr: Array = MetaProgression.hero_talents[hid]
-			talent_count += arr.size()
+		# Legacy talents — scoped to selected hero only (matches new behavior).
+		var legacy_talents: Array = MetaProgression.hero_talents.get(selected_hero_id, [])
+		talent_count = legacy_talents.size()
 		upgrade_count = MetaProgression.purchased_upgrades.size()
+		# Skill-tree nodes — selected hero only.
+		var per_hero: Dictionary = MetaProgression.hero_skill_nodes.get(selected_hero_id, {})
+		var tree: Resource = ContentRegistry.find_skill_tree(selected_hero_id)
+		if tree != null:
+			for node_id in per_hero.keys():
+				var node: Resource = tree.find_node(String(node_id))
+				if node == null:
+					continue
+				var k: int = int(node.kind)
+				if k == _HeroSkillNodeDataScript.Kind.PASSIVE_RANK \
+						or k == _HeroSkillNodeDataScript.Kind.MOD \
+						or k == _HeroSkillNodeDataScript.Kind.CAPSTONE:
+					node_count += 1
 	var talent_bonus: float = minf(_PPT_BONUS_CAP, float(talent_count) * _PPT_BONUS_PER_TALENT)
+	var node_bonus: float = minf(_PPT_BONUS_CAP, float(node_count) * _PPT_BONUS_PER_TALENT)
 	var upgrade_bonus: float = minf(_PPT_BONUS_CAP, float(upgrade_count) * _PPT_BONUS_PER_UPGRADE)
-	total += talent_bonus + upgrade_bonus
+	total += talent_bonus + node_bonus + upgrade_bonus
 	return total

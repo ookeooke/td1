@@ -24,6 +24,10 @@ class_name StatModifierAbility
 @export var xp_gain_mult_pct: float = 0.0
 @export var skill_power_flat: float = 0.0
 @export var skill_power_pct: float = 0.0
+@export var health_regen_flat: float = 0.0
+# Cooldown reduction stacks additively (5 × 4% = 20%). Stored as a fraction
+# in [0..1]; the reader caps at 0.5 so a fully-geared loadout can't free-cast.
+@export var cooldown_reduction_flat: float = 0.0
 
 
 func apply(owner: Node, ctx: Dictionary) -> void:
@@ -47,3 +51,19 @@ func apply(owner: Node, ctx: Dictionary) -> void:
 		owner.recompute_stats()
 		if owner.has_method("_refresh_health_after_modifier_change"):
 			owner._refresh_health_after_modifier_change()
+
+
+# AbilityHost.tick() calls this when `duration > 0` and the ability ages out.
+# Without it, a time-limited stat buff (e.g. Hunter's Stance pushed via
+# BuffSkillData) would leak its registration in owner._modifier_sources —
+# the ability gets removed from the host's _abilities array, but the modifier
+# source persists. Unregister + recompute brings stats back to baseline.
+func _on_expired(owner: Node) -> void:
+	if owner == null or not is_instance_valid(owner):
+		return
+	if not (owner.has_method("unregister_modifier_source") and owner.has_method("recompute_stats")):
+		return
+	owner.unregister_modifier_source(self)
+	owner.recompute_stats()
+	if owner.has_method("_refresh_health_after_modifier_change"):
+		owner._refresh_health_after_modifier_change()

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="ShieldBashSkillData" format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/shield_bash_skill_data.gd" id="1_bash"]
+
+[resource]
+script = ExtResource("1_bash")
+skill_name = "Frost Nova"
+skill_id = "frost_nova"
+skill_range = 250.0
+damage = 14.0
+damage_type = 1
+cooldown = 10.0
+target_type = 1
+level_required = 3
+aoe_radius = 130.0
+on_hit_slow_factor = 0.4
+on_hit_slow_duration = 2.5
+description = "Burst of frost at the tap point — magic damage in a wide AoE plus a 40% slow for 2.5s."
+rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.2}]

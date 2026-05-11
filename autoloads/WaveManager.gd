@@ -747,7 +747,6 @@ func stop() -> void:
 	_level = null
 	_wave_index = -1
 	_active_spawners = 0
-	_alive_count = 0
 	_alive_per_wave.clear()
 	_pending_bounties.clear()
 	_pending_spawners_per_wave.clear()

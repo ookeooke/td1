@@ -11,48 +11,27 @@ extends Node
 # files) comes back as a bare Resource with no script attached. Load() runs
 # after every autoload has compiled — no race possible. Cost ~10ms at boot.
 
-const _ENEMY_PATHS: Array[String] = [
-	"res://enemies/data/enemy_basic.tres",
-	"res://enemies/data/enemy_flying.tres",
-	"res://enemies/data/enemy_healer.tres",
-	"res://enemies/data/enemy_armored.tres",
-	"res://enemies/data/enemy_scout.tres",
-	"res://enemies/data/enemy_brute.tres",
-	"res://enemies/data/boss_orc_warlord.tres",
-]
-
-const _TOWER_PATHS: Array[String] = [
-	"res://towers/data/tower_archer.tres",
-	"res://towers/data/tower_barracks.tres",
-	"res://towers/data/tower_mage.tres",
-	"res://towers/data/tower_artillery.tres",
-	"res://towers/data/tower_ice.tres",
-]
-
-const _HERO_PATHS: Array[String] = [
-	"res://heroes/data/hero_warrior.tres",
-	"res://heroes/data/hero_mage.tres",
-	"res://heroes/data/hero_ranger.tres",
-]
-
-# Phase 1 — per-hero skill trees (node-graph progression). Filename basename
-# matches hero_id so _assert_ids catches drift.
-const _SKILL_TREE_PATHS: Array[String] = [
-	"res://heroes/data/skill_trees/hero_warrior.tres",
-	"res://heroes/data/skill_trees/hero_mage.tres",
-	"res://heroes/data/skill_trees/hero_ranger.tres",
-]
-
+# Directory-globbed catalogs. Drop any new .tres into the matching folder
+# and it loads on next boot — no autoload edit. Filenames sort
+# lexicographically for deterministic load order across machines / file
+# systems. Loaded via _load_catalog_dir below.
+#
+# CORE RULE 16's load() vs preload() rationale still applies: every file is
+# load()'d inside _ready(), never preloaded at class-body scope.
+#
+# `enemies/data/` and `heroes/data/` contain `visual_*.tres` (UnitVisualData)
+# alongside the unit data files; the `required_field` filter in
+# _load_catalog_dir keeps only resources with the expected id field so
+# foreign siblings are silently skipped.
+const _ENEMY_DIR: String = "res://enemies/data/"
+const _TOWER_DIR: String = "res://towers/data/"
+const _HERO_DIR: String = "res://heroes/data/"
+# Phase 1 — per-hero skill trees (node-graph progression). Own subdir so no
+# foreign siblings; filter still applied for consistency.
+const _SKILL_TREE_DIR: String = "res://heroes/data/skill_trees/"
 # Phase 48 — loot system content. ItemBase templates back all dropped
 # ItemInstance runtime objects; AffixData templates are rolled into
 # instances at drop time; AffixPool groups affixes into pool_id buckets.
-#
-# Phase 49 — directory-globbed (was a hand-maintained Array[String]). Drop
-# any new .tres into the matching folder and it loads on next boot — no
-# autoload edit. Filenames sort lexicographically for deterministic load
-# order across machines / file systems. Loaded via _load_catalog_dir below.
-# CORE RULE 16's load() vs preload() rationale still applies: every file is
-# load()'d inside _ready(), never preloaded at class-body scope.
 const _ITEM_BASE_DIR: String = "res://items/bases/"
 const _AFFIX_DIR: String = "res://items/affixes/"
 const _AFFIX_POOL_DIR: String = "res://items/pools/"
@@ -76,10 +55,10 @@ const _LEVEL_LIST_PATH: String = "res://ui/world_map/level_list.tres"
 
 
 func _ready() -> void:
-	enemies = _load_catalog(_ENEMY_PATHS, "enemies")
-	towers = _load_catalog(_TOWER_PATHS, "towers")
-	heroes = _load_catalog(_HERO_PATHS, "heroes")
-	skill_trees = _load_catalog(_SKILL_TREE_PATHS, "skill_trees")
+	enemies = _load_catalog_dir(_ENEMY_DIR, "enemies", "enemy_id")
+	towers = _load_catalog_dir(_TOWER_DIR, "towers", "tower_id")
+	heroes = _load_catalog_dir(_HERO_DIR, "heroes", "hero_id")
+	skill_trees = _load_catalog_dir(_SKILL_TREE_DIR, "skill_trees", "hero_id")
 	item_bases = _load_catalog_dir(_ITEM_BASE_DIR, "item_bases")
 	affixes = _load_catalog_dir(_AFFIX_DIR, "affixes")
 	affix_pools = _load_catalog_dir(_AFFIX_POOL_DIR, "affix_pools")
@@ -111,25 +90,16 @@ func _load_levels() -> Array[Resource]:
 	return out
 
 
-# Loads each path, drops nulls with an error. Missing files are fatal-visible
-# (loud push_error) rather than silently skipped so content drift surfaces
-# on the very first boot.
-func _load_catalog(paths: Array[String], label: String) -> Array[Resource]:
-	var out: Array[Resource] = []
-	for p in paths:
-		var r: Resource = load(p)
-		if r == null:
-			push_error("[ContentRegistry] failed to load %s: %s" % [label, p])
-			continue
-		out.append(r)
-	return out
-
-
 # Directory-glob loader. Lists every .tres in `dir`, sorts filenames
 # lexicographically (deterministic across platforms), and loads each.
 # Skips .import / .uid sidecars implicitly via the suffix filter. Adding
 # a new authored file requires zero autoload edits.
-func _load_catalog_dir(dir: String, label: String) -> Array[Resource]:
+#
+# `required_field` (optional): if set, resources lacking that property are
+# silently skipped. Guards against foreign sibling .tres in the same dir
+# (e.g. visual_*.tres UnitVisualData files living alongside enemy_*.tres /
+# hero_*.tres). Empty string = accept everything.
+func _load_catalog_dir(dir: String, label: String, required_field: String = "") -> Array[Resource]:
 	var out: Array[Resource] = []
 	var d: DirAccess = DirAccess.open(dir)
 	if d == null:
@@ -145,6 +115,8 @@ func _load_catalog_dir(dir: String, label: String) -> Array[Resource]:
 		var r: Resource = load(p)
 		if r == null:
 			push_error("[ContentRegistry] failed to load %s: %s" % [label, p])
+			continue
+		if required_field != "" and not (required_field in r):
 			continue
 		out.append(r)
 	return out

@@ -6,7 +6,7 @@ class_name Arrow
 # MageBolt / ArtilleryShell). Hit detection uses the homing-linear ground
 # position; arc_height lifts the body visually so a shell reads as ballistic
 # without breaking the on-target-arrival timing.
-enum Shape { ARROW, CRYSTAL, ORB, SHELL }
+enum Shape { ARROW, CRYSTAL, ORB, SHELL, HERO_ARROW, ARCANE_BOLT }
 
 const _ShellImpactScript := preload("res://vfx/ShellImpactVFX.gd")
 
@@ -155,8 +155,146 @@ func _on_hit() -> void:
 		# the player just paid for. Skipped on clean_view.
 		if not VFXSpawner.clean_view:
 			_ShellImpactScript.spawn(get_tree().current_scene, impact_pos, _aoe_radius)
+	# Per-shape impact polish on the primary target. HitSparkVFX is already
+	# routed via EventBus.hit_landed for every hit — these add an element-
+	# specific flourish on top (frost shatter, arcane ring) so each projectile
+	# class has a distinct hit signature, not just a different in-flight look.
+	if not VFXSpawner.clean_view:
+		_spawn_impact_vfx(impact_pos)
 	if total_dealt > 0.0 and _source != null and is_instance_valid(_source) and _source.has_method("record_damage"):
 		_source.record_damage(total_dealt)
+
+
+func _spawn_impact_vfx(impact_pos: Vector2) -> void:
+	var parent: Node = get_tree().current_scene
+	if parent == null:
+		return
+	# Shift the spawn down to the target's feet so the impact reads as a
+	# ground splat under the enemy, not a halo around its body. Flying
+	# enemies don't touch the ground — keep the impact at body center for
+	# them. z_index = -1 on each spawned VFX so the body sprite draws on top.
+	var ground_pos: Vector2 = impact_pos
+	if is_instance_valid(_target) and "data" in _target and _target.data != null and _target.data.visual != null:
+		var on_ground: bool = true
+		if "is_flying" in _target.data:
+			on_ground = not _target.data.is_flying
+		if on_ground:
+			ground_pos.y += _target.data.visual.radius * 0.95
+	match shape:
+		Shape.CRYSTAL:
+			# Frost shatter — 6 outward shard streaks, cyan-white, very brief.
+			var burst := _IceShatterVFX.new()
+			burst.global_position = ground_pos
+			burst.z_index = -1
+			burst._color = proj_color
+			parent.add_child(burst)
+		Shape.ORB:
+			# Arcane ring — single expanding ring in proj_color.
+			var ring := _ArcaneRingVFX.new()
+			ring.global_position = ground_pos
+			ring.z_index = -1
+			ring._color = proj_color
+			parent.add_child(ring)
+		Shape.ARCANE_BOLT:
+			# Bigger arcane burst — a ring + 5 radial rune flashes. Slightly
+			# more theatrical than the tower MageBolt ring because the hero
+			# shot fires slower and is "the" attack the player is watching.
+			var ring2 := _ArcaneRingVFX.new()
+			ring2.global_position = ground_pos
+			ring2.z_index = -1
+			ring2._color = proj_color
+			parent.add_child(ring2)
+			var burst := _ArcaneBurstVFX.new()
+			burst.global_position = ground_pos
+			burst.z_index = -1
+			burst._color = proj_color
+			parent.add_child(burst)
+
+
+# Tiny inner VFX classes — kept here so the shape→effect dispatch is local
+# to Arrow.gd and we don't fan out a new .gd per impact variant.
+class _IceShatterVFX extends Node2D:
+	const LIFE: float = 0.22
+	var _t: float = LIFE
+	var _color: Color = Color(0.55, 0.85, 1.0)
+	var _angles: Array = []
+	func _ready() -> void:
+		for i in 6:
+			_angles.append(randf_range(0.0, TAU))
+	func _process(delta: float) -> void:
+		_t -= delta
+		if _t <= 0.0:
+			queue_free()
+			return
+		queue_redraw()
+	func _draw() -> void:
+		var k: float = clampf(1.0 - _t / LIFE, 0.0, 1.0)
+		var alpha: float = 1.0 - k
+		var reach: float = lerpf(6.0, 26.0, k)
+		var c: Color = _color.lerp(Color(1, 1, 1), 0.4)
+		c.a = alpha
+		for a in _angles:
+			var dir: Vector2 = Vector2.from_angle(float(a))
+			draw_line(dir * 3.0, dir * reach, c, 2.0, true)
+		# Center frost puff.
+		var puff: Color = _color
+		puff.a = alpha * 0.5
+		draw_circle(Vector2.ZERO, lerpf(4.0, 10.0, k), puff)
+
+
+class _ArcaneBurstVFX extends Node2D:
+	const LIFE: float = 0.32
+	var _t: float = LIFE
+	var _color: Color = Color(0.6, 0.45, 1.0)
+	var _angles: Array = []
+	func _ready() -> void:
+		# 5 rune flashes radiating outward at evenly-distributed angles + a
+		# random rotation so two consecutive impacts don't look identical.
+		var base: float = randf_range(0.0, TAU)
+		for i in 5:
+			_angles.append(base + TAU * float(i) / 5.0)
+	func _process(delta: float) -> void:
+		_t -= delta
+		if _t <= 0.0:
+			queue_free()
+			return
+		queue_redraw()
+	func _draw() -> void:
+		var k: float = clampf(1.0 - _t / LIFE, 0.0, 1.0)
+		var alpha: float = 1.0 - k
+		# Central white flash collapses to nothing.
+		var flash: Color = Color(1, 1, 1, alpha * 0.85)
+		draw_circle(Vector2.ZERO, lerpf(12.0, 2.0, k), flash)
+		# Rune streaks — thick at the head, fading to a point.
+		var reach: float = lerpf(8.0, 32.0, k)
+		var c: Color = _color.lerp(Color(1, 1, 1), 0.4)
+		c.a = alpha
+		for a in _angles:
+			var dir: Vector2 = Vector2.from_angle(float(a))
+			draw_line(dir * 4.0, dir * reach, c, lerpf(3.5, 1.0, k), true)
+
+
+class _ArcaneRingVFX extends Node2D:
+	const LIFE: float = 0.26
+	var _t: float = LIFE
+	var _color: Color = Color(0.6, 0.45, 1.0)
+	func _process(delta: float) -> void:
+		_t -= delta
+		if _t <= 0.0:
+			queue_free()
+			return
+		queue_redraw()
+	func _draw() -> void:
+		var k: float = clampf(1.0 - _t / LIFE, 0.0, 1.0)
+		var r: float = lerpf(4.0, 30.0, k)
+		var alpha: float = (1.0 - k) * 0.9
+		var ring: Color = _color
+		ring.a = alpha
+		draw_arc(Vector2.ZERO, r, 0.0, TAU, 28, ring, lerpf(4.0, 1.0, k), true)
+		# Inner glow flash, white core.
+		var core: Color = _color.lerp(Color(1, 1, 1), 0.6)
+		core.a = alpha * 0.7
+		draw_circle(Vector2.ZERO, lerpf(6.0, 2.0, k), core)
 
 
 func _draw() -> void:
@@ -242,6 +380,10 @@ func _draw() -> void:
 			_draw_orb_shape()
 		Shape.SHELL:
 			_draw_shell_shape(lift_t)
+		Shape.HERO_ARROW:
+			_draw_hero_arrow_shape()
+		Shape.ARCANE_BOLT:
+			_draw_arcane_bolt_shape()
 
 
 func _draw_arrow_shape() -> void:
@@ -271,6 +413,81 @@ func _draw_arrow_shape() -> void:
 		PackedVector2Array([Vector2(-16, 1), Vector2(-22, 4), Vector2(-12, 1)]),
 		fletching
 	)
+
+
+func _draw_hero_arrow_shape() -> void:
+	# Elven hero arrow — lighter ash shaft, brighter steel head, green
+	# fletching, faint warm glow. Reads as "magical / hero-fired" next to
+	# the plain brown tower arrow without changing silhouette enough to
+	# break the language of "this is an arrow." ~46 px total.
+	var shaft_color: Color = Color(0.82, 0.70, 0.48)
+	var head_color: Color = Color(0.85, 0.88, 0.92)
+	var head_dark: Color = Color(0.30, 0.32, 0.36)
+	var fletching: Color = Color(0.30, 0.75, 0.40)
+	var fletching_dark: Color = Color(0.18, 0.45, 0.22)
+	# Faint warm halo behind the body — sells "enchanted arrow."
+	draw_circle(Vector2(0, 0), 14.0, Color(1.0, 0.92, 0.55, 0.18))
+	# Shaft — pale ash, slightly thinner than the tower arrow.
+	draw_line(Vector2(-18, 0), Vector2(13, 0), shaft_color, 2.5)
+	# Arrowhead — long bright steel.
+	draw_colored_polygon(
+		PackedVector2Array([Vector2(24, 0), Vector2(13, -3), Vector2(13, 3)]),
+		head_color
+	)
+	# Head edge highlight.
+	draw_line(Vector2(24, 0), Vector2(13, -3), Color(1.0, 1.0, 1.0, 0.7), 1.0, true)
+	# Tiny dark binding at haft-to-head join.
+	draw_circle(Vector2(13, 0), 1.5, head_dark)
+	# Fletching — green leaf-feather pair, with a darker inner stripe so it
+	# reads as layered feathers, not flat triangles.
+	draw_colored_polygon(
+		PackedVector2Array([Vector2(-18, -1), Vector2(-25, -5), Vector2(-12, -1)]),
+		fletching
+	)
+	draw_colored_polygon(
+		PackedVector2Array([Vector2(-18, 1), Vector2(-25, 5), Vector2(-12, 1)]),
+		fletching
+	)
+	draw_line(Vector2(-18, -1), Vector2(-24, -3), fletching_dark, 1.0, true)
+	draw_line(Vector2(-18, 1), Vector2(-24, 3), fletching_dark, 1.0, true)
+
+
+func _draw_arcane_bolt_shape() -> void:
+	# Wand-fired arcane bolt — distinct silhouette from the soft round
+	# MageBolt (tower) and from any future ORB users. Reads as a charged,
+	# directional spell: an elongated capsule of energy with a bright white
+	# core, two small orbiting motes, and a faint crackle of rune lines.
+	# Symmetric around the long axis so rotation looks deliberate.
+	var t: float = _time * 6.0
+	# Outer halo — proj_color, soft.
+	var halo: Color = proj_color
+	halo.a = 0.30
+	draw_circle(Vector2.ZERO, 16.0, halo)
+	# Elongated energy capsule — diamond-ish, lit toward the front.
+	var capsule: PackedVector2Array = PackedVector2Array([
+		Vector2(18, 0), Vector2(4, -6), Vector2(-14, -3),
+		Vector2(-14, 3), Vector2(4, 6)
+	])
+	var body: Color = proj_color.lerp(Color(1, 1, 1), 0.35)
+	draw_colored_polygon(capsule, body)
+	# Bright core — slim, brighter near the tip.
+	var core: PackedVector2Array = PackedVector2Array([
+		Vector2(16, 0), Vector2(0, -2), Vector2(-10, 0), Vector2(0, 2)
+	])
+	draw_colored_polygon(core, Color(1.0, 1.0, 1.0, 0.95))
+	# Crackle — three short rune lines fanning back, alpha pulsing.
+	var crackle: Color = proj_color.lerp(Color(1, 1, 1), 0.6)
+	crackle.a = 0.55 + 0.35 * sin(t)
+	draw_line(Vector2(-12, -4), Vector2(-18, -7), crackle, 1.5, true)
+	draw_line(Vector2(-12, 4), Vector2(-18, 7), crackle, 1.5, true)
+	draw_line(Vector2(-14, 0), Vector2(-22, 0), crackle, 1.5, true)
+	# Two orbiting motes — counter-rotating, sell the "magic" feel.
+	var orbit_r: float = 11.0
+	var p1: Vector2 = Vector2(cos(t) * orbit_r, sin(t) * orbit_r * 0.5)
+	var p2: Vector2 = Vector2(cos(t + PI) * orbit_r, sin(t + PI) * orbit_r * 0.5)
+	var mote: Color = proj_color.lerp(Color(1, 1, 1), 0.7)
+	draw_circle(p1, 2.8, mote)
+	draw_circle(p2, 2.8, mote)
 
 
 func _draw_crystal_shape() -> void:

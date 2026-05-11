@@ -3498,3 +3498,85 @@ Distilled the three context-shift bugs from earlier today (Talents stale-cache, 
 - Updated `balance/BALANCE.md` and `docs/agents/balance_scout.md` so Balance Scout knows schema v4 exists.
 - Added regression coverage for overlapped leak attribution and the new wave pressure/economy block.
 - Verification: attempted targeted GUT from this Codex shell; Godot crashed with signal 11 before test output. Needs fresh PowerShell GUT verification.
+
+
+---
+
+## 2026-05-11 - Projectile visuals pass (hero arrow + impact polish + hero muzzle flash)
+
+Goal: differentiate hero shots from tower shots and add element-specific impact flourishes.
+
+- `projectiles/Arrow.gd`: added `Shape.HERO_ARROW` + `_draw_hero_arrow_shape()` — elven look (ash shaft, bright steel head, green leaf fletching, warm halo). Added `_spawn_impact_vfx()` called from `_on_hit`: CRYSTAL gets a 6-shard frost burst (`_IceShatterVFX`), ORB gets an arcane ring + core flash (`_ArcaneRingVFX`). Both inner classes live inside Arrow.gd so the shape→effect dispatch stays local. SHELL still gets the existing ShellImpactVFX via the AoE branch; ARROW relies on the per-hit HitSpark.
+- `projectiles/HeroArrow.tscn`: new — Shape=HERO_ARROW, proj_color light-green, slightly smaller arc than tower arrow (55 vs 75), shadow on, smoothed gold-to-green trail.
+- `heroes/data/hero_ranger.tres`: switched `projectile_scene` from `Arrow.tscn` to `HeroArrow.tscn`.
+- `projectiles/IceShard.tscn`: added a 10-particle `FrostMist` CPUParticles2D trail (white-cyan, 0.35s lifetime, damped).
+- `projectiles/MageBolt.tscn`: added a 12-particle `ArcaneSparkles` CPUParticles2D trail (lavender → violet, 0.45s lifetime).
+- `heroes/base_hero.gd`: hero projectile fire now (a) offsets the spawn 18px along the aim vector instead of starting at the hero's feet, (b) spawns a `MuzzleFlashVFX` tinted by `proj.proj_color`. Previously towers had muzzle flashes and heroes did not.
+
+Verification:
+- Headless boot clean (no parse errors, no resource load failures).
+- Full GUT suite: 37/37 passed (Asserts: 272).
+- Visual verification deferred to next editor session — projectile VFX changes are inherently visual and the headless run only proves they parse/instantiate. Specifically need to confirm: hero arrow reads as visibly distinct from tower arrow, frost/arcane impact bursts don't overlap awkwardly with HitSparkVFX, particle counts are mobile-acceptable.
+
+---
+
+## 2026-05-11 - Mage hero gets a real ranged projectile
+
+Discovered while reviewing hero projectile visuals: `hero_mage.tres` had no `projectile_scene` set. A 240-range ranged caster was using the instant-hit `else` branch in `_combat_attack`, so damage applied at the target with only the cyan HitSparkVFX — no flying object. The mage looked broken next to ranger (arrow flies) and warrior (melee swing).
+
+- `projectiles/Arrow.gd`: added `Shape.ARCANE_BOLT` + `_draw_arcane_bolt_shape()` — distinct from the soft round ORB used by the mage tower. Wand-fired silhouette: elongated cyan-white energy capsule with bright white core, three back-trailing rune crackle lines (alpha-pulsed), two counter-orbiting motes, soft halo. Added per-shape impact: `_ArcaneBurstVFX` (5 radial rune flashes at random base rotation + white core flash) on top of the existing `_ArcaneRingVFX`. So an ARCANE_BOLT hit reads as ring + burst, more theatrical than the ORB ring-only.
+- `projectiles/HeroBolt.tscn`: new — Shape=ARCANE_BOLT, cyan proj_color, smoothed white-cyan trail, no arc (straight-flying spell), 14-particle `Sparkles` CPUParticles2D trailing behind.
+- `heroes/data/hero_mage.tres`: wired `projectile_scene = HeroBolt.tscn`.
+
+Verification:
+- Headless boot clean (no parse errors, ContentRegistry loads 5 towers / 3 heroes as before).
+- Visual verification deferred — same caveats as the earlier projectile pass: open Main.tscn with Mage selected and confirm the bolt reads at 240px and the impact burst doesn't overlap the existing magic HitSparkVFX awkwardly.
+
+Tower-Mage (violet ORB) and Hero-Mage (cyan ARCANE_BOLT) now use the same dispatch path but different shapes and tints, so they're distinguishable in the same level — mirrors the ranger arrow/tower arrow split.
+
+---
+
+## 2026-05-11 — Telemetry pipeline (schemas 5/6/7) + RunStatsDigest + L5 balance investigation
+
+Goal: turn `run_stats.json` from a "tower placements + outcome" log into a per-wave, per-tower, per-leak record rich enough to answer "what role failed in which wave" without playing back the run. Driven by an L5 balance review where the static-data review found +27% hardness drift but couldn't verify it against play data — five runs of warrior-on-L5 kept losing on the same waves, and the existing telemetry could not tell me *where*, *to which enemy type*, or *on which path*.
+
+**Schema 5 — boss events, tower events timeline, skill casts, level_hardness, peak_concurrent_enemies_global, level_target_ppt.** Stamping authoritative authored hardness at run start collapses the static/empirical drift question into a single field. `peak_concurrent_enemies_global` is the only metric that captures CORE RULE 19 overlap pressure across waves; the existing per-wave peak is bucketed and misses cross-wave overlap by definition. `tower_events[]` reconstructs the player's economy curve from build-time gold reads; `boss_events[]` solves "did boss #2 actually die or did the player just survive while it walked through" for multi-boss finales.
+
+**Schema 6 — per-wave damage/leak attribution and post-mortem fields.** `enemies_by_id` per wave answers "what coverage did the player miss?" in one grep (W3 flying spawned 14 / killed 1 / leaked 11 — game over question solved). `damage_by_source` per wave shows the carrier shift across waves (hero solos W1, towers carry W2, hero+soldiers backfill W4 after towers are out of range). `damage_by_tower_instance` answers "is this L3 still pulling weight in W8?". Run-level `tower_runtime_stats[]` surfaces wasted-on-placement towers (high lifetime, low damage). `defeat_reason`, `final_wave_reached`, `game_speed` are post-mortem metadata so runs are filterable in aggregation (a 3× run is not a 1× run; a `lives_zero` defeat is not a `unknown` defeat).
+
+**Schema 7 — coverage geometry.** The L5 review repeatedly hit the question "which spots cover `tl_plank`?" — invisible from the data, derived by hand from "which towers fired during W3." Stamping `paths_in_range: [...]` at build time (sample each Path2D's baked curve, distance check against `get_preview_range()` — the yellow ring per CORE RULE 14) makes coverage explicit per tower. `spots_total` + `spots_unbuilt` removes the manual cross-reference against the level scene's `TowerSpots/`.
+
+**Two bookkeeping fixes the data forced out:**
+1. *Mid-wave-defeat lives backfill.* A run that died during W3-on-map (W4 already spawning) had `wave_entry.lives_lost = 0` despite `leaks[].size() == 17`, because `_on_wave_completed` was the only writer of `lives_lost` and it never fired for W3. `_finalize_wave_entries` now sums `leaks[].lives_lost` into `wave_entry.lives_lost` when the latter is zero, and re-pads `lives_lost_per_wave` from the corrected per-entry values. So mid-wave defeats record their true loss count per wave instead of silently dropping the tally.
+2. *Soldier damage → spawning barracks attribution.* A barracks at Spot5 with 274s lifetime read `total_hits: 0, damage_total: 0` — the "wasted on placement" rule from the agent doc would have misfired on every functioning barracks. Soldiers fire `hit_landed` with themselves as `source`, so `_record_tower_hit` was never called for barracks. Listening for `EventBus.soldier_spawned(soldier, tower)` populates `_soldier_to_spawner: {soldier_iid: spawner_iid}`; on `hit_landed` where source is `BaseSoldier`, the spawner's runtime entry gets credited. Wave-level `damage_by_source.soldiers` and `damage_by_tower_instance` (direct-fire only) stay intact — no double counting. Verified on the next L5 victory: Spot5 barracks shows 335 hits / 841 dmg, Spot1 barracks (built late, briefly active) shows 3 hits / 7.8 dmg — correctly flagged as wasted.
+3. *Naked-baseline overrides gate.* `_is_naked_baseline_run` was missing `BalanceOverrides.any_active() == false` per the original spec. Added the gate. No qualifying runs in current telemetry; the field exists ready for a future genuine baseline run.
+
+**New aggregator [`balance/report/RunStatsDigest.gd`](balance/report/RunStatsDigest.gd).** Static functions (no UI, no node deps) — `summarize(runs)`, `runs_for_level(runs, level_id, last_n)`, `level_digest(runs, level_id, opts)` with `{naked_only, last_n}` filters, `format_level_digest(d)` for printable text. Produces medians, win%, leakiest wave with dominant leaked enemy_id, boss kill rate + avg TTK, tower efficiency by tower_id, defeat-reason distribution, final-wave histogram, top skill casts. Older records (schema ≤ 4) aggregate cleanly because missing fields default to neutral.
+
+**Docs synced.** [docs/agents/balance_scout.md](docs/agents/balance_scout.md) extended with telemetry sources (full schema-7 field catalog + Windows path to `run_stats.json`), telemetry workflow (cohort filters by `overrides_active` / `naked_baseline` / `defeat_reason` / `game_speed`), cross-check rules (authoritative `level_hardness` stamp vs hand-computation, coverage-problem vs DPS-problem, wasted-on-placement rule extended to barracks via soldier attribution), and `level`-mode bullet additions for telemetry-aware checks. [balance/BALANCE.md](balance/BALANCE.md) Telemetry section rewritten to match schema 7.
+
+**L5 balance investigation — what the new data revealed.** Four L5 runs in telemetry (3 warrior defeats + 1 mage victory, all with overrides active):
+- W2 dies on `bl_plank` to a scout density burst (10 scouts at 0.55s interval — matches the static-review density-cliff flag). 11/14 leaks in run `132000` happened in a 7-second window.
+- W3 dies on `tl_plank` to flying — 11/14 leaks in run `132000`, 12/13 in run `131033`, 11/13 even in the *winning* mage run `144410`. The flying spawn ratio is the dominant pressure regardless of outcome.
+- Across all three warrior losses: 3 towers built, 0 flying coverage. The mage win: 6 towers built, 2 Necromancer L3s, 7 upgrades, 4 lives remaining. Mage's hero alone killed 3 flying in W3 versus warrior's 0–1.
+- `level_hardness` stamped at 57,088 against `target_ppt 6 × 7500 = 45,000` → **+27% drift** (red band). Confirms static-review estimate.
+- `final_gold: 1012` on the win = 42% of the 2400 budget unspent. Late-game gold pacing over-generous; player ran out of useful sinks at 6 / 8 spots built.
+
+No L5 `.tres` was edited in this investigation — the question of *how* to fix the +27% drift (remove the triple-boss W10, soften the W2 density burst, address the W3 flying ratio, or rework the level entirely) is deferred to a separate session with intent decisions from the user (e.g. the W10 triple-boss is plausibly authoring drift rather than design intent — needs confirmation).
+
+**Verification.**
+- Headless boot clean after every schema bump (no parse errors, no resource load failures).
+- Schemas 5, 6, 7 all confirmed emitting end-to-end against live L5 playtests; the new fields read as expected in the saved JSON.
+- Fix B (soldier → barracks attribution) confirmed on the L5 mage victory (`20260511_144410_9cf8`): Spot5 barracks runtime stats show 335 hits / 841 dmg.
+- Fix A (mid-wave lives backfill) not yet exercised — every wave in the verification run completed naturally on the victory path, so the backfill branch was skipped. Next mid-wave defeat run will confirm.
+- GUT suite not re-run this session — telemetry additions are observation-only (no behavioral changes to combat / waves / damage); no existing tests touch RunStats.
+
+---
+
+## 2026-05-11 - Projectile impact VFX shifted to enemy feet
+
+User feedback: per-shape impact bursts (frost shatter, arcane ring, arcane rune flash) were drawing as a circle *around* the enemy because they spawned at the enemy's origin (body center) with default z_index — looked like a halo, not a ground splat.
+
+- `projectiles/Arrow.gd._spawn_impact_vfx`: spawn position now shifts down by `target.data.visual.radius * 0.95` (matches the foot-plant math in `base_enemy._spawn_walk_dust`) and each spawned VFX gets `z_index = -1` so the body sprite draws on top. Flying targets (`data.is_flying`) skip the shift since they're airborne — impact stays at body center.
+
+Verification: headless boot clean. Visual confirmation deferred to editor.

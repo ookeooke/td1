@@ -1,0 +1,32 @@
+[gd_scene format=3 uid="uid://b1td1herobolt"]
+
+[ext_resource type="Script" path="res://projectiles/Arrow.gd" id="1_arrow"]
+
+[sub_resource type="Gradient" id="Gradient_sparkle"]
+offsets = PackedFloat32Array(0.0, 1.0)
+colors = PackedColorArray(1.0, 1.0, 1.0, 0.85, 0.45, 0.85, 1.0, 0.0)
+
+[node name="HeroBolt" type="Node2D"]
+script = ExtResource("1_arrow")
+shape = 5
+speed = 950.0
+hit_radius = 28.0
+proj_color = Color(0.45, 0.85, 1.0, 1.0)
+trail_color_core = Color(1.0, 1.0, 1.0, 1.0)
+trail_color_edge = Color(0.4, 0.8, 1.0, 1.0)
+trail_smooth = true
+
+[node name="Sparkles" type="CPUParticles2D" parent="."]
+amount = 14
+lifetime = 0.4
+local_coords = false
+spread = 160.0
+direction = Vector2(-1, 0)
+gravity = Vector2(0, 0)
+initial_velocity_min = 15.0
+initial_velocity_max = 40.0
+scale_amount_min = 1.2
+scale_amount_max = 2.6
+damping_min = 5.0
+damping_max = 9.0
+color_ramp = SubResource("Gradient_sparkle")

@@ -41,13 +41,19 @@ Report only. Do not edit files unless the user explicitly asks for implementatio
 - Runtime play data is written by `autoloads/RunStats.gd` to `user://run_stats.json`, capped at the last 50 runs. Test Range is excluded.
 - Windows path: `C:\Users\<USER>\AppData\Roaming\Godot\app_userdata\Fantasy Tower Defense\run_stats.json`.
 - `RunStats.get_history()` is the in-game API; outside the game, read the JSON directly.
-- Current schema version: **6**. Older records (≤ 5) aggregate cleanly with missing fields defaulting to neutral.
+- Current schema version: **7**. Older records (≤ 6) aggregate cleanly with missing fields defaulting to neutral.
 
-Schema fields you can rely on (schema 6):
+Schema fields you can rely on (schema 7):
 
 - **Run-level**: `level_id`, `outcome`, `naked_baseline`, `level_hardness`, `level_target_ppt`, `peak_concurrent_enemies_global`, `defeat_reason` (`victory` / `lives_zero` / `unknown`), `final_wave_reached`, `game_speed`, `overrides_active`, `overrides_snapshot`.
 - **Per wave** (`waves[]`): `damage_total`, `damage_by_source {hero, soldiers, towers, other}`, `damage_by_tower_instance {instance_id: damage}`, `enemies_by_id {id: {spawned, killed, leaked}}`, `enemies_spawned`, `enemies_leaked`, `lives_lost`, `clear_time_s`, `peak_concurrent_enemies` (per-wave bucket — global counterpart is on the run), `gold_start`, `gold_on_clear`, `gold_spent`, per-leak `leaks[]` with `path_id`, `enemy_id`, `distance_along_path_pct`.
-- **Run-level rollups**: `damage_by_source` (totals), `damage_by_tower` (per instance, run-aggregate), `boss_events[]` with per-boss `damage_breakdown {hero, soldiers, towers, other}` and `ended:"killed"|"leaked"`, `tower_events[]` (build / upgrade / branch / sold timeline with `gold_at` and `wave`), `tower_runtime_stats[]` (per-instance `total_hits`, `damage_total`, `lifetime_s`, `first_hit_ms`, `last_hit_ms`), `skill_casts`.
+- **Run-level rollups**: `damage_by_source` (totals), `damage_by_tower` (per instance, run-aggregate), `boss_events[]` with per-boss `damage_breakdown {hero, soldiers, towers, other}` and `ended:"killed"|"leaked"`, `tower_events[]` (build / upgrade / branch / sold timeline with `gold_at`, `wave`, and `paths_in_range` on `built` events), `tower_runtime_stats[]` (per-instance `total_hits`, `damage_total`, `lifetime_s`, `first_hit_ms`, `last_hit_ms`, `paths_in_range`), `skill_casts`, `spots_total`, `spots_unbuilt`.
+
+`paths_in_range` is the list of Path2D names (e.g. `["bl_plank", "tl_plank"]`) whose curves intersect the tower's preview range at the moment of build. Use it to answer "did the player build on a spot that covers the leaking path?" A run where every leaking-path enemy died downstream of a tower with the matching path in its `paths_in_range` is a DPS problem; a run where leaks happened on paths no tower covered is a coverage problem.
+
+`spots_unbuilt` lists the level's tower spot names the player never built on. Combined with `spots_total`, the digest can show "built 3 of 8" without scene cross-reference.
+
+`naked_baseline: true` now additionally requires `overrides_active == false`. Older records (schema ≤ 6) may have set the flag with overrides on — treat them as suspect.
 
 Use the aggregator instead of hand-rolling:
 

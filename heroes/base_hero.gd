@@ -170,6 +170,7 @@ var _modifier_sources: Array = []
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
 const _HeroSkillNodeDataScript := preload("res://heroes/HeroSkillNodeData.gd")
+const _MuzzleFlashScript := preload("res://vfx/MuzzleFlashVFX.gd")
 # Phase 3R-followup-3 — debug-only slider overrides. is_active() short-circuits
 # in release builds, so the multiplications below are identity at zero cost.
 const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
@@ -1169,9 +1170,21 @@ func _attack_step(delta: float) -> void:
 		if parent != null:
 			var proj: Node2D = data.projectile_scene.instantiate()
 			parent.add_child(proj)
-			proj.global_position = global_position
+			# Offset the spawn slightly toward the target so the arrow starts
+			# at the hero's hand-line, not their feet — matches tower muzzle
+			# offsets visually without per-hero authoring.
+			var aim: Vector2 = enemy.global_position - global_position
+			var aim_angle: float = aim.angle() if aim.length_squared() > 0.0001 else 0.0
+			var muzzle_offset: Vector2 = Vector2.from_angle(aim_angle) * 18.0
+			proj.global_position = global_position + muzzle_offset
 			if proj.has_method("setup"):
 				proj.setup(enemy, dmg, data.damage_type, self)
+			# Muzzle flash, tinted by projectile color so each hero's archetype
+			# (green ranger arrow, future arcane bolt, etc.) reads at the
+			# launch point too. Skipped on clean_view.
+			if not VFXSpawner.clean_view:
+				var flash_color: Color = proj.proj_color if "proj_color" in proj else Color(1.0, 0.95, 0.6)
+				_MuzzleFlashScript.spawn(parent, proj.global_position, aim_angle, flash_color)
 	else:
 		enemy.take_damage(dmg, data.damage_type, self)
 	if _ability_host != null:

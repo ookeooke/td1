@@ -1,7 +1,7 @@
 extends RefCounted
 class_name RunStatsDigest
 
-# Pure read-only aggregator over the run_stats.json history (schema 1..5).
+# Pure read-only aggregator over the run_stats.json history (schema 1..7).
 # Returns structured dictionaries — no UI, no side effects. Consumers:
 #   1. balance/report/BalanceReport.gd (UI screen) — can call any of these to
 #      surface more detail without owning the rollup logic.

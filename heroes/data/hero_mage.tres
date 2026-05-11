@@ -13,6 +13,7 @@
 [ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="12_s_charm"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_frost_nova.tres" id="13_nova"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_meteor.tres" id="14_meteor"]
+[ext_resource type="PackedScene" path="res://projectiles/HeroBolt.tscn" id="15_bolt"]
 
 [sub_resource type="Resource" id="MageRegen"]
 script = ExtResource("6_regen")
@@ -64,9 +65,9 @@ hero_name = "Mage"
 hero_id = "hero_mage"
 requires_unlock = true
 max_health = 40
-attack_damage = 4.0
-attack_range = 240.0
-attack_speed = 0.8
+attack_damage = 1.0
+attack_range = 270.0
+attack_speed = 0.6
 move_speed = 180.0
 armor = 0.0
 magic_resist = 0.4
@@ -76,5 +77,6 @@ max_block_targets = 1
 skills = Array[Resource]([ExtResource("2_fireball"), ExtResource("4_shield"), ExtResource("13_nova"), ExtResource("14_meteor")])
 talents = Array[Resource]([SubResource("Talent_Meditation"), SubResource("Talent_Siphon"), SubResource("Talent_ArcanePower")])
 visual = ExtResource("9_vis")
+projectile_scene = ExtResource("15_bolt")
 starter_items = Array[Resource]([ExtResource("10_s_sword"), ExtResource("11_s_tunic"), ExtResource("12_s_charm")])
 encyclopedia_entry = "Fragile ranged caster. High magic damage, crowd control, and self-sustain. Keep away from melee."

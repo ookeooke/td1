@@ -1,6 +1,10 @@
-[gd_scene format=3 uid="uid://b1td1iceshard"]
+[gd_scene load_steps=3 format=3 uid="uid://b1td1iceshard"]
 
 [ext_resource type="Script" path="res://projectiles/Arrow.gd" id="1_arrow"]
+
+[sub_resource type="Gradient" id="Gradient_frost"]
+offsets = PackedFloat32Array(0.0, 1.0)
+colors = PackedColorArray(0.85, 0.95, 1.0, 0.7, 0.55, 0.85, 1.0, 0.0)
 
 [node name="IceShard" type="Node2D"]
 script = ExtResource("1_arrow")
@@ -13,3 +17,18 @@ trail_color_edge = Color(0.55, 0.85, 1.0, 1.0)
 glow_enabled = true
 glow_radius = 22.0
 spin_speed = 8.0
+
+[node name="FrostMist" type="CPUParticles2D" parent="."]
+amount = 10
+lifetime = 0.35
+local_coords = false
+spread = 90.0
+direction = Vector2(-1, 0)
+gravity = Vector2(0, 0)
+initial_velocity_min = 20.0
+initial_velocity_max = 50.0
+scale_amount_min = 1.5
+scale_amount_max = 3.0
+damping_min = 6.0
+damping_max = 10.0
+color_ramp = SubResource("Gradient_frost")

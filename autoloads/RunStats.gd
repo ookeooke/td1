@@ -77,9 +77,12 @@ func _start_new_run() -> void:
 	# schema_version=6 adds per-wave enemies_by_id, damage_by_source,
 	# damage_by_tower_instance; run-level tower_runtime_stats, defeat_reason,
 	# final_wave_reached, game_speed.
+	# schema_version=7 adds paths_in_range stamping on tower_events/runtime,
+	# run-level spots_total + spots_unbuilt. Also: _is_naked_baseline_run now
+	# rejects runs with BalanceOverrides active (spec fix).
 	# Records without it (loaded from older run_stats.json) implicitly = 1 and
 	# the new fields read as absent. Bump on any future shape change.
-	const SCHEMA_VERSION: int = 6
+	const SCHEMA_VERSION: int = 7
 	var BO = load("res://balance/debug/BalanceOverrides.gd")
 	_latest_wave_num = 0
 	_last_gold = RunState.gold
@@ -305,8 +308,9 @@ func _on_tower_built(tower, spot_id) -> void:
 		"branch": -1,
 	})
 	_current["tower_placements"] = arr
-	_push_tower_event("built", tower, {"spot_id": String(spot_id), "level": 1})
-	_open_tower_runtime(tower, String(spot_id))
+	var paths_covered: Array = _paths_in_range_of(tower)
+	_push_tower_event("built", tower, {"spot_id": String(spot_id), "level": 1, "paths_in_range": paths_covered})
+	_open_tower_runtime(tower, String(spot_id), paths_covered)
 
 
 func _on_tower_upgraded(tower, new_level: int) -> void:
@@ -435,6 +439,7 @@ func _finalize(outcome: String, stars: int) -> void:
 	_current["final_wave_reached"] = _latest_wave_num
 	_current["game_speed"] = float(Engine.time_scale)
 	_finalize_tower_runtime_stats()
+	_finalize_spot_coverage()
 	_current.erase("_pending_wave_leak_by_wave")
 	_current.erase("_boss_runtime")
 	_current.erase("_active_enemies_global")
@@ -568,6 +573,12 @@ func _capped_hit_amount(target, amount: float) -> float:
 
 func _is_naked_baseline_run() -> bool:
 	if RunState.current_mode != "campaign":
+		return false
+	# A run with BalanceOverrides active is an easy-mode playtest, not baseline.
+	# Missing earlier — the four "naked_baseline: true" runs that would have
+	# slipped through never materialized in practice, but the gate has to be here.
+	var BO = load("res://balance/debug/BalanceOverrides.gd")
+	if BO != null and BO.has_method("any_active") and BO.any_active():
 		return false
 	if LoadoutState.selected_hero_id != "hero_warrior":
 		return false
@@ -733,6 +744,73 @@ func _push_tower_event(kind: String, tower, extra: Dictionary) -> void:
 	_current["tower_events"] = arr
 
 
+func _paths_in_range_of(tower) -> Array:
+	# Sample each Path2D in the active level and return the names of those any
+	# point of which falls inside the tower's preview range. Run once at build
+	# time so the level digest can answer "which spots cover which path?" without
+	# replaying geometry. Cheap: ~50 samples × N paths × O(1) distance.
+	var out: Array = []
+	if tower == null:
+		return out
+	var r: float = 0.0
+	if tower.has_method("get_preview_range"):
+		r = float(tower.get_preview_range())
+	if r <= 0.0:
+		return out
+	var range_sq: float = r * r
+	var scene = get_tree().current_scene
+	if scene == null:
+		return out
+	var paths_node = scene.get_node_or_null("Paths")
+	if paths_node == null:
+		return out
+	var tpos: Vector2 = tower.global_position
+	for path in paths_node.get_children():
+		if not path is Path2D:
+			continue
+		var curve: Curve2D = path.curve
+		if curve == null:
+			continue
+		var baked_len: float = curve.get_baked_length()
+		if baked_len <= 0.0:
+			continue
+		var step: float = max(20.0, baked_len / 50.0)
+		var d: float = 0.0
+		var hit: bool = false
+		while d <= baked_len:
+			var p: Vector2 = path.global_transform * curve.sample_baked(d)
+			if tpos.distance_squared_to(p) <= range_sq:
+				hit = true
+				break
+			d += step
+		if hit:
+			out.append(String(path.name))
+	return out
+
+
+func _finalize_spot_coverage() -> void:
+	# Stamp spots_total + spots_unbuilt so the digest can show "5 of 8 spots
+	# unbuilt" without cross-referencing the level scene.
+	var scene = get_tree().current_scene
+	if scene == null:
+		return
+	var spots_node = scene.get_node_or_null("TowerSpots")
+	if spots_node == null:
+		return
+	var all_spots: Array = []
+	for c in spots_node.get_children():
+		all_spots.append(String(c.name))
+	var built_set: Dictionary = {}
+	for p in _current.get("tower_placements", []):
+		built_set[String(p.get("spot_id", ""))] = true
+	var unbuilt: Array = []
+	for s in all_spots:
+		if not built_set.has(s):
+			unbuilt.append(s)
+	_current["spots_total"] = all_spots.size()
+	_current["spots_unbuilt"] = unbuilt
+
+
 func _on_soldier_spawned(soldier, tower) -> void:
 	if _current.is_empty() or soldier == null or tower == null:
 		return
@@ -773,7 +851,7 @@ func _bump_enemies_by_id(wave_entry: Dictionary, enemy_id: String, kind: String)
 	wave_entry["enemies_by_id"] = ebi
 
 
-func _open_tower_runtime(tower, spot_id: String) -> void:
+func _open_tower_runtime(tower, spot_id: String, paths_in_range: Array = []) -> void:
 	if tower == null or tower.data == null:
 		return
 	var rt: Dictionary = _current.get("_tower_runtime", {})
@@ -789,6 +867,7 @@ func _open_tower_runtime(tower, spot_id: String) -> void:
 		"first_hit_ms": -1,
 		"last_hit_ms": -1,
 		"damage_total": 0.0,
+		"paths_in_range": paths_in_range,
 	}
 	_current["_tower_runtime"] = rt
 
@@ -853,6 +932,7 @@ func _finalize_tower_runtime_stats() -> void:
 			"first_hit_ms": int(entry.get("first_hit_ms", -1)),
 			"last_hit_ms": int(entry.get("last_hit_ms", -1)),
 			"damage_total": float(entry.get("damage_total", 0.0)),
+			"paths_in_range": entry.get("paths_in_range", []),
 		})
 	_current["tower_runtime_stats"] = out
 

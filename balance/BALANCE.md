@@ -577,11 +577,13 @@ Mechanical effects don't roll random magnitudes — they're either active or not
 
 `autoloads/RunStats.gd` writes to `user://run_stats.json` after every campaign/heroic/iron run. Capped at last 50. Test Range runs are excluded (mode = "test_range").
 
-Current records (`schema_version = 4`) include: tower placements, max levels reached, branch choices, hero deaths, duration, outcome, stars earned, `naked_baseline`, run-level damage by source/tower, and a `waves` block.
+Current records (`schema_version = 7`) include the run-level fields below plus a per-wave `waves[]` block. Older records (≤ 6) load cleanly with missing fields defaulting to neutral.
 
-Each `waves[]` entry records: wave number, start/first-spawn/last-exit timing, clear time, enemies spawned/leaked, lives lost, capped hit damage, gold at start, gold spent, gold on clear, peak concurrent enemies, and leak events (`t_ms`, enemy id, path id, path progress %, lives lost).
+Run-level: `level_id`, `hero_id`, `outcome`, `defeat_reason` (`victory` / `lives_zero` / `unknown`), `final_wave_reached`, `stars_earned`, `duration_s`, `final_gold`, `game_speed`, `naked_baseline` (requires `overrides_active == false`), `level_hardness` (stamped from `BalanceCalculator.score_level`), `level_target_ppt`, `peak_concurrent_enemies_global`, `damage_by_source`, `damage_by_tower`, `boss_events[]` (with `damage_breakdown {hero, soldiers, towers, other}` and `ended:"killed"|"leaked"`), `tower_events[]` (built / upgraded / branch / sold timeline with `gold_at`, `wave`, and `paths_in_range` on build), `tower_runtime_stats[]` (per-instance `total_hits`, `damage_total`, `lifetime_s`, `first_hit_ms`, `last_hit_ms`, `paths_in_range`; soldier damage is attributed back to the spawning barracks), `tower_placements[]`, `skill_casts {name: count}`, `early_call_count`, `early_call_gold_earned`, `hero_deaths`, `hero_level_end`, `hero_xp_end`, `spots_total`, `spots_unbuilt`, `lives_lost_per_wave`, `lives_remaining`, `loadout`, `overrides_active`, `overrides_snapshot`.
 
-To get aggregate views (which towers carry, where lives leak), build `balance/report/BalanceReport.gd` — reads `run_stats.json`, rolls up across runs, displays in-editor.
+Each `waves[]` entry records: `wave`, `start_ms`, `first_spawn_ms`, `last_exit_ms`, `clear_time_s`, `enemies_spawned`, `enemies_leaked`, `lives_lost` (backfilled from `leaks[]` if the wave was cut short by defeat), `damage_total` (overkill-capped), `damage_by_source {hero, soldiers, towers, other}`, `damage_by_tower_instance {iid: damage}`, `enemies_by_id {enemy_id: {spawned, killed, leaked}}`, `gold_start`, `gold_spent`, `gold_on_clear`, `peak_concurrent_enemies` (per-wave bucket; the run-level counterpart is `peak_concurrent_enemies_global`), and `leaks[]` (each with `t_ms`, `enemy_id`, `path_id`, `distance_along_path_pct`, `lives_lost`).
+
+`balance/report/RunStatsDigest.gd` is the canonical aggregator API — `level_digest(runs, level_id, opts)` returns medians, win%, leakiest wave with dominant leaked enemy, boss summary, tower efficiency, defeat-reason distribution, final-wave histogram. `balance/report/BalanceReport.gd` is the in-editor UI view.
 
 ---
 

@@ -10,7 +10,7 @@
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_hunter_stance.tres" id="8_stance"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_marked_shot.tres" id="9_marked"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_falcon_storm.tres" id="10_falcon"]
-[ext_resource type="PackedScene" path="res://projectiles/Arrow.tscn" id="11_arrow"]
+[ext_resource type="PackedScene" path="res://projectiles/HeroArrow.tscn" id="11_arrow"]
 
 [resource]
 script = ExtResource("1_data")

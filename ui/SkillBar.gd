@@ -62,12 +62,22 @@ func _slot_positions_for_cap(cap: int) -> Array[Vector2]:
 
 @onready var cluster: Control = %Cluster
 
+# Node2D whose canvas transform maps screen → world. Wired by Main.gd at
+# _enter_tree time (mirrors HeroInputManager.map_path); TestRange.tscn sets
+# it statically. Empty path → _screen_to_world returns the raw screen coord
+# (safe no-op so targeting doesn't crash if wiring is forgotten).
+@export var map_path: NodePath
+
 var _hero: Node = null
 var _buttons: Array = []
 var _targeting_idx: int = -1
+var _map: Node2D = null
 
 
 func _ready() -> void:
+	_map = get_node_or_null(map_path) as Node2D
+	if _map == null:
+		push_error("[SkillBar] map node not found at %s — skill targeting will fall back to screen coords" % map_path)
 	EventBus.hero_spawned.connect(_on_hero_spawned)
 	EventBus.hero_died.connect(_on_hero_died)
 	# Loadout changes happen on the WorldMap (Heroes → Skills tab) — the
@@ -238,10 +248,10 @@ func _input(event: InputEvent) -> void:
 func _screen_to_world(screen_pos: Vector2) -> Vector2:
 	# Same transform chain SpotInputManager / HeroInputManager use — maps
 	# canvas-layer screen coords back into the world-space the hero lives in.
-	var map: Node2D = get_tree().root.find_child("Level1", true, false) as Node2D
-	if map == null:
+	# `_map` is wired via the exported map_path (level-agnostic).
+	if _map == null or not is_instance_valid(_map):
 		return screen_pos
-	return map.get_global_transform_with_canvas().affine_inverse() * screen_pos
+	return _map.get_global_transform_with_canvas().affine_inverse() * screen_pos
 
 
 

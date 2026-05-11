@@ -38,6 +38,7 @@ map_path = NodePath("../TestRangeMap")
 [node name="HUD" parent="." instance=ExtResource("3_hud")]
 
 [node name="SkillBar" parent="." instance=ExtResource("10_skillbar")]
+map_path = NodePath("../TestRangeMap")
 
 [node name="TowerRadialMenu" parent="." instance=ExtResource("15_radial")]
 visible = false

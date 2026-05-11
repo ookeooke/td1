@@ -53,6 +53,8 @@ func _enter_tree() -> void:
 		placer.grid_manager_path = placer.get_path_to(grid_node)
 		input_mgr.grid_manager_path = input_mgr.get_path_to(grid_node)
 		input_mgr.map_path = input_mgr.get_path_to(level)
+		var skill_bar: Node = $SkillBar
+		skill_bar.map_path = skill_bar.get_path_to(level)
 	else:
 		push_error("[Main] level %s has no GridManager child" % level.name)
 

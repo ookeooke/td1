@@ -3368,3 +3368,92 @@ Four small but real findings from a review pass. Each is independently revertibl
 - EventBus 72-signal ownership documentation — better as a generator (grep emit/connect sites) than a manual table that rots. Trigger is "next signal-ordering bug" or "adding 3+ signals in one phase."
 
 **Verification:** in-editor playtest pending — verify L2 skill casts land at the tapped map point (not screen-corner coords), and ContentRegistry boot print still reads `loaded — 7 enemies, 5 towers, 3 heroes, 3 trees, ...` with no `[ContentRegistry/DRIFT]` warnings.
+
+---
+
+## 2026-05-11 - CLAUDE.md workflow defaults
+
+- Added a compact `Workflow Defaults` section near the top of `CLAUDE.md`.
+- Captured pure vibe coding expectations, definition-of-done verification rules, and short final-response style.
+- No code, scenes, resources, or balance numbers changed.
+- Verification: documentation-only change; reviewed placement in `CLAUDE.md`.
+
+---
+
+## 2026-05-11 - CLAUDE.md local Godot path
+
+- Added the Windows local Godot console binary fallback to `CLAUDE.md` under Development Commands.
+- Captured PowerShell examples for version, headless boot, and GUT verification when `godot` is not on PATH.
+- No code, scenes, resources, or balance numbers changed.
+- Verification: documentation-only change; command execution not required.
+
+---
+
+## 2026-05-11 — HeroesHub: Talents hero-switch, save-on-equip, Overview shows effective stats
+
+Three small UI-binding fixes from the "is the hub showing the right data?" review.
+
+- **Talents tab refreshes on hero switch.** `HeroSkillTreeScreen` cached `_hero_id` at `_ready()` and only re-pulled on five state-change signals — `hero_selected` wasn't one. Inside Talents, tapping a different sidebar hero left the previous hero's tree on screen. Connected `EventBus.hero_selected → _on_state_changed` (and matching disconnect). Updated the stale "Talents already listens" comment in HeroesHub.
+- **Equip / unequip persist immediately.** `InventoryManager.equip()` and `unequip()` emitted signals but never called `SaveManager.save_game()` — every other inventory mutation (sell, lock, pickup, starter-gear, skill-equip) saves on the spot. A mobile player killing the app after equipping a sword saw the old loadout on relaunch. Added `SaveManager.save_game()` after the `inventory_changed` emit in both.
+- **Hero Hall Overview shows effective stats with gear.** The Overview's HP/DMG/RNG/SPD/ARM lines read `hero_data.max_health` / `.attack_damage` etc. — base values, no gear modifiers. The EquipmentScreen's effective-stats panel that uses `BaseHero.compute_stats_for()` has been hidden via `StatsCard.visible = false` since Phase 55b. So nowhere in the UI showed effective stats. Routed `_refresh_hero_hall` through `BaseHero.compute_stats_for(hero_data, lvl, InventoryManager.get_all_equipped(hid))` and connected `item_equipped` / `item_unequipped → _refresh_hero_hall` so the panel stays live.
+
+**Files:** `ui/HeroSkillTreeScreen.gd` (+4 lines), `ui/HeroesHub.gd` (+5 lines, one comment), `autoloads/InventoryManager.gd` (+2 lines).
+
+**Verification pending (editor):**
+1. Open Talents on Warrior → tap Mage in sidebar → tree refreshes to Mage's nodes/points within the same frame.
+2. Equip an item on Warrior → force-quit Godot → relaunch → item still equipped.
+3. Equip a rare with a clear stat affix → return to Overview → HP/DMG/ARM increase.
+4. In-level (Level 1) hero stats unaffected — runtime path was already correct.
+
+---
+
+## 2026-05-11 — Preventive Bug Rules (postmortem hardening of today's three bugs)
+
+Distilled the three context-shift bugs from earlier today (Talents stale-cache, equip/unequip drift, Overview base-stats) into four CLAUDE.md rules + one new helper + one InventoryManager refactor. Goal: make each whole bug class structurally hard to reintroduce.
+
+- **New CLAUDE.md section `Preventive Bug Rules`.** Sits right after CORE RULES, before Tower Indicator Interface. Four rules, each tied to a real shipped bug.
+  1. UI reads hero stats via `HeroStats.effective_for(hero_id)` — never `hero_data.attack_damage` directly. Mirror of CORE RULE 14.
+  2. Every `InventoryManager` mutator ends with `_persist()` (signal + save bundled).
+  3. Embedded hero-scoped screens listen to `EventBus.hero_selected`.
+  4. Load-bearing invariants must be executable (assert / guard / test) — not just stated in a comment.
+
+- **New file [`heroes/HeroStats.gd`](heroes/HeroStats.gd).** Static class with `effective_for(hero_id)` + `base_for(hero_id)`. Thin sugar over `BaseHero.compute_stats_for` that handles the hero_data + level + equipped lookup. Mirrors the Tower Indicator pattern: one accessor, used everywhere, can't accidentally read a stale field. Preloaded by HeroesHub via `const _HeroStats := preload(...)` (Godot class_name scan is racy on first boot of a new file).
+
+- **`InventoryManager._persist()` helper + audit.** Replaced 7 `emit() + save_game()` pairs with single `_persist()` calls in: `add_to_round`, `commit_round`, grid-placement, `equip`, `unequip`, `destroy`, `toggle_lock`, `ensure_starter_gear`. Found **two additional drift sites** while auditing: grid-placement (line 332) and `destroy()` (line 550) also skipped `save_game()` — now fixed. `reset()` and `from_save_dict` deliberately opt out (test wipe; loading isn't a mutation).
+
+- **HeroesHub migrated to dogfood `HeroStats`.** `_refresh_hero_hall` now calls `_HeroStats.effective_for(hid)` instead of `BaseHero.compute_stats_for(hero_data, lvl, InventoryManager.get_all_equipped(hid))`. Identical math, one call instead of three, and demonstrates the rule.
+
+- **Sell-path double save accepted.** `sell()` calls `destroy(uid)` which now persists, then calls `add_meta_gold` (which doesn't auto-save), then calls `save_game()` explicitly to capture the meta_gold change. Two writes per sale, both cheap; the alternative (a `destroy_no_persist` flag) added complexity for marginal benefit. Documented in the diff context.
+
+**Files:** `CLAUDE.md` (+4 rules), `heroes/HeroStats.gd` (new, +44 lines), `autoloads/InventoryManager.gd` (`_persist()` + 8 site rewrites, net −5 lines), `ui/HeroesHub.gd` (preload + 1 call swap).
+
+**Verification pending (editor):** boot game → ContentRegistry print clean → Overview HP/DMG/etc. still update on hero switch + on equip → equip → force-quit → relaunch → item persisted (now covered by `_persist()` for ALL mutators, not just equip/unequip). No save-format change, no SAVE_VERSION bump.
+
+---
+
+## 2026-05-11 - GUT hero fixture follow-up
+
+- Investigated the new GUT run: 34/35 tests passed; the only failure was `test_hero_die_double_call_emits_once`.
+- Root cause: the test created `BaseHero.new()` without the child nodes required by `base_hero.gd` onready paths (`AttackRange`, `EngageRange`, `NavigationAgent2D`, `SeekRange`).
+- Updated the test fixture to add the minimal required child nodes before adding the hero to the tree.
+- User reran GUT from a fresh PowerShell: 35/35 tests passed twice.
+- Follow-up cleanup: keep `hero.data` null through the first process frame after `add_child_autofree()` so this narrow idempotency fixture does not schedule BaseHero's deferred `hero_spawned` signal and wake encyclopedia/VFX autoload listeners after GUT frees the temporary node.
+- Verification: user reran full GUT from a fresh PowerShell. Result: 35/35 passing, 258 asserts, no post-summary `hero_spawned` freed-instance errors. Remaining warnings are expected test-path warnings (helper script ignored, intentional corrupt/unknown save fixtures, and the fixture's temporary missing HeroData warning).
+
+---
+
+## 2026-05-11 - DEV_WORKFLOW verification playbook
+
+- Added `docs/DEV_WORKFLOW.md` with the local Godot console path, version check, headless boot, full GUT command, good-output examples, crash fallback, and manual editor checks.
+- Linked the playbook from `CLAUDE.md` near the top so future Claude Code sessions can find the exact verification commands without bloating the main invariants.
+- No gameplay, scene, resource, or balance behavior changed.
+- Verification: documentation-only change; reviewed file placement and link.
+
+---
+
+## 2026-05-11 - VS Code Godot tasks
+
+- Added `.vscode/tasks.json` with five PowerShell tasks: `Godot: Version`, `Godot: Headless Boot`, `Godot: GUT Tests`, `Godot: Open Editor`, and `Godot: Run Game`.
+- Marked `Godot: GUT Tests` as the default VS Code test task.
+- Updated `docs/DEV_WORKFLOW.md` to list the task names.
+- Verification: configuration/docs-only change; task commands mirror the manually verified PowerShell commands.

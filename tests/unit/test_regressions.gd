@@ -192,10 +192,15 @@ func test_stunned_blocked_enemy_stays_in_combat() -> void:
 # Mirror of test_enemy_die_double_call_emits_once.
 func test_hero_die_double_call_emits_once() -> void:
 	var hero: BaseHero = _track(BaseHero.new())
+	_add_hero_required_children(hero)
+	add_child_autofree(hero)
+	# Keep data null until after _ready() so this narrow idempotency fixture
+	# does not schedule BaseHero's deferred hero_spawned signal and wake
+	# encyclopedia/VFX autoload listeners after GUT frees the temporary node.
+	await get_tree().process_frame
 	hero.data = ContentRegistry.find_hero("hero_warrior")
 	assert_not_null(hero.data, "fixture: hero_warrior must be in registry")
 	hero.current_health = 1
-	add_child_autofree(hero)
 
 	var emit_count: Array[int] = [0]
 	var listener: Callable = func() -> void:
@@ -207,3 +212,21 @@ func test_hero_die_double_call_emits_once() -> void:
 
 	EventBus.hero_died.disconnect(listener)
 	assert_eq(emit_count[0], 1, "hero_died must fire exactly once across two _die() calls")
+
+
+func _add_hero_required_children(hero: BaseHero) -> void:
+	_add_area_with_shape(hero, "AttackRange")
+	_add_area_with_shape(hero, "EngageRange")
+	var nav_agent := NavigationAgent2D.new()
+	nav_agent.name = "NavigationAgent2D"
+	hero.add_child(nav_agent)
+	_add_area_with_shape(hero, "SeekRange")
+
+
+func _add_area_with_shape(parent: Node, area_name: String) -> void:
+	var area := Area2D.new()
+	area.name = area_name
+	parent.add_child(area)
+	var shape := CollisionShape2D.new()
+	shape.name = "CollisionShape2D"
+	area.add_child(shape)

@@ -17,6 +17,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+See [docs/DEV_WORKFLOW.md](docs/DEV_WORKFLOW.md) for exact local Godot/GUT commands, expected output, and headless-crash fallback.
+
+---
+
 ## Development Commands
 
 ```bash
@@ -24,7 +28,45 @@ godot --path . --editor          # Open in editor
 godot --path .                   # Run the game directly
 ```
 
+Windows local fallback if `godot` is not on PATH:
+
+```powershell
+& "C:\Godot_v4.6.2-stable_win64.exe (1)\Godot_v4.6.2-stable_win64_console.exe" --version
+& "C:\Godot_v4.6.2-stable_win64.exe (1)\Godot_v4.6.2-stable_win64_console.exe" --headless --path . --quit
+& "C:\Godot_v4.6.2-stable_win64.exe (1)\Godot_v4.6.2-stable_win64_console.exe" --headless --path . -s res://addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit
+```
+
 Entry point: `res://ui/MainMenu.tscn`. Design viewport: 1920x1080 (landscape). Stretch: `canvas_items` + `keep_height`. Renderer: GL Compatibility (mobile-first). No build system or linter; tests via [GUT](https://github.com/bitwes/Gut) under [tests/unit/](tests/unit/) (run headless from Godot). Beyond tests, validate by running in the Godot editor.
+
+---
+
+## Workflow Defaults
+
+### Pure Vibe Coding Workflow
+
+- User describes the desired outcome; Claude handles implementation details.
+- Ask questions only when the choice affects product direction, monetization, save compatibility, or irreversible content IDs.
+- Prefer working app/game behavior over implementation explanation.
+- Always summarize changes in player-facing terms.
+
+### Definition of Done
+
+- After any code or scene/resource change, verify with the smallest relevant check.
+- Prefer targeted GUT tests first; run full GUT when touching autoloads, saves, content registry, combat math, unlocks, or shared state.
+- For UI/mobile changes, verify visually in the Godot editor at phone and tablet-like aspect ratios.
+- For balance changes, read [balance/BALANCE.md](balance/BALANCE.md), run balance tooling, and report target-vs-actual.
+- If verification cannot run, say exactly why, list what was checked manually, and mark the change as unverified.
+- Append a dated entry to [SESSIONS.md](SESSIONS.md) after every working session.
+
+### Response Style
+
+- Results first. Keep final replies short.
+- Do not paste code, diffs, or long explanations unless explicitly asked.
+- Default final format: `Done`, `Verified`, `Notes`, `Next`.
+- Mention only files changed, tests run, blockers, and important risks.
+- No broad tutorials, architecture essays, or repeated context.
+- If nothing changed, say that directly.
+- Maximum final answer: about 8 bullets or 2 short paragraphs.
 
 ---
 
@@ -71,6 +113,20 @@ Entry point: `res://ui/MainMenu.tscn`. Design viewport: 1920x1080 (landscape). S
 
 	Adding a new content type (pets, mounts, world-map flags) = one new dict on the appropriate autoload, three helpers (`get_*`, `set_*`, `_default_*_for`), one EventBus signal. Mirrors `LoadoutState.hero_equipped_skills` end-to-end. (See SESSIONS.md "2026-05-01 — GameState split" for the rationale.)
 21. **Painted backgrounds are L5+ only, opt-in via a `MapBackground` Sprite2D child.** When a level scene has a `MapBackground` Sprite2D under its root, BaseLevel auto-suppresses the procedural BG fill, decorations (trees/bushes/flowers), and path strokes — the painting owns those layers. (BG fill must be suppressed because BaseLevel's `_draw()` runs at root z_index=0 and would overdraw any Sprite2D child regardless of the sprite's negative z_index.) Procedural borders stay by default so zoom-out past the painting still looks framed. Adding a `MapBackgroundOverflow` Node sibling also suppresses borders, for paintings that include their own framing past `map_bounds`. Tower spots always render (interactive build cue). **Never retrofit painted backgrounds onto L1–L4** — they stay 100% procedural forever. Reasoning: (a) shipped/balanced levels shouldn't be reskinned without scoped re-verification, (b) the procedural look is the deliberate art direction for early game, (c) keeping the procedural draw branches load-bearing on multiple shipped levels prevents bit-rot. Image lives at `levels/backgrounds/level_<N>_bg.<ext>`; native size 2000×1160 for 1:1 placement against the default `map_bounds`. Set `MapBackground.z_index = -50` so it draws beneath spots.
+
+---
+
+## Preventive Bug Rules
+
+These exist because each one is a postmortem of a real bug that shipped. They're especially load-bearing for vibe coding: Claude reads this section and avoids the bug class before repeating it. Bug-by-bug rationale is in SESSIONS.md "2026-05-11 — Preventive Bug Rules".
+
+1. **Hero stats for display go through `HeroStats.effective_for(hero_id)`.** UI never reads `hero_data.attack_damage` / `.max_health` / `.armor` etc. directly. [`HeroStats`](heroes/HeroStats.gd) is a thin wrapper over [`BaseHero.compute_stats_for`](heroes/base_hero.gd) that applies per-level growth + equipped-item modifiers + meta-upgrade multipliers. Mirror of CORE RULE 14 (Tower Indicator Interface). Reading base HeroData fields for display silently ignores the modifier stack — the Hero Hall Overview shipped with exactly this bug. Carve-outs: BaseHero's own stat math (the source); static display strings like `hero_data.hero_name` / `.icon`.
+
+2. **Every `InventoryManager` public mutator ends with `_persist()`.** `_persist()` bundles `EventBus.inventory_changed.emit()` + `SaveManager.save_game()`. Mutator-specific signals (`item_equipped`, `item_sold`) fire BEFORE `_persist()`. Reason: skill-equip / sell / lock / pickup / starter-gear all saved on the spot, but `equip()` / `unequip()` / grid-placement / `destroy()` quietly didn't. A mobile player closing the app mid-menu lost the change. The drift went unnoticed for months because every individual mutator looked correct in isolation. Carve-outs: `reset()` (the test wipe deliberately doesn't save), `from_save_dict` (loading isn't a mutation).
+
+3. **Embedded hero-scoped screens listen to `EventBus.hero_selected`.** Any Control embedded inside HeroesHub (or any future hub that swaps active hero from a sidebar) that reads `LoadoutState.selected_hero_id` MUST connect `hero_selected → _refresh` in `_ready()` and disconnect in `_exit_tree()`. Reason: standalone screens get embedded later, inheriting a context where the active hero can change underneath them; the cached `_hero_id` at `_ready()` then lies. Reference patterns: [`EquipmentScreen.gd:191`](ui/EquipmentScreen.gd#L191), [`HeroSkillTreeScreen.gd`](ui/HeroSkillTreeScreen.gd) (`_ready` + `_exit_tree`).
+
+4. **Load-bearing invariants must be executable.** If a comment claims something must always be true, prefer an `assert`, guard, test, or `ContentRegistry._validate_ids`-style boot check. Keep comments for rationale (the *why*); don't rely on them to enforce behavior. Reason: a stale "Equipment/Talents already listen to `hero_selected`" comment in HeroesHub.gd hid a real wiring gap for months — both the original author and every subsequent reader trusted the comment over the code.
 
 ---
 

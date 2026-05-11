@@ -22,6 +22,10 @@ const _HeroSidebarButtonScript := preload("res://ui/HeroSidebarButton.gd")
 # class_name registry order. Matches the pattern used in MetaProgression /
 # LoadoutState / HeroSkillTreeScreen.
 const _HeroSkillNodeDataScript := preload("res://heroes/HeroSkillNodeData.gd")
+# HeroStats interface (Preventive Bug Rule, CLAUDE.md): the canonical way
+# for UI to read effective hero stats with gear modifiers applied. Preload
+# so the script is resolvable regardless of Godot's class_name scan order.
+const _HeroStats := preload("res://heroes/HeroStats.gd")
 
 # Phase 51 — sidebar size system. The 140-px sidebar replaces the prior
 # 304-px RosterRail; nav buttons and hero buttons share the touch-target
@@ -137,6 +141,8 @@ func _connect_events() -> void:
 		_refresh_roster_progress()
 	)
 	EventBus.inventory_changed.connect(_refresh_nav_state)
+	EventBus.item_equipped.connect(func(_h, _s, _i) -> void: _refresh_hero_hall())
+	EventBus.item_unequipped.connect(func(_h, _s, _i) -> void: _refresh_hero_hall())
 
 
 # --- Hero sidebar (Phase 51) ---------------------------------------------
@@ -267,8 +273,8 @@ func _on_hero_selected(hero_id: String) -> void:
 			btn.set_selected(hid == hero_id)
 	_refresh_hero_hall()
 	_refresh_nav_state()
-	# If a sub-view is open, refresh it (Skills builds itself; Equipment/Talents
-	# already listen to hero_selected via EventBus).
+	# If a sub-view is open, refresh it (Skills rebuilds here; Equipment + Talents
+	# listen to hero_selected directly).
 	if _current_sub == "skills":
 		_refresh_skills_subview()
 
@@ -541,14 +547,17 @@ func _refresh_hero_hall() -> void:
 	else:
 		_hall_xp_bar.value = clampf(float(xp) / float(need), 0.0, 1.0)
 		_hall_xp_label.text = "XP %d / %d" % [xp, need]
-	# Stats lines.
+	# Stats lines — effective stats including equipped gear, via HeroStats
+	# (Preventive Bug Rule). Don't read hero_data.max_health / .attack_damage
+	# etc. directly for display anywhere — those skip the modifier stack.
+	var stats: Dictionary = _HeroStats.effective_for(hid)
 	_hall_stats_label.text = "%s\nHP   %d\nDMG  %d\nRNG  %d\nSPD  %.2f\nARM  %d%%" % [
 		dmg_type,
-		int(hero_data.max_health),
-		int(round(hero_data.attack_damage)),
-		int(round(hero_data.attack_range)),
-		float(hero_data.attack_speed),
-		int(round(float(hero_data.armor) * 100.0)),
+		int(round(float(stats.get("max_health", 0.0)))),
+		int(round(float(stats.get("damage", 0.0)))),
+		int(round(float(stats.get("attack_range", 0.0)))),
+		float(stats.get("attack_speed", 0.0)),
+		int(round(float(stats.get("armor", 0.0)) * 100.0)),
 	]
 	# READY CHECK lines — equipment slot fill, equipped skill count, talent
 	# stars to spend. Slot total honors per-hero equipment_slots override

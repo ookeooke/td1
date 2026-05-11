@@ -39,6 +39,7 @@ func _ready() -> void:
 	EventBus.hero_passive_equipped.connect(_on_state_changed)
 	EventBus.hero_skill_mod_chosen.connect(_on_state_changed)
 	EventBus.hero_leveled_up.connect(_on_state_changed)
+	EventBus.hero_selected.connect(_on_state_changed)
 
 
 func _exit_tree() -> void:
@@ -52,6 +53,8 @@ func _exit_tree() -> void:
 		EventBus.hero_skill_mod_chosen.disconnect(_on_state_changed)
 	if EventBus.hero_leveled_up.is_connected(_on_state_changed):
 		EventBus.hero_leveled_up.disconnect(_on_state_changed)
+	if EventBus.hero_selected.is_connected(_on_state_changed):
+		EventBus.hero_selected.disconnect(_on_state_changed)
 
 
 # All EventBus payloads are arg-variable; collapse them into one refresh.

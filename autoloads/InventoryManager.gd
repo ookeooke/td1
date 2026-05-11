@@ -55,6 +55,16 @@ func _ready() -> void:
 	print("[InventoryManager] loaded")
 
 
+# Preventive Bug Rule (CLAUDE.md): every public mutator on InventoryManager
+# ends with _persist(). Bundles signal emit + save_game so a future mutator
+# can't drift back into "signals only, no save" (the equip/unequip bug we
+# hit on 2026-05-11). Callers that genuinely should NOT save (reset(),
+# load_from_save) emit inventory_changed directly instead.
+func _persist() -> void:
+	EventBus.inventory_changed.emit()
+	SaveManager.save_game()
+
+
 # 2026-04-29 audit fix — full wipe of every InventoryManager-owned field.
 # Called from SaveManager.delete_save() so "Reset Progress" actually clears
 # items, equipment slots, and the starter-gear bookkeeping (which previously
@@ -126,8 +136,7 @@ func add_to_round(instance) -> void:
 	if instance.base_id != "":
 		MetaProgression.try_unlock_encyclopedia(instance.base_id)
 	EventBus.item_picked_up.emit(instance)
-	EventBus.inventory_changed.emit()
-	SaveManager.save_game()
+	_persist()
 
 
 func commit_round() -> void:
@@ -142,8 +151,7 @@ func commit_round() -> void:
 	for inst in round_pickups:
 		add_to_shared(inst)
 	round_pickups.clear()
-	EventBus.inventory_changed.emit()
-	SaveManager.save_game()
+	_persist()
 
 
 # Phase 49 — Single chokepoint for adding an instance to the shared pool.
@@ -329,7 +337,7 @@ func move_item(uid: String, row: int, col: int) -> bool:
 				return false
 	inst.grid_row = row
 	inst.grid_col = col
-	EventBus.inventory_changed.emit()
+	_persist()
 	return true
 
 
@@ -465,7 +473,7 @@ func equip(hero_id: String, uid: String) -> bool:
 		EventBus.item_unequipped.emit(hero_id, slot, find_by_uid(previous_uid))
 		_reflow_unplaced()
 	EventBus.item_equipped.emit(hero_id, slot, inst)
-	EventBus.inventory_changed.emit()
+	_persist()
 	return true
 
 
@@ -508,7 +516,7 @@ func unequip(hero_id: String, slot: int) -> bool:
 	# Phase 49 — coming off a slot, item needs a grid spot again.
 	_reflow_unplaced()
 	EventBus.item_unequipped.emit(hero_id, slot, find_by_uid(uid))
-	EventBus.inventory_changed.emit()
+	_persist()
 	return true
 
 
@@ -545,7 +553,7 @@ func destroy(uid: String) -> bool:
 		push_warning("[InventoryManager] destroy refused: %s is equipped" % uid)
 		return false
 	shared_inventory.remove_at(idx)
-	EventBus.inventory_changed.emit()
+	_persist()
 	return true
 
 
@@ -582,8 +590,7 @@ func toggle_lock(uid: String) -> bool:
 	if inst == null:
 		return false
 	inst.locked = not inst.locked
-	EventBus.inventory_changed.emit()
-	SaveManager.save_game()
+	_persist()
 	return inst.locked
 
 
@@ -639,5 +646,4 @@ func ensure_starter_gear(hero_id: String) -> void:
 	# Phase 49 — place any starter items that didn't auto-equip onto the grid.
 	_reflow_unplaced()
 	starter_gear_granted.append(hero_id)
-	EventBus.inventory_changed.emit()
-	SaveManager.save_game()
+	_persist()

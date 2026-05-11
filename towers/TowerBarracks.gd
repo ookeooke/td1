@@ -147,6 +147,12 @@ func can_upgrade() -> bool:
 	return get_upgrade_cost_to(level + 1) > 0
 
 
+# Tower Indicator Interface: barracks have no L3 branch — return false so UI
+# can call this uniformly without a has_method() guard (CORE RULE 14).
+func has_branch_options() -> bool:
+	return false
+
+
 func upgrade() -> bool:
 	if not can_upgrade():
 		return false

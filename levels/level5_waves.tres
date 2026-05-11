@@ -15,28 +15,22 @@
 script = ExtResource("3_spawn")
 path_id = "bl_plank"
 enemy_scene = ExtResource("9_scout")
-count = 10
+count = 2
 interval = 5.0
-
-[sub_resource type="Resource" id="L5_W1_BLArmor"]
-script = ExtResource("3_spawn")
-path_id = "bl_plank"
-enemy_scene = ExtResource("6_armor")
-interval = 14.0
 
 [sub_resource type="Resource" id="Resource_j075h"]
 script = ExtResource("3_spawn")
 path_id = "bl_plank"
 enemy_scene = ExtResource("9_scout")
-count = 8
+count = 5
+interval = 1.25
 start_delay = 10.0
 
 [sub_resource type="Resource" id="Resource_pksk3"]
 script = ExtResource("3_spawn")
 path_id = "bl_plank"
 enemy_scene = ExtResource("4_basic")
-count = 3
-interval = 2.6
+interval = 5.0
 start_delay = 20.0
 
 [sub_resource type="Resource" id="Resource_wtlbc"]
@@ -57,8 +51,8 @@ start_delay = 35.0
 script = ExtResource("3_spawn")
 path_id = "bl_plank"
 enemy_scene = ExtResource("9_scout")
-count = 8
-interval = 0.7142857142857143
+count = 5
+interval = 1.25
 start_delay = 35.0
 
 [sub_resource type="Resource" id="Resource_lrgiu"]
@@ -73,7 +67,8 @@ start_delay = 25.0
 script = ExtResource("3_spawn")
 path_id = "bl_plank"
 enemy_scene = ExtResource("9_scout")
-interval = 5.0
+count = 3
+interval = 2.5
 start_delay = 5.0
 
 [sub_resource type="Resource" id="Resource_ov70g"]
@@ -84,9 +79,24 @@ count = 4
 interval = 1.6666666666666667
 start_delay = 45.0
 
+[sub_resource type="Resource" id="Resource_6ee7r"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("4_basic")
+interval = 5.0
+start_delay = 15.0
+
+[sub_resource type="Resource" id="Resource_xa26m"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("9_scout")
+count = 3
+interval = 2.5
+start_delay = 25.0
+
 [sub_resource type="Resource" id="L5_Wave1"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W1_BLBasic"), SubResource("L5_W1_BLArmor"), SubResource("Resource_j075h"), SubResource("Resource_pksk3"), SubResource("Resource_wtlbc"), SubResource("Resource_agutc"), SubResource("Resource_xnowe"), SubResource("Resource_lrgiu"), SubResource("Resource_ik6uv"), SubResource("Resource_ov70g")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W1_BLBasic"), SubResource("Resource_j075h"), SubResource("Resource_pksk3"), SubResource("Resource_wtlbc"), SubResource("Resource_agutc"), SubResource("Resource_xnowe"), SubResource("Resource_lrgiu"), SubResource("Resource_ik6uv"), SubResource("Resource_ov70g"), SubResource("Resource_6ee7r"), SubResource("Resource_xa26m")])
 bounty = 85
 early_call_window_sec = 0.0
 
@@ -105,13 +115,6 @@ count = 3
 interval = 5.0
 start_delay = 4.0
 
-[sub_resource type="Resource" id="L5_W2_BLArmor"]
-script = ExtResource("3_spawn")
-path_id = "bl_plank"
-enemy_scene = ExtResource("6_armor")
-count = 6
-interval = 11.0
-
 [sub_resource type="Resource" id="Resource_o88bf"]
 script = ExtResource("3_spawn")
 path_id = "bl_plank"
@@ -120,9 +123,23 @@ count = 10
 interval = 0.5555555555555556
 start_delay = 20.0
 
+[sub_resource type="Resource" id="Resource_3gv62"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("6_armor")
+interval = 5.0
+start_delay = 30.0
+
+[sub_resource type="Resource" id="Resource_kf84l"]
+script = ExtResource("3_spawn")
+path_id = "bl_plank"
+enemy_scene = ExtResource("6_armor")
+interval = 5.0
+start_delay = 55.0
+
 [sub_resource type="Resource" id="L5_Wave2"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W2_BLBasic"), SubResource("L5_W2_BLScouts"), SubResource("L5_W2_BLArmor"), SubResource("Resource_o88bf")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("L5_W2_BLBasic"), SubResource("L5_W2_BLScouts"), SubResource("Resource_o88bf"), SubResource("Resource_3gv62"), SubResource("Resource_kf84l")])
 countdown = 27.0
 bounty = 95
 early_call_window_sec = 7.0

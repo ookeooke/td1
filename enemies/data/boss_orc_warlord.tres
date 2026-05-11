@@ -1,10 +1,10 @@
-[gd_resource type="Resource" script_class="EnemyData" format=3]
+[gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://dthmilf1ovscm"]
 
-[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
-[ext_resource type="Script" path="res://enemies/bosses/BossPhaseData.gd" id="2_phase"]
-[ext_resource type="Script" path="res://systems/abilities/HealAuraAbility.gd" id="3_heal"]
-[ext_resource type="Resource" path="res://enemies/data/visual_boss.tres" id="4_vis"]
-[ext_resource type="Resource" path="res://items/data/loot_table_boss_orc.tres" id="5_loot"]
+[ext_resource type="Script" uid="uid://bfgo62wek7fpf" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Script" uid="uid://c4vidh3phudj5" path="res://enemies/bosses/BossPhaseData.gd" id="2_phase"]
+[ext_resource type="Script" uid="uid://cp02o50kiybdd" path="res://systems/abilities/HealAuraAbility.gd" id="3_heal"]
+[ext_resource type="Resource" uid="uid://dut2ilo1gvq3b" path="res://enemies/data/visual_boss.tres" id="4_vis"]
+[ext_resource type="Resource" uid="uid://dl2sepr85i6yp" path="res://items/data/loot_table_boss_orc.tres" id="5_loot"]
 
 [sub_resource type="Resource" id="Phase1"]
 script = ExtResource("2_phase")

@@ -10,18 +10,33 @@ var _spawned: Array[Node] = []
 var _saved_round_damage_towers: Dictionary
 var _saved_round_damage_hero: float
 var _saved_round_damage_soldiers: float
+var _saved_runstats_current: Dictionary
+var _saved_runstats_start_time_msec: int
+var _saved_runstats_latest_wave_num: int
+var _saved_runstats_last_gold: int
+var _saved_runstats_pre_wave_gold_spent: int
 
 
 func before_each() -> void:
 	_saved_round_damage_towers = RunState.round_damage_towers.duplicate(true)
 	_saved_round_damage_hero = RunState.round_damage_hero
 	_saved_round_damage_soldiers = RunState.round_damage_soldiers
+	_saved_runstats_current = RunStats._current.duplicate(true)
+	_saved_runstats_start_time_msec = RunStats._start_time_msec
+	_saved_runstats_latest_wave_num = RunStats._latest_wave_num
+	_saved_runstats_last_gold = RunStats._last_gold
+	_saved_runstats_pre_wave_gold_spent = RunStats._pre_wave_gold_spent
 
 
 func after_each() -> void:
 	RunState.round_damage_towers = _saved_round_damage_towers
 	RunState.round_damage_hero = _saved_round_damage_hero
 	RunState.round_damage_soldiers = _saved_round_damage_soldiers
+	RunStats._current = _saved_runstats_current
+	RunStats._start_time_msec = _saved_runstats_start_time_msec
+	RunStats._latest_wave_num = _saved_runstats_latest_wave_num
+	RunStats._last_gold = _saved_runstats_last_gold
+	RunStats._pre_wave_gold_spent = _saved_runstats_pre_wave_gold_spent
 	# Synchronous free for any node not added via add_child_autofree —
 	# queue_free defers past GUT's orphan check.
 	for n in _spawned:
@@ -212,6 +227,81 @@ func test_hero_die_double_call_emits_once() -> void:
 
 	EventBus.hero_died.disconnect(listener)
 	assert_eq(emit_count[0], 1, "hero_died must fire exactly once across two _die() calls")
+
+
+# L5 balance telemetry depends on this: with early-call overlap, enemies from
+# wave N can leak after wave N+1 starts. RunStats must attribute leaks by the
+# enemy's spawn wave_index, not by one shared "current wave" counter.
+func test_runstats_lives_lost_per_wave_uses_enemy_wave_index() -> void:
+	RunStats._start_time_msec = Time.get_ticks_msec()
+	RunStats._current = {
+		"lives_lost_per_wave": [],
+		"_pending_wave_leak_by_wave": {},
+		"gold_timeline": [],
+		"waves": [],
+	}
+
+	RunStats._on_wave_started(5, [])
+	RunStats._on_wave_started(6, [])
+
+	var wave5_enemy: Node = _track(Node.new())
+	wave5_enemy.set_meta("wave_index", 4)
+	var wave6_enemy: Node = _track(Node.new())
+	wave6_enemy.set_meta("wave_index", 5)
+
+	RunStats._on_enemy_reached_end(wave5_enemy, 2)
+	RunStats._on_enemy_reached_end(wave6_enemy, 1)
+	RunStats._on_wave_completed(6)
+	RunStats._on_wave_completed(5)
+
+	var leaks: Array = RunStats._current["lives_lost_per_wave"]
+	assert_eq(leaks.size(), 6, "array must preserve 1-based wave slots even when waves clear out of order")
+	assert_eq(int(leaks[4]), 2, "wave 5 leak is stored in slot 5")
+	assert_eq(int(leaks[5]), 1, "wave 6 leak is stored in slot 6")
+
+
+func test_runstats_wave_block_tracks_pressure_and_economy() -> void:
+	RunState.gold = 100
+	RunStats._start_time_msec = Time.get_ticks_msec()
+	RunStats._latest_wave_num = 0
+	RunStats._last_gold = 100
+	RunStats._pre_wave_gold_spent = 0
+	RunStats._current = {
+		"lives_lost_per_wave": [],
+		"_pending_wave_leak_by_wave": {},
+		"gold_timeline": [],
+		"waves": [],
+	}
+
+	RunState.gold = 70
+	RunStats._on_gold_changed(70) # pre-W1 build spend should attach to W1.
+	RunStats._on_wave_started(1, [])
+
+	var enemy: BaseEnemy = _track(BaseEnemy.new())
+	enemy.data = ContentRegistry.find_enemy("enemy_basic")
+	assert_not_null(enemy.data, "fixture: enemy_basic must be in registry")
+	# hit_landed fires after BaseEnemy.take_damage subtracts ceil(final). A
+	# 5 HP enemy hit for 100 damage is therefore at -95 when RunStats sees it.
+	enemy.current_health = -95
+	enemy.set_meta("wave_index", 0)
+	RunStats._on_enemy_spawned(enemy, "main")
+	RunStats._on_hit_landed(enemy, null, 100.0, 0)
+	RunStats._on_enemy_reached_end(enemy, 1)
+	RunStats._on_wave_completed(1)
+
+	var waves: Array = RunStats._current["waves"]
+	assert_eq(waves.size(), 1)
+	var w: Dictionary = waves[0]
+	assert_eq(int(w["wave"]), 1)
+	assert_eq(int(w["enemies_spawned"]), 1)
+	assert_eq(int(w["enemies_leaked"]), 1)
+	assert_eq(int(w["lives_lost"]), 1)
+	assert_eq(int(w["gold_spent"]), 30)
+	assert_eq(int(w["gold_on_clear"]), 70)
+	assert_eq(int(w["peak_concurrent_enemies"]), 1)
+	assert_almost_eq(float(w["damage_total"]), 5.0, 0.001, "per-wave damage should cap obvious overkill")
+	var leak_events: Array = w["leaks"]
+	assert_eq(leak_events.size(), 1)
 
 
 func _add_hero_required_children(hero: BaseHero) -> void:

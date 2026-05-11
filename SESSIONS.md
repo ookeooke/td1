@@ -3457,3 +3457,44 @@ Distilled the three context-shift bugs from earlier today (Talents stale-cache, 
 - Marked `Godot: GUT Tests` as the default VS Code test task.
 - Updated `docs/DEV_WORKFLOW.md` to list the task names.
 - Verification: configuration/docs-only change; task commands mirror the manually verified PowerShell commands.
+
+---
+
+## 2026-05-11 - Balance Scout agent brief
+
+- Added `docs/agents/README.md` to explain how reusable scout briefs should be used: report-first, no edits by default, main Claude implements one selected task after review.
+- Added `docs/agents/balance_scout.md` with level/tower/enemy/progression modes, required read order, balance rules, and concise output format.
+- Added `balance/notes/README.md` as the inbox for raw balance research, playtest notes, audit notes, and hypotheses that are not yet canonical design intent.
+- No gameplay, scene, resource, or balance values changed.
+- Verification: documentation-only change; reviewed folder placement and brief contents.
+
+---
+
+## 2026-05-11 - Balance Scout telemetry pointers
+
+- Updated `docs/agents/balance_scout.md` with an explicit `Telemetry Sources` section.
+- Named `autoloads/RunStats.gd`, `user://run_stats.json`, `RunStats.get_history()`, `balance/report/BalanceReport.gd`, `balance/audit/`, `balance/snapshots/`, and `balance/notes/` so future scout runs know where played-level evidence lives.
+- No gameplay, scene, resource, or balance values changed.
+- Verification: documentation-only change; reviewed the updated agent brief text.
+
+---
+
+## 2026-05-11 - RunStats per-wave leak attribution fix
+
+- Fixed `autoloads/RunStats.gd` so `lives_lost_per_wave` is tracked by the leaking enemy's `wave_index`, not by a single shared pending counter.
+- This matters for early-call overlap and L5 review: a late W5 leak after W6 starts now stays attached to W5, and out-of-order wave clears preserve the correct 1-based array slot.
+- Bumped telemetry `schema_version` to 3 so new records can be distinguished from older, less reliable per-wave leak records.
+- Added a regression test for overlapped W5/W6 leaks clearing out of order.
+- Verification: attempted targeted GUT twice and headless boot once from this Codex shell; Godot crashed with signal 11 before test output each time. Change remains unverified here; run the targeted/full GUT command from a fresh PowerShell.
+
+---
+
+## 2026-05-11 - RunStats schema v4 per-wave balance block
+
+- Extended `autoloads/RunStats.gd` to `schema_version = 4`.
+- Added `naked_baseline` tagging for campaign runs using default warrior, default tower loadout, no equipped items, no purchased upgrades/talents/skill-tree nodes, level-1 warrior, default active skills, and no non-campaign mode.
+- Added per-wave telemetry under `waves[]`: timing, clear time, enemies spawned/leaked, lives lost, capped hit damage, gold start/spent/on-clear, peak concurrent enemies, and per-leak event details.
+- Kept legacy `lives_lost_per_wave` and `gold_timeline` for existing report compatibility.
+- Updated `balance/BALANCE.md` and `docs/agents/balance_scout.md` so Balance Scout knows schema v4 exists.
+- Added regression coverage for overlapped leak attribution and the new wave pressure/economy block.
+- Verification: attempted targeted GUT from this Codex shell; Godot crashed with signal 11 before test output. Needs fresh PowerShell GUT verification.

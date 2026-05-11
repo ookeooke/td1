@@ -577,7 +577,9 @@ Mechanical effects don't roll random magnitudes — they're either active or not
 
 `autoloads/RunStats.gd` writes to `user://run_stats.json` after every campaign/heroic/iron run. Capped at last 50. Test Range runs are excluded (mode = "test_range").
 
-Each record has: tower placements, max levels reached, branch choices, lives lost per wave, hero deaths, spells cast, duration, outcome, stars earned.
+Current records (`schema_version = 4`) include: tower placements, max levels reached, branch choices, hero deaths, duration, outcome, stars earned, `naked_baseline`, run-level damage by source/tower, and a `waves` block.
+
+Each `waves[]` entry records: wave number, start/first-spawn/last-exit timing, clear time, enemies spawned/leaked, lives lost, capped hit damage, gold at start, gold spent, gold on clear, peak concurrent enemies, and leak events (`t_ms`, enemy id, path id, path progress %, lives lost).
 
 To get aggregate views (which towers carry, where lives leak), build `balance/report/BalanceReport.gd` — reads `run_stats.json`, rolls up across runs, displays in-editor.
 

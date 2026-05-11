@@ -108,7 +108,7 @@ func _on_branch_upgrade_requested(spot_id: String, branch_idx: int) -> void:
 	if _grid == null:
 		return
 	var tower: Node = _grid.get_tower_at(spot_id)
-	if tower == null or not tower.has_method("has_branch_options"):
+	if tower == null:
 		return
 	if not tower.has_branch_options():
 		return

@@ -1,8 +1,8 @@
-[gd_resource type="Resource" script_class="EnemyData" format=3]
+[gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://b2f441b3l11ab"]
 
-[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
-[ext_resource type="Script" path="res://systems/abilities/HealAuraAbility.gd" id="2_healaura"]
-[ext_resource type="Resource" path="res://enemies/data/visual_healer.tres" id="3_vis"]
+[ext_resource type="Script" uid="uid://bfgo62wek7fpf" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Script" uid="uid://cp02o50kiybdd" path="res://systems/abilities/HealAuraAbility.gd" id="2_healaura"]
+[ext_resource type="Resource" uid="uid://dfd0f5v4t0phs" path="res://enemies/data/visual_healer.tres" id="3_vis"]
 
 [sub_resource type="Resource" id="HealAura_1"]
 script = ExtResource("2_healaura")

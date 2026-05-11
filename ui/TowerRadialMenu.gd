@@ -203,7 +203,7 @@ func _open_action_ring(anchor_pos: Vector2, world_pos: Vector2) -> void:
 
 func _populate_action_slots() -> void:
 	var tower: Node = _current_tower
-	var has_branches: bool = tower.has_method("has_branch_options") and tower.has_branch_options()
+	var has_branches: bool = tower.has_branch_options()
 
 	# Top slot: upgrade OR two branch cards.
 	if has_branches:

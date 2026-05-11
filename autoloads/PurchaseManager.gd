@@ -16,6 +16,9 @@ func _ready() -> void:
 func purchase(product_id: String, unlock_id: String) -> void:
 	# TODO: replace with real SDK call.
 	# Real flow: SDK.purchase(product_id) → await receipt → validate → unlock.
+	if product_id.is_empty() or unlock_id.is_empty():
+		push_error("[PurchaseManager] purchase called with empty product_id='%s' / unlock_id='%s' — aborted" % [product_id, unlock_id])
+		return
 	print("[PurchaseManager] purchase '%s' → auto-success (stub)" % product_id)
 	UnlockManager.unlock(unlock_id)
 	EventBus.iap_purchase_completed.emit(product_id, unlock_id)

@@ -3343,3 +3343,28 @@ End-to-end manual smoke (executed mentally; eyes-on-device pending in editor):
 - `HeroInputManager.gd`: move commands now ignore freed hero/map references and reject navigation snaps when the navigation map has no closest-point owner yet. This guards the reload/first-frame case where Godot can return an unusable nav point.
 - `base_hero.gd`: death drift tween is now tracked and killed on respawn; stale death callbacks no longer get to hide a live hero.
 - Verification blocked: `godot` is not on PATH; direct `C:\Godot_v4.6.2-stable_win64.exe (1)\Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit` and GUT both crash with signal 11 before project/test output.
+
+---
+
+## 2026-05-11 — Code-review punch list: SkillBar level-agnostic, ContentRegistry dir-glob, IAP guard, doc fix
+
+Four small but real findings from a review pass. Each is independently revertible.
+
+- **SkillBar level hardcode removed.** [SkillBar.gd:241](ui/SkillBar.gd#L241) used `get_tree().root.find_child("Level1", true, false)` for screen→world conversion. On L2+ this returns null and any area/single-target skill silently casts at screen coordinates instead of map coordinates. Mirrored [HeroInputManager.gd:20](heroes/HeroInputManager.gd#L20) — exported `map_path: NodePath`, cached `_map: Node2D` in `_ready()`, fallback to raw screen_pos if unwired. Wired dynamically in [Main.gd](main/Main.gd) `_enter_tree` next to the existing `input_mgr.map_path` line; [TestRange.tscn](balance/test_range/TestRange.tscn) sets it statically to `../TestRangeMap`. No new signals, no new autoloads.
+
+- **ContentRegistry: enemies / towers / heroes / skill_trees now directory-globbed.** [ContentRegistry.gd](autoloads/ContentRegistry.gd) hardcoded path arrays for 4 catalogs (items/affixes/pools were already dir-globbed in Phase 49). Replaced the four `Array[String]` consts with `_*_DIR` paths; reused the existing `_load_catalog_dir` helper. Removed the now-orphan `_load_catalog(paths, label)` function.
+  - **Foreign-sibling guard:** `enemies/data/` and `heroes/data/` contain `visual_*.tres` (UnitVisualData) alongside the unit `.tres` files. Added a `required_field` optional parameter to `_load_catalog_dir`; resources lacking that property are silently skipped at load. Calls now pass `"enemy_id"` / `"tower_id"` / `"hero_id"` so foreign siblings can't pollute the catalog.
+  - Items/affixes/pools call sites unchanged (default `required_field=""` accepts everything, matching prior behavior).
+  - `_validate_ids()` still catches filename↔id drift on every boot.
+  - Adding a new hero / tower / enemy is now a single `.tres` drop — no autoload edit, matching the Phase 49 promise for items.
+
+- **PurchaseManager: empty-id guard.** [PurchaseManager.gd:16](autoloads/PurchaseManager.gd#L16) blindly forwarded any string to `UnlockManager.unlock()`. Added an early-return `push_error` when `product_id` or `unlock_id` is empty. Real billing SDK swap is still queued; this is the cheap pre-launch hardening line.
+
+- **CLAUDE.md doc patch.** [CLAUDE.md:27](CLAUDE.md#L27) said "no test suite" — outdated since GUT shipped 2026-05-01 (9 test files, ~33 tests). Updated to point at [tests/unit/](tests/unit/).
+
+**Deferred** (need concrete triggers, not invented now):
+- VSync/144 FPS mobile setting — wait for first thermal complaint or pre-launch QA.
+- Real IAP SDK + package ID + iOS export preset — trigger is "scheduling closed-track store submission."
+- EventBus 72-signal ownership documentation — better as a generator (grep emit/connect sites) than a manual table that rots. Trigger is "next signal-ordering bug" or "adding 3+ signals in one phase."
+
+**Verification:** in-editor playtest pending — verify L2 skill casts land at the tapped map point (not screen-corner coords), and ContentRegistry boot print still reads `loaded — 7 enemies, 5 towers, 3 heroes, 3 trees, ...` with no `[ContentRegistry/DRIFT]` warnings.

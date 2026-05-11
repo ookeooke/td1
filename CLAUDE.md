@@ -24,7 +24,7 @@ godot --path . --editor          # Open in editor
 godot --path .                   # Run the game directly
 ```
 
-Entry point: `res://ui/MainMenu.tscn`. Design viewport: 1920x1080 (landscape). Stretch: `canvas_items` + `keep_height`. Renderer: GL Compatibility (mobile-first). No build system, linter, or test suite — validate by running in the Godot editor.
+Entry point: `res://ui/MainMenu.tscn`. Design viewport: 1920x1080 (landscape). Stretch: `canvas_items` + `keep_height`. Renderer: GL Compatibility (mobile-first). No build system or linter; tests via [GUT](https://github.com/bitwes/Gut) under [tests/unit/](tests/unit/) (run headless from Godot). Beyond tests, validate by running in the Godot editor.
 
 ---
 

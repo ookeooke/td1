@@ -53,6 +53,12 @@ const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
 const AIM_LERP_SPEED: float = 12.0
 # Multiplier applied to silhouette draws — keep in sync with _draw().
 const _SILHOUETTE_BASE_SIZE: float = 1.30
+# Y-shift applied to the silhouette + muzzle so the tower's visual mass
+# reads centered on the spot foundation. Unscaled local pixels (negative =
+# up). Without this the ground pad anchors at y=39 and the tower hangs off
+# the southern edge of the 65px spot circle. Construction / upgrade rings
+# stay at identity so ground VFX still anchors to spot center.
+const VISUAL_Y_OFFSET: float = -16.0
 var _construct_t: float = 0.0
 var _upgrade_t: float = 0.0
 var _aim_angle: float = -PI / 2.0
@@ -529,7 +535,7 @@ func _fire_projectile(target: Node) -> void:
 	var proj: Node2D = data.projectile_scene.instantiate()
 	get_parent().add_child(proj)
 	var muzzle_local: Vector2 = _TowerSilhouetteScript.muzzle_offset(data.tower_id, level, _aim_angle)
-	proj.global_position = global_position + muzzle_local * _SILHOUETTE_BASE_SIZE
+	proj.global_position = global_position + Vector2(0.0, VISUAL_Y_OFFSET) + muzzle_local * _SILHOUETTE_BASE_SIZE
 
 	# Phase 25: branches can attach an on-hit status effect (Ranger's slow).
 	# Construct a fresh instance per shot so per-target duration state isn't
@@ -618,7 +624,7 @@ func _draw() -> void:
 	# artillery / barracks fall-back). Owns the entire body + aimable part
 	# so the player can read tower type at a glance instead of seeing a
 	# generic colored circle.
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s * breath_x, s * breath_y))
+	draw_set_transform(Vector2(0.0, VISUAL_Y_OFFSET), 0.0, Vector2(s * breath_x, s * breath_y))
 	var ov: Resource = _level_override()
 	var tint: Color = ov.tint if ov != null else Color.WHITE
 	var tower_id: String = data.tower_id if data != null else ""

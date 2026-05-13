@@ -13,6 +13,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [SESSIONS.md](SESSIONS.md) — chronological log of what's been done and why. Append a dated entry at the end of every working session.
 - **This file (CLAUDE.md)** — invariants only (rules, interfaces, contracts). Do not log session notes here.
 - [balance/BALANCE.md](balance/BALANCE.md) — design intent for tuning: target g/DPS curves, hardness baselines, the Naked Baseline invariant. Read before any balance change. Folder is dev-only (stripped from production exports).
+- [addons/godot_mcp/](addons/godot_mcp/) + `.mcp.json` — Godot MCP Pro v1.13.1 plugin and Claude Code bridge config. Dev-only AI tooling; the plugin is optional and auto-injects 3 `MCP*` autoloads while enabled. Strip before final production ship. Never reference any MCP symbol from game code.
+- [.claude/skills.md](.claude/skills.md) — MCP tool usage playbook auto-loaded by Claude Code each session. Mirror of `addons/godot_mcp/skills.md` from the vendor. Update both sides if either changes.
 - `git log` — diffs and short commit messages.
 
 ---

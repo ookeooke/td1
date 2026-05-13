@@ -8,8 +8,8 @@
 [sub_resource type="Resource" id="ArtilleryBranch_Howitzer"]
 script = ExtResource("4_upg")
 upgrade_name = "Howitzer"
-damage = 101.0
-attack_range = 625.0000000000025
+damage = 13.0
+attack_range = 350.0
 attack_speed = 0.4
 cost = 135
 sell_value = 130
@@ -18,8 +18,8 @@ tint = Color(0.55, 0.45, 0.35, 1)
 [sub_resource type="Resource" id="ArtilleryBranch_TripleCannon"]
 script = ExtResource("4_upg")
 upgrade_name = "Triple Cannon"
-damage = 29.0
-attack_range = 534.9999999999999
+damage = 17.0
+attack_range = 355.0
 attack_speed = 1.2500000000000002
 cost = 160
 sell_value = 140
@@ -28,12 +28,12 @@ tint = Color(1.15, 0.5, 0.3, 1)
 [sub_resource type="Resource" id="ArtilleryUpg_L2"]
 script = ExtResource("4_upg")
 upgrade_name = "Cannon"
-damage = 34.99999999999999
-attack_range = 555.0
+damage = 7.0
+attack_range = 320.0
 attack_speed = 0.55
-cost = 155
+cost = 180
 sell_value = 60
-aoe_radius = 150.0
+aoe_radius = 90.0
 tint = Color(0.95, 0.85, 0.75, 1)
 
 [sub_resource type="Resource" id="ArtilleryUpg_L3"]
@@ -52,12 +52,12 @@ tower_name = "Artillery"
 tower_id = "tower_artillery"
 tower_scene = ExtResource("3_scene")
 pictogram = "cannon"
-damage = 8.0
+damage = 4.0
 attack_range = 250.00000000000017
-attack_speed = 0.45
+attack_speed = 0.4
 cost = 130
 sell_value = 70
-aoe_radius = 100.0
+aoe_radius = 50.0
 body_color = Color(0.6, 0.35, 0.2, 1)
 level_upgrades = Array[Resource]([SubResource("ArtilleryUpg_L2"), SubResource("ArtilleryUpg_L3")])
 level_3_branches = Array[Resource]([SubResource("ArtilleryBranch_Howitzer"), SubResource("ArtilleryBranch_TripleCannon")])

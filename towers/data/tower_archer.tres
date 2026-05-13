@@ -15,7 +15,7 @@ cost = 150
 sell_value = 130
 on_hit_slow_factor = 0.45
 on_hit_slow_duration = 1.5
-tint = Color(0.6, 1.15, 0.6, 1)
+tint = Color(0.65, 1.0, 0.65, 1)
 
 [sub_resource type="Resource" id="ArcherBranch_Musketeer"]
 script = ExtResource("3_upg")
@@ -25,7 +25,7 @@ attack_range = 290.0000000000002
 attack_speed = 0.7000000000000001
 cost = 170
 sell_value = 140
-tint = Color(1.2, 0.7, 0.4, 1)
+tint = Color(1.0, 0.65, 0.45, 1)
 
 [sub_resource type="Resource" id="ArcherUpg_L2"]
 script = ExtResource("3_upg")

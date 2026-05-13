@@ -458,7 +458,7 @@ func _draw() -> void:
 	var s_construct: float = _TowerAnimScript.construct_scale(_construct_t)
 	var s_upgrade: float = _TowerAnimScript.upgrade_scale(_upgrade_t)
 	var s: float = s_construct * s_upgrade * BASE_SIZE
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
+	draw_set_transform(Vector2(0.0, BaseTower.VISUAL_Y_OFFSET), 0.0, Vector2(s, s))
 	# Procedural barracks silhouette — wood at L1, stone walls + windows at
 	# L2, watchtower + battlements at L3. Banner sways automatically inside
 	# draw_barracks. Aim angle isn't relevant for barracks (no projectile).

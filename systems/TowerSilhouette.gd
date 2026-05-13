@@ -67,7 +67,7 @@ static func muzzle_offset(tower_id: String, level: int, aim_angle: float) -> Vec
 			# Bow center at (0, deck_y - 28 - 5) with deck_y = -10. Arrow tip
 			# extends along aim by bow_size * 1.05 (matches draw_archer).
 			var bow_anchor: Vector2 = Vector2(0.0, -43.0)
-			var bow_size: float = 18.0 + level * 4.0
+			var bow_size: float = 18.0 + level * 6.0
 			if level >= 3:
 				bow_size += 4.0
 			return bow_anchor + dir * bow_size * 1.05
@@ -114,8 +114,8 @@ static func draw_archer(ci: CanvasItem, level: int, branch_idx: int, tint: Color
 	var base_h: float = 22.0
 	_draw_ground_pad(ci, Vector2(0.0, 39.0), 43.0, 14.0, tint)
 	# Branch tints: ranger = green wash, musketeer = orange.
-	var wood_col: Color = Color(0.55, 0.40, 0.22) * tint
-	var stone_col: Color = Color(0.62, 0.60, 0.55) * tint
+	var wood_col: Color = ThemeColors.WOOD_PLANK * tint
+	var stone_col: Color = ThemeColors.STONE_LIGHT * tint
 	if branch_idx == 0:
 		wood_col = wood_col.lerp(Color(0.45, 0.65, 0.30), 0.4)  # ranger green
 	elif branch_idx == 1:
@@ -140,22 +140,36 @@ static func draw_archer(ci: CanvasItem, level: int, branch_idx: int, tint: Color
 	ci.draw_rect(deck_rect, outline, false, 2.5)
 	_highlight_line_for_rect(ci, deck_rect, tint)
 	if level >= 3:
-		# Small side shields make the upgraded archer silhouette wider without
-		# turning it into a large circle that covers the road.
-		ci.draw_circle(Vector2(-deck_w * 0.38, deck_y - 14.0), 6.0, Color(0.26, 0.48, 0.24) * tint)
-		ci.draw_circle(Vector2(deck_w * 0.38, deck_y - 14.0), 6.0, Color(0.26, 0.48, 0.24) * tint)
+		# Painted side shields read as "fortified archer" at thumb zoom — a
+		# clearer L3 silhouette change than the previous tiny green dots.
+		var shield_col: Color = Color(0.26, 0.48, 0.24) * tint
+		for s in [-1.0, 1.0]:
+			var sc: Vector2 = Vector2(s * deck_w * 0.42, deck_y - 14.0)
+			var sg: float = 7.0
+			var shield_pts: PackedVector2Array = PackedVector2Array([
+				sc + Vector2(-sg * 0.55, -sg * 0.55),
+				sc + Vector2(sg * 0.55, -sg * 0.55),
+				sc + Vector2(sg * 0.55, sg * 0.1),
+				sc + Vector2(0.0, sg * 0.8),
+				sc + Vector2(-sg * 0.55, sg * 0.1),
+			])
+			ci.draw_colored_polygon(shield_pts, shield_col)
+			ci.draw_polyline(shield_pts + PackedVector2Array([shield_pts[0]]), outline, 1.2, true)
+			# Cross stroke.
+			ci.draw_line(sc + Vector2(0.0, -sg * 0.45), sc + Vector2(0.0, sg * 0.55), outline, 1.0, true)
+			ci.draw_line(sc + Vector2(-sg * 0.40, 0.0), sc + Vector2(sg * 0.40, 0.0), outline, 1.0, true)
 	# Archer figure (small orc-killer dude on the deck).
 	var arch_y: float = deck_y - 28.0
-	ci.draw_circle(Vector2(0.0, arch_y - 12.0), 7.0, Color(0.95, 0.78, 0.62) * tint)  # head
+	ci.draw_circle(Vector2(0.0, arch_y - 12.0), 7.0, ThemeColors.SKIN_LIGHT * tint)  # head
 	ci.draw_arc(Vector2(0.0, arch_y - 12.0), 7.0, 0.0, TAU, 12, outline, 1.5)
 	ci.draw_rect(Rect2(Vector2(-5.0, arch_y - 5.0), Vector2(10.0, 14.0)), Color(0.50, 0.40, 0.20) * tint)  # tunic
 	# The bow — drawn rotated toward target, anchored at the archer's hand.
-	var bow_size: float = 18.0 + level * 4.0
+	var bow_size: float = 18.0 + level * 6.0
 	if level >= 3:
 		bow_size += 4.0
 	ci.draw_set_transform(Vector2(0.0, arch_y - 5.0), aim_angle, Vector2.ONE)
 	# Bow as an arc with a string between the tips.
-	ci.draw_arc(Vector2.ZERO, bow_size * 0.55, -PI * 0.55, PI * 0.55, 14, Color(0.30, 0.18, 0.08), 3.5)
+	ci.draw_arc(Vector2.ZERO, bow_size * 0.55, -PI * 0.55, PI * 0.55, 14, ThemeColors.WOOD_DARK, 3.5)
 	var t1: Vector2 = Vector2(cos(-PI * 0.55), sin(-PI * 0.55)) * bow_size * 0.55
 	var t2: Vector2 = Vector2(cos(PI * 0.55), sin(PI * 0.55)) * bow_size * 0.55
 	ci.draw_line(t1, t2, Color(0.85, 0.85, 0.85), 1.5, true)
@@ -167,13 +181,13 @@ static func draw_archer(ci: CanvasItem, level: int, branch_idx: int, tint: Color
 		Vector2(bow_size * 0.85, 3.0),
 		Vector2(bow_size * 1.05, 0.0),
 	])
-	ci.draw_colored_polygon(head_pts, Color(0.78, 0.78, 0.82))
+	ci.draw_colored_polygon(head_pts, ThemeColors.BLADE_STEEL * tint)
 	# Fletching at L2+.
 	if level >= 2:
 		var fletch_pts: PackedVector2Array = PackedVector2Array([
 			Vector2(-4.0, -2.5), Vector2(-4.0, 2.5), Vector2(0.0, 0.0),
 		])
-		ci.draw_colored_polygon(fletch_pts, Color(0.85, 0.30, 0.25))
+		ci.draw_colored_polygon(fletch_pts, Color(0.85, 0.30, 0.25) * tint)
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 

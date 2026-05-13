@@ -31,3 +31,14 @@ const BTN_BORDER: Color = Color(0.40, 0.44, 0.52)
 const COOLDOWN_READY: Color = Color(0.85, 0.4, 0.15)
 const COOLDOWN_ACTIVE: Color = Color(0.35, 0.2, 0.1)
 const COOLDOWN_BORDER: Color = Color(0.1, 0.05, 0.0)
+
+# In-world tower / unit materials. Shared by TowerSilhouette draws so wood
+# and stone read the same across Archer / Mage / Artillery / Barracks.
+const WOOD_PLANK: Color = Color(0.55, 0.40, 0.22)
+const WOOD_DARK: Color = Color(0.30, 0.18, 0.08)
+const STONE_LIGHT: Color = Color(0.62, 0.60, 0.55)
+const STONE_DARK: Color = Color(0.50, 0.50, 0.55)
+const SKIN_LIGHT: Color = Color(0.95, 0.78, 0.62)
+const BANNER_RED: Color = Color(0.55, 0.20, 0.18)
+const IRON: Color = Color(0.25, 0.25, 0.28)
+const BLADE_STEEL: Color = Color(0.78, 0.78, 0.82)

@@ -98,6 +98,20 @@ func _ready() -> void:
 	print("[MetaProgression] loaded — %d levels tracked" % level_stars.size())
 
 
+# Bundles SaveManager.save_game() so every mutator on this autoload persists
+# immediately. Mirrors InventoryManager._persist() (Preventive Bug Rule 2 in
+# CLAUDE.md). Missing this on MetaProgression was the root cause of the
+# 2026-05-14 save-loss bug: XP gain, level-ups, tree-node purchases, and
+# meta-gold changes were updating state in-memory but never reaching disk,
+# so closing Godot rolled the hero back to the last externally-triggered
+# save (LoadoutPicker / WorldMap celebration / etc.). Test Range guard
+# inside SaveManager.save_game already prevents sandbox runs from clobbering
+# the production save, so this is safe to call freely.
+func _persist() -> void:
+	if has_node("/root/SaveManager"):
+		SaveManager.save_game()
+
+
 func reset() -> void:
 	# Full wipe — called from Reset Progress. Clears every persistent dict
 	# and rebuilds the upgrade cache from a zero state.
@@ -130,6 +144,7 @@ func try_unlock_encyclopedia(content_id: String) -> void:
 		return
 	encyclopedia_unlocked.append(content_id)
 	EventBus.encyclopedia_entry_unlocked.emit(content_id)
+	_persist()
 
 
 func _on_enemy_spawned_for_encyclopedia(enemy: Node, _path_id: String) -> void:
@@ -162,6 +177,7 @@ func submit_endless_score(player_name: String, final_score: int, wave: int) -> v
 	if endless_leaderboard.size() > LEADERBOARD_MAX_ENTRIES:
 		endless_leaderboard.resize(LEADERBOARD_MAX_ENTRIES)
 	EventBus.leaderboard_score_submitted.emit(final_score)
+	_persist()
 
 
 # ── Best-time / endless-best-score tracking ─────────────────────────────
@@ -174,6 +190,7 @@ func try_record_best_time(level_id: String, seconds: float) -> bool:
 	var prev: float = float(level_best_times.get(level_id, -1.0))
 	if prev < 0.0 or seconds < prev:
 		level_best_times[level_id] = seconds
+		_persist()
 		return true
 	return false
 
@@ -189,6 +206,7 @@ func try_record_endless_score(level_id: String, run_score: int) -> bool:
 	var prev: int = int(level_endless_best_scores.get(level_id, 0))
 	if run_score > prev:
 		level_endless_best_scores[level_id] = run_score
+		_persist()
 		return true
 	return false
 
@@ -203,7 +221,14 @@ func get_endless_best_score(level_id: String) -> int:
 # stars from the run. This avoids MetaProgression reading RunState.
 func record_stars(mode: String, level_id: String, stars: int) -> void:
 	# Persist the better of current run vs. previous best into the in-memory
-	# progression dictionary. SaveManager will flush this to disk.
+	# progression dictionary, then flush to disk via _persist().
+	# All three branches require stars > 0 — a 0-star "result" is a defeat,
+	# which should never flip heroic/iron completion bools or bump campaign
+	# stars. Defense in depth: the caller (GameOverScreen._on_continue_pressed)
+	# already gates by stars_earned > 0, but a stray future call site that
+	# forgets the outer gate can't pollute progression because of this guard.
+	if stars <= 0:
+		return
 	if mode == "campaign":
 		var prev: int = level_stars.get(level_id, 0)
 		level_stars[level_id] = maxi(prev, stars)
@@ -211,6 +236,7 @@ func record_stars(mode: String, level_id: String, stars: int) -> void:
 		heroic_complete[level_id] = true
 	elif mode == "iron":
 		iron_complete[level_id] = true
+	_persist()
 
 
 func is_heroic_unlocked(level_id: String) -> bool:
@@ -325,6 +351,7 @@ func add_meta_gold(amount: int) -> void:
 		return
 	meta_gold += amount
 	EventBus.meta_gold_changed.emit(meta_gold)
+	_persist()
 
 
 func spend_meta_gold(amount: int) -> bool:
@@ -332,6 +359,7 @@ func spend_meta_gold(amount: int) -> bool:
 		return false
 	meta_gold -= amount
 	EventBus.meta_gold_changed.emit(meta_gold)
+	_persist()
 	return true
 
 
@@ -378,6 +406,21 @@ func get_skill_points(hero_id: String) -> int:
 
 
 func add_hero_skill_points(hero_id: String, count: int) -> void:
+	if hero_id == "" or count == 0:
+		return
+	hero_skill_points[hero_id] = get_skill_points(hero_id) + count
+	EventBus.hero_skill_points_changed.emit(hero_id, get_skill_points(hero_id))
+	_persist()
+
+
+# Same dict mutation + signal emit as add_hero_skill_points, but skips
+# _persist(). Used inside add_hero_xp / sync_hero_progression_to_level loops
+# so the save flushes ONCE after the whole batch (level + xp + points +
+# auto-slot-unlocks) is consistent. Without this, a mid-loop save could
+# write the new skill points before hero_progress.level/xp catch up — a
+# process kill in that window leaves the player with phantom points and
+# stale XP/level on next boot.
+func _grant_skill_points_silent(hero_id: String, count: int) -> void:
 	if hero_id == "" or count == 0:
 		return
 	hero_skill_points[hero_id] = get_skill_points(hero_id) + count
@@ -442,10 +485,41 @@ func can_purchase_node(hero_id: String, node_id: String) -> Dictionary:
 		return {"ok": false, "reason": "not enough points"}
 	if get_hero_level(hero_id) < int(node.level_required):
 		return {"ok": false, "reason": "level too low"}
+	# Gate ACTIVE_RANK / MOD nodes by the target skill's own level_required —
+	# without this, players can spend ★ on e.g. rally_cry_r2 at L3 while
+	# Rally Cry itself unlocks at L6, wasting the point on an unusable skill.
+	# Other Kinds (PASSIVE_RANK / CAPSTONE / SLOT_UNLOCK) don't target a
+	# SkillData so this gate doesn't apply.
+	var kind: int = int(node.kind)
+	if kind == _HeroSkillNodeDataScript.Kind.ACTIVE_RANK \
+			or kind == _HeroSkillNodeDataScript.Kind.MOD:
+		var target_skill: Resource = _find_hero_skill(hero_id, String(node.target_id))
+		if target_skill != null and "level_required" in target_skill:
+			var skill_lvl_req: int = int(target_skill.level_required)
+			if get_hero_level(hero_id) < skill_lvl_req:
+				return {"ok": false, "reason": "skill unlocks at Lv %d" % skill_lvl_req}
 	for pid in node.prerequisite_ids:
 		if get_purchased_rank(hero_id, String(pid)) < 1:
 			return {"ok": false, "reason": "missing prerequisite"}
 	return {"ok": true, "reason": ""}
+
+
+# Looks up the SkillData resource on a hero by skill_id. Returns null on miss
+# (unknown hero / skill_id, or registry not yet ready). Used by
+# can_purchase_node to gate tree-node purchases by their target skill's
+# level_required.
+func _find_hero_skill(hero_id: String, skill_id: String) -> Resource:
+	if hero_id == "" or skill_id == "":
+		return null
+	if not has_node("/root/ContentRegistry"):
+		return null
+	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
+	if hero_data == null or not ("skills" in hero_data):
+		return null
+	for skill in hero_data.skills:
+		if skill != null and "skill_id" in skill and String(skill.skill_id) == skill_id:
+			return skill
+	return null
 
 
 # Phase 3R-followup — catch-up sync for heroes loaded from saves whose
@@ -469,13 +543,21 @@ func sync_hero_progression_to_level(hero_id: String) -> void:
 		cursor += 1
 		# L1 is the starting level; no per-level grant. Per-level grants
 		# begin at level 2 to match add_hero_xp's level-up loop semantics.
+		# Use the silent variant — we want the entry["last_synced_level"]
+		# write below to land in the SAME save as the granted points, not a
+		# mid-loop flush that could leave the cursor stale on a process kill.
 		if cursor > 1:
-			add_hero_skill_points(hero_id, 1)
+			_grant_skill_points_silent(hero_id, 1)
 			granted += 1
 		_auto_purchase_slot_unlocks_at_level(hero_id, cursor)
 	entry["last_synced_level"] = cursor
 	if granted > 0:
 		print("[MetaProgression] catch-up synced %s through L%d (+%d points)" % [hero_id, target, granted])
+	# Persist once at the end so cursor + points + auto-slot-unlocks all
+	# hit disk together. Skip if nothing changed (early-return above already
+	# covers the cursor-unchanged case, but defensively gate by granted > 0
+	# so a no-grant SLOT_UNLOCK-only catch-up still saves the cursor).
+	_persist()
 
 
 # Phase 3P — auto-grant SLOT_UNLOCK nodes whose level threshold is met.
@@ -515,6 +597,7 @@ func purchase_node(hero_id: String, node_id: String) -> bool:
 	hero_skill_nodes[hero_id][node_id] = int(node.rank)
 	EventBus.hero_node_purchased.emit(hero_id, node_id)
 	EventBus.hero_skill_points_changed.emit(hero_id, get_skill_points(hero_id))
+	_persist()
 	return true
 
 
@@ -533,7 +616,15 @@ func add_hero_xp(hero_id: String, amount: int) -> int:
 	var xp: int = int(entry.get("xp", 0))
 	var scaled: int = int(ceil(float(amount) * get_upgrade_multiplier(MOD_HERO_XP)))
 	xp += scaled
-	EventBus.hero_xp_gained.emit(amount)
+	# Tally per-run XP for the GameOverScreen recap (actual XP banked, post
+	# MOD_HERO_XP — what the player's hero progress dict received).
+	if has_node("/root/RunState"):
+		RunState.record_round_xp(scaled)
+	# Emit the scaled amount so the in-level floating "+N XP" text matches
+	# the GameOverScreen recap totals. Previously emitting raw `amount` made
+	# a MOD_HERO_XP>1 player see e.g. "+10 XP" pop while the recap showed
+	# "+12 XP banked" — same kill, two numbers, confusing.
+	EventBus.hero_xp_gained.emit(scaled)
 	while lvl < hero_data.max_level:
 		var idx: int = lvl - 1
 		if idx < 0 or idx >= hero_data.xp_per_level.size():
@@ -544,10 +635,11 @@ func add_hero_xp(hero_id: String, amount: int) -> int:
 		xp -= needed
 		lvl += 1
 		EventBus.hero_leveled_up.emit(lvl)
-		# Phase 1 — one hero point per level-up. Granted here (not in
-		# BaseHero) so a level-up via debug grant or save migration also
-		# adds points, not just earned XP in-level.
-		add_hero_skill_points(hero_id, 1)
+		# Phase 1 — one hero point per level-up. Granted via the silent
+		# variant so we don't flush a partial save while entry["level"] /
+		# ["xp"] are still mid-loop. The single _persist() after the loop
+		# body commits the consistent state.
+		_grant_skill_points_silent(hero_id, 1)
 		# Phase 3P — auto-purchase SLOT_UNLOCK nodes whose threshold is now met.
 		# Slot caps already gate by hero level in LoadoutState; this just keeps
 		# the skill-tree UI visibly in sync (the player sees "★ Slot Unlocked"
@@ -560,4 +652,10 @@ func add_hero_xp(hero_id: String, amount: int) -> int:
 		xp = 0
 	entry["level"] = lvl
 	entry["xp"] = xp
+	# Persist after the level-up loop so multi-level catch-ups save once,
+	# not N times. add_hero_skill_points (called inside the loop) also
+	# triggers _persist, but those writes are idempotent — same dict, same
+	# file. Fine in practice; if profiling flags it, gate _persist to fire
+	# only when level/xp actually changed.
+	_persist()
 	return lvl

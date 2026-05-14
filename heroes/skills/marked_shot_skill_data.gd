@@ -16,11 +16,11 @@ const _MarkedEffectScript: Script = preload("res://systems/MarkedEffect.gd")
 @export var mark_duration: float = 6.0
 
 
-func apply(hero: Node, target, ctx: Dictionary = {}) -> void:
+func apply(hero: Node, target, ctx: Dictionary = {}) -> bool:
 	if hero == null or not is_instance_valid(hero):
-		return
+		return false
 	if target == null or not is_instance_valid(target):
-		return
+		return false
 	# Phase 3L — rank/mod ctx scaling. Marked Shot reads:
 	#   damage_mult   → mark's damage_taken_mult amplitude
 	#   duration_mult → how long the mark lingers
@@ -30,7 +30,7 @@ func apply(hero: Node, target, ctx: Dictionary = {}) -> void:
 	# a BaseEnemy (or anything implementing apply_status_effect) — bosses /
 	# heroes / soldiers are silently ignored if they don't have the method.
 	if not target.has_method("apply_status_effect"):
-		return
+		return false
 	target.apply_status_effect(_MarkedEffectScript.new(eff_mult, eff_dur))
 	print("[Skill/Marked] %s marked %s for %.1fs (×%.2f damage)" % [
 		hero.data.hero_name if hero.data != null else "?",
@@ -38,3 +38,4 @@ func apply(hero: Node, target, ctx: Dictionary = {}) -> void:
 		eff_dur,
 		eff_mult,
 	])
+	return true

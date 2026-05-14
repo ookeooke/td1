@@ -75,6 +75,7 @@ damage_type = 1
 respawn_time = 35.0
 max_block_targets = 1
 skills = Array[Resource]([ExtResource("2_fireball"), ExtResource("4_shield"), ExtResource("13_nova"), ExtResource("14_meteor")])
+starter_skill_ids = Array[String](["fireball", "mana_shield"])
 talents = Array[Resource]([SubResource("Talent_Meditation"), SubResource("Talent_Siphon"), SubResource("Talent_ArcanePower")])
 visual = ExtResource("9_vis")
 projectile_scene = ExtResource("15_bolt")

@@ -1,5 +1,7 @@
 extends Control
 
+const _SkillGlyph := preload("res://ui/SkillGlyph.gd")
+
 # Phase 20 cooldown button.
 # Draws a colored placeholder tile with the provider's display name, plus
 # a radial cooldown overlay that shrinks a dark pie-slice over the button
@@ -85,6 +87,14 @@ func _display_name() -> String:
 	return str(_provider.display_name(_idx))
 
 
+func _pictogram() -> String:
+	# Optional — providers without this method (or skills with empty
+	# pictogram) fall through to the text label.
+	if _provider == null or not _provider.has_method("pictogram"):
+		return ""
+	return str(_provider.pictogram(_idx))
+
+
 func _gui_input(event: InputEvent) -> void:
 	# Use _gui_input (Control-native) so the backdrop-style modal stacks
 	# above the button correctly — taps on UI always hit the UI first.
@@ -105,6 +115,16 @@ func _draw() -> void:
 	draw_circle(center, radius, base)
 	draw_arc(center, radius, 0.0, TAU, 32, ThemeColors.COOLDOWN_BORDER, 2.0, true)
 
+	# Procedural skill glyph (when the skill has a `pictogram`). Drawn under
+	# the cooldown overlay so the sweep visibly darkens the glyph during CD —
+	# matches KR's standard cooldown read. Empty pictogram falls through to
+	# the text label below.
+	var glyph: String = _pictogram()
+	if glyph != "":
+		var glyph_white: Color = Color(1.0, 0.97, 0.88)
+		var glyph_dark: Color = Color(0.12, 0.10, 0.06)
+		_draw_glyph(center, radius, glyph, glyph_white, glyph_dark)
+
 	# Radial cooldown overlay — pie slice that starts full on cast and
 	# shrinks counter-clockwise as the cooldown drains. Radius matches the
 	# button circle so the overlay never spills past the visible disk.
@@ -121,14 +141,15 @@ func _draw() -> void:
 			points.append(center + Vector2(cos(angle), sin(angle)) * radius)
 		draw_colored_polygon(points, Color(0.0, 0.0, 0.0, 0.55))
 
-	# Name label — drawn manually so it appears above both the tile and
-	# the overlay. Centered, simple.
-	var font: Font = ThemeDB.fallback_font
-	var font_size: int = 18
-	var text: String = _display_name()
-	var text_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size)
-	var text_pos: Vector2 = Vector2(size.x * 0.5 - text_size.x * 0.5, size.y * 0.5 + font_size * 0.35)
-	draw_string(font, text_pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
+	# Text label — only when no glyph is authored. Drawn on TOP of overlay
+	# so the skill name stays legible during cooldown (legacy fallback).
+	if glyph == "":
+		var font: Font = ThemeDB.fallback_font
+		var font_size: int = 18
+		var text: String = _display_name()
+		var text_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size)
+		var text_pos: Vector2 = Vector2(size.x * 0.5 - text_size.x * 0.5, size.y * 0.5 + font_size * 0.35)
+		draw_string(font, text_pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
 
 	# Armed ring — drawn LAST so it sits above the cooldown overlay and
 	# label. Bright yellow, slightly outside the button's silhouette, with
@@ -142,3 +163,9 @@ func _draw() -> void:
 		draw_arc(center, radius + 8.0 + pulse * 3.0, 0.0, TAU, 36, halo_color, 6.0, true)
 		# Crisp inner accent ring on the button rim.
 		draw_arc(center, radius + 2.0, 0.0, TAU, 36, ring_color, 3.0, true)
+
+
+# Delegate to the shared SkillGlyph helper so HeroesHub picker tiles and
+# any future skill UI render the same glyph for a given pictogram key.
+func _draw_glyph(center: Vector2, radius: float, glyph: String, white: Color, dark: Color) -> void:
+	_SkillGlyph.draw(self, glyph, center, radius * 0.55, white, dark)

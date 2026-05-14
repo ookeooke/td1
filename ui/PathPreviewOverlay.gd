@@ -97,7 +97,7 @@ func _draw_chevrons_along(p: Path2D, zoom_scale: float) -> void:
 		var tip: Vector2 = pos_world + dir * size
 		var tail_l: Vector2 = pos_world - dir * size + perp * size
 		var tail_r: Vector2 = pos_world - dir * size - perp * size
-		draw_polyline(PackedVector2Array([tail_l, tip, tail_r]), _color, thickness, true)
+		draw_polyline(PackedVector2Array([tail_l, tip, tail_r]), _color, thickness, false)
 		offset += CHEVRON_SPACING_WORLD
 
 

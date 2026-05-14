@@ -676,6 +676,13 @@ func _build_skill_ctx(skill: Resource) -> Dictionary:
 	var sp: float = get_effective_skill_power()
 	if not is_equal_approx(sp, 1.0):
 		ctx["damage_mult"] = float(ctx.get("damage_mult", 1.0)) * sp
+	# 2026-05-14 — also expose skill_power as its own ctx key so non-damage
+	# skills can scale outputs that aren't damage (heal, summon lifetime,
+	# buff duration, slow duration, bless health). The damage_mult fold above
+	# remains the chokepoint for damage skills; non-damage subclasses opt in
+	# by reading skill_power_mult. Default 1.0 = identity, so subclasses that
+	# don't read it stay unchanged.
+	ctx["skill_power_mult"] = sp
 	# Phase 3R-followup-3 — debug slider overrides for per-skill stats. Each
 	# value is identity (1.0) in release builds via BalanceOverrides.is_active
 	# short-circuit, so the multiplications are free when not actively used.
@@ -700,6 +707,13 @@ func display_name(idx: int) -> String:
 	if skill == null:
 		return "?"
 	return skill.skill_name
+
+
+func pictogram(idx: int) -> String:
+	var skill: Resource = get_skill_data(idx)
+	if skill == null or not ("pictogram" in skill):
+		return ""
+	return String(skill.pictogram)
 
 
 func get_skill_effective_range(idx: int) -> float:
@@ -739,7 +753,13 @@ func cast_skill(idx: int, target) -> bool:
 	# Phase 2 — single ctx built once: rank-scaling × chosen-mod scaling.
 	# Subclasses read `damage_mult`, `aoe_radius_mult`, `count_mult`, etc.
 	var ctx: Dictionary = _build_skill_ctx(skill)
-	skill.apply(self, target, ctx)
+	# Bail without consuming cooldown if the skill explicitly no-ops (invalid
+	# target shape, missing scene refs, etc.). Subclasses returning true is
+	# the new contract; the SkillData base default is true so legacy void
+	# overrides that never opt out keep firing.
+	var fired: bool = bool(skill.apply(self, target, ctx))
+	if not fired:
+		return false
 	var effective_cd: float = get_skill_effective_cooldown(idx)
 	_skill_cooldowns[idx] = effective_cd
 	EventBus.hero_skill_used.emit(skill.skill_name)
@@ -1276,11 +1296,14 @@ func _die() -> void:
 	_death_tween.tween_property(self, "position:y", position.y + 28.0, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	_death_tween.tween_property(self, "modulate:a", 0.0, 0.30).set_delay(0.10)
 	_death_tween.chain().tween_callback(_on_death_drift_done)
-	# Schedule respawn. HeroData.respawn_time (default 30s). Timer honors
-	# the paused SceneTree (process_always defaults to false), so tactical
-	# pause freezes the countdown — fair to the player.
+	# Schedule respawn. HeroData.respawn_time (default 30s). Pass
+	# process_always=false so the timer freezes with the paused SceneTree —
+	# tactical pause and GameOverScreen pause both halt the countdown.
+	# (Godot 4.6 default for create_timer's second arg is TRUE — without
+	# this explicit false, the respawn would keep ticking through pause and
+	# the hero could respawn on the GameOver screen.)
 	var wait: float = data.respawn_time if data != null and data.respawn_time > 0.0 else 30.0
-	get_tree().create_timer(wait).timeout.connect(_respawn)
+	get_tree().create_timer(wait, false).timeout.connect(_respawn)
 
 
 func _on_death_drift_done() -> void:
@@ -1544,6 +1567,10 @@ func _draw() -> void:
 			var raise_amount: float = sin(ct2 * PI) * 0.85 + 0.15
 			ctx["wind_t"] = clampf(raise_amount, 0.0, 1.0)
 			ctx["strike_dir"] = _cast_dir
+			# Staff finial release-flash strength: 1 right after the shot,
+			# 0 at the end of the cast animation. Drawer uses this to swell
+			# the orb and brighten its core for the duration.
+			ctx["cast_t"] = clampf(_cast_t / CAST_ANIM_DURATION, 0.0, 1.0)
 
 	# Body draw.
 	if data != null and data.visual != null:

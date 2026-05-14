@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DeathMarkSkillData" format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/death_mark_skill_data.gd" id="1_dm"]
+[ext_resource type="PackedScene" path="res://soldiers/Soldier.tscn" id="2_scene"]
+[ext_resource type="Resource" path="res://soldiers/data/soldier_skeleton.tres" id="3_data"]
+[ext_resource type="PackedScene" path="res://vfx/SoulRiseVFX.tscn" id="4_vfx"]
+
+[resource]
+script = ExtResource("1_dm")
+skill_name = "Death Mark"
+skill_id = "death_mark"
+power_tier = 2
+skill_range = 360.0
+damage = 0.0
+damage_type = 1
+cooldown = 14.0
+target_type = 0
+damage_taken_mult = 1.5
+mark_duration = 6.0
+skeleton_scene = ExtResource("2_scene")
+skeleton_data = ExtResource("3_data")
+skeletons_on_death = 1
+skeleton_lifetime = 12.0
+skeleton_spawn_vfx_scene = ExtResource("4_vfx")
+pictogram = "target"
+description = "Brand an enemy with the death curse. While marked it takes 50% more damage from every source — and if it dies before the mark fades, a skeleton claws its way out of the corpse."
+rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.15, "duration_mult": 1.2}]

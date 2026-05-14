@@ -6,6 +6,7 @@
 script = ExtResource("1_falcon")
 skill_name = "Falcon Storm"
 skill_id = "falcon_storm"
+power_tier = 3
 skill_range = 360.0
 damage = 14.0
 damage_type = 0
@@ -15,5 +16,6 @@ level_required = 8
 aoe_radius = 130.0
 tick_count = 5
 tick_interval = 0.6
+pictogram = "falcon"
 description = "Summon a flock of falcons — 5 strikes over 3 seconds at the tap point. Physical damage per strike, scales fastest with rank-3 damage boost."
 rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.25, "count_mult": 1.2}]

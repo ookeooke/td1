@@ -6,11 +6,13 @@
 script = ExtResource("1_bless")
 skill_name = "Bless"
 skill_id = "bless"
+power_tier = 1
 cooldown = 25.0
 target_type = 2
 radius = 200.0
 damage_bonus = 8.0
 health_bonus = 30
 buff_duration = 8.0
+pictogram = "sunburst"
 description = "Bless yourself and nearby soldiers for 8 seconds: +8 attack damage and +30 HP."
 rank_scaling = [{"cooldown_mult": 0.85}]

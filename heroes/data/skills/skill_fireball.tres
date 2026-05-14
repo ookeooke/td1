@@ -7,6 +7,7 @@
 script = ExtResource("1_bash")
 skill_name = "Fireball"
 skill_id = "fireball"
+power_tier = 2
 skill_range = 0.0
 damage = 25.0
 damage_type = 1
@@ -14,5 +15,6 @@ cooldown = 8.0
 target_type = 1
 aoe_radius = 90.0
 vfx_scene = ExtResource("2_vfx")
+pictogram = "fireball"
 description = "Hurl a fireball — magic damage to every enemy in a small radius around the tap."
 rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.2}]

@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="HeroData" format=3]
+
+[ext_resource type="Script" path="res://heroes/HeroData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_raise_skeletons.tres" id="2_raise"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_death_mark.tres" id="3_mark"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_bone_armor.tres" id="4_bone"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_soul_nova.tres" id="5_nova"]
+[ext_resource type="Resource" path="res://heroes/data/visual_necromancer.tres" id="6_vis"]
+[ext_resource type="PackedScene" path="res://projectiles/NecroBolt.tscn" id="7_bolt"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_sword.tres" id="8_s_sword"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_tunic.tres" id="9_s_tunic"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="10_s_charm"]
+
+[resource]
+script = ExtResource("1_data")
+hero_name = "Necromancer"
+hero_id = "hero_necromancer"
+requires_unlock = true
+power_tier = 2
+max_health = 35
+attack_damage = 1.0
+attack_range = 290.0
+engage_radius = 30.0
+attack_speed = 0.7
+move_speed = 170.0
+armor = 0.0
+magic_resist = 0.3
+damage_type = 1
+respawn_time = 32.0
+max_block_targets = 0
+skills = Array[Resource]([ExtResource("2_raise"), ExtResource("3_mark"), ExtResource("4_bone"), ExtResource("5_nova")])
+starter_skill_ids = Array[String](["raise_skeletons", "death_mark"])
+visual = ExtResource("6_vis")
+projectile_scene = ExtResource("7_bolt")
+starter_items = Array[Resource]([ExtResource("8_s_sword"), ExtResource("9_s_tunic"), ExtResource("10_s_charm")])
+encyclopedia_entry = "Fragile backline caster. Curses enemies with Death Mark so towers finish them faster; raises skeletons from corpses to plug the line. Never tank — keep him behind your soldiers."

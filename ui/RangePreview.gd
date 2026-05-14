@@ -96,19 +96,23 @@ func _draw() -> void:
 	if _radius <= 0.0:
 		return
 	var zs: float = _get_zoom_scale()
+	# Snap stroke widths so the ring doesn't shimmy under fractional zoom
+	# now that anti-aliasing is off globally. maxf(1.0,...) prevents 0-px.
+	var stroke_main: float = maxf(1.0, roundf(RING_WIDTH * zs))
+	var stroke_up: float = maxf(1.0, roundf(UPGRADE_RING_WIDTH * zs))
 	draw_circle(Vector2.ZERO, _radius, FILL_COLOR)
-	draw_arc(Vector2.ZERO, _radius, 0.0, TAU, 48, RING_COLOR, RING_WIDTH * zs)
+	draw_arc(Vector2.ZERO, _radius, 0.0, TAU, 24, RING_COLOR, stroke_main)
 	# Ghost ring — green outside when reach grows, red inside when it shrinks.
 	if _upgrade_radius <= 0.0 or is_equal_approx(_upgrade_radius, _radius):
 		return
 	if _upgrade_radius > _radius:
 		draw_circle(Vector2.ZERO, _upgrade_radius, UPGRADE_FILL_COLOR)
-		draw_arc(Vector2.ZERO, _upgrade_radius, 0.0, TAU, 48,
-				UPGRADE_RING_COLOR, UPGRADE_RING_WIDTH * zs)
+		draw_arc(Vector2.ZERO, _upgrade_radius, 0.0, TAU, 24,
+				UPGRADE_RING_COLOR, stroke_up)
 	else:
 		draw_circle(Vector2.ZERO, _upgrade_radius, UPGRADE_SHRINK_FILL_COLOR)
-		draw_arc(Vector2.ZERO, _upgrade_radius, 0.0, TAU, 48,
-				UPGRADE_SHRINK_RING_COLOR, UPGRADE_RING_WIDTH * zs)
+		draw_arc(Vector2.ZERO, _upgrade_radius, 0.0, TAU, 24,
+				UPGRADE_SHRINK_RING_COLOR, stroke_up)
 
 
 func _get_zoom_scale() -> float:

@@ -13,6 +13,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [SESSIONS.md](SESSIONS.md) — chronological log of what's been done and why. Append a dated entry at the end of every working session.
 - **This file (CLAUDE.md)** — invariants only (rules, interfaces, contracts). Do not log session notes here.
 - [balance/BALANCE.md](balance/BALANCE.md) — design intent for tuning: target g/DPS curves, hardness baselines, the Naked Baseline invariant. Read before any balance change. Folder is dev-only (stripped from production exports).
+- [docs/ITEM_VISUAL_TIERS.md](docs/ITEM_VISUAL_TIERS.md) - item-art visual tier rules. Read before generating or replacing item textures.
+- [docs/ITEM_NAMING.md](docs/ITEM_NAMING.md) - item naming rules. Read before adding or renaming item bases, affixes, or unique-style items.
 - [addons/godot_mcp/](addons/godot_mcp/) + `.mcp.json` — Godot MCP Pro v1.13.1 plugin and Claude Code bridge config. Dev-only AI tooling; the plugin is optional and auto-injects 3 `MCP*` autoloads while enabled. Strip before final production ship. Never reference any MCP symbol from game code.
 - [.claude/skills.md](.claude/skills.md) — MCP tool usage playbook auto-loaded by Claude Code each session. Mirror of `addons/godot_mcp/skills.md` from the vendor. Update both sides if either changes.
 - `git log` — diffs and short commit messages.
@@ -126,7 +128,7 @@ These exist because each one is a postmortem of a real bug that shipped. They're
 
 2. **Every `InventoryManager` public mutator ends with `_persist()`.** `_persist()` bundles `EventBus.inventory_changed.emit()` + `SaveManager.save_game()`. Mutator-specific signals (`item_equipped`, `item_sold`) fire BEFORE `_persist()`. Reason: skill-equip / sell / lock / pickup / starter-gear all saved on the spot, but `equip()` / `unequip()` / grid-placement / `destroy()` quietly didn't. A mobile player closing the app mid-menu lost the change. The drift went unnoticed for months because every individual mutator looked correct in isolation. Carve-outs: `reset()` (the test wipe deliberately doesn't save), `from_save_dict` (loading isn't a mutation).
 
-3. **Embedded hero-scoped screens listen to `EventBus.hero_selected`.** Any Control embedded inside HeroesHub (or any future hub that swaps active hero from a sidebar) that reads `LoadoutState.selected_hero_id` MUST connect `hero_selected → _refresh` in `_ready()` and disconnect in `_exit_tree()`. Reason: standalone screens get embedded later, inheriting a context where the active hero can change underneath them; the cached `_hero_id` at `_ready()` then lies. Reference patterns: [`EquipmentScreen.gd:191`](ui/EquipmentScreen.gd#L191), [`HeroSkillTreeScreen.gd`](ui/HeroSkillTreeScreen.gd) (`_ready` + `_exit_tree`).
+3. **Embedded hero-scoped screens listen to `EventBus.hero_selected`.** Any Control embedded inside HeroesHub (or any future hub that swaps active hero from a sidebar) that reads `LoadoutState.selected_hero_id` MUST connect `hero_selected → _refresh` in `_ready()` and disconnect in `_exit_tree()`. Reason: standalone screens get embedded later, inheriting a context where the active hero can change underneath them; the cached `_hero_id` at `_ready()` then lies. Reference patterns: [`EquipmentScreen.gd:191`](ui/EquipmentScreen.gd#L191), [`HeroSkillsPage.gd`](ui/HeroSkillsPage.gd) (`_ready` + `_exit_tree`).
 
 4. **Load-bearing invariants must be executable.** If a comment claims something must always be true, prefer an `assert`, guard, test, or `ContentRegistry._validate_ids`-style boot check. Keep comments for rationale (the *why*); don't rely on them to enforce behavior. Reason: a stale "Equipment/Talents already listen to `hero_selected`" comment in HeroesHub.gd hid a real wiring gap for months — both the original author and every subsequent reader trusted the comment over the code.
 
@@ -505,6 +507,13 @@ Procedural `_draw()` shapes for all visuals. Data-driven via `UnitVisualData` re
 - Free SFX: freesound.org
 - File naming: `entity_animation_00.png` (e.g. `enemy_orc_walk_00.png`)
 - Drop `.wav` files into `audio/sfx/` — SoundManager auto-detects by event name.
+- Item textures are the exception to procedural-first UI glyphs: `ItemBase.icon_texture`
+  may reference transparent object-only PNG cutouts. Follow
+  [docs/ITEM_VISUAL_TIERS.md](docs/ITEM_VISUAL_TIERS.md) before generating or
+  replacing item art.
+- Item names should follow [docs/ITEM_NAMING.md](docs/ITEM_NAMING.md): stable
+  IDs stay mechanical and save-safe, while player-facing names escalate by
+  rarity through material, craftsmanship, role, and artifact identity.
 
 ---
 

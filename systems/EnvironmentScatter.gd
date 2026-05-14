@@ -183,7 +183,7 @@ static func _draw_flower(ci: CanvasItem, pos: Vector2, size: float, seed_val: fl
 		var dy: float = (sin(seed_val * 7.0 + float(i)) * 2.5)
 		var stem_top: Vector2 = pos + Vector2(dx, dy - 4.0 * size)
 		var stem_base: Vector2 = pos + Vector2(dx, dy + 3.0 * size)
-		ci.draw_line(stem_base, stem_top, stem_color, 1.5, true)
+		ci.draw_line(stem_base, stem_top, stem_color, 1.5, false)
 		var petal_color: Color = petal_palette[(i + int(seed_val * 4.0)) % petal_palette.size()]
 		ci.draw_circle(stem_top, 2.5 * size, petal_color)
 		ci.draw_circle(stem_top, 1.0 * size, Color(1.0, 1.0, 0.85))
@@ -200,4 +200,4 @@ static func _draw_grass(ci: CanvasItem, pos: Vector2, size: float, _seed_val: fl
 		var top: Vector2 = pos + Vector2(dx + lean, -h)
 		var base: Vector2 = pos + Vector2(dx, 0.0)
 		var c: Color = col_a if i == 1 else col_b
-		ci.draw_line(base, top, c, 1.6, true)
+		ci.draw_line(base, top, c, 1.6, false)

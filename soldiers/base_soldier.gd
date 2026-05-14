@@ -26,6 +26,12 @@ const LUNGE_DISTANCE: float = 12.0
 # strings = no overrides applied (production runtime / orphan spawns).
 var tower_id: String = ""
 var tier_key: String = ""
+# Optional owning hero — populated by SummonSoldiersSkillData when this
+# soldier was spawned by a Knight's Summon Soldiers cast. Null = standard
+# barracks soldier, no XP credit on kill (towers don't have XP). When set,
+# BaseEnemy._die routes the kill's xp_worth to this hero so the cooldown
+# spent on the summon pays back in progression.
+var _summoner: Node = null
 const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
 
 var state: int = State.MOVING

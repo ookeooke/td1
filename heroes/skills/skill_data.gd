@@ -22,6 +22,10 @@ enum TargetType { SINGLE, AREA, SELF }
 @export var cooldown: float = 5.0
 @export var target_type: int = TargetType.SINGLE
 @export var icon: Texture2D
+# Procedural-glyph key drawn by CooldownButton — mirrors TowerData.pictogram.
+# Empty string = fall back to text label. See CooldownButton._draw_glyph
+# for the supported keys ("fireball", "snowflake", "volley", ...).
+@export var pictogram: String = ""
 @export_multiline var description: String = ""
 # Hero level at which this skill becomes equippable. Default 1 = always
 # available. Skills with level_required > hero level appear in the WorldMap
@@ -48,8 +52,14 @@ enum TargetType { SINGLE, AREA, SELF }
 # mod-context — subclasses that scale on damage / radius / count read keys
 # like `ctx.get("damage_mult", 1.0)`. Defaults to {} so older call sites
 # without rank context still work.
-func apply(_hero: Node, _target, _ctx: Dictionary = {}) -> void:
-	pass
+#
+# Returns true if the skill actually fired (committed an effect). Return
+# false to indicate a no-op (invalid target, no enemies in radius, etc.) —
+# BaseHero.cast_skill then skips cooldown + signal emit so the player can
+# retap. Default returns true to preserve legacy void-style overrides that
+# unconditionally succeed.
+func apply(_hero: Node, _target, _ctx: Dictionary = {}) -> bool:
+	return true
 
 
 # Effective cooldown for a given purchased rank (1..N). Applies cooldown_mult

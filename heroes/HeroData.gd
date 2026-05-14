@@ -41,6 +41,13 @@ class_name HeroData
 
 # Active skills (player-cast via SkillBar buttons) — SkillData subclasses.
 @export var skills: Array[Resource] = []
+# Starter loadout — the skill_ids that fill the player's active slots on a
+# new save (or when "Reset to default" is pressed in the Skills page).
+# Order matters: starter_skill_ids[0] occupies slot 0, [1] slot 1, etc.
+# Empty array = fall back to "first N unlocked in author order" (see
+# LoadoutState._default_equipped_for). Skill ids referencing skills not
+# authored on this hero are silently dropped at resolve time.
+@export var starter_skill_ids: Array[String] = []
 # Passive abilities (always-on traits, auras, on-hit effects) — AbilityData
 # subclasses. Items equipped later will also push AbilityData via the same
 # dispatcher, so passives + item-granted effects use one pipeline.

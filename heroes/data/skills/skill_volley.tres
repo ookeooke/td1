@@ -6,11 +6,14 @@
 script = ExtResource("1_bash")
 skill_name = "Volley"
 skill_id = "volley"
+power_tier = 2
 skill_range = 320.0
 damage = 16.0
 damage_type = 0
 cooldown = 8.0
 target_type = 1
 aoe_radius = 110.0
+flying_bonus_mult = 1.3
+pictogram = "volley"
 description = "Loose a volley of arrows at the tap point — physical damage in a wide arc. Strong vs flying enemies in the AoE."
 rank_scaling = [{"cooldown_mult": 0.85}, {"damage_mult": 1.2}]

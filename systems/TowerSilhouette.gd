@@ -120,24 +120,28 @@ static func draw_archer(ci: CanvasItem, level: int, branch_idx: int, tint: Color
 		wood_col = wood_col.lerp(Color(0.45, 0.65, 0.30), 0.4)  # ranger green
 	elif branch_idx == 1:
 		wood_col = wood_col.lerp(Color(0.65, 0.40, 0.20), 0.4)  # musketeer orange
-	var outline: Color = Color(0.16, 0.10, 0.05)
+	# Near-black KR-style contour shared by every stroke on this tower.
+	var outline: Color = Color(0.08, 0.06, 0.05)
 	# Ground base — stone (L2/L3) or wood (L1).
 	var base_y: float = 36.0
 	var base_rect: Rect2 = Rect2(Vector2(-base_w * 0.5, base_y - base_h), Vector2(base_w, base_h))
 	ci.draw_rect(base_rect, stone_col if stone_base else wood_col)
-	ci.draw_rect(base_rect, outline, false, 3.0)
+	ci.draw_rect(base_rect, outline, false, 3.5)
 	_highlight_stone_or_wood(ci, base_rect, stone_base, tint)
-	# Vertical posts (frame).
+	# Lit-edge highlight along the top of the base, KR "sun-from-above" feel.
+	ci.draw_line(Vector2(-base_w * 0.5 + 4.0, base_y - base_h + 2.0), Vector2(base_w * 0.5 - 4.0, base_y - base_h + 2.0), Color(1.0, 0.95, 0.78, 0.32), 1.5, true)
+	# Vertical posts (frame). Heavier inner stroke + dark outline for KR depth.
 	var post_x: float = base_w * 0.36
 	var post_top_y: float = -10.0
-	ci.draw_line(Vector2(-post_x, base_y - base_h), Vector2(-post_x, post_top_y), wood_col.darkened(0.15), 6.0, true)
-	ci.draw_line(Vector2(post_x, base_y - base_h), Vector2(post_x, post_top_y), wood_col.darkened(0.15), 6.0, true)
+	for px in [-post_x, post_x]:
+		ci.draw_line(Vector2(px, base_y - base_h), Vector2(px, post_top_y), outline, 8.0, true)
+		ci.draw_line(Vector2(px, base_y - base_h), Vector2(px, post_top_y), wood_col.darkened(0.15), 6.0, true)
 	# Upper deck where the archer stands.
 	var deck_y: float = post_top_y
 	var deck_w: float = base_w * 0.95
 	var deck_rect: Rect2 = Rect2(Vector2(-deck_w * 0.5, deck_y - 6.0), Vector2(deck_w, 12.0))
 	ci.draw_rect(deck_rect, wood_col)
-	ci.draw_rect(deck_rect, outline, false, 2.5)
+	ci.draw_rect(deck_rect, outline, false, 3.5)
 	_highlight_line_for_rect(ci, deck_rect, tint)
 	if level >= 3:
 		# Painted side shields read as "fortified archer" at thumb zoom — a
@@ -154,40 +158,47 @@ static func draw_archer(ci: CanvasItem, level: int, branch_idx: int, tint: Color
 				sc + Vector2(-sg * 0.55, sg * 0.1),
 			])
 			ci.draw_colored_polygon(shield_pts, shield_col)
-			ci.draw_polyline(shield_pts + PackedVector2Array([shield_pts[0]]), outline, 1.2, true)
+			ci.draw_polyline(shield_pts + PackedVector2Array([shield_pts[0]]), outline, 2.0, true)
 			# Cross stroke.
-			ci.draw_line(sc + Vector2(0.0, -sg * 0.45), sc + Vector2(0.0, sg * 0.55), outline, 1.0, true)
-			ci.draw_line(sc + Vector2(-sg * 0.40, 0.0), sc + Vector2(sg * 0.40, 0.0), outline, 1.0, true)
+			ci.draw_line(sc + Vector2(0.0, -sg * 0.45), sc + Vector2(0.0, sg * 0.55), outline, 1.5, true)
+			ci.draw_line(sc + Vector2(-sg * 0.40, 0.0), sc + Vector2(sg * 0.40, 0.0), outline, 1.5, true)
 	# Archer figure (small orc-killer dude on the deck).
 	var arch_y: float = deck_y - 28.0
 	ci.draw_circle(Vector2(0.0, arch_y - 12.0), 7.0, ThemeColors.SKIN_LIGHT * tint)  # head
-	ci.draw_arc(Vector2(0.0, arch_y - 12.0), 7.0, 0.0, TAU, 12, outline, 1.5)
-	ci.draw_rect(Rect2(Vector2(-5.0, arch_y - 5.0), Vector2(10.0, 14.0)), Color(0.50, 0.40, 0.20) * tint)  # tunic
+	ci.draw_arc(Vector2(0.0, arch_y - 12.0), 7.0, 0.0, TAU, 14, outline, 2.5)
+	var tunic_rect: Rect2 = Rect2(Vector2(-5.0, arch_y - 5.0), Vector2(10.0, 14.0))
+	ci.draw_rect(tunic_rect, Color(0.50, 0.40, 0.20) * tint)  # tunic
+	ci.draw_rect(tunic_rect, outline, false, 2.0)
 	# The bow — drawn rotated toward target, anchored at the archer's hand.
 	var bow_size: float = 18.0 + level * 6.0
 	if level >= 3:
 		bow_size += 4.0
 	ci.draw_set_transform(Vector2(0.0, arch_y - 5.0), aim_angle, Vector2.ONE)
-	# Bow as an arc with a string between the tips.
-	ci.draw_arc(Vector2.ZERO, bow_size * 0.55, -PI * 0.55, PI * 0.55, 14, ThemeColors.WOOD_DARK, 3.5)
+	# Bow drawn twice: outer contour stroke + wood stroke on top for KR-style
+	# heavy contour without changing the bow's silhouette.
+	ci.draw_arc(Vector2.ZERO, bow_size * 0.55, -PI * 0.55, PI * 0.55, 16, outline, 5.5)
+	ci.draw_arc(Vector2.ZERO, bow_size * 0.55, -PI * 0.55, PI * 0.55, 16, ThemeColors.WOOD_DARK, 3.5)
 	var t1: Vector2 = Vector2(cos(-PI * 0.55), sin(-PI * 0.55)) * bow_size * 0.55
 	var t2: Vector2 = Vector2(cos(PI * 0.55), sin(PI * 0.55)) * bow_size * 0.55
-	ci.draw_line(t1, t2, Color(0.85, 0.85, 0.85), 1.5, true)
+	ci.draw_line(t1, t2, Color(0.92, 0.92, 0.92), 1.5, true)
 	# Nocked arrow (always drawn — a bow without an arrow looks too peaceful).
+	ci.draw_line(Vector2(-2.0, 0.0), Vector2(bow_size * 0.85, 0.0), outline, 3.5, true)
 	ci.draw_line(Vector2(-2.0, 0.0), Vector2(bow_size * 0.85, 0.0), Color(0.75, 0.65, 0.40) * tint, 2.0, true)
-	# Arrowhead triangle.
+	# Arrowhead triangle — fill + heavy outline.
 	var head_pts: PackedVector2Array = PackedVector2Array([
 		Vector2(bow_size * 0.85, -3.0),
 		Vector2(bow_size * 0.85, 3.0),
 		Vector2(bow_size * 1.05, 0.0),
 	])
 	ci.draw_colored_polygon(head_pts, ThemeColors.BLADE_STEEL * tint)
+	ci.draw_polyline(head_pts + PackedVector2Array([head_pts[0]]), outline, 1.5, true)
 	# Fletching at L2+.
 	if level >= 2:
 		var fletch_pts: PackedVector2Array = PackedVector2Array([
 			Vector2(-4.0, -2.5), Vector2(-4.0, 2.5), Vector2(0.0, 0.0),
 		])
 		ci.draw_colored_polygon(fletch_pts, Color(0.85, 0.30, 0.25) * tint)
+		ci.draw_polyline(fletch_pts + PackedVector2Array([fletch_pts[0]]), outline, 1.2, true)
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 

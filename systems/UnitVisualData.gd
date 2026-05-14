@@ -6,7 +6,7 @@ class_name UnitVisualData
 # this covers enemies, heroes, and soldiers.
 
 enum Shape { CIRCLE, SQUARE }
-enum Accent { NONE, WEAPON_LINE, CROSSHAIR, WINGS, CROWN }
+enum Accent { NONE, WEAPON_LINE, CROSSHAIR, WINGS, CROWN, SKULL_CHEST, RIBCAGE }
 # Drives draw_swing_arc_trail's silhouette. Default SWORD keeps the existing
 # 60° arc, so every existing .tres renders unchanged until explicitly updated.
 enum WeaponType { SWORD, SPEAR, STAFF, CLAWS, BOW }
@@ -78,6 +78,16 @@ enum Hat { NONE, HORNS, HELMET, HOOD, BANDANA, CROWN_BIG }
 @export_range(0.5, 2.0, 0.05) var weapon_trail_strength: float = 1.0
 @export var weapon_glow_color: Color = Color(0.0, 0.0, 0.0, 0.0)
 @export_range(0.0, 1.0, 0.01) var weapon_glow_strength: float = 0.0
+# When alpha > 0, overrides the default dark eye dots with glowing eyes of
+# this color (plus a soft outer halo). Used by undead/demonic units so the
+# silhouette reads as "not alive" at a glance. Default alpha 0 = legacy
+# dark dots, so every existing visual renders unchanged.
+@export var eye_glow_color: Color = Color(0.0, 0.0, 0.0, 0.0)
+# Optional orb / finial drawn at the staff tip when weapon_type == STAFF.
+# Alpha 0 (default) → use the legacy hardcoded blue knob. When set, the
+# finial replaces the default knob with a colored core + soft halo.
+@export var staff_finial_color: Color = Color(0.0, 0.0, 0.0, 0.0)
+@export_range(0.0, 14.0, 0.5) var staff_finial_size: float = 0.0
 
 # When set, replaces the procedural torso/head/legs/arms/hat with this image.
 # Shadow, hit-flash, status rings, HP bar, swing-arc trail still wrap the

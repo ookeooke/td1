@@ -34,6 +34,13 @@ var round_damage_towers: Dictionary = {}  # int(instance_id) → {"name": String
 var round_damage_hero: float = 0.0
 var round_damage_soldiers: float = 0.0
 
+# Per-run hero progression recap — drives the GameOverScreen "Hero progression"
+# section. `round_xp_gained` is the total scaled XP credited this run (post
+# MOD_HERO_XP). `round_hero_start_level` is the hero's level at level-entry,
+# so the screen can show "Lv 3 → Lv 5" deltas. Both reset in reset_for_level.
+var round_xp_gained: int = 0
+var round_hero_start_level: int = 1
+
 
 func _ready() -> void:
 	reset_for_level()
@@ -72,6 +79,15 @@ func reset_for_level() -> void:
 	round_damage_towers.clear()
 	round_damage_hero = 0.0
 	round_damage_soldiers = 0.0
+	round_xp_gained = 0
+	# Snapshot the selected hero's level at level-entry so the GameOverScreen
+	# recap can render "Lv 3 → Lv 5". Falls back to 1 if MetaProgression /
+	# LoadoutState aren't ready yet (early-boot reset).
+	round_hero_start_level = 1
+	if has_node("/root/MetaProgression") and has_node("/root/LoadoutState"):
+		var hid: String = LoadoutState.selected_hero_id
+		if hid != "":
+			round_hero_start_level = MetaProgression.get_hero_level(hid)
 
 
 func reset() -> void:
@@ -104,6 +120,15 @@ func lose_lives(amount: int) -> void:
 	EventBus.lives_changed.emit(lives)
 	if lives <= 0:
 		EventBus.game_over.emit()
+
+
+func record_round_xp(amount: int) -> void:
+	# Called by MetaProgression.add_hero_xp after scaling. Tracks the per-run
+	# total so the GameOverScreen can render "+450 XP earned" alongside the
+	# damage breakdown. Reset to 0 in reset_for_level so a restart counts fresh.
+	if amount <= 0:
+		return
+	round_xp_gained += amount
 
 
 func record_round_damage(source: Node, amount: float) -> void:

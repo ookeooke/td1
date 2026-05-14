@@ -14,13 +14,13 @@ const _AbilityDataScript: Script = preload("res://systems/AbilityData.gd")
 @export var buff_duration: float = 10.0
 
 
-func apply(hero: Node, _target, ctx: Dictionary = {}) -> void:
+func apply(hero: Node, _target, ctx: Dictionary = {}) -> bool:
 	if hero == null or not is_instance_valid(hero):
-		return
+		return false
 	if buff_ability == null:
-		return
+		return false
 	if not ("_ability_host" in hero) or hero._ability_host == null:
-		return
+		return false
 	# Phase 3G — duration_mult lets mods stretch / shrink the buff window.
 	# Phase 3R-followup-2 — damage_mult folds into the buff ability's
 	# damage_pct field if present. Without this, Adrenaline Rush on Hunter's
@@ -28,7 +28,10 @@ func apply(hero: Node, _target, ctx: Dictionary = {}) -> void:
 	# the +30% damage that's the buff's whole point. attack_speed_mult /
 	# armor_mult could be wired similarly but no current mod authors them,
 	# so leaving the door open without dead code.
-	var eff_duration: float = buff_duration * float(ctx.get("duration_mult", 1.0))
+	# 2026-05-14 — skill_power_mult also stretches the buff window so Mana
+	# Shield / Hunter Stance benefit from SP gear, not just damage skills.
+	var sp_mult: float = float(ctx.get("skill_power_mult", 1.0))
+	var eff_duration: float = buff_duration * float(ctx.get("duration_mult", 1.0)) * sp_mult
 	var buff: Resource = buff_ability.duplicate()
 	buff.duration = eff_duration
 	var dmg_mult: float = float(ctx.get("damage_mult", 1.0))
@@ -41,3 +44,4 @@ func apply(hero: Node, _target, ctx: Dictionary = {}) -> void:
 		hero.data.hero_name if hero.data != null else "?",
 		eff_duration,
 	])
+	return true

@@ -1,0 +1,432 @@
+[gd_resource type="Resource" script_class="HeroSkillTreeData" format=3]
+
+[ext_resource type="Script" path="res://heroes/HeroSkillTreeData.gd" id="1_tree"]
+[ext_resource type="Script" path="res://heroes/HeroSkillNodeData.gd" id="2_node"]
+[ext_resource type="Script" path="res://systems/abilities/LifestealAbility.gd" id="3_lifesteal"]
+[ext_resource type="Script" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="4_bonusdmg"]
+[ext_resource type="Script" path="res://systems/abilities/StatModifierAbility.gd" id="5_statmod"]
+[ext_resource type="Script" path="res://heroes/skills/SkillModData.gd" id="6_mod"]
+
+[sub_resource type="Resource" id="ability_soul_drain"]
+script = ExtResource("3_lifesteal")
+heal_amount = 2.0
+ability_id = "necro_soul_drain"
+trigger = 3
+
+[sub_resource type="Resource" id="node_soul_drain_r1"]
+script = ExtResource("2_node")
+node_id = "necro_soul_drain_r1"
+node_name = "Soul Drain"
+description = "Each attack drains 2 HP from the target into the Necromancer."
+kind = 1
+target_id = "necro_soul_drain"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_soul_drain")
+
+[sub_resource type="Resource" id="ability_frail_tutelage"]
+script = ExtResource("5_statmod")
+ability_id = "necro_frail_tutelage"
+trigger = 0
+skill_power_pct = 0.10
+magic_resist_pct = 0.05
+
+[sub_resource type="Resource" id="node_frail_tutelage_r1"]
+script = ExtResource("2_node")
+node_id = "necro_frail_tutelage_r1"
+node_name = "Frail Tutelage"
+description = "+10% skill power and +5% magic resist. Always-on."
+kind = 1
+target_id = "necro_frail_tutelage"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_frail_tutelage")
+
+[sub_resource type="Resource" id="ability_curse_mastery"]
+script = ExtResource("5_statmod")
+ability_id = "necro_curse_mastery"
+trigger = 0
+damage_pct = 0.10
+cooldown_reduction_flat = 0.05
+
+[sub_resource type="Resource" id="node_curse_mastery_r1"]
+script = ExtResource("2_node")
+node_id = "necro_curse_mastery_r1"
+node_name = "Curse Mastery"
+description = "+10% damage and 5% skill cooldown reduction."
+kind = 1
+target_id = "necro_curse_mastery"
+rank = 1
+point_cost = 1
+level_required = 1
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_curse_mastery")
+
+[sub_resource type="Resource" id="ability_bone_marrow"]
+script = ExtResource("5_statmod")
+ability_id = "necro_bone_marrow"
+trigger = 0
+max_health_pct = 0.15
+
+[sub_resource type="Resource" id="node_bone_marrow_r1"]
+script = ExtResource("2_node")
+node_id = "necro_bone_marrow_r1"
+node_name = "Bone Marrow"
+description = "+15% maximum HP. The robes hide reinforced bone — keep him alive a beat longer."
+kind = 1
+target_id = "necro_bone_marrow"
+rank = 1
+point_cost = 1
+level_required = 2
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_bone_marrow")
+
+[sub_resource type="Resource" id="ability_withered_veil"]
+script = ExtResource("5_statmod")
+ability_id = "necro_withered_veil"
+trigger = 0
+magic_resist_pct = 0.15
+armor_pct = 0.05
+
+[sub_resource type="Resource" id="node_withered_veil_r1"]
+script = ExtResource("2_node")
+node_id = "necro_withered_veil_r1"
+node_name = "Withered Veil"
+description = "+15% magic resist and +5% armor. The dead don't fear the dead."
+kind = 1
+target_id = "necro_withered_veil"
+rank = 1
+point_cost = 1
+level_required = 2
+prerequisite_ids = Array[String]([])
+ability = SubResource("ability_withered_veil")
+
+[sub_resource type="Resource" id="ability_necrotic_touch"]
+script = ExtResource("4_bonusdmg")
+bonus_damage = 4.0
+bonus_damage_type = 1
+ability_id = "necro_necrotic_touch"
+trigger = 3
+
+[sub_resource type="Resource" id="node_necrotic_touch_r1"]
+script = ExtResource("2_node")
+node_id = "necro_necrotic_touch_r1"
+node_name = "Necrotic Touch"
+description = "+4 bonus magic damage on every basic attack."
+kind = 1
+target_id = "necro_necrotic_touch"
+rank = 1
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String](["necro_curse_mastery_r1"])
+ability = SubResource("ability_necrotic_touch")
+
+[sub_resource type="Resource" id="node_raise_skeletons_r2"]
+script = ExtResource("2_node")
+node_id = "raise_skeletons_r2"
+node_name = "Raise Skeletons"
+description = "Raise Skeletons cools down 15% faster."
+kind = 0
+target_id = "raise_skeletons"
+rank = 2
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_raise_skeletons_r3"]
+script = ExtResource("2_node")
+node_id = "raise_skeletons_r3"
+node_name = "Raise Skeletons"
+description = "Skeletons last 30% longer before crumbling."
+kind = 0
+target_id = "raise_skeletons"
+rank = 3
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["raise_skeletons_r2"])
+
+[sub_resource type="Resource" id="node_death_mark_r2"]
+script = ExtResource("2_node")
+node_id = "death_mark_r2"
+node_name = "Death Mark"
+description = "Death Mark cools down 15% faster."
+kind = 0
+target_id = "death_mark"
+rank = 2
+point_cost = 1
+level_required = 3
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_death_mark_r3"]
+script = ExtResource("2_node")
+node_id = "death_mark_r3"
+node_name = "Death Mark"
+description = "The curse amplifies damage 15% more and clings 20% longer."
+kind = 0
+target_id = "death_mark"
+rank = 3
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["death_mark_r2"])
+
+[sub_resource type="Resource" id="node_bone_armor_r2"]
+script = ExtResource("2_node")
+node_id = "bone_armor_r2"
+node_name = "Bone Armor"
+description = "Bone Armor cools down 15% faster."
+kind = 0
+target_id = "bone_armor"
+rank = 2
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_soul_nova_r2"]
+script = ExtResource("2_node")
+node_id = "soul_nova_r2"
+node_name = "Soul Nova"
+description = "Soul Nova cools down 15% faster."
+kind = 0
+target_id = "soul_nova"
+rank = 2
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_soul_nova_r3"]
+script = ExtResource("2_node")
+node_id = "soul_nova_r3"
+node_name = "Soul Nova"
+description = "Soul Nova deals 20% more damage."
+kind = 0
+target_id = "soul_nova"
+rank = 3
+point_cost = 1
+level_required = 7
+prerequisite_ids = Array[String](["soul_nova_r2"])
+
+[sub_resource type="Resource" id="mod_raise_horde"]
+script = ExtResource("6_mod")
+mod_id = "raise_skeletons_horde"
+mod_name = "Horde"
+description = "+50% skeleton count, -30% lifetime. A bigger swarm that fades faster."
+scaling = {"count_mult": 1.5, "duration_mult": 0.7}
+
+[sub_resource type="Resource" id="node_raise_mod_horde"]
+script = ExtResource("2_node")
+node_id = "raise_skeletons_mod_horde"
+node_name = "Mod: Horde"
+description = "Raise Skeletons spawns more bodies that don't last as long."
+kind = 2
+target_id = "raise_skeletons"
+rank = 1
+point_cost = 1
+level_required = 4
+prerequisite_ids = Array[String](["raise_skeletons_r2"])
+ability = SubResource("mod_raise_horde")
+
+[sub_resource type="Resource" id="mod_raise_revenant"]
+script = ExtResource("6_mod")
+mod_id = "raise_skeletons_revenant"
+mod_name = "Revenant"
+description = "-50% count, +75% lifetime. One stubborn revenant who refuses to fall."
+scaling = {"count_mult": 0.5, "duration_mult": 1.75}
+
+[sub_resource type="Resource" id="node_raise_mod_revenant"]
+script = ExtResource("2_node")
+node_id = "raise_skeletons_mod_revenant"
+node_name = "Mod: Revenant"
+description = "Raise Skeletons calls one durable revenant instead of a fragile pair."
+kind = 2
+target_id = "raise_skeletons"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["raise_skeletons_r2"])
+ability = SubResource("mod_raise_revenant")
+
+[sub_resource type="Resource" id="mod_death_mark_brand"]
+script = ExtResource("6_mod")
+mod_id = "death_mark_brand"
+mod_name = "Searing Brand"
+description = "+50% damage amplitude, -50% duration. A brief, savage execute brand."
+scaling = {"damage_mult": 1.5, "duration_mult": 0.5}
+
+[sub_resource type="Resource" id="node_death_mark_mod_brand"]
+script = ExtResource("2_node")
+node_id = "death_mark_mod_brand"
+node_name = "Mod: Searing Brand"
+description = "Death Mark becomes a short execute window instead of a sustained curse."
+kind = 2
+target_id = "death_mark"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["death_mark_r2"])
+ability = SubResource("mod_death_mark_brand")
+
+[sub_resource type="Resource" id="mod_death_mark_hex"]
+script = ExtResource("6_mod")
+mod_id = "death_mark_lingering_hex"
+mod_name = "Lingering Hex"
+description = "+50% duration, -25% damage amplitude. A long slow rot instead of a peak."
+scaling = {"duration_mult": 1.5, "damage_mult": 0.75}
+
+[sub_resource type="Resource" id="node_death_mark_mod_hex"]
+script = ExtResource("2_node")
+node_id = "death_mark_mod_lingering_hex"
+node_name = "Mod: Lingering Hex"
+description = "Death Mark clings longer at lower amplitude — sidegrade to Searing Brand."
+kind = 2
+target_id = "death_mark"
+rank = 1
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["death_mark_r2"])
+ability = SubResource("mod_death_mark_hex")
+
+[sub_resource type="Resource" id="mod_soul_nova_concentrated"]
+script = ExtResource("6_mod")
+mod_id = "soul_nova_concentrated"
+mod_name = "Concentrated"
+description = "-30% AoE radius, +35% damage. A spear of souls instead of a sweep."
+scaling = {"aoe_radius_mult": 0.7, "damage_mult": 1.35}
+
+[sub_resource type="Resource" id="node_soul_nova_mod_concentrated"]
+script = ExtResource("2_node")
+node_id = "soul_nova_mod_concentrated"
+node_name = "Mod: Concentrated"
+description = "Soul Nova trades AoE width for raw damage."
+kind = 2
+target_id = "soul_nova"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["soul_nova_r2"])
+ability = SubResource("mod_soul_nova_concentrated")
+
+[sub_resource type="Resource" id="mod_soul_nova_haunt"]
+script = ExtResource("6_mod")
+mod_id = "soul_nova_haunt"
+mod_name = "Haunt"
+description = "+30% AoE radius, +25% cooldown. A wider, slower-recharging echo."
+scaling = {"aoe_radius_mult": 1.3, "cooldown_mult": 1.25}
+
+[sub_resource type="Resource" id="node_soul_nova_mod_haunt"]
+script = ExtResource("2_node")
+node_id = "soul_nova_mod_haunt"
+node_name = "Mod: Haunt"
+description = "Soul Nova covers more ground in exchange for slower recast — sidegrade to Concentrated."
+kind = 2
+target_id = "soul_nova"
+rank = 1
+point_cost = 1
+level_required = 6
+prerequisite_ids = Array[String](["soul_nova_r2"])
+ability = SubResource("mod_soul_nova_haunt")
+
+[sub_resource type="Resource" id="mod_bone_armor_extended"]
+script = ExtResource("6_mod")
+mod_id = "bone_armor_extended"
+mod_name = "Extended Ward"
+description = "+50% duration, +25% cooldown. Longer protection at the cost of recasting less often."
+scaling = {"duration_mult": 1.5, "cooldown_mult": 1.25}
+
+[sub_resource type="Resource" id="node_bone_armor_mod_extended"]
+script = ExtResource("2_node")
+node_id = "bone_armor_mod_extended"
+node_name = "Mod: Extended Ward"
+description = "Bone Armor lasts longer but takes longer to come back."
+kind = 2
+target_id = "bone_armor"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["bone_armor_r2"])
+ability = SubResource("mod_bone_armor_extended")
+
+[sub_resource type="Resource" id="mod_bone_armor_emergency"]
+script = ExtResource("6_mod")
+mod_id = "bone_armor_emergency"
+mod_name = "Emergency Ward"
+description = "-30% cooldown, -40% duration. Slap it on twice as often for half the time."
+scaling = {"cooldown_mult": 0.7, "duration_mult": 0.6}
+
+[sub_resource type="Resource" id="node_bone_armor_mod_emergency"]
+script = ExtResource("2_node")
+node_id = "bone_armor_mod_emergency"
+node_name = "Mod: Emergency Ward"
+description = "Bone Armor comes back faster but each shell is brief — sidegrade to Extended Ward."
+kind = 2
+target_id = "bone_armor"
+rank = 1
+point_cost = 1
+level_required = 5
+prerequisite_ids = Array[String](["bone_armor_r2"])
+ability = SubResource("mod_bone_armor_emergency")
+
+[sub_resource type="Resource" id="node_necromancer_passive_slot_2"]
+script = ExtResource("2_node")
+node_id = "necromancer_passive_slot_2"
+node_name = "★ Passive Slot 2"
+description = "A second passive slot opens at hero level 4. Auto-granted on level-up."
+kind = 3
+target_id = "passive_slot_2"
+rank = 1
+point_cost = 0
+level_required = 4
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_necromancer_active_slot_3"]
+script = ExtResource("2_node")
+node_id = "necromancer_active_slot_3"
+node_name = "★ Active Slot 3"
+description = "A third active-skill slot opens at hero level 8."
+kind = 3
+target_id = "active_slot_3"
+rank = 1
+point_cost = 0
+level_required = 8
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="node_necromancer_passive_slot_3"]
+script = ExtResource("2_node")
+node_id = "necromancer_passive_slot_3"
+node_name = "★ Passive Slot 3"
+description = "A third passive slot opens at hero level 9."
+kind = 3
+target_id = "passive_slot_3"
+rank = 1
+point_cost = 0
+level_required = 9
+prerequisite_ids = Array[String]([])
+
+[sub_resource type="Resource" id="ability_lich_rite"]
+script = ExtResource("5_statmod")
+ability_id = "necro_lich_rite_capstone"
+trigger = 0
+damage_pct = 0.25
+skill_power_pct = 0.20
+magic_resist_pct = 0.15
+
+[sub_resource type="Resource" id="node_lich_rite_capstone"]
+script = ExtResource("2_node")
+node_id = "necro_lich_rite_capstone"
+node_name = "★ Lich Rite ★"
+description = "CAPSTONE — +25% damage, +20% skill power, +15% magic resist. The Necromancer crosses over: half-undead, all menace. Requires Raise Skeletons mastered (R3)."
+kind = 4
+target_id = "necro_lich_rite_capstone"
+rank = 1
+point_cost = 1
+level_required = 10
+prerequisite_ids = Array[String](["raise_skeletons_r3"])
+ability = SubResource("ability_lich_rite")
+
+[resource]
+script = ExtResource("1_tree")
+hero_id = "hero_necromancer"
+nodes = Array[Resource]([SubResource("node_soul_drain_r1"), SubResource("node_frail_tutelage_r1"), SubResource("node_curse_mastery_r1"), SubResource("node_bone_marrow_r1"), SubResource("node_withered_veil_r1"), SubResource("node_necrotic_touch_r1"), SubResource("node_raise_skeletons_r2"), SubResource("node_raise_skeletons_r3"), SubResource("node_death_mark_r2"), SubResource("node_death_mark_r3"), SubResource("node_bone_armor_r2"), SubResource("node_soul_nova_r2"), SubResource("node_soul_nova_r3"), SubResource("node_raise_mod_horde"), SubResource("node_raise_mod_revenant"), SubResource("node_death_mark_mod_brand"), SubResource("node_death_mark_mod_hex"), SubResource("node_soul_nova_mod_concentrated"), SubResource("node_soul_nova_mod_haunt"), SubResource("node_bone_armor_mod_extended"), SubResource("node_bone_armor_mod_emergency"), SubResource("node_necromancer_passive_slot_2"), SubResource("node_necromancer_active_slot_3"), SubResource("node_necromancer_passive_slot_3"), SubResource("node_lich_rite_capstone")])

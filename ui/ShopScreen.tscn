@@ -12,6 +12,14 @@ description = "Ranged magic caster with Arcane Bolt, Frost Nova, and Mana Shield
 price_text = "$0.99"
 unlock_id = "hero_mage"
 
+[sub_resource type="Resource" id="Product_Necromancer"]
+script = ExtResource("2_prod")
+product_id = "hero_necromancer_unlock"
+display_name = "Necromancer Hero"
+description = "Fragile backline curser. Death Mark amplifies damage from every source; cursed kills raise skeletons to plug the line."
+price_text = "$1.99"
+unlock_id = "hero_necromancer"
+
 [node name="ShopScreen" type="Control"]
 layout_mode = 3
 anchors_preset = 15
@@ -19,7 +27,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 theme = ExtResource("3_theme")
 script = ExtResource("1_shop")
-products = Array[Resource]([SubResource("Product_Mage")])
+products = Array[Resource]([SubResource("Product_Mage"), SubResource("Product_Necromancer")])
 
 [node name="Background" type="ColorRect" parent="."]
 layout_mode = 1

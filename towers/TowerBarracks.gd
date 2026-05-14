@@ -353,7 +353,11 @@ func _on_soldier_died(soldier: Node) -> void:
 
 
 func _respawn_after(seconds: float, slot: int) -> void:
-	await get_tree().create_timer(seconds).timeout
+	# process_always=false → freeze with tactical pause / GameOverScreen
+	# pause, matching the gameplay clock. Without this the respawn keeps
+	# ticking through pause, giving the player a free time advantage on
+	# soldier cooldowns. Mirrors the BaseHero respawn timer fix.
+	await get_tree().create_timer(seconds, false).timeout
 	if not is_inside_tree():
 		return
 	_spawn_soldier(slot)

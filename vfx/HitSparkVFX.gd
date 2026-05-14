@@ -75,13 +75,13 @@ func _draw() -> void:
 		var reach: float = length + 3.0
 		for a in _lines:
 			var p: Vector2 = Vector2.from_angle(a) * reach
-			draw_line(-p * 0.3, p, c, 3.0, true)
+			draw_line(-p * 0.3, p, c, 3.0, false)
 		return
 	for a_off in _lines:
 		var a: float = base_angle + a_off
 		var from: Vector2 = Vector2.from_angle(a) * 3.0
 		var to: Vector2 = Vector2.from_angle(a) * (3.0 + length)
-		draw_line(from, to, c, 2.5, true)
+		draw_line(from, to, c, 2.5, false)
 	if _style == STYLE_MAGIC:
 		# Inner expanding shockwave half-ring facing hit direction.
 		var ring_r: float = lerpf(6.0, 22.0, t01)

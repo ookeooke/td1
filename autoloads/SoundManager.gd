@@ -18,6 +18,7 @@ const SFX_PATHS: Dictionary = {
 	"wave_start":     "res://audio/sfx/wave_start.wav",
 	"wave_complete":  "res://audio/sfx/wave_complete.wav",
 	"hero_skill":     "res://audio/sfx/hero_skill.wav",
+	"hero_level_up":  "res://audio/sfx/hero_level_up.wav",
 	"game_over":      "res://audio/sfx/game_over.wav",
 	"victory":        "res://audio/sfx/victory.wav",
 	"boss_phase":     "res://audio/sfx/boss_phase.wav",

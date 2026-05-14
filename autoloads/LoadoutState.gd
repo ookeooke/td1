@@ -287,15 +287,49 @@ func has_unequipped_skills(hero_id: String) -> bool:
 
 
 func _default_equipped_for(hero_id: String) -> Array:
-	# First N unlocked skills (author order, N = current active slot cap),
-	# pad with "" to cap. Resizes naturally on level-up because
-	# get_equipped_skills re-sizes against the live cap on every read.
-	var unlocked: Array[String] = get_unlocked_skill_ids(hero_id)
+	# Resolves the hero's starter loadout. Two paths:
+	#   1. HeroData.starter_skill_ids (authored explicit order) — preferred.
+	#      Entries are filtered through unlocked_skill_ids so locked /
+	#      renamed / removed ids drop silently. Order is preserved.
+	#   2. Fallback: first N unlocked in author order. Mirrors the original
+	#      implicit rule for heroes that haven't authored starter_skill_ids.
+	# Pads with "" to the current active slot cap. Re-sizes naturally on
+	# level-up because get_equipped_skills re-reads cap every call.
 	var cap: int = get_active_slot_cap(hero_id)
+	var unlocked: Array[String] = get_unlocked_skill_ids(hero_id)
+	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
+	var authored: Array = []
+	if hero_data != null and "starter_skill_ids" in hero_data:
+		for sid in hero_data.starter_skill_ids:
+			var s: String = String(sid)
+			if s != "" and s in unlocked:
+				authored.append(s)
+	var source: Array = authored if not authored.is_empty() else unlocked
 	var out: Array = []
 	for i in cap:
-		out.append(unlocked[i] if i < unlocked.size() else "")
+		out.append(source[i] if i < source.size() else "")
 	return out
+
+
+# Called by the Skills page "Reset to default" button. Resolves the hero's
+# starter loadout and writes it back, firing per-slot equip signals so the
+# in-level SkillBar (if open) and any listening UI stays consistent. No-op
+# if the resolved default already matches the current loadout.
+func reset_active_loadout_to_default(hero_id: String) -> bool:
+	if hero_id == "":
+		return false
+	var cap: int = get_active_slot_cap(hero_id)
+	var defaults: Array = _default_equipped_for(hero_id)
+	var current: Array[String] = get_equipped_skills(hero_id)
+	var changed: bool = false
+	for i in cap:
+		var want: String = String(defaults[i]) if i < defaults.size() else ""
+		var have: String = current[i] if i < current.size() else ""
+		if want == have:
+			continue
+		if set_equipped_skill(hero_id, i, want):
+			changed = true
+	return changed
 
 
 # ── Equipped passives (Phase 1) ─────────────────────────────────────────

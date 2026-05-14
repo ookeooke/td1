@@ -67,6 +67,7 @@ attack_range = 75.0
 move_speed = 220.0
 armor = 0.25
 skills = Array[Resource]([ExtResource("2_summon"), ExtResource("3_bless"), ExtResource("4_bash"), ExtResource("13_rally")])
+starter_skill_ids = Array[String](["summon_soldiers", "bless"])
 talents = Array[Resource]([SubResource("Talent_Endurance"), SubResource("Talent_Vampiric"), SubResource("Talent_HeavyBlows")])
 visual = ExtResource("9_vis")
 starter_items = Array[Resource]([ExtResource("10_s_sword"), ExtResource("11_s_tunic"), ExtResource("12_s_charm")])

@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://vfx/SoulRiseVFX.gd" id="1_vfx"]
+
+[node name="SoulRiseVFX" type="Node2D"]
+script = ExtResource("1_vfx")

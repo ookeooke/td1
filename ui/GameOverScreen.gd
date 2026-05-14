@@ -97,6 +97,15 @@ func _on_all_waves_completed() -> void:
 	continue_button.visible = true
 	restart_button.text = "Restart"
 	restart_button.visible = false
+	# Record completion AT VICTORY TIME, not when the player taps Continue.
+	# Closing Godot on the victory screen before pressing Continue previously
+	# lost heroic_complete / iron_complete (and campaign star bumps) because
+	# the only call site was _on_continue_pressed. record_stars is idempotent
+	# (campaign uses max, heroic/iron just flip a bool), so the redundant call
+	# in _on_continue_pressed is a harmless safety net. record_stars also
+	# triggers _persist → save_game, so the completion lands on disk before
+	# EventBus.level_completed fires SaveManager._on_level_completed below.
+	MetaProgression.record_stars(RunState.current_mode, RunState.current_level_id, stars)
 	_show("Victory!", summary)
 	EventBus.level_completed.emit(RunState.current_level_id, stars, RunState.current_mode)
 
@@ -111,22 +120,50 @@ func _build_damage_breakdown() -> String:
 	var tower_entries: Array = RunState.round_damage_towers.values()
 	var hero: float = RunState.round_damage_hero
 	var sold: float = RunState.round_damage_soldiers
-	if tower_entries.is_empty() and hero <= 0.0 and sold <= 0.0:
+	var sections: PackedStringArray = []
+	if not tower_entries.is_empty() or hero > 0.0 or sold > 0.0:
+		tower_entries.sort_custom(func(a, b): return float(a.get("total", 0.0)) > float(b.get("total", 0.0)))
+		var lines: PackedStringArray = ["", "— Damage dealt —"]
+		var shown: int = mini(_TOWER_LEADERBOARD_LIMIT, tower_entries.size())
+		for i in range(shown):
+			var e: Dictionary = tower_entries[i]
+			var display: String = String(e.get("name", ""))
+			if display.is_empty():
+				display = "Tower"
+			lines.append("%s: %s" % [display, _fmt(float(e.get("total", 0.0)))])
+		if hero > 0.0:
+			lines.append("Hero: %s" % _fmt(hero))
+		if sold > 0.0:
+			lines.append("Soldiers: %s" % _fmt(sold))
+		sections.append("\n".join(lines))
+	var xp_section: String = _build_xp_recap()
+	if xp_section != "":
+		sections.append(xp_section)
+	if sections.is_empty():
 		return ""
-	tower_entries.sort_custom(func(a, b): return float(a.get("total", 0.0)) > float(b.get("total", 0.0)))
-	var lines: PackedStringArray = ["", "— Damage dealt —"]
-	var shown: int = mini(_TOWER_LEADERBOARD_LIMIT, tower_entries.size())
-	for i in range(shown):
-		var e: Dictionary = tower_entries[i]
-		var display: String = String(e.get("name", ""))
-		if display.is_empty():
-			display = "Tower"
-		lines.append("%s: %s" % [display, _fmt(float(e.get("total", 0.0)))])
-	if hero > 0.0:
-		lines.append("Hero: %s" % _fmt(hero))
-	if sold > 0.0:
-		lines.append("Soldiers: %s" % _fmt(sold))
-	return "\n" + "\n".join(lines)
+	return "\n" + "\n\n".join(sections)
+
+
+# Hero progression recap for the GameOverScreen — surfaces the XP banked this
+# run plus any level-up delta. Skipped silently when nothing was gained
+# (e.g. instant defeat before any kills). Reads RunState.round_xp_gained +
+# round_hero_start_level, both reset/snapshotted in RunState.reset_for_level.
+func _build_xp_recap() -> String:
+	var gained: int = RunState.round_xp_gained
+	if gained <= 0:
+		return ""
+	var hid: String = LoadoutState.selected_hero_id
+	var hero_data: Resource = ContentRegistry.find_hero(hid) if hid != "" else null
+	var hero_name: String = String(hero_data.hero_name) if hero_data != null and "hero_name" in hero_data else "Hero"
+	var start_lvl: int = RunState.round_hero_start_level
+	var end_lvl: int = MetaProgression.get_hero_level(hid) if hid != "" else start_lvl
+	var lines: PackedStringArray = ["— Hero progression —"]
+	lines.append("%s: +%s XP" % [hero_name, _fmt(float(gained))])
+	if end_lvl > start_lvl:
+		var delta: int = end_lvl - start_lvl
+		var star_str: String = "★" if delta == 1 else "%d ★" % delta
+		lines.append("Lv %d → Lv %d  (+%s)" % [start_lvl, end_lvl, star_str])
+	return "\n".join(lines)
 
 
 func _fmt(n: float) -> String:
@@ -274,7 +311,14 @@ func _on_sliders_pressed() -> void:
 func _on_continue_pressed() -> void:
 	get_tree().paused = false
 	WaveManager.stop()
-	if RunState.current_mode != "endless":
+	# Only record stars / completion when the run was a victory. Defeat now
+	# also shows the World Map button (so the screen isn't a dead end on
+	# loss), but tapping it must NOT flip heroic_complete / iron_complete /
+	# bump campaign stars. _on_all_waves_completed (victory) sets
+	# stars_earned = calculate_stars() (always ≥ 1 unless 0 lives); defeat
+	# leaves stars_earned at 0 (cleared by reset_for_level). So
+	# `stars_earned > 0` is a faithful "did we win?" gate.
+	if RunState.current_mode != "endless" and RunState.stars_earned > 0:
 		MetaProgression.record_stars(RunState.current_mode, RunState.current_level_id, RunState.stars_earned)
 	SceneManager.goto("res://ui/WorldMap.tscn")
 

@@ -88,6 +88,12 @@ signal hero_passive_equipped(hero_id, slot, passive_id)
 # Phase 2C — fired by LoadoutState.set_chosen_mod when the player toggles
 # which owned mod is active for a skill.
 signal hero_skill_mod_chosen(hero_id, skill_id, mod_id)
+# Unified Skills page — emitted by tappable widgets (active slot, passive
+# chip, tree row, owned-mod chip) to open the inspector drawer. Kind values
+# mirror HeroSkillNodeData.Kind (ACTIVE_RANK=0, PASSIVE_RANK=1, MOD=2, etc.);
+# slot_index = the equipped-slot the tap originated from (or -1 if not from
+# a slot).
+signal skill_node_inspected(kind: int, content_id: String, slot_index: int)
 
 # Game modes
 signal endless_wave_started(wave_number)

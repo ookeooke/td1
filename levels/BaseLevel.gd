@@ -323,11 +323,11 @@ func _draw_tower_spot(pos: Vector2, spot_id: String, pulse_t: float) -> void:
 	var pulse_scale: float = 0.92 + pulse_t * 0.10
 	var arm: float = 18.0 * pulse_scale
 	# Plank 1 (top-left to bottom-right) — drawn as a thick rounded line.
-	draw_line(pos + Vector2(-arm, -arm), pos + Vector2(arm, arm), SPOT_PLANK_OUTLINE, 9.0, true)
-	draw_line(pos + Vector2(-arm, -arm), pos + Vector2(arm, arm), SPOT_PLANK_COLOR, 6.0, true)
+	draw_line(pos + Vector2(-arm, -arm), pos + Vector2(arm, arm), SPOT_PLANK_OUTLINE, 9.0, false)
+	draw_line(pos + Vector2(-arm, -arm), pos + Vector2(arm, arm), SPOT_PLANK_COLOR, 6.0, false)
 	# Plank 2 (top-right to bottom-left).
-	draw_line(pos + Vector2(arm, -arm), pos + Vector2(-arm, arm), SPOT_PLANK_OUTLINE, 9.0, true)
-	draw_line(pos + Vector2(arm, -arm), pos + Vector2(-arm, arm), SPOT_PLANK_COLOR, 6.0, true)
+	draw_line(pos + Vector2(arm, -arm), pos + Vector2(-arm, arm), SPOT_PLANK_OUTLINE, 9.0, false)
+	draw_line(pos + Vector2(arm, -arm), pos + Vector2(-arm, arm), SPOT_PLANK_COLOR, 6.0, false)
 	# Center nail / hammer-head dot.
 	draw_circle(pos, 4.0 * pulse_scale, SPOT_COBBLE_COLOR)
 	draw_circle(pos, 2.0 * pulse_scale, Color(0.85, 0.78, 0.55))

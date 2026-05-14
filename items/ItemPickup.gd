@@ -93,7 +93,10 @@ func _draw() -> void:
 	var center: Vector2 = Vector2(0, -20 + bob)
 	var radius: float = ICON_RADIUS_PX * zs
 	# Rarity halo — slightly larger than the icon.
-	draw_arc(center, radius + HALO_THICKNESS_PX * zs, 0.0, TAU, 32, _rarity_color, HALO_THICKNESS_PX * zs, true)
+	# Snap stroke width to integer px and disable AA so the halo reads as
+	# a crisp ring at any camera zoom now that the in-world style is chunky.
+	var halo_w: float = maxf(1.0, roundf(HALO_THICKNESS_PX * zs))
+	draw_arc(center, radius + HALO_THICKNESS_PX * zs, 0.0, TAU, 24, _rarity_color, halo_w, false)
 	# Dark backing disc so glyph is always readable over any map terrain.
 	draw_circle(center, radius, Color(0.08, 0.08, 0.1, 0.85))
 	# Procedural glyph + rarity pips (same helper as ItemIcon).

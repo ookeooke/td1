@@ -28,6 +28,7 @@ armor = 0.0
 respawn_time = 28.0
 max_block_targets = 1
 skills = Array[Resource]([ExtResource("2_volley"), ExtResource("3_snare"), ExtResource("8_stance"), ExtResource("9_marked"), ExtResource("10_falcon")])
+starter_skill_ids = Array[String](["volley", "snare_trap"])
 visual = ExtResource("4_vis")
 projectile_scene = ExtResource("11_arrow")
 starter_items = Array[Resource]([ExtResource("5_s_sword"), ExtResource("6_s_tunic"), ExtResource("7_s_charm")])

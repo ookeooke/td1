@@ -58,7 +58,7 @@ const _SILHOUETTE_BASE_SIZE: float = 1.30
 # up). Without this the ground pad anchors at y=39 and the tower hangs off
 # the southern edge of the 65px spot circle. Construction / upgrade rings
 # stay at identity so ground VFX still anchors to spot center.
-const VISUAL_Y_OFFSET: float = -16.0
+const VISUAL_Y_OFFSET: float = -28.0
 var _construct_t: float = 0.0
 var _upgrade_t: float = 0.0
 var _aim_angle: float = -PI / 2.0

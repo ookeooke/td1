@@ -501,10 +501,21 @@ func _die() -> void:
 	if state == State.DYING:
 		return
 	change_state(State.DYING)
-	# Last-hit XP: only the hero earns XP, towers don't.
-	if _last_damage_source != null and is_instance_valid(_last_damage_source) \
-			and _last_damage_source is BaseHero and data.xp_worth > 0:
-		_last_damage_source.gain_xp(data.xp_worth)
+	# Last-hit XP: the hero earns XP directly; hero-summoned soldiers funnel
+	# kill credit back to their summoner (a Knight's Summon Soldiers cast).
+	# Barracks soldiers stay neutral — towers don't have XP, and the soldier
+	# has _summoner == null in that case. Tower-direct hits earn no XP either.
+	var xp_recipient: Node = null
+	if _last_damage_source != null and is_instance_valid(_last_damage_source):
+		if _last_damage_source is BaseHero:
+			xp_recipient = _last_damage_source
+		elif _last_damage_source is BaseSoldier \
+				and "_summoner" in _last_damage_source \
+				and _last_damage_source._summoner != null \
+				and is_instance_valid(_last_damage_source._summoner):
+			xp_recipient = _last_damage_source._summoner
+	if xp_recipient != null and data.xp_worth > 0:
+		xp_recipient.gain_xp(data.xp_worth)
 	# Fire ON_DEATH abilities (explode, summon, buff allies, etc.) BEFORE
 	# despawn so they can read our position / iterate the enemies group
 	# while we're still valid.
@@ -640,7 +651,11 @@ func _draw() -> void:
 	if _effects.has("stun"):
 		UnitVisualDrawer.draw_status_ring(self, ring_r + 10.0, Color(1.0, 0.95, 0.2), 6, -_status_ring_t * 2.0, 5.0)
 	if _effects.has("marked"):
-		UnitVisualDrawer.draw_status_ring(self, ring_r + 20.0, Color(1.0, 0.4, 0.2), 4, _status_ring_t * 1.0, 5.0)
+		# Phase 48 polish — skull glyph above the head replaces the old generic
+		# orange dashed ring. Positional cue (above body, not color-on-ring) so
+		# the curse reads against any enemy palette and at any zoom.
+		var body_top_y: float = -(data.visual.radius if data != null and data.visual != null else 35.0)
+		UnitVisualDrawer.draw_marked_skull(self, body_top_y, _status_ring_t)
 	_draw_attack_telegraph(ring_r)
 	_draw_health_bar()
 

@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="SoldierData" format=3]
+
+[ext_resource type="Script" path="res://soldiers/SoldierData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://soldiers/data/visual_skeleton.tres" id="2_vis"]
+
+[resource]
+script = ExtResource("1_data")
+soldier_id = "soldier_skeleton"
+soldier_name = "Skeleton"
+max_health = 14
+attack_damage = 1.2
+attack_speed = 1.1
+move_speed = 130.0
+armor = 0.0
+magic_resist = 0.1
+respawn_time = 999.0
+max_count = 1
+melee_range = 40.0
+aggro_range = 110.0
+leash_range = 160.0
+max_block_targets = 1
+visual = ExtResource("2_vis")
+encyclopedia_entry = "Risen on a Necromancer's command. Fragile, short-lived, and slow — but a skeleton that grabs an enemy buys the towers a precious second."

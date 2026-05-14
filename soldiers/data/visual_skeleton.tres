@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UnitVisualData" format=3]
+
+[ext_resource type="Script" path="res://systems/UnitVisualData.gd" id="1_vis"]
+
+[resource]
+script = ExtResource("1_vis")
+shape = 1
+body_color = Color(0.86, 0.85, 0.78, 1)
+outline_color = Color(0.18, 0.16, 0.12, 1)
+accent_color = Color(0.55, 0.20, 0.55, 1)
+accent_type = 6
+body_size = Vector2(26, 26)
+outline_width = 3.5
+weapon_type = 0
+race = 5
+head_color = Color(0.92, 0.91, 0.84, 1)
+head_radius_ratio = 0.55
+head_y_offset = -1.5
+has_tusks = false
+hat = 0
+leg_color = Color(0.78, 0.76, 0.68, 1)
+arm_color = Color(0.86, 0.85, 0.78, 1)
+eye_glow_color = Color(0.45, 1.0, 0.55, 1)

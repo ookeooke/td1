@@ -71,18 +71,40 @@ func _ready() -> void:
 	print("[SaveManager] loaded — %d levels tracked" % MetaProgression.level_stars.size())
 
 
+# Defense in depth — flush a final save when Godot tears down (window close,
+# app background on Android, editor stop). The engine broadcasts these
+# notifications to every node before quitting; save_game is a synchronous
+# JSON write so it completes before the process exits. Test Range guard
+# inside _save_to_path still protects production saves from sandbox runs
+# at close time. Auto-accept-quit stays at its default (true) — we just
+# piggyback on the broadcast, we don't gate the quit.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST \
+			or what == NOTIFICATION_WM_GO_BACK_REQUEST \
+			or what == NOTIFICATION_APPLICATION_PAUSED:
+		save_game()
+
+
 func _on_encyclopedia_unlocked(_content_id: String) -> void:
 	save_game()
 
 
 func _on_level_completed(level_id: String, stars: int, _mode: String) -> void:
-	# Record best stars (MetaProgression already did this in record_stars,
-	# but belt-and-suspenders — make sure the dictionary is current).
-	var prev: int = MetaProgression.level_stars.get(level_id, 0)
-	MetaProgression.level_stars[level_id] = maxi(prev, stars)
-	# Unlock the next level if this one was cleared with at least 1 star.
-	if stars >= 1:
-		_try_unlock_next_level(level_id)
+	# Campaign-only progression — `level_stars` and the unlock chain belong
+	# to the campaign track. Heroic / iron clears live in their own dicts
+	# (`heroic_complete` / `iron_complete`, written by MetaProgression.record_stars).
+	# Without this gate, a heroic clear would bump campaign stars AND auto-
+	# unlock the next *campaign* level, conflating tracks.
+	if _mode == "campaign":
+		# Record best stars (MetaProgression already did this in record_stars,
+		# but belt-and-suspenders — make sure the dictionary is current).
+		var prev: int = MetaProgression.level_stars.get(level_id, 0)
+		MetaProgression.level_stars[level_id] = maxi(prev, stars)
+		# Unlock the next level if this one was cleared with at least 1 star.
+		if stars >= 1:
+			_try_unlock_next_level(level_id)
+	# Save unconditionally — heroic/iron completions need to persist too
+	# (record_stars already flushed upstream, but a second write is safe).
 	save_game()
 
 

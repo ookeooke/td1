@@ -32,22 +32,31 @@ const _FAN_CENTER: float = -PI * 0.5
 # Spread offset — soldiers spawn around the hero in a small arc so two
 # units don't pile on the exact same pixel.
 @export var spread_radius: float = 35.0
+# Optional per-spawn VFX (e.g. SoulRiseVFX for the Necromancer's skeletons).
+# Instantiated once per spawned soldier at the soldier's position. Leave null
+# for vanilla rally-style summons (Warrior's soldier call, etc.).
+@export var spawn_vfx_scene: PackedScene
 
 
-func apply(hero: Node, target, ctx: Dictionary = {}) -> void:
+func apply(hero: Node, target, ctx: Dictionary = {}) -> bool:
 	if hero == null or not is_instance_valid(hero):
-		return
+		return false
 	if soldier_scene == null or soldier_data == null:
 		push_warning("[SummonSoldiers] skill_summon_soldiers.tres missing soldier_scene or soldier_data")
-		return
+		return false
 	var parent: Node = hero.get_tree().current_scene
 	if parent == null:
-		return
+		return false
 	# Phase 3G — rank + mod ctx. Summon reads:
 	#   count_mult    → integer count of soldiers spawned (rounded, min 1)
 	#   duration_mult → lifetime each soldier survives before auto-despawn
+	#   skill_power_mult → also stretches lifetime so SP gear makes summons last
+	# Count deliberately doesn't scale by skill_power_mult — more bodies on
+	# screen is loud and hard to balance; SP players get longer-lived squads
+	# instead of bigger ones.
+	var sp_mult: float = float(ctx.get("skill_power_mult", 1.0))
 	var eff_count: int = maxi(1, int(round(float(count) * float(ctx.get("count_mult", 1.0)))))
-	var eff_lifetime: float = lifetime * float(ctx.get("duration_mult", 1.0))
+	var eff_lifetime: float = lifetime * float(ctx.get("duration_mult", 1.0)) * sp_mult
 	# Spawn center: tap position when AREA-targeted, hero position otherwise.
 	# Lets the skill stay backwards-compatible with SELF-cast sites.
 	var spawn_center: Vector2 = hero.global_position
@@ -67,6 +76,11 @@ func apply(hero: Node, target, ctx: Dictionary = {}) -> void:
 		# Add to the soldiers group so other systems (Bless, hero soldier-aura
 		# talents, splitting rules) treat them as friendly ground units.
 		soldier.add_to_group("soldiers")
+		# Tag the soldier with its summoning hero so kill-XP routes back to the
+		# hero (see BaseEnemy._die's XP routing). Barracks-spawned soldiers
+		# leave this null and earn no XP for their tower, which is correct.
+		if "_summoner" in soldier:
+			soldier._summoner = hero
 		parent.add_child(soldier)
 		var t: float = 0.5 if eff_count <= 1 else float(i) / float(eff_count - 1)
 		var angle: float = _FAN_CENTER - _FAN_ARC * 0.5 + _FAN_ARC * t
@@ -87,9 +101,17 @@ func apply(hero: Node, target, ctx: Dictionary = {}) -> void:
 		lifetime_ability.duration = eff_lifetime
 		if "_ability_host" in soldier and soldier._ability_host != null:
 			soldier._ability_host.add_ability(lifetime_ability)
+		# Spawn VFX — instantiated as a sibling, positioned at the soldier's
+		# rally pos so the burst plays at the summon point.
+		if spawn_vfx_scene != null:
+			var vfx: Node = spawn_vfx_scene.instantiate()
+			parent.add_child(vfx)
+			if vfx is Node2D:
+				(vfx as Node2D).global_position = rally_pos
 	print("[Skill/Summon] %s summoned %d soldiers at %s for %.1fs" % [
 		hero.data.hero_name if hero.data != null else "?",
 		eff_count,
 		spawn_center,
 		eff_lifetime,
 	])
+	return true

@@ -13,6 +13,11 @@ const _DeathVFXScript := preload("res://vfx/DeathVFX.gd")
 const _HitSparkVFXScript := preload("res://vfx/HitSparkVFX.gd")
 const _EnemyDeathDriftScript := preload("res://vfx/EnemyDeathDrift.gd")
 const _SkillCastFlareScript := preload("res://vfx/SkillCastFlare.gd")
+# Necromancer-only presence VFX. Aura attaches as a child of the hero on
+# spawn; soul harvest fires on every enemy_died while the necromancer is
+# active. Both gated by hero_id so other heroes are unaffected.
+const _NecroAuraScene: PackedScene = preload("res://vfx/NecroAuraVFX.tscn")
+const _SoulHarvestScene: PackedScene = preload("res://vfx/SoulHarvestVFX.tscn")
 
 # Skill-name → flare color. Unlisted names fall back to yellow (buff).
 const _SKILL_FLARE_COLORS: Dictionary = {
@@ -41,8 +46,10 @@ var _merge_drain: Timer = null
 func _ready() -> void:
 	EventBus.enemy_died.connect(_on_enemy_died)
 	EventBus.hero_xp_gained.connect(_on_hero_xp_gained)
+	EventBus.hero_leveled_up.connect(_on_hero_leveled_up)
 	EventBus.hero_spawned.connect(func(h): _hero = h)
 	EventBus.hero_died.connect(func(): _hero = null)
+	EventBus.hero_spawned.connect(_install_necro_aura)
 	EventBus.game_over.connect(_on_game_over)
 	EventBus.game_won.connect(_on_game_won)
 	EventBus.clean_view_toggled.connect(func(v): clean_view = v)
@@ -85,6 +92,27 @@ func _on_enemy_died(enemy: Node, gold_value: int) -> void:
 	# Gold text — always shown (informational, not clutter).
 	if gold_value > 0:
 		_FloatingTextScript.spawn_kind(parent, _FloatingTextScript.Kind.GOLD, pos, float(gold_value))
+	# Soul harvest — Necromancer-only on-kill tell. Wisps drift from the
+	# corpse toward the hero, sells "the lich absorbed the kill."
+	if not clean_view and _hero != null and is_instance_valid(_hero) \
+			and _hero.data != null and _hero.data.hero_id == "hero_necromancer":
+		var harv: Node2D = _SoulHarvestScene.instantiate()
+		parent.add_child(harv)
+		harv.global_position = pos
+		if harv.has_method("setup"):
+			harv.setup(_hero)
+
+
+# Attach the persistent passive aura as a child of the Necromancer on
+# spawn. Other heroes: no-op. Frees automatically when the hero is freed
+# (e.g. between levels) since it's parented to the hero.
+func _install_necro_aura(hero: Node) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	if hero.data == null or hero.data.hero_id != "hero_necromancer":
+		return
+	var aura: Node2D = _NecroAuraScene.instantiate()
+	hero.add_child(aura)
 
 
 func _on_hit_landed(target: Node, source: Node, amount: float, dmg_type: int) -> void:
@@ -215,6 +243,23 @@ func _on_hero_xp_gained(amount: int) -> void:
 	if parent == null:
 		return
 	_FloatingTextScript.spawn_kind(parent, _FloatingTextScript.Kind.XP, _hero.global_position + Vector2(0, -50), float(amount))
+
+
+func _on_hero_leveled_up(new_level: int) -> void:
+	# Celebration moment: a transient Toast + SFX so leveling reads as an
+	# event, not a silent badge tick. Only the active hero earns XP (last-hit
+	# semantics, hero-only), so resolving the name via
+	# LoadoutState.selected_hero_id is safe.
+	var hero_name: String = "Hero"
+	if has_node("/root/LoadoutState") and has_node("/root/ContentRegistry"):
+		var hid: String = LoadoutState.selected_hero_id
+		var hero_data: Resource = ContentRegistry.find_hero(hid)
+		if hero_data != null and "hero_name" in hero_data and String(hero_data.hero_name) != "":
+			hero_name = String(hero_data.hero_name)
+	if has_node("/root/Toast"):
+		Toast.show_message("⚡ LEVEL UP!  %s is Lv %d" % [hero_name, new_level])
+	if has_node("/root/SoundManager"):
+		SoundManager.play_sfx("hero_level_up")
 
 
 func _on_game_over() -> void:

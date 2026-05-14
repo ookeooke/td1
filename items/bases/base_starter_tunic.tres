@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
 [ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
-[ext_resource type="Texture2D" uid="uid://bsydv8atf0juw" path="res://items/art/base_starter_tunic.jpg" id="3_tex"]
+[ext_resource type="Texture2D" uid="uid://dlhgbd0uja60r" path="res://items/art/generated/base_starter_tunic_white_tier.png" id="3_tex"]
 
 [sub_resource type="Resource" id="Impl_StarterTunic"]
 script = ExtResource("2_mod")

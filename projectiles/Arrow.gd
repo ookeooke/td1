@@ -235,7 +235,7 @@ class _IceShatterVFX extends Node2D:
 		c.a = alpha
 		for a in _angles:
 			var dir: Vector2 = Vector2.from_angle(float(a))
-			draw_line(dir * 3.0, dir * reach, c, 2.0, true)
+			draw_line(dir * 3.0, dir * reach, c, 2.0, false)
 		# Center frost puff.
 		var puff: Color = _color
 		puff.a = alpha * 0.5
@@ -271,7 +271,7 @@ class _ArcaneBurstVFX extends Node2D:
 		c.a = alpha
 		for a in _angles:
 			var dir: Vector2 = Vector2.from_angle(float(a))
-			draw_line(dir * 4.0, dir * reach, c, lerpf(3.5, 1.0, k), true)
+			draw_line(dir * 4.0, dir * reach, c, lerpf(3.5, 1.0, k), false)
 
 
 class _ArcaneRingVFX extends Node2D:
@@ -290,7 +290,7 @@ class _ArcaneRingVFX extends Node2D:
 		var alpha: float = (1.0 - k) * 0.9
 		var ring: Color = _color
 		ring.a = alpha
-		draw_arc(Vector2.ZERO, r, 0.0, TAU, 28, ring, lerpf(4.0, 1.0, k), true)
+		draw_arc(Vector2.ZERO, r, 0.0, TAU, 28, ring, lerpf(4.0, 1.0, k), false)
 		# Inner glow flash, white core.
 		var core: Color = _color.lerp(Color(1, 1, 1), 0.6)
 		core.a = alpha * 0.7
@@ -362,7 +362,7 @@ func _draw() -> void:
 			var frac: float = float(i + 1) / float(n_pts - 1)
 			var col: Color = col_edge.lerp(col_core, frac)
 			col.a *= frac * 0.6
-			draw_line(points_local[i], points_local[i + 1], col, lerpf(3.0, 10.0, frac), true)
+			draw_line(points_local[i], points_local[i + 1], col, lerpf(3.0, 10.0, frac), false)
 	# Glow halo under the body — flat alpha circle in proj_color.
 	if glow_enabled:
 		var glow_col: Color = proj_color
@@ -435,7 +435,7 @@ func _draw_hero_arrow_shape() -> void:
 		head_color
 	)
 	# Head edge highlight.
-	draw_line(Vector2(24, 0), Vector2(13, -3), Color(1.0, 1.0, 1.0, 0.7), 1.0, true)
+	draw_line(Vector2(24, 0), Vector2(13, -3), Color(1.0, 1.0, 1.0, 0.7), 1.0, false)
 	# Tiny dark binding at haft-to-head join.
 	draw_circle(Vector2(13, 0), 1.5, head_dark)
 	# Fletching — green leaf-feather pair, with a darker inner stripe so it
@@ -448,8 +448,8 @@ func _draw_hero_arrow_shape() -> void:
 		PackedVector2Array([Vector2(-18, 1), Vector2(-25, 5), Vector2(-12, 1)]),
 		fletching
 	)
-	draw_line(Vector2(-18, -1), Vector2(-24, -3), fletching_dark, 1.0, true)
-	draw_line(Vector2(-18, 1), Vector2(-24, 3), fletching_dark, 1.0, true)
+	draw_line(Vector2(-18, -1), Vector2(-24, -3), fletching_dark, 1.0, false)
+	draw_line(Vector2(-18, 1), Vector2(-24, 3), fletching_dark, 1.0, false)
 
 
 func _draw_arcane_bolt_shape() -> void:
@@ -478,9 +478,9 @@ func _draw_arcane_bolt_shape() -> void:
 	# Crackle — three short rune lines fanning back, alpha pulsing.
 	var crackle: Color = proj_color.lerp(Color(1, 1, 1), 0.6)
 	crackle.a = 0.55 + 0.35 * sin(t)
-	draw_line(Vector2(-12, -4), Vector2(-18, -7), crackle, 1.5, true)
-	draw_line(Vector2(-12, 4), Vector2(-18, 7), crackle, 1.5, true)
-	draw_line(Vector2(-14, 0), Vector2(-22, 0), crackle, 1.5, true)
+	draw_line(Vector2(-12, -4), Vector2(-18, -7), crackle, 1.5, false)
+	draw_line(Vector2(-12, 4), Vector2(-18, 7), crackle, 1.5, false)
+	draw_line(Vector2(-14, 0), Vector2(-22, 0), crackle, 1.5, false)
 	# Two orbiting motes — counter-rotating, sell the "magic" feel.
 	var orbit_r: float = 11.0
 	var p1: Vector2 = Vector2(cos(t) * orbit_r, sin(t) * orbit_r * 0.5)
@@ -498,7 +498,7 @@ func _draw_crystal_shape() -> void:
 	var dark: Color = proj_color.darkened(0.4)
 	draw_polyline(PackedVector2Array([
 		Vector2(28, 0), Vector2(0, -16), Vector2(-28, 0), Vector2(0, 16), Vector2(28, 0)
-	]), dark, 2.0, true)
+	]), dark, 2.0, false)
 	# Bright facet highlight on the upper-left edge.
 	var hl: Color = Color(1.0, 1.0, 1.0, 0.6)
 	draw_colored_polygon(PackedVector2Array([
@@ -520,7 +520,7 @@ func _draw_orb_shape() -> void:
 func _draw_shell_shape(lift_t: float) -> void:
 	var body: Color = Color(0.18, 0.16, 0.14)
 	draw_circle(Vector2.ZERO, 14.0, body)
-	draw_arc(Vector2.ZERO, 14.0, 0.0, TAU, 24, Color(0.05, 0.04, 0.03), 2.0, true)
+	draw_arc(Vector2.ZERO, 14.0, 0.0, TAU, 24, Color(0.05, 0.04, 0.03), 2.0, false)
 	# Metallic highlight on upper-left.
 	draw_circle(Vector2(-4, -5), 3.5, Color(0.55, 0.5, 0.45))
 	# Lit fuse ember at the tail. Brightens and grows on descent (last ~40%

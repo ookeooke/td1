@@ -497,7 +497,7 @@ func _draw_chevron_glyph(pos: Vector2, radius: float, c: Color, alpha: float, pu
 		var p_top := pos + Vector2(x, -h * 0.5)
 		var p_mid := pos + Vector2(x + w * 0.5, 0.0)
 		var p_bot := pos + Vector2(x, h * 0.5)
-		_draw_node.draw_polyline(PackedVector2Array([p_top, p_mid, p_bot]), col, 6.0, true)
+		_draw_node.draw_polyline(PackedVector2Array([p_top, p_mid, p_bot]), col, 6.0, false)
 
 
 func _draw_bonus_chip(center: Vector2, radius: float) -> void:

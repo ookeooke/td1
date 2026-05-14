@@ -6,6 +6,7 @@
 script = ExtResource("1_bless")
 skill_name = "Rally Cry"
 skill_id = "rally_cry"
+power_tier = 2
 cooldown = 35.0
 target_type = 2
 level_required = 6
@@ -13,5 +14,6 @@ radius = 280.0
 damage_bonus = 14.0
 health_bonus = 50
 buff_duration = 12.0
+pictogram = "horn"
 description = "A thunderous warcry — every soldier and the Knight himself within 280 px gains +14 damage and +50 HP for 12 seconds."
 rank_scaling = [{"cooldown_mult": 0.85}]

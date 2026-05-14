@@ -3580,3 +3580,234 @@ User feedback: per-shape impact bursts (frost shatter, arcane ring, arcane rune 
 - `projectiles/Arrow.gd._spawn_impact_vfx`: spawn position now shifts down by `target.data.visual.radius * 0.95` (matches the foot-plant math in `base_enemy._spawn_walk_dust`) and each spawned VFX gets `z_index = -1` so the body sprite draws on top. Flying targets (`data.is_flying`) skip the shift since they're airborne — impact stays at body center.
 
 Verification: headless boot clean. Visual confirmation deferred to editor.
+
+---
+
+## 2026-05-13 - Common white-tier item art replacement
+
+User wanted low-level/basic item art replaced rather than adding high-level items. Generated and converted a six-item common/white-tier set into 512x640 PNG cutouts with alpha, object-only framing, bottom-up/3/4-ish perspective, no baked background, no rarity frame, and no glow. Wired the existing item bases to the new textures, keeping all item IDs, stats, glyph fallbacks, abilities, drop weights, and descriptions unchanged:
+
+- `base_starter_sword` -> `res://items/art/generated/base_starter_sword_white_tier.png`
+- `base_wooden_sword` -> `res://items/art/generated/base_wooden_sword_white_tier.png`
+- `base_starter_tunic` -> `res://items/art/generated/base_starter_tunic_white_tier.png`
+- `base_training_gloves` -> `res://items/art/generated/base_training_gloves_white_tier.png`
+- `base_worn_boots` -> `res://items/art/generated/base_worn_boots_white_tier.png`
+- `base_starter_charm` -> `res://items/art/generated/base_starter_charm_white_tier.png`
+
+The generated chroma-key source PNGs remain beside the final cutouts for iteration; the original generated images under Codex's generated-images folder were left untouched.
+
+Verification:
+- Confirmed every final cutout is 512x640 and has transparent corners.
+- Confirmed all six common item bases now point at `res://items/art/generated/*_white_tier.png`.
+- Headless Godot boot was attempted with the documented local console binary, but it crashed with signal 11 before project logs. Per `docs/DEV_WORKFLOW.md`, local verification is blocked; visual/editor verification is still needed to judge fit inside the 120x144 equipment cell.
+
+---
+
+## 2026-05-14 - Magic-tier item art replacement
+
+Continued the item-art pass into rarity-1 / magic-tier gear. Generated and converted seven 512x640 PNG cutouts with alpha, object-only framing, bottom-up/3/4-ish perspective, and no baked rarity frame/glow. Wired the existing item bases to the new textures, keeping all item IDs, stats, abilities, drop weights, affix pools, and descriptions unchanged:
+
+- `base_iron_sword` -> `res://items/art/generated/base_iron_sword_magic_tier.png`
+- `base_chain_mail` -> `res://items/art/generated/base_chain_mail_magic_tier.png`
+- `base_leather_cap` -> `res://items/art/generated/base_leather_cap_magic_tier.png`
+- `base_battle_gloves` -> `res://items/art/generated/base_battle_gloves_magic_tier.png`
+- `base_scout_boots` -> `res://items/art/generated/base_scout_boots_magic_tier.png`
+- `base_apprentice_charm` -> `res://items/art/generated/base_apprentice_charm_magic_tier.png`
+- `base_apprentice_staff` -> `res://items/art/generated/base_apprentice_staff_magic_tier.png`
+
+The generated chroma-key source PNGs remain beside the final cutouts for iteration; original generated images under Codex's generated-images folder were left untouched.
+
+Verification:
+- Confirmed every final magic-tier cutout is 512x640 and has transparent corners.
+- Confirmed all seven rarity-1 item bases now point at `res://items/art/generated/*_magic_tier.png`.
+- `git diff --check` passed for the touched magic-tier item resources.
+- Headless Godot boot was attempted with the documented local console binary, but it crashed with signal 11 before project logs. Per `docs/DEV_WORKFLOW.md`, local verification is blocked; visual/editor verification is still needed in the 120x144 equipment cells.
+
+---
+
+## 2026-05-14 - Item visual tier plan documented
+
+Saved the item-art rules into `docs/ITEM_VISUAL_TIERS.md` after the common/magic replacement passes and external ARPG/UI readability research. The doc defines the project asset rules for item PNGs, tier-by-tier material/craftsmanship progression, slot ladders, mobile readability checks, and the remaining replacement order (Rare -> Epic -> Legendary -> final equipment-screen pass).
+
+Added a pointer in `CLAUDE.md`'s "Working here" list and in "Asset Strategy" so future sessions read the tier rules before generating or replacing item textures. No gameplay resources were changed in this step.
+
+Verification:
+- Documentation-only change; no Godot run needed.
+
+---
+
+## 2026-05-14 - Item naming plan documented
+
+Added `docs/ITEM_NAMING.md` as a companion to the item visual tier guide. It captures ARPG-inspired naming patterns for item bases, rarity tiers, slot vocabularies, affix display lines, future rolled item names, and the hard distinction between stable internal IDs (`base_id`, `affix_id`, filenames) and player-facing names.
+
+Linked the naming guide from `CLAUDE.md`'s "Working here" list and "Asset Strategy" section so future item additions/renames consult it alongside `docs/ITEM_VISUAL_TIERS.md`. No item resources or gameplay data were changed.
+
+Verification:
+- Documentation-only change; no Godot run needed.
+
+---
+
+## 2026-05-14 - Item implementation audit against art/naming plans
+
+Audited the current item implementation against `docs/ITEM_VISUAL_TIERS.md` and `docs/ITEM_NAMING.md`. Common and magic-tier bases now follow the generated transparent PNG convention; rare, epic, and legendary bases still use older JPG art and remain next in the documented replacement queue rather than being treated as regressions.
+
+Fixed one data mismatch found during the audit: `base_leather_cap` is named and drawn as a helm item but was still assigned to the Armor slot, so its slot is now `ItemBase.Slot.HELM`. Updated the `ItemBase.icon_texture` comment to point future art work at the generated PNG convention and the item visual tier guide.
+
+Verification:
+- `git diff --check` passed for `items/ItemBase.gd`, `items/bases/base_leather_cap.tres`, and `SESSIONS.md`.
+
+---
+
+## 2026-05-14 - Rare-tier item art replacement
+
+Continued the item-art replacement pass into rarity-2 / rare-tier gear. Generated and converted seven 512x640 transparent PNG cutouts with object-only framing, bottom-up/3/4-ish perspective, rare-tier steel/leather/gem craftsmanship, and no baked background, rarity frame, text, or glow. Wired the existing item bases to the new textures, keeping all item IDs, names, stats, abilities, affix pools, drop weights, and descriptions unchanged:
+
+- `base_steel_sword` -> `res://items/art/generated/base_steel_sword_rare_tier.png`
+- `base_hunter_bow` -> `res://items/art/generated/base_hunter_bow_rare_tier.png`
+- `base_plate_armor` -> `res://items/art/generated/base_plate_armor_rare_tier.png`
+- `base_captain_helm` -> `res://items/art/generated/base_captain_helm_rare_tier.png`
+- `base_focus_hood` -> `res://items/art/generated/base_focus_hood_rare_tier.png`
+- `base_archer_gloves` -> `res://items/art/generated/base_archer_gloves_rare_tier.png`
+- `base_amulet_wisdom` -> `res://items/art/generated/base_amulet_wisdom_rare_tier.png`
+
+Kept the generated chroma-key source PNGs beside the final cutouts for iteration and added matching Godot `.import` metadata for the new rare-tier PNGs. Updated `docs/ITEM_VISUAL_TIERS.md` so rare tier is marked complete and epic tier is now next in the replacement queue.
+
+Verification:
+- Confirmed every final rare-tier cutout is 512x640 and has transparent corners.
+- Confirmed all seven rarity-2 item bases now point at `res://items/art/generated/*_rare_tier.png`.
+- Reviewed a contact sheet at `tmp/imagegen/rare_tier_contact_sheet.png`; regenerated `base_amulet_wisdom` once so the chain loop is fully inside the frame.
+- `git diff --check` passed for the touched rare-tier item resources, `docs/ITEM_VISUAL_TIERS.md`, and `SESSIONS.md`.
+- Headless Godot boot was attempted with the documented local console binary, but it crashed with signal 11 before project logs. Per `docs/DEV_WORKFLOW.md`, local runtime verification is blocked; visual/editor verification is still needed in the 120x144 equipment cells.
+
+---
+
+## 2026-05-14 - Epic-tier item art replacement
+
+Continued the item-art replacement pass into rarity-3 / epic-tier gear. Generated and converted three 512x640 transparent PNG cutouts with object-only framing, bottom-up/3/4-ish perspective, refined silhouettes, moonsteel/dark leather/silver filigree materials, contained violet magic cues, and no baked background, rarity frame, text, or glow. Wired the existing item bases to the new textures, keeping all item IDs, names, stats, abilities, affix pools, drop weights, and descriptions unchanged:
+
+- `base_elven_blade` -> `res://items/art/generated/base_elven_blade_epic_tier.png`
+- `base_guardian_greaves` -> `res://items/art/generated/base_guardian_greaves_epic_tier.png`
+- `base_commander_seal` -> `res://items/art/generated/base_commander_seal_epic_tier.png`
+
+Kept the generated chroma-key source PNGs beside the final cutouts for iteration and added matching Godot `.import` metadata for the new epic-tier PNGs. Updated `docs/ITEM_VISUAL_TIERS.md` so epic tier is marked complete and legendary tier is now next in the replacement queue.
+
+Verification:
+- Confirmed every final epic-tier cutout is 512x640 and has transparent corners.
+- Confirmed all three rarity-3 item bases now point at `res://items/art/generated/*_epic_tier.png`.
+- Reviewed a contact sheet at `tmp/imagegen/epic_tier_contact_sheet.png`; silhouettes are fully framed and readable.
+- `git diff --check` passed for the touched epic-tier item resources, `docs/ITEM_VISUAL_TIERS.md`, and `SESSIONS.md`.
+- Headless Godot boot was attempted with the documented local console binary, but it crashed with signal 11 before project logs. Per `docs/DEV_WORKFLOW.md`, local runtime verification is blocked; visual/editor verification is still needed in the 120x144 equipment cells.
+
+---
+
+## 2026-05-14 - Legendary-tier item art replacement
+
+Completed the item-art replacement ladder by generating and converting the rarity-4 / legendary-tier `Demon Core` into a 512x640 transparent PNG cutout with object-only framing, bottom-up/3/4-ish perspective, obsidian/infernal metal/demon bone materials, ancient gold binding, and contained molten energy. The image keeps the magic inside the object and cracks, with no baked background, rarity frame, text, or external aura.
+
+Wired `base_demon_core` to `res://items/art/generated/base_demon_core_legendary_tier.png`, keeping its item ID, name, slot, rarity, stats, abilities, affix pools, drop weight, and description unchanged. Kept the generated chroma-key source PNG beside the final cutout and added matching Godot `.import` metadata. Updated `docs/ITEM_VISUAL_TIERS.md` so legendary tier is marked complete; the remaining item-art work is the final equipment-screen visual pass.
+
+Verification:
+- Confirmed the final legendary cutout is 512x640 and has transparent corners.
+- Confirmed `base_demon_core` now points at `res://items/art/generated/base_demon_core_legendary_tier.png`.
+- Reviewed a contact sheet at `tmp/imagegen/legendary_tier_contact_sheet.png`; silhouette is fully framed and readable.
+- `git diff --check` passed for `items/bases/base_demon_core.tres`, `docs/ITEM_VISUAL_TIERS.md`, and `SESSIONS.md`.
+- Headless Godot boot was attempted with the documented local console binary, but it crashed with signal 11 before project logs. Per `docs/DEV_WORKFLOW.md`, local runtime verification is blocked; visual/editor verification is still needed in the 120x144 equipment cells.
+
+---
+
+## 2026-05-14 - Static equipment-cell item art audit
+
+Ran a final static item-art QA pass against the real EquipmentScreen cell constraints. `ui/EquipmentScreen.gd` uses 120x144 gear cells, and `ui/ItemIcon.gd` draws item textures inside an approximately 100.8x124.8 inset texture rect, so generated two contact sheets that mimic that framing:
+
+- `tmp/imagegen/item_equipment_cell_audit_120x144.png`
+- `tmp/imagegen/item_equipment_cell_audit_half_size.png`
+
+The first audit script initially omitted the three starter items because their `.tres` files rely on `ItemBase`'s default `rarity = COMMON`; regenerated the sheets with default-rarity handling and confirmed all 24 item bases appear. The full set is structurally complete: every item base now references a generated transparent PNG and no generated item resource still points at the old JPG art. Visual review of the static sheets found no must-fix cropping, padding, or readability issue; thin silhouettes like bows/staves remain the weakest at half-size but still read as their slot.
+
+Updated `docs/ITEM_VISUAL_TIERS.md` to mark the static equipment-cell audit complete. The only remaining art QA is an in-editor EquipmentScreen pass once local Godot can run reliably.
+
+Verification:
+- Confirmed all 24 item bases are represented in the 120x144 audit sheet.
+- Confirmed all item bases point at `res://items/art/generated/*.png`.
+- Confirmed all 24 final item PNGs are 512x640 and have transparent corners.
+- `git diff --check` passed for `docs/ITEM_VISUAL_TIERS.md` and `SESSIONS.md`.
+- Headless Godot boot was attempted with the documented local console binary, but it crashed with signal 11 before project logs. Per `docs/DEV_WORKFLOW.md`, live EquipmentScreen verification remains blocked locally.
+
+---
+
+## 2026-05-14 - Skills page unification + dead-code cleanup
+
+Replaced the split Skills / Talents tabs in `HeroesHub` with one unified Skills page. The active loadout, passive loadout, mod choice, and skill-tree purchases now live on a single embedded screen with a tab-filtered tree list and a right-side inspector. Rejected Gemini's "Pan & Zoom Web" proposal — trees are intentionally curated at ~25 nodes per hero, so a Diablo-Immortal-style list + tabs + side inspector fits the data better than a Path-of-Exile-scale canvas.
+
+New screen: [ui/HeroSkillsPage.gd](ui/HeroSkillsPage.gd) + `.tscn`. Three bands (active loadout / passive loadout / tree list), an `All / Skills / Passives / Mods` tab filter, a fixed 460-wide inspector panel with three render modes (`_INSP_ACTIVE_SLOT`, `_INSP_PASSIVE_SLOT`, `_INSP_TREE_NODE`), and a "Reset to default" button in the header. Inspector content + selection are dropped wholesale when `_last_refreshed_hero_id` diverges from `LoadoutState.selected_hero_id`, fixing a hero-switch leak class. Connects + disconnects 7 EventBus signals per [Preventive Bug Rule 3]. Node rows + mod status widgets were lifted verbatim from the prior `HeroSkillTreeScreen.gd` body. SkillGlyph icons wired into the active slot cards, ACTIVE_RANK / MOD tree rows, and the inspector header — same renderer the in-level `SkillBar` already uses, so the equip UI and the in-level UI now look like a set.
+
+Wired up starter-loadout authoring: new `@export var starter_skill_ids: Array[String]` on [heroes/HeroData.gd](heroes/HeroData.gd); `LoadoutState._default_equipped_for` prefers it (filtered through `unlocked_skill_ids`, padded to cap), falls back to the prior "first N unlocked" rule when empty. Authored the per-hero starters: warrior `[summon_soldiers, bless]`, mage `[fireball, mana_shield]`, ranger `[volley, snare_trap]` — values match what the implicit rule resolved to today, so behavior is unchanged. Added [`LoadoutState.reset_active_loadout_to_default`](autoloads/LoadoutState.gd) which re-applies the starter via per-slot `set_equipped_skill` calls (fires `hero_skill_equipped` signals so the in-level `SkillBar` stays consistent). The Skills page's "Reset to default" button calls it and then `_persist()`.
+
+Cleanup pass: deleted the now-unreachable `ui/HeroSkillTreeScreen.gd` + `.tscn` + `.gd.uid`. Slimmed [ui/HeroesHub.gd](ui/HeroesHub.gd) from 1578 to 763 lines by deleting the inline drag-grid Skills sub-view + `_SkillTile` / `_SkillSlot` classes + 19 dead helper functions, plus their fields, constants, and dead clears in `_open_sub_view` / `_close_sub_view`. Preserved the `HallPortrait` inner class (still used by `_build_hero_hall`). Sidebar nav collapsed to three entries (Overview / Equip / Skills); the skills nav badge now surfaces unspent skill points (`%d★`) as a call-to-action, falling back to `%d/%d` equipped-cap when nothing's left to spend. Added one new signal `EventBus.skill_node_inspected(kind, content_id, slot_index)` (reserved for future listeners). Updated CLAUDE.md Preventive Bug Rule 3 to reference [ui/HeroSkillsPage.gd](ui/HeroSkillsPage.gd) instead of the deleted tree screen, and two stale doc comments in HeroesHub that still mentioned the Talents tab.
+
+Audited save/load round-trip via three parallel agents: all five skills state dicts (`hero_equipped_skills`, `hero_equipped_passives`, `hero_skill_mods`, `hero_skill_nodes`, `hero_skill_points`) persist correctly; `starter_skill_ids` is authored content only and never reaches `user://save.json`; `SAVE_VERSION` stays at 5 (no schema reshape). Every mutator on the Skills page ends in `_persist()` before returning. One latent gap noted but not fixed: `base_hero.gd` doesn't listen to `hero_passive_equipped`, so a passive equipped mid-run wouldn't apply to a live hero until respawn. Unreachable today since the Skills tab is only available from the WorldMap.
+
+Verification:
+- Headless Godot boot clean, no parse errors.
+- `gut_cmdln.gd -gdir=res://tests/unit -gexit`: 37/37 pass, 272 asserts.
+- Manual UI verification still pending in the editor (player visual confirmation of icons, tab filter, drawer, hero-switch state reset).
+
+---
+
+## 2026-05-14 - Hero XP recap, save-loss fix, skill audit fixes
+
+Continued from the unified Skills page work earlier the same day. Three threads completed back-to-back.
+
+**(1) Level-up celebration + GameOverScreen XP recap.** Hero leveling was silent — the HUD badge just ticked up. Added an `_on_hero_leveled_up` handler in [autoloads/VFXSpawner.gd](autoloads/VFXSpawner.gd) that fires a `Toast.show_message("⚡ LEVEL UP!  <hero_name> is Lv N")` + `SoundManager.play_sfx("hero_level_up")` per crossed threshold (multi-level kills naturally queue multiple toasts). Registered `"hero_level_up"` in [autoloads/SoundManager.gd](autoloads/SoundManager.gd) `SFX_PATHS` — `audio/sfx/hero_level_up.wav` can be dropped later; missing file logs once and skips. For end-of-run feedback, extended [autoloads/RunState.gd](autoloads/RunState.gd) with `round_xp_gained: int` + `round_hero_start_level: int` (snapshot in `reset_for_level`) + `record_round_xp(amount)`; [autoloads/MetaProgression.gd `add_hero_xp`](autoloads/MetaProgression.gd) records the scaled amount before emitting. [ui/GameOverScreen.gd `_build_damage_breakdown`](ui/GameOverScreen.gd) now appends a `— Hero progression —` section showing `Knight: +450 XP` + `Lv 3 → Lv 5  (+2 ★)` whenever the run banked any XP; section is silently skipped if zero (instant-defeat case). Same string flows through Victory, Defeat, and Endless Game Over.
+
+**(2) Save-loss bug — root cause + fix.** User reported closing Godot losing all opened skills and items. Audit traced it to a class of missing persistence calls: **no mutator in `MetaProgression.gd` ever called `SaveManager.save_game()`**. `InventoryManager` had the `_persist()` pattern (Preventive Bug Rule 2), but MetaProgression never got the same treatment, so XP gained mid-level, levels crossed, skill points granted, tree-node purchases, meta-gold changes, encyclopedia unlocks, best times, and endless scores all reverted on the next boot. Added `_persist()` helper to MetaProgression (mirrors InventoryManager's pattern) and called it from `add_hero_xp`, `purchase_node`, `add_hero_skill_points`, `add_meta_gold`, `spend_meta_gold`, `record_stars`, `try_unlock_encyclopedia`, `try_record_best_time`, `try_record_endless_score`, `submit_endless_score`. `reset()` deliberately doesn't save (matches InventoryManager carve-out for Reset Progress). Defense-in-depth: added a `_notification` handler to [autoloads/SaveManager.gd](autoloads/SaveManager.gd) that catches `NOTIFICATION_WM_CLOSE_REQUEST` / `NOTIFICATION_WM_GO_BACK_REQUEST` / `NOTIFICATION_APPLICATION_PAUSED` and forces a final `save_game()` — protects against any future mutator we forget to wire and flushes mid-level closes on mobile. Auto-accept-quit stays at its default; we piggyback on the broadcast rather than gating the quit.
+
+**(3) Five audit findings (P2/P3) — all fixed.**
+
+- **P2-1: Tree nodes buyable before target skill unlocks.** `MetaProgression.can_purchase_node` only checked the node's own `level_required`, not the target `SkillData`'s. Added `_find_hero_skill` helper + gating block for ACTIVE_RANK / MOD nodes; UI now rejects with `"skill unlocks at Lv N"` so players can't waste ★ on rally_cry_r2 at L3 while Rally Cry itself unlocks at L6.
+- **P3-2: `cast_skill` consumed cooldown even when `apply()` no-oped.** Changed [heroes/skills/skill_data.gd](heroes/skills/skill_data.gd) base `apply()` signature `void` → `bool` (defaults `true`). Updated all 6 subclasses (`shield_bash`, `bless_soldiers`, `buff`, `falcon_storm`, `marked_shot`, `summon_soldiers`) to return `false` on every no-op path. Falcon Storm split into sync `apply()` (validates + kicks off, returns bool) + async `_run_storm()` so the bool contract works around its `await` loop. [heroes/base_hero.gd `cast_skill`](heroes/base_hero.gd) now bails on `false` before consuming cooldown or emitting `hero_skill_used` / `skill_cooldown_started`.
+- **P2-3: PPT undercounted because every skill's `power_tier` defaulted to 1.** Authored explicit tiers on all 13 skill `.tres` files: T1 utility (bless, summon_soldiers, hunter_stance), T2 solid impact (fireball, volley, shield_bash, snare_trap, mana_shield, marked_shot, rally_cry, frost_nova), T3 capstone-scale (meteor, falcon_storm). `LoadoutState.get_effective_ppt` now reflects real loadout strength.
+- **P2-2: Volley's "strong vs flying" copy was unimplemented.** Added `@export var flying_bonus_mult: float = 1.0` to [heroes/skills/shield_bash_skill_data.gd](heroes/skills/shield_bash_skill_data.gd) (default 1.0 keeps Shield Bash / Fireball / Frost Nova / Snare Trap / Meteor unchanged). In the AoE loop, if the enemy is flying AND `flying_bonus_mult > 1`, scale the hit's damage. [heroes/data/skills/skill_volley.tres](heroes/data/skills/skill_volley.tres) sets `flying_bonus_mult = 1.3` — the "+30% damage to flying targets is implicit" claim in the Skyward Aim mod description is now actually delivered.
+- **P3-1: `skill_power` was damage-only.** Exposed `skill_power_mult` as a separate ctx key in [heroes/base_hero.gd `_build_skill_ctx`](heroes/base_hero.gd) (alongside the existing fold-into-damage_mult so damage skills don't double-apply). Non-damage outputs now scale: Bless `health_bonus` + `buff_duration`, Summon Soldiers `lifetime` (count deliberately not — bigger squads are loud), BuffSkillData `buff_duration` (Mana Shield / Hunter Stance), ShieldBashSkillData family `on_hit_slow_duration` (Frost Nova / Snare Trap). Mage SP gear / passives / capstone now feel meaningful across the kit, not just on damage skills.
+
+Verification:
+- Headless boot clean, no parse errors.
+- `gut_cmdln.gd -gdir=res://tests/unit -gexit`: 37/37 pass, 272 asserts.
+- Manual primary tests pending: (a) kill enemies mid-level, close Godot, reopen — XP/level/skill points survive; (b) buy a tree node, close, reopen — purchase survives; (c) tap a SINGLE-target skill with no enemy in range — cooldown not consumed; (d) Volley a flying mob — damage is 30% higher than against ground; (e) equip a +20% skill_power item — Mana Shield's 8s duration becomes 9.6s.
+
+---
+
+## 2026-05-14 - Second audit batch + completion-write timing + pause/label fixes
+
+Follow-up sweep after a second round of audit findings (5 P1/P2/P3 items, then a sixth catch, then 2 more). All addressed in one continuous pass.
+
+**Heroic / Iron defeats no longer counted as completions (two-layer defense).** [ui/GameOverScreen.gd `_on_continue_pressed`](ui/GameOverScreen.gd) only calls `record_stars` when `RunState.stars_earned > 0`; defeat leaves stars_earned at 0 so tapping the World Map button on loss can't flip `heroic_complete` / `iron_complete`. Belt-and-suspenders: [autoloads/MetaProgression.gd `record_stars`](autoloads/MetaProgression.gd) now early-returns on `stars <= 0`, so any future caller forgetting the outer gate can't pollute progression either.
+
+**Completion writes moved to victory time.** Previously heroic / iron clears only persisted when the player tapped Continue; closing Godot on the Victory screen pre-Continue lost the completion. Added `MetaProgression.record_stars(mode, level_id, stars)` directly in [ui/GameOverScreen.gd `_on_all_waves_completed`](ui/GameOverScreen.gd) before `_show("Victory!", …)` and before the `level_completed` emit. `record_stars` already flushes via `_persist()`, so the completion hits disk before any user input. The Continue path's redundant `record_stars` stays as an idempotent safety net.
+
+**SaveManager `_on_level_completed` mode-gated.** [autoloads/SaveManager.gd](autoloads/SaveManager.gd) — the `level_stars[level_id]` bump and `_try_unlock_next_level` chain now run only when `_mode == "campaign"`. Heroic clears no longer pollute campaign stars or auto-unlock the next campaign level; the unconditional `save_game()` at the end still persists the heroic/iron completion that `record_stars` already wrote.
+
+**Level-up persistence is atomic.** [autoloads/MetaProgression.gd](autoloads/MetaProgression.gd) added private `_grant_skill_points_silent(hero_id, count)` (same mutation + `hero_skill_points_changed` emit as `add_hero_skill_points`, but skips `_persist`). `add_hero_xp`'s level-up loop and `sync_hero_progression_to_level`'s catch-up loop both call the silent variant; the consistent state (`level` + `xp` + skill points + auto-SLOT_UNLOCK nodes + `last_synced_level`) lands in a single `_persist()` at the end of each function. Closes the mobile-kill window where a process death mid-loop previously wrote skill points without their matching XP/level catch-up.
+
+**Hero-summoned soldiers credit the summoner for XP.** Added `var _summoner: Node = null` on [soldiers/base_soldier.gd](soldiers/base_soldier.gd) (barracks-spawned soldiers leave it null and earn nothing for their tower — towers don't have XP). [heroes/skills/summon_soldiers_skill_data.gd `apply`](heroes/skills/summon_soldiers_skill_data.gd) sets `soldier._summoner = hero` on every summon. [enemies/base_enemy.gd `_die`](enemies/base_enemy.gd) XP routing now resolves an `xp_recipient`: hero-direct hits go straight; `BaseSoldier` hits with a valid `_summoner` funnel to that hero. Tower-direct hits + barracks-soldier kills still earn nothing, which is correct.
+
+**XP popup matches the recap.** [autoloads/MetaProgression.gd `add_hero_xp`](autoloads/MetaProgression.gd) emits `hero_xp_gained.emit(scaled)` instead of `emit(amount)`. Floating "+N XP" text now reflects the actually-banked post-MOD_HERO_XP amount, matching `RunState.round_xp_gained` and the GameOverScreen recap totals.
+
+**Pause-sensitive gameplay timers freeze with the SceneTree.** Godot 4.6's `create_timer` defaults `process_always = true`, so timers tick through pause. Fixed three gameplay timers by passing the explicit `false`:
+- [heroes/base_hero.gd respawn timer](heroes/base_hero.gd) — hero respawn no longer counts down on the GameOverScreen pause or tactical pause. The stale comment claiming the default was already pause-aware was corrected.
+- [heroes/skills/falcon_storm_skill_data.gd inter-tick wait](heroes/skills/falcon_storm_skill_data.gd) — storm stops mid-cast during pause.
+- [towers/TowerBarracks.gd `_respawn_after`](towers/TowerBarracks.gd) — same class of bug; soldier respawn now freezes on pause so players can't gain free cooldown by pausing. WaveManager's spawn-interval timer left untouched (complex interaction with its session_id machinery — needs its own pass).
+
+**Hero Hall + Skills badge show per-hero skill points, not account stars.** [ui/HeroesHub.gd `_refresh_hero_hall`](ui/HeroesHub.gd) READY CHECK "Points N ★" line now reads `MetaProgression.get_skill_points(hid)` (the selected hero's unspent tree points). [ui/HeroesHub.gd `_refresh_nav_badges`](ui/HeroesHub.gd) Skills tab call-to-action badge uses the same source. Previously both read `get_available_stars()` (account-wide meta-upgrade stars), which falsely advertised "spendable!" on heroes who actually had 0 unspent points. Also wired `EventBus.hero_skill_points_changed` → `_refresh_nav_state` + `_refresh_hero_hall` so the badge and label react when points are granted (level-up) or spent (tree purchase).
+
+**First audit batch (same session, pre-rollup) — for completeness:**
+- **P2-1**: `MetaProgression.can_purchase_node` now gates ACTIVE_RANK / MOD nodes by their target SkillData's `level_required` via new `_find_hero_skill` helper — players can't waste ★ on rally_cry_r2 at L3 while Rally Cry unlocks at L6.
+- **P3-2**: `SkillData.apply` signature `void` → `bool`; all 6 subclasses (`shield_bash`, `bless_soldiers`, `buff`, `falcon_storm`, `marked_shot`, `summon_soldiers`) return `false` on no-op paths. `BaseHero.cast_skill` skips cooldown + signal emit on `false`. Falcon Storm split into sync `apply()` + async `_run_storm()` so the bool contract survives `await`.
+- **P2-3**: Authored `power_tier` explicitly on all 13 skill `.tres` files (T1 utility / T2 solid / T3 capstone) so `LoadoutState.get_effective_ppt` reflects real loadout strength.
+- **P2-2**: Added `flying_bonus_mult` to `shield_bash_skill_data.gd` (default 1.0); `skill_volley.tres` sets it to 1.3 so the "+30% damage to flying" copy in the Skyward Aim mod is actually delivered.
+- **P3-1**: Exposed `skill_power_mult` as its own ctx key in [base_hero.gd `_build_skill_ctx`](heroes/base_hero.gd) (alongside the existing damage_mult fold). Non-damage outputs now scale: Bless `health_bonus`+`buff_duration`, Summon Soldiers `lifetime`, BuffSkillData `buff_duration`, ShieldBashSkillData family `on_hit_slow_duration`. Mage SP gear / passives / capstone now feel meaningful across the whole kit.
+
+Verification:
+- Headless boot clean, no parse errors.
+- `gut_cmdln.gd -gdir=res://tests/unit -gexit`: 37/37 pass, 272 asserts.
+- Manual primary tests pending: (a) heroic defeat → tap World Map → confirm `heroic_complete[level]` still false; (b) heroic victory → close on victory screen pre-Continue → reopen → completion persisted; (c) heroic win → confirm campaign stars NOT bumped; (d) gain XP mid-level → close mid-loop → reopen → level + xp + points consistent; (e) Knight Summon Soldiers → summoned soldier last-hits an enemy → hero XP rises; (f) MOD_HERO_XP > 1 → floating "+N XP" matches recap; (g) tactical pause during respawn / Falcon Storm / barracks respawn → countdowns freeze; (h) buy a tree node → Skills badge updates immediately, shows hero's remaining ★ not account ★.

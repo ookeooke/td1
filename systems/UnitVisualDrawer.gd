@@ -29,7 +29,7 @@ static func draw_swing_arc(ci: CanvasItem, v: UnitVisualData, lunge_dir: Vector2
 		pts.append(Vector2(cos(ang), sin(ang)) * reach)
 	var col: Color = v.accent_color
 	col.a = (1.0 - progress) * 0.8
-	ci.draw_polyline(pts, col, 3.5, true)
+	ci.draw_polyline(pts, col, 3.5, false)
 
 
 # Swing arc + trailing ghost copies. Ghost arcs are angularly trailed behind
@@ -68,7 +68,7 @@ static func _draw_weapon_shape(ci: CanvasItem, v: UnitVisualData, angle: float, 
 			# Straight thrust — two-point line extending farther than the arc.
 			var inner: Vector2 = Vector2.from_angle(angle) * (body_r * 0.3) * reach_factor
 			var outer: Vector2 = Vector2.from_angle(angle) * (body_r + 22.0) * reach_factor
-			ci.draw_line(inner, outer, col, 4.0, true)
+			ci.draw_line(inner, outer, col, 4.0, false)
 		UnitVisualData.WeaponType.STAFF:
 			# Short radial flick — 30° arc closer to the body.
 			var reach_s: float = (body_r + 6.0) * reach_factor
@@ -78,7 +78,7 @@ static func _draw_weapon_shape(ci: CanvasItem, v: UnitVisualData, angle: float, 
 				var frac: float = float(i) / 4.0
 				var a: float = angle + lerp(-half_span_s, half_span_s, frac)
 				pts_s.append(Vector2(cos(a), sin(a)) * reach_s)
-			ci.draw_polyline(pts_s, col, 4.5, true)
+			ci.draw_polyline(pts_s, col, 4.5, false)
 		UnitVisualData.WeaponType.CLAWS:
 			# Three parallel rake lines.
 			var reach_c: float = (body_r + 12.0) * reach_factor
@@ -88,14 +88,14 @@ static func _draw_weapon_shape(ci: CanvasItem, v: UnitVisualData, angle: float, 
 				var lateral: Vector2 = side * float(i) * 6.0
 				var near: Vector2 = forward * (body_r * 0.5) + lateral
 				var far: Vector2 = forward * reach_c + lateral
-				ci.draw_line(near, far, col, 2.5, true)
+				ci.draw_line(near, far, col, 2.5, false)
 		UnitVisualData.WeaponType.BOW:
 			# Arrow streak — single forward dart for the release "twang."
 			# Shorter near-end than SPEAR (the arrow leaves the bow, doesn't
 			# extend from it), longer reach to suggest the projectile flying.
 			var inner_b: Vector2 = Vector2.from_angle(angle) * (body_r * 0.4) * reach_factor
 			var outer_b: Vector2 = Vector2.from_angle(angle) * (body_r + 18.0) * reach_factor
-			ci.draw_line(inner_b, outer_b, col, 2.5, true)
+			ci.draw_line(inner_b, outer_b, col, 2.5, false)
 		_:
 			# SWORD (default) — 60° slash arc.
 			var reach: float = (body_r + 14.0) * reach_factor
@@ -105,7 +105,7 @@ static func _draw_weapon_shape(ci: CanvasItem, v: UnitVisualData, angle: float, 
 				var frac: float = float(i) / 6.0
 				var a: float = angle + lerp(-half_span, half_span, frac)
 				pts.append(Vector2(cos(a), sin(a)) * reach)
-			ci.draw_polyline(pts, col, 3.5, true)
+			ci.draw_polyline(pts, col, 3.5, false)
 
 
 # Rotating dashed ring. Used for status overlays (slow / stun) so players
@@ -117,6 +117,51 @@ static func draw_status_ring(ci: CanvasItem, radius: float, color: Color, dashes
 	for i in d:
 		var start: float = rotation_t + float(i) * slot
 		ci.draw_arc(Vector2.ZERO, radius, start, start + span, 6, color, width)
+
+
+# Death-mark skull glyph drawn above the cursed enemy's head. Position is
+# positional (above the body), not color-only, so the curse reads even on
+# enemies whose palette already has orange. `bob_t` drives a slow vertical
+# float; `body_top_y` is the enemy's body-top y in local coords (negative).
+static func draw_marked_skull(ci: CanvasItem, body_top_y: float, bob_t: float) -> void:
+	var center: Vector2 = Vector2(0.0, body_top_y - 18.0 + sin(bob_t * 2.5) * 2.0)
+	_draw_skull_glyph(ci, center, 7.0, true)
+
+
+# Skull glyph primitive — bone cranium, eye sockets, hinged jaw. Reused by
+# the floating death-mark indicator (with bob + halo) and the chest-emblem
+# accent (no halo, smaller). `with_halo` toggles the soft outer glow.
+static func _draw_skull_glyph(ci: CanvasItem, center: Vector2, skull_r: float, with_halo: bool) -> void:
+	var bone: Color = Color(0.95, 0.92, 0.82, 0.95)
+	var dark: Color = Color(0.10, 0.05, 0.12, 1.0)
+	if with_halo:
+		var glow: Color = Color(0.95, 0.55, 0.30, 0.35)
+		ci.draw_circle(center, skull_r + 4.0, glow)
+	ci.draw_circle(center, skull_r, bone)
+	ci.draw_arc(center, skull_r, 0.0, TAU, 10, dark, 1.5)
+	# Snap socket / jaw offsets to whole pixels so the glyph reads as a
+	# stable sticker, not a shimmering blob, with AA off.
+	var eye_off: float = roundf(skull_r * 0.42)
+	var eye_r: float = roundf(skull_r * 0.30)
+	var eye_y: float = roundf(-skull_r * 0.05)
+	ci.draw_circle(center + Vector2(-eye_off, eye_y), eye_r, dark)
+	ci.draw_circle(center + Vector2(eye_off, eye_y), eye_r, dark)
+	var jaw_w: float = roundf(skull_r * 0.85)
+	var jaw_top: float = roundf(skull_r * 0.55)
+	var jaw_bot: float = roundf(skull_r * 1.15)
+	var jaw_w_b: float = roundf(skull_r * 0.60)
+	var jaw: PackedVector2Array = PackedVector2Array([
+		center + Vector2(-jaw_w * 0.5, jaw_top),
+		center + Vector2(jaw_w * 0.5, jaw_top),
+		center + Vector2(jaw_w_b * 0.5, jaw_bot),
+		center + Vector2(-jaw_w_b * 0.5, jaw_bot),
+	])
+	ci.draw_colored_polygon(jaw, bone)
+	var tick_y_top: float = jaw_top + 1.0
+	var tick_y_bot: float = jaw_bot - 0.5
+	for i in 3:
+		var x: float = -jaw_w * 0.25 + float(i) * (jaw_w * 0.25)
+		ci.draw_line(center + Vector2(x, tick_y_top), center + Vector2(x * 0.7, tick_y_bot), dark, 1.0, false)
 
 
 static func draw_hit_flash(ci: CanvasItem, v: UnitVisualData, amount: float, offset: Vector2 = Vector2.ZERO, scale: Vector2 = Vector2.ONE) -> void:
@@ -211,6 +256,9 @@ static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vecto
 	# at impact, 1 = follow-through low. Negative = no strike active.
 	var strike_t: float = ctx.get("strike_t", -1.0)
 	var strike_dir: Vector2 = ctx.get("strike_dir", Vector2.ZERO)
+	# cast_t in [0, 1]: 1 immediately after a skill cast fires, decaying to
+	# 0 over CAST_ANIM_DURATION. Used by the STAFF finial to flash on shot.
+	var cast_t: float = ctx.get("cast_t", 0.0)
 	var low_hp: bool = ctx.get("low_hp", false)
 	var body_col: Color = v.body_color * skin_tint
 	var head_col: Color = v.head_color * skin_tint
@@ -231,9 +279,9 @@ static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vecto
 
 	if v.shape == UnitVisualData.Shape.CIRCLE:
 		ci.draw_circle(Vector2.ZERO, v.radius, body_col)
-		ci.draw_arc(Vector2.ZERO, v.radius, 0, TAU, 24, v.outline_color, v.outline_width)
+		ci.draw_arc(Vector2.ZERO, v.radius, 0, TAU, 16, v.outline_color, v.outline_width)
 		if v.accent_band_color.a > 0.0:
-			ci.draw_arc(Vector2.ZERO, v.radius - v.outline_width, 0, TAU, 24, v.accent_band_color, 3.0)
+			ci.draw_arc(Vector2.ZERO, v.radius - v.outline_width, 0, TAU, 16, v.accent_band_color, 3.0)
 	else:
 		var half: Vector2 = v.body_size * 0.5
 		var rect: Rect2 = Rect2(-half, v.body_size)
@@ -252,7 +300,7 @@ static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vecto
 	# visibly in front of the body. Front arm raises during wind-up, then
 	# sweeps through a full arc during the strike commit.
 	if v.race != UnitVisualData.Race.NONE:
-		_draw_arms_and_weapon(ci, v, walk_t, walk_phase, wind_t, strike_t, strike_dir, arm_col)
+		_draw_arms_and_weapon(ci, v, walk_t, walk_phase, wind_t, strike_t, strike_dir, arm_col, cast_t)
 
 	_draw_accent(ci, v)
 
@@ -271,19 +319,19 @@ static func _draw_weapon_glow(ci: CanvasItem, v: UnitVisualData, angle: float, b
 		UnitVisualData.WeaponType.SPEAR:
 			var inner: Vector2 = Vector2.from_angle(angle) * (body_r * 0.2) * reach_factor
 			var outer: Vector2 = Vector2.from_angle(angle) * (body_r + 25.0) * reach_factor
-			ci.draw_line(inner, outer, col, 9.0, true)
+			ci.draw_line(inner, outer, col, 9.0, false)
 		UnitVisualData.WeaponType.CLAWS:
 			var reach_c: float = (body_r + 14.0) * reach_factor
 			var forward: Vector2 = Vector2.from_angle(angle)
 			var side: Vector2 = Vector2.from_angle(angle + PI * 0.5)
 			for i in range(-1, 2):
 				var lateral: Vector2 = side * float(i) * 6.0
-				ci.draw_line(forward * (body_r * 0.45) + lateral, forward * reach_c + lateral, col, 6.0, true)
+				ci.draw_line(forward * (body_r * 0.45) + lateral, forward * reach_c + lateral, col, 6.0, false)
 		UnitVisualData.WeaponType.BOW:
 			# Wider under-glow for the arrow streak.
 			var inner_b: Vector2 = Vector2.from_angle(angle) * (body_r * 0.3) * reach_factor
 			var outer_b: Vector2 = Vector2.from_angle(angle) * (body_r + 22.0) * reach_factor
-			ci.draw_line(inner_b, outer_b, col, 5.5, true)
+			ci.draw_line(inner_b, outer_b, col, 5.5, false)
 		_:
 			var reach: float = (body_r + 16.0) * reach_factor
 			var half_span: float = PI / 3.0
@@ -292,7 +340,7 @@ static func _draw_weapon_glow(ci: CanvasItem, v: UnitVisualData, angle: float, b
 				var frac: float = float(i) / 6.0
 				var a: float = angle + lerp(-half_span, half_span, frac)
 				pts.append(Vector2(cos(a), sin(a)) * reach)
-			ci.draw_polyline(pts, col, 8.0, true)
+			ci.draw_polyline(pts, col, 8.0, false)
 
 
 static func _draw_cape(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_phase: float) -> void:
@@ -320,7 +368,7 @@ static func _draw_cape(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_ph
 		Vector2(0.0, bottom_y + torso_r * 0.20),
 		Vector2(hem_w * 0.5 + flutter, bottom_y),
 		Vector2(shoulder_w * 0.5, top_y),
-	]), shade, maxf(1.5, v.outline_width * 0.35), true)
+	]), shade, maxf(1.5, v.outline_width * 0.35), false)
 
 
 static func _draw_wings(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_phase: float) -> void:
@@ -341,8 +389,8 @@ static func _draw_wings(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_p
 		var inner: Vector2 = Vector2(side * torso_r * 0.78, root_y + wing_h * 0.35)
 		var pts: PackedVector2Array = PackedVector2Array([root, tip, lower, inner])
 		ci.draw_colored_polygon(pts, col)
-		ci.draw_polyline(PackedVector2Array([root, tip, lower, inner, root]), shade, maxf(1.5, v.outline_width * 0.35), true)
-		ci.draw_line(root, lower, shade, maxf(1.0, v.outline_width * 0.25), true)
+		ci.draw_polyline(PackedVector2Array([root, tip, lower, inner, root]), shade, maxf(1.5, v.outline_width * 0.35), false)
+		ci.draw_line(root, lower, shade, maxf(1.0, v.outline_width * 0.25), false)
 
 
 static func _draw_body_polish(ci: CanvasItem, v: UnitVisualData) -> void:
@@ -352,7 +400,7 @@ static func _draw_body_polish(ci: CanvasItem, v: UnitVisualData) -> void:
 	col.a *= clampf(v.highlight_strength, 0.0, 1.0)
 	if v.shape == UnitVisualData.Shape.CIRCLE:
 		var r: float = v.radius
-		ci.draw_arc(Vector2(-r * 0.12, -r * 0.10), r * 0.62, deg_to_rad(210.0), deg_to_rad(300.0), 8, col, maxf(2.0, v.outline_width * 0.45), true)
+		ci.draw_arc(Vector2(-r * 0.12, -r * 0.10), r * 0.62, deg_to_rad(210.0), deg_to_rad(300.0), 8, col, maxf(2.0, v.outline_width * 0.45), false)
 		ci.draw_circle(Vector2(-r * 0.25, -r * 0.35), r * 0.10, col)
 		return
 	var half: Vector2 = v.body_size * 0.5
@@ -383,14 +431,14 @@ static func _draw_armor_plates(ci: CanvasItem, v: UnitVisualData) -> void:
 	ci.draw_colored_polygon(chest, plate)
 	ci.draw_polyline(PackedVector2Array([
 		chest[0], chest[1], chest[2], chest[3], chest[4], chest[0]
-	]), v.outline_color, outline_w, true)
+	]), v.outline_color, outline_w, false)
 	# Center ridge + belt line make the tiny torso read as metal armor.
-	ci.draw_line(Vector2(0.0, top_y + 2.0), Vector2(0.0, top_y + chest_h + torso_r * 0.10), v.outline_color, outline_w, true)
-	ci.draw_line(Vector2(-chest_w * 0.34, top_y + chest_h * 0.70), Vector2(chest_w * 0.34, top_y + chest_h * 0.70), v.outline_color, outline_w, true)
+	ci.draw_line(Vector2(0.0, top_y + 2.0), Vector2(0.0, top_y + chest_h + torso_r * 0.10), v.outline_color, outline_w, false)
+	ci.draw_line(Vector2(-chest_w * 0.34, top_y + chest_h * 0.70), Vector2(chest_w * 0.34, top_y + chest_h * 0.70), v.outline_color, outline_w, false)
 	if v.highlight_color.a > 0.0:
 		var shine: Color = v.highlight_color
 		shine.a *= clampf(maxf(v.highlight_strength, 0.25), 0.0, 1.0)
-		ci.draw_line(Vector2(-chest_w * 0.26, top_y + chest_h * 0.15), Vector2(-chest_w * 0.10, top_y + chest_h * 0.52), shine, outline_w, true)
+		ci.draw_line(Vector2(-chest_w * 0.26, top_y + chest_h * 0.15), Vector2(-chest_w * 0.10, top_y + chest_h * 0.52), shine, outline_w, false)
 
 
 static func _draw_shoulder_pads(ci: CanvasItem, v: UnitVisualData) -> void:
@@ -411,7 +459,7 @@ static func _draw_shoulder_pads(ci: CanvasItem, v: UnitVisualData) -> void:
 			c + Vector2(-pad_w * 0.70 * side, pad_h * 0.42),
 		])
 		ci.draw_colored_polygon(pts, col)
-		ci.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[4], pts[0]]), v.outline_color, outline_w, true)
+		ci.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[4], pts[0]]), v.outline_color, outline_w, false)
 
 
 # Soft dark ellipse under the body. Drawn at the enemy's local origin (not
@@ -422,11 +470,11 @@ static func draw_ground_shadow(ci: CanvasItem, v: UnitVisualData) -> void:
 	var w: float = torso_r * 1.3
 	var h: float = torso_r * 0.32
 	var y: float = torso_r * 0.95
-	# Approximate ellipse via filled polygon (16 verts is plenty for a small
-	# blob). Cheaper than draw_circle + scale tricks.
+	# Approximate ellipse via filled polygon. Chunky shadow reads fine at
+	# 10 verts and matches the silhouette polygonal feel.
 	var pts: PackedVector2Array = PackedVector2Array()
-	for i in 16:
-		var a: float = TAU * float(i) / 16.0
+	for i in 10:
+		var a: float = TAU * float(i) / 10.0
 		pts.append(Vector2(cos(a) * w * 0.5, y + sin(a) * h * 0.5))
 	ci.draw_colored_polygon(pts, Color(0.0, 0.0, 0.0, 0.28))
 
@@ -507,7 +555,7 @@ static func _draw_legs(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_ph
 # follow-through. strike_dir flips the swing direction so the weapon points
 # at the actual target. The right arm carries the held weapon (sword/staff/
 # spear/etc.) which travels with the hand throughout the arc.
-static func _draw_arms_and_weapon(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_phase: float, wind_t: float, strike_t: float, strike_dir: Vector2, arm_col: Color) -> void:
+static func _draw_arms_and_weapon(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_phase: float, wind_t: float, strike_t: float, strike_dir: Vector2, arm_col: Color, cast_t: float = 0.0) -> void:
 	var torso_r: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
 	var shoulder_y: float = -torso_r * 0.10
 	var shoulder_x: float = torso_r * 0.70
@@ -552,7 +600,7 @@ static func _draw_arms_and_weapon(ci: CanvasItem, v: UnitVisualData, walk_t: flo
 	_draw_arm_segment(ci, Vector2(-shoulder_x, shoulder_y), left_hand, arm_w, arm_col, v.outline_color, outline_w)
 	_draw_arm_segment(ci, Vector2(shoulder_x, shoulder_y), right_hand, arm_w, arm_col, v.outline_color, outline_w)
 	# Held weapon at the right hand. Skip CLAWS (claws are part of the hand).
-	_draw_held_weapon(ci, v, Vector2(shoulder_x, shoulder_y), right_hand, right_angle)
+	_draw_held_weapon(ci, v, Vector2(shoulder_x, shoulder_y), right_hand, right_angle, cast_t)
 
 
 static func _draw_arm_segment(ci: CanvasItem, shoulder: Vector2, hand: Vector2, arm_w: float, fill: Color, outline: Color, outline_w: float) -> void:
@@ -571,12 +619,12 @@ static func _draw_arm_segment(ci: CanvasItem, shoulder: Vector2, hand: Vector2, 
 	# Hand circle at the tip.
 	ci.draw_circle(hand, arm_w * 0.55, fill)
 	# Light outline along the arm.
-	ci.draw_line(shoulder + perp, hand + perp, outline, outline_w, true)
-	ci.draw_line(shoulder - perp, hand - perp, outline, outline_w, true)
+	ci.draw_line(shoulder + perp, hand + perp, outline, outline_w, false)
+	ci.draw_line(shoulder - perp, hand - perp, outline, outline_w, false)
 	ci.draw_arc(hand, arm_w * 0.55, 0.0, TAU, 12, outline, outline_w)
 
 
-static func _draw_held_weapon(ci: CanvasItem, v: UnitVisualData, shoulder: Vector2, hand: Vector2, _arm_angle: float) -> void:
+static func _draw_held_weapon(ci: CanvasItem, v: UnitVisualData, shoulder: Vector2, hand: Vector2, _arm_angle: float, cast_t: float = 0.0) -> void:
 	var dir: Vector2 = hand - shoulder
 	if dir.length_squared() < 0.001:
 		return
@@ -586,7 +634,7 @@ static func _draw_held_weapon(ci: CanvasItem, v: UnitVisualData, shoulder: Vecto
 		UnitVisualData.WeaponType.SPEAR:
 			# Long shaft past the hand + small triangle tip.
 			var shaft_end: Vector2 = hand + fwd * 38.0
-			ci.draw_line(hand - fwd * 8.0, shaft_end, Color(0.45, 0.30, 0.18), 4.0, true)
+			ci.draw_line(hand - fwd * 8.0, shaft_end, Color(0.45, 0.30, 0.18), 4.0, false)
 			var tip_pts: PackedVector2Array = PackedVector2Array([
 				shaft_end - side * 5.0,
 				shaft_end + side * 5.0,
@@ -594,11 +642,27 @@ static func _draw_held_weapon(ci: CanvasItem, v: UnitVisualData, shoulder: Vecto
 			])
 			ci.draw_colored_polygon(tip_pts, Color(0.78, 0.78, 0.74))
 		UnitVisualData.WeaponType.STAFF:
-			# Wooden shaft + glowing knob at the top.
+			# Wooden shaft + glowing knob at the top. When staff_finial_color
+			# is set (alpha > 0), the knob is data-driven (size + color) with
+			# a soft outer halo. Otherwise the legacy blue knob renders so
+			# the Mage and any other STAFF-wielding unit looks unchanged.
+			# `cast_t` (post-cast release flash, 0..1) swells the orb and
+			# brightens the core for ~CAST_ANIM_DURATION after each shot.
 			var top: Vector2 = hand + fwd * 30.0
-			ci.draw_line(hand - fwd * 6.0, top, Color(0.50, 0.32, 0.18), 4.5, true)
-			ci.draw_circle(top, 5.0, Color(0.55, 0.85, 1.0))
-			ci.draw_circle(top, 2.5, Color(1.0, 1.0, 1.0))
+			ci.draw_line(hand - fwd * 6.0, top, Color(0.50, 0.32, 0.18), 4.5, false)
+			var flash: float = clampf(cast_t, 0.0, 1.0)
+			if v.staff_finial_color.a > 0.0 and v.staff_finial_size > 0.0:
+				var halo: Color = v.staff_finial_color
+				halo.a *= 0.35 + flash * 0.45
+				var size_mult: float = 1.0 + flash * 0.9
+				ci.draw_circle(top, v.staff_finial_size * 1.6 * size_mult, halo)
+				ci.draw_circle(top, v.staff_finial_size * size_mult, v.staff_finial_color)
+				var core_r: float = maxf(1.5, v.staff_finial_size * 0.45) * (1.0 + flash * 0.5)
+				ci.draw_circle(top, core_r, Color(1.0, 1.0, 1.0, 0.9))
+			else:
+				var size_mult_d: float = 1.0 + flash * 0.7
+				ci.draw_circle(top, 5.0 * size_mult_d, Color(0.55, 0.85, 1.0))
+				ci.draw_circle(top, 2.5 * size_mult_d, Color(1.0, 1.0, 1.0))
 		UnitVisualData.WeaponType.CLAWS:
 			# Claws are part of the hand — skip the held weapon. The arm tip
 			# already reads as a fist; nothing to draw.
@@ -617,24 +681,24 @@ static func _draw_held_weapon(ci: CanvasItem, v: UnitVisualData, shoulder: Vecto
 			var half_span: float = PI * 0.45
 			ci.draw_arc(arc_center, arc_radius,
 				center_angle - half_span, center_angle + half_span,
-				14, bow_color, 3.0, true)
+				14, bow_color, 3.0, false)
 			# String — chord between the two limb tips.
 			var ang_a: float = center_angle - half_span
 			var ang_b: float = center_angle + half_span
 			var tip_a: Vector2 = arc_center + Vector2(cos(ang_a), sin(ang_a)) * arc_radius
 			var tip_b: Vector2 = arc_center + Vector2(cos(ang_b), sin(ang_b)) * arc_radius
-			ci.draw_line(tip_a, tip_b, string_color, 1.5, true)
+			ci.draw_line(tip_a, tip_b, string_color, 1.5, false)
 			# Nocked arrow — a small forward stub from the hand for the
 			# "ready to fire" silhouette. Drawn only when the hand is roughly
 			# at rest; the swing-arc trail handles the in-flight visual.
-			ci.draw_line(hand - fwd * 3.0, hand + fwd * 12.0, Color(0.55, 0.40, 0.25), 1.8, true)
+			ci.draw_line(hand - fwd * 3.0, hand + fwd * 12.0, Color(0.55, 0.40, 0.25), 1.8, false)
 		_:
 			# SWORD (default) — also serves as a serviceable club for orcs:
 			# rectangular shaft with a pommel and a wider blade body.
 			var grip_end: Vector2 = hand + fwd * 4.0
 			var blade_end: Vector2 = hand + fwd * 32.0
 			# Crossguard (perpendicular bar at the hilt).
-			ci.draw_line(grip_end - side * 7.0, grip_end + side * 7.0, Color(0.55, 0.45, 0.25), 4.0, true)
+			ci.draw_line(grip_end - side * 7.0, grip_end + side * 7.0, Color(0.55, 0.45, 0.25), 4.0, false)
 			# Blade shape — narrow trapezoid tapering to a point.
 			var blade_pts: PackedVector2Array = PackedVector2Array([
 				grip_end - side * 3.5,
@@ -650,7 +714,7 @@ static func _draw_held_weapon(ci: CanvasItem, v: UnitVisualData, shoulder: Vecto
 				blade_end + fwd * 5.0,
 				blade_end + side * 1.8,
 				grip_end + side * 3.5,
-			]), Color(0.18, 0.18, 0.20), 1.5, true)
+			]), Color(0.18, 0.18, 0.20), 1.5, false)
 
 
 static func _fill_capsule(ci: CanvasItem, top_center: Vector2, w: float, h: float, fill: Color, outline: Color, outline_w: float) -> void:
@@ -660,8 +724,8 @@ static func _fill_capsule(ci: CanvasItem, top_center: Vector2, w: float, h: floa
 	ci.draw_circle(top_center + Vector2(0.0, hw), hw, fill)
 	ci.draw_circle(top_center + Vector2(0.0, h - hw), hw, fill)
 	# Outline: two side lines + bottom arc. Keep it cheap.
-	ci.draw_line(top_center + Vector2(-hw, hw), top_center + Vector2(-hw, h - hw), outline, outline_w, true)
-	ci.draw_line(top_center + Vector2(hw, hw), top_center + Vector2(hw, h - hw), outline, outline_w, true)
+	ci.draw_line(top_center + Vector2(-hw, hw), top_center + Vector2(-hw, h - hw), outline, outline_w, false)
+	ci.draw_line(top_center + Vector2(hw, hw), top_center + Vector2(hw, h - hw), outline, outline_w, false)
 	ci.draw_arc(top_center + Vector2(0.0, h - hw), hw, 0.0, PI, 10, outline, outline_w)
 
 
@@ -674,19 +738,32 @@ static func _draw_head_and_hat(ci: CanvasItem, v: UnitVisualData, head_col: Colo
 		_draw_hood(ci, v, head_pos, head_r)
 	# Head fill + outline.
 	ci.draw_circle(head_pos, head_r, head_col)
-	ci.draw_arc(head_pos, head_r, 0.0, TAU, 20, v.outline_color, maxf(2.0, v.outline_width * 0.7))
+	ci.draw_arc(head_pos, head_r, 0.0, TAU, 12, v.outline_color, maxf(2.0, v.outline_width * 0.7))
 	# Eyes — small dark dots. Direction-aware: shift toward facing direction
 	# so the enemy "looks where it's going". face_dir is in world space; we
 	# treat its X component as our local left/right (PathFollow2D rotates is
 	# disabled in this project, so world ↔ local X are the same axis).
-	var eye_off: float = head_r * 0.35
-	var eye_r: float = maxf(1.5, head_r * 0.12)
-	var eye_y: float = -head_r * 0.05
+	# Snap eye offsets to whole pixels so the dots don't shimmer with AA off.
+	var eye_off: float = roundf(head_r * 0.35)
+	var eye_r: float = maxf(1.5, roundf(head_r * 0.12))
+	var eye_y: float = roundf(-head_r * 0.05)
 	var eye_shift_x: float = 0.0
 	if face_dir.length_squared() > 0.0001:
-		eye_shift_x = signf(face_dir.x) * eye_r * 0.55
-	ci.draw_circle(head_pos + Vector2(-eye_off + eye_shift_x, eye_y), eye_r, v.outline_color)
-	ci.draw_circle(head_pos + Vector2(eye_off + eye_shift_x, eye_y), eye_r, v.outline_color)
+		eye_shift_x = signf(face_dir.x) * roundf(eye_r * 0.55)
+	var eye_l: Vector2 = head_pos + Vector2(-eye_off + eye_shift_x, eye_y)
+	var eye_r_pos: Vector2 = head_pos + Vector2(eye_off + eye_shift_x, eye_y)
+	if v.eye_glow_color.a > 0.0:
+		# Glowing eyes — soft outer halo, bright core. Halo radius is small
+		# enough to stay inside the head outline at typical head sizes.
+		var halo: Color = v.eye_glow_color
+		halo.a *= 0.45
+		ci.draw_circle(eye_l, eye_r * 2.1, halo)
+		ci.draw_circle(eye_r_pos, eye_r * 2.1, halo)
+		ci.draw_circle(eye_l, eye_r, v.eye_glow_color)
+		ci.draw_circle(eye_r_pos, eye_r, v.eye_glow_color)
+	else:
+		ci.draw_circle(eye_l, eye_r, v.outline_color)
+		ci.draw_circle(eye_r_pos, eye_r, v.outline_color)
 	# Tusks — two small upward-pointing white triangles at the mouth line.
 	if v.has_tusks:
 		_draw_tusks(ci, head_pos, head_r)
@@ -728,8 +805,8 @@ static func _draw_hood(ci: CanvasItem, v: UnitVisualData, head_pos: Vector2, hea
 	# Fill the upper hemisphere.
 	var pts: PackedVector2Array = PackedVector2Array()
 	pts.append(hood_center + Vector2(-hood_r, 0.0))
-	for i in 13:
-		var a: float = PI + PI * (float(i) / 12.0)
+	for i in 8:
+		var a: float = PI + PI * (float(i) / 7.0)
 		pts.append(hood_center + Vector2(cos(a), sin(a)) * hood_r)
 	pts.append(hood_center + Vector2(hood_r, 0.0))
 	ci.draw_colored_polygon(pts, v.hat_color)
@@ -761,12 +838,12 @@ static func _draw_hat(ci: CanvasItem, v: UnitVisualData, hat: int, head_pos: Vec
 			# Filled half-disk over the top of the head + nose-guard line.
 			var helm_pts: PackedVector2Array = PackedVector2Array()
 			helm_pts.append(head_pos + Vector2(-head_r, head_r * 0.05))
-			for i in 13:
-				var a: float = PI + PI * (float(i) / 12.0)
+			for i in 8:
+				var a: float = PI + PI * (float(i) / 7.0)
 				helm_pts.append(head_pos + Vector2(cos(a), sin(a)) * head_r * 1.05)
 			helm_pts.append(head_pos + Vector2(head_r, head_r * 0.05))
 			ci.draw_colored_polygon(helm_pts, v.hat_color)
-			ci.draw_line(head_pos + Vector2(0.0, -head_r * 0.4), head_pos + Vector2(0.0, head_r * 0.45), v.outline_color, maxf(2.0, v.outline_width * 0.6), true)
+			ci.draw_line(head_pos + Vector2(0.0, -head_r * 0.4), head_pos + Vector2(0.0, head_r * 0.45), v.outline_color, maxf(2.0, v.outline_width * 0.6), false)
 		UnitVisualData.Hat.BANDANA:
 			# Thin band across the forehead with two trailing tails behind.
 			var band_y: float = head_pos.y - head_r * 0.45
@@ -826,3 +903,29 @@ static func _draw_accent(ci: CanvasItem, v: UnitVisualData) -> void:
 			ci.draw_line(Vector2(15, top - 5), Vector2(7.5, top - 20), v.accent_color, 5.0)
 			ci.draw_line(Vector2(-7.5, top - 20), Vector2(0, top - 10), v.accent_color, 5.0)
 			ci.draw_line(Vector2(7.5, top - 20), Vector2(0, top - 10), v.accent_color, 5.0)
+		UnitVisualData.Accent.SKULL_CHEST:
+			# Small bone skull centered on the upper chest. Reuses the skull
+			# primitive shared with the death-mark indicator so the necromancer
+			# pendant and his curse glyph speak the same visual language.
+			var body_r: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
+			_draw_skull_glyph(ci, Vector2(0.0, body_r * 0.10), maxf(4.5, body_r * 0.18), false)
+		UnitVisualData.Accent.RIBCAGE:
+			# Skeletal ribcage on the chest — central spine + 3 curved rib bars
+			# tapering toward the waist. Used by raised skeletons to give the
+			# silhouette the bone-cage tell a generic pale soldier lacks.
+			var body_r2: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
+			var rib_col: Color = v.outline_color
+			rib_col.a = 0.85
+			# Snap rib offsets to whole pixels so the cage looks like an
+			# engraved sticker, not a wavy line, with AA off.
+			var chest_top_y: float = roundf(-body_r2 * 0.15)
+			var chest_bot_y: float = roundf(body_r2 * 0.55)
+			# Central spine.
+			ci.draw_line(Vector2(0.0, chest_top_y), Vector2(0.0, chest_bot_y), rib_col, maxf(1.5, roundf(body_r2 * 0.08)), false)
+			# Three rib bars, narrowing toward the waist.
+			var rib_count: int = 3
+			for i in rib_count:
+				var ti: float = float(i) / float(rib_count - 1)
+				var y: float = roundf(lerpf(chest_top_y + body_r2 * 0.08, chest_bot_y - body_r2 * 0.05, ti))
+				var half_w: float = roundf(lerpf(body_r2 * 0.40, body_r2 * 0.22, ti))
+				ci.draw_line(Vector2(-half_w, y), Vector2(half_w, y), rib_col, maxf(1.5, roundf(body_r2 * 0.07)), false)

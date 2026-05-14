@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
 [ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
-[ext_resource type="Texture2D" path="res://items/art/base_plate_armor.jpg" id="3_tex"]
+[ext_resource type="Texture2D" path="res://items/art/generated/base_plate_armor_rare_tier.png" id="3_tex"]
 
 [sub_resource type="Resource" id="Impl_PlateArmor"]
 script = ExtResource("2_mod")

@@ -29,6 +29,7 @@ var _star_thresholds: Dictionary = {
 	# stars on these — reaching the threshold is enough.
 	"hero_mage": 5,
 	"hero_ranger": 12,
+	"hero_necromancer": 18,
 }
 
 

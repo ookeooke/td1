@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://vfx/SoulHarvestVFX.gd" id="1_harv"]
+
+[node name="SoulHarvestVFX" type="Node2D"]
+script = ExtResource("1_harv")

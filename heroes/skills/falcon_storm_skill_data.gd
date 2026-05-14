@@ -27,12 +27,21 @@ class_name FalconStormSkillData
 @export var vfx_scene: PackedScene
 
 
-func apply(hero: Node, target, ctx: Dictionary = {}) -> void:
+func apply(hero: Node, target, ctx: Dictionary = {}) -> bool:
+	# Sync gate — validates target shape and bails (returning false) so
+	# BaseHero.cast_skill can refund the cooldown if the cast is malformed.
+	# The actual tick loop is fire-and-forget via _run_storm, which awaits
+	# between ticks; cast_skill doesn't await us, so kicking off the async
+	# work from a sync wrapper is the cleanest way to keep both contracts.
 	if hero == null or not is_instance_valid(hero):
-		return
+		return false
 	if target == null or not (target is Vector2):
-		return
-	var center: Vector2 = target
+		return false
+	_run_storm(hero, target, ctx)
+	return true
+
+
+func _run_storm(hero: Node, target: Vector2, ctx: Dictionary) -> void:
 	# Pre-merge ctx multipliers once so the loop reads stable locals.
 	var eff_count: int = maxi(1, int(round(float(tick_count) * float(ctx.get("count_mult", 1.0)))))
 	var eff_damage: float = damage * float(ctx.get("damage_mult", 1.0))
@@ -42,11 +51,14 @@ func apply(hero: Node, target, ctx: Dictionary = {}) -> void:
 		# Hero may have died / scene swapped between ticks. Bail safely.
 		if not is_instance_valid(hero) or hero.get_tree() == null:
 			return
-		_do_tick(hero, center, eff_damage, eff_radius)
+		_do_tick(hero, target, eff_damage, eff_radius)
 		if i < eff_count - 1:
-			# Standard pause-aware tween-style wait. SceneTreeTimer respects
-			# Engine.time_scale so a paused game freezes the storm in place.
-			await hero.get_tree().create_timer(eff_interval).timeout
+			# Pass process_always=false so the inter-tick wait freezes with
+			# the paused SceneTree. Godot 4.6's create_timer defaults the
+			# second arg to TRUE — without explicit false the storm keeps
+			# ticking through tactical pause / GameOverScreen pause, which
+			# would let post-victory waves of falcons damage cleanup state.
+			await hero.get_tree().create_timer(eff_interval, false).timeout
 
 
 func _do_tick(hero: Node, center: Vector2, dmg: float, r: float) -> void:

@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="BuffSkillData" format=3]
+
+[ext_resource type="Script" path="res://heroes/skills/buff_skill_data.gd" id="1_buff"]
+[ext_resource type="Script" path="res://systems/abilities/RegenAbility.gd" id="2_regen"]
+
+[sub_resource type="Resource" id="BoneArmorRegen"]
+script = ExtResource("2_regen")
+heal_amount = 5.0
+ability_id = "bone_armor_regen"
+trigger = 1
+interval = 1.0
+
+[resource]
+script = ExtResource("1_buff")
+buff_ability = SubResource("BoneArmorRegen")
+buff_duration = 8.0
+skill_name = "Bone Armor"
+skill_id = "bone_armor"
+power_tier = 2
+cooldown = 22.0
+target_type = 2
+level_required = 3
+pictogram = "bubble_shield"
+description = "Cloak yourself in clattering bone plates. Regenerate 5 HP per second for 8 seconds."
+rank_scaling = [{"cooldown_mult": 0.85}]

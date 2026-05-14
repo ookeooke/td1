@@ -13,6 +13,7 @@ const _DeathVFXScript := preload("res://vfx/DeathVFX.gd")
 const _HitSparkVFXScript := preload("res://vfx/HitSparkVFX.gd")
 const _EnemyDeathDriftScript := preload("res://vfx/EnemyDeathDrift.gd")
 const _SkillCastFlareScript := preload("res://vfx/SkillCastFlare.gd")
+const _NecroHeroVFXScript := preload("res://vfx/NecroHeroVFX.gd")
 # Necromancer-only presence VFX. Aura attaches as a child of the hero on
 # spawn; soul harvest fires on every enemy_died while the necromancer is
 # active. Both gated by hero_id so other heroes are unaffected.
@@ -35,6 +36,7 @@ const BIG_HIT_RATIO: float = 0.25
 
 # Cached hero reference for XP text positioning.
 var _hero: Node2D = null
+var _hero_alive: bool = false
 var clean_view: bool = false
 
 # Per-(target, source) damage accumulator. Key = "tid_sid". Each value:
@@ -47,8 +49,9 @@ func _ready() -> void:
 	EventBus.enemy_died.connect(_on_enemy_died)
 	EventBus.hero_xp_gained.connect(_on_hero_xp_gained)
 	EventBus.hero_leveled_up.connect(_on_hero_leveled_up)
-	EventBus.hero_spawned.connect(func(h): _hero = h)
-	EventBus.hero_died.connect(func(): _hero = null)
+	EventBus.hero_spawned.connect(_on_hero_spawned)
+	EventBus.hero_died.connect(_on_hero_died)
+	EventBus.hero_respawned.connect(_on_hero_respawned)
 	EventBus.hero_spawned.connect(_install_necro_aura)
 	EventBus.game_over.connect(_on_game_over)
 	EventBus.game_won.connect(_on_game_won)
@@ -94,7 +97,7 @@ func _on_enemy_died(enemy: Node, gold_value: int) -> void:
 		_FloatingTextScript.spawn_kind(parent, _FloatingTextScript.Kind.GOLD, pos, float(gold_value))
 	# Soul harvest — Necromancer-only on-kill tell. Wisps drift from the
 	# corpse toward the hero, sells "the lich absorbed the kill."
-	if not clean_view and _hero != null and is_instance_valid(_hero) \
+	if not clean_view and _hero_alive and _hero != null and is_instance_valid(_hero) \
 			and _hero.data != null and _hero.data.hero_id == "hero_necromancer":
 		var harv: Node2D = _SoulHarvestScene.instantiate()
 		parent.add_child(harv)
@@ -111,8 +114,42 @@ func _install_necro_aura(hero: Node) -> void:
 		return
 	if hero.data == null or hero.data.hero_id != "hero_necromancer":
 		return
+	if hero.has_node("NecroAuraVFX"):
+		return
 	var aura: Node2D = _NecroAuraScene.instantiate()
+	aura.name = "NecroAuraVFX"
 	hero.add_child(aura)
+
+
+func _on_hero_spawned(hero: Node) -> void:
+	_hero = hero as Node2D
+	_hero_alive = true
+
+
+func _on_hero_died() -> void:
+	if _hero == null or not is_instance_valid(_hero):
+		_hero_alive = false
+		return
+	if _hero.data != null and _hero.data.hero_id == "hero_necromancer":
+		if not clean_view:
+			var parent: Node = _get_world_parent()
+			if parent != null:
+				_NecroHeroVFXScript.spawn(parent, _hero.global_position, _NecroHeroVFXScript.MODE_DEATH)
+		if _hero.has_node("NecroAuraVFX"):
+			_hero.get_node("NecroAuraVFX").queue_free()
+	_hero_alive = false
+
+
+func _on_hero_respawned() -> void:
+	if _hero == null or not is_instance_valid(_hero):
+		return
+	_hero_alive = true
+	if _hero.data != null and _hero.data.hero_id == "hero_necromancer":
+		if not clean_view:
+			var parent: Node = _get_world_parent()
+			if parent != null:
+				_NecroHeroVFXScript.spawn(parent, _hero.global_position, _NecroHeroVFXScript.MODE_RESPAWN)
+		_install_necro_aura(_hero)
 
 
 func _on_hit_landed(target: Node, source: Node, amount: float, dmg_type: int) -> void:

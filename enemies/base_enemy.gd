@@ -149,6 +149,30 @@ func setup(path_follow: PathFollow2D, path_id: String) -> void:
 	_path_id = path_id
 
 
+# Combat Blocking Doctrine — public path accessors. Used by blocker guard-zone
+# checks to compare an enemy's path progress against the projected position of
+# a hero hold-point / soldier rally. Hero/soldier code must use these instead
+# of reaching into _path_follow directly. See docs/COMBAT_BLOCKING_DOCTRINE.md.
+func get_path_id() -> String:
+	return _path_id
+
+
+func get_path_progress() -> float:
+	if _path_follow == null:
+		return 0.0
+	return _path_follow.progress
+
+
+func get_path_progress_ratio() -> float:
+	if _path_follow == null:
+		return 0.0
+	return _path_follow.progress_ratio
+
+
+func get_path_follow() -> PathFollow2D:
+	return _path_follow
+
+
 func change_state(new_state: int) -> void:
 	if state == new_state:
 		return
@@ -252,9 +276,15 @@ func engage_combat(blocker: Node) -> bool:
 		return false
 	if _blockers.has(blocker):
 		return false
+	# Combat Blocking Doctrine bug fix — only reset the swing cooldown when
+	# the enemy is *entering* COMBAT (first blocker joins). A second blocker
+	# arriving mid-swing must not delay the strike against the existing
+	# focus, or the focused soldier gets a free moment every time another
+	# friendly piles on. See docs/COMBAT_BLOCKING_DOCTRINE.md Phase 7.
+	var was_combat: bool = state == State.COMBAT
 	_blockers.append(blocker)
-	_combat_cooldown = 1.0 / maxf(0.01, data.attack_speed) if data != null else 1.0
-	if state != State.COMBAT:
+	if not was_combat:
+		_combat_cooldown = 1.0 / maxf(0.01, data.attack_speed) if data != null else 1.0
 		change_state(State.COMBAT)
 	return true
 

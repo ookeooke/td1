@@ -15,6 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [balance/BALANCE.md](balance/BALANCE.md) — design intent for tuning: target g/DPS curves, hardness baselines, the Naked Baseline invariant. Read before any balance change. Folder is dev-only (stripped from production exports).
 - [docs/ITEM_VISUAL_TIERS.md](docs/ITEM_VISUAL_TIERS.md) - item-art visual tier rules. Read before generating or replacing item textures.
 - [docs/ITEM_NAMING.md](docs/ITEM_NAMING.md) - item naming rules. Read before adding or renaming item bases, affixes, or unique-style items.
+- [docs/COMBAT_BLOCKING_DOCTRINE.md](docs/COMBAT_BLOCKING_DOCTRINE.md) — Combat Blocking Doctrine. Source of truth for hero/soldier/enemy battle logic (guard zones, target selection, release conditions, projectile timing). Read before changing base_hero.gd / base_soldier.gd / base_enemy.gd / HeroData.gd / SoldierData.gd or any blocker-related ability.
 - [addons/godot_mcp/](addons/godot_mcp/) + `.mcp.json` — Godot MCP Pro v1.13.1 plugin and Claude Code bridge config. Dev-only AI tooling; the plugin is optional and auto-injects 3 `MCP*` autoloads while enabled. Strip before final production ship. Never reference any MCP symbol from game code.
 - [.claude/skills.md](.claude/skills.md) — MCP tool usage playbook auto-loaded by Claude Code each session. Mirror of `addons/godot_mcp/skills.md` from the vendor. Update both sides if either changes.
 - `git log` — diffs and short commit messages.
@@ -397,13 +398,16 @@ Effects modify behavior in `_get_effective_speed()` and state gate checks. Tower
 
 ## Blocking and Capacity
 
-Soldiers AND heroes can lock ground enemies into `COMBAT` (enemy stops walking). Flying enemies skip engagement.
+Canonical doctrine lives in [docs/COMBAT_BLOCKING_DOCTRINE.md](docs/COMBAT_BLOCKING_DOCTRINE.md). Read it before changing hero/soldier/enemy combat, blocker movement, target selection, or ranged-vs-close engagement.
+
+Soldiers AND heroes can lock ground enemies into `COMBAT` (enemy stops walking). Flying enemies skip engagement. Detection alone never stops an enemy; only physical engagement through `engage_combat()` does.
 
 - **Capacity on blocker data**: `SoldierData.max_block_targets` (default 1), `HeroData.max_block_targets` (default 2; mage overrides to 1).
 - **Enemies allow any number of blockers**: `BaseEnemy._blockers: Array[Node]`; COMBAT iff non-empty. Counter-attacks focus `_blockers[0]` (oldest engager, stable telegraph).
 - **Split rule**: `BaseSoldier._try_engage` + `BaseHero._pick_split_target_in_area` prefer FEWEST current blockers (ties broken by distance). Friendlies spread across threats; pile on a lone target.
 - **Hero auto-claims extras** up to capacity while in COMBAT; releases via `_prune_blocks_out_of_range`.
 - **Release points**: death, rally-move (soldier), tap-to-move (hero), target loss.
+- **Ranged units default to ranged combat**: they fire while enemies stay on path; close combat/blocking begins only when a blockable enemy enters `engage_radius` and the unit has capacity. Hybrid melee+ranged behavior must be authored deliberately.
 - **Hero engage radius is decoupled from attack_range**: `HeroData.engage_radius` controls the *block-claim* circle (where enemies halt and engage as melee); `HeroData.attack_range` controls *weapon reach* (projectile spawn, AoE pivot, when COMBAT state triggers). Two numbers because the jobs are independent: a Mage at attack_range=350 with engage_radius=55 shoots from far but only locks enemies that walk into face contact; a Knight at 75/55 walks up and swings. Default when unset (0): `min(attack_range, BaseHero.DEFAULT_ENGAGE_RADIUS=60)`. Override only when the archetype needs a divergent value (sniper = 0 to never block, tank = 90 for bigger presence, dragon = 110 for a large body). Mirrors the `SoldierData.melee_range` ≠ weapon-reach pattern.
 
 ---
@@ -522,17 +526,17 @@ Procedural `_draw()` shapes for all visuals. Data-driven via `UnitVisualData` re
 **Hero & soldiers** use `NavigationAgent2D` for smart pathfinding (only ~10 agents). **Enemies** stay on `PathFollow2D` rails with swarm effects (zero nav CPU).
 
 ### Hero Movement (Kingdom Rush style)
-- `SeekRange` Area2D (2.5x attack_range) detects enemies → hero auto-walks toward them via nav agent
-- Melee heroes walk right up (within `MELEE_ENGAGE_DISTANCE = 30px`) for face-to-face combat
-- Ranged heroes stop at attack_range edge
-- Enemy leaves attack range → hero **chases** (instead of dropping target)
-- Player tap always overrides auto-seek and combat
-- Repathing throttled to every 0.5s (`NAV_REPATH_INTERVAL`) for mobile perf
+- Default hero behavior is guard/hold, not hunter/chase. The last player-issued move point is the hero's hold point.
+- Melee heroes may make short guard-zone intercepts near their hold point; no map-wide chase.
+- Ranged heroes attack from `attack_range`; they only enter close combat when an enemy reaches `engage_radius` and the hero has block capacity.
+- Enemy detection never stops path movement. Enemy stops only after `engage_combat()` succeeds.
+- Player tap always overrides auto-seek and combat.
+- Optional auto-seek must be opt-in per hero data (for a deliberate hunter/hybrid archetype), not inherited by all heroes.
 
 ### Soldier Movement
-- Nav-paths to rally position (paths around obstacles instead of straight line)
-- First-frame fallback: direct movement if nav_agent not ready yet
-- BLOCKING + melee engagement unchanged
+- Soldiers hold rally slots, scan the rally guard zone, step out to physically block, and return after release.
+- Soldiers do not chase enemies that leave the guard zone before contact.
+- Once engaged, the melee lock persists until enemy death, soldier death, rally reset, bypass/escape behavior, or another explicit release.
 
 ### Enemy Swarm — Single Path + 3-lane v_offset (no NavAgent)
 One Path2D per direction (`left` / `right` / `top`). `WaveManager.spawn_enemy` picks one of 3 lanes for non-boss enemies via `PathFollow2D.v_offset ∈ {-LANE_SPACING, 0, +LANE_SPACING}` (±50px). `rotates = false` so v_offset shifts world Y (reads as above/on/below the road for horizontal paths). **Bosses ride centered.** Vertical-running paths on future levels will need `rotates = true`.

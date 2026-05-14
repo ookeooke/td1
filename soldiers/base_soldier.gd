@@ -30,7 +30,9 @@ var tier_key: String = ""
 # soldier was spawned by a Knight's Summon Soldiers cast. Null = standard
 # barracks soldier, no XP credit on kill (towers don't have XP). When set,
 # BaseEnemy._die routes the kill's xp_worth to this hero so the cooldown
-# spent on the summon pays back in progression.
+# spent on the summon pays back in progression. Read by other scripts via
+# reflection (`"_summoner" in soldier`), not by any method on this class.
+@warning_ignore("unused_private_class_variable")
 var _summoner: Node = null
 const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
 
@@ -88,6 +90,7 @@ var _charge_target: BaseEnemy = null
 const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
 const _DeathVFXScript := preload("res://vfx/DeathVFX.gd")
+const _GuardZoneScript := preload("res://systems/GuardZone.gd")
 var _ability_host: RefCounted = null
 
 @onready var melee_range: Area2D = $MeleeRange
@@ -269,11 +272,13 @@ func _try_engage() -> void:
 	var cap: int = data.max_block_targets if data != null and "max_block_targets" in data else 1
 	if _engaged_enemies.size() >= cap:
 		return
-	# Split-rule pick: prefer enemies with the fewest current blockers so
-	# multiple soldiers/heroes don't pile on the same target when there
-	# are other threats to block. Ties broken by distance.
+	# Combat Blocking Doctrine — target selection: only consider enemies
+	# inside the guard zone, prefer fewest current blockers, then highest
+	# path progress (closer-to-exit threat first), then nearest. Same rule
+	# the hero uses for extra-block picks. See docs/COMBAT_BLOCKING_DOCTRINE.md.
 	var best: BaseEnemy = null
 	var best_block: int = 1 << 30
+	var best_progress: float = -INF
 	var best_d2: float = INF
 	for area in melee_range.get_overlapping_areas():
 		if not (area is BaseEnemy):
@@ -285,14 +290,31 @@ func _try_engage() -> void:
 			continue
 		if _engaged_enemies.has(enemy):
 			continue
+		if not _is_guardable(enemy):
+			continue
 		var bc: int = enemy._blockers.size()
+		var prog: float = enemy.get_path_progress() if enemy.has_method("get_path_progress") else 0.0
 		var d2: float = global_position.distance_squared_to(enemy.global_position)
-		if bc < best_block or (bc == best_block and d2 < best_d2):
+		if bc < best_block \
+				or (bc == best_block and prog > best_progress) \
+				or (bc == best_block and prog == best_progress and d2 < best_d2):
 			best_block = bc
+			best_progress = prog
 			best_d2 = d2
 			best = enemy
 	if best != null and best.engage_combat(self):
 		_engaged_enemies.append(best)
+
+
+# Combat Blocking Doctrine helper — is `enemy` inside this soldier's guard
+# zone around the rally flag? Falls back to world distance if the enemy's
+# path data is unavailable. See systems/GuardZone.gd.
+func _is_guardable(enemy) -> bool:
+	if data == null:
+		return false
+	var front: float = data.guard_front_px if "guard_front_px" in data else 0.0
+	var back: float = data.guard_back_px if "guard_back_px" in data else 0.0
+	return _GuardZoneScript.is_guardable(enemy, _flag_position, front, back)
 
 
 func _attack_cycle(delta: float) -> void:
@@ -321,25 +343,20 @@ func _attack_cycle(delta: float) -> void:
 			_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_KILL, {"victim": enemy})
 
 
-# KR-style charge sensor: idle soldier at rally picks the best enemy in
-# aggro_range (split-rule: fewest blockers, then nearest) and transitions
-# into CHARGING. Respects max_block_targets so a full-capacity soldier
-# won't start a new chase.
+# Combat Blocking Doctrine charge sensor: idle soldier at rally picks the
+# best in-guard-zone enemy and transitions into CHARGING. Guard zone is
+# path-projected when possible (world-distance fallback). Target selection:
+# fewest blockers → highest path progress → nearest. Respects max_block_targets
+# so a full-capacity soldier won't start a new chase.
 func _scan_aggro_and_maybe_charge() -> void:
 	if data == null:
 		return
 	var cap: int = data.max_block_targets if "max_block_targets" in data else 1
 	if _engaged_enemies.size() >= cap:
 		return
-	# Engagement zone = leash_range circle centered on the barracks flag.
-	# Enemies outside the zone aren't this barracks's problem, even if
-	# they're physically within the soldier's aggro Area2D (which moves
-	# with the soldier and would otherwise pick up past-the-barracks
-	# enemies that are geographically close).
-	var zone: float = data.leash_range if "leash_range" in data else 0.0
-	var zone2: float = zone * zone
 	var best: BaseEnemy = null
 	var best_block: int = 1 << 30
+	var best_progress: float = -INF
 	var best_d2: float = INF
 	for area in aggro_range.get_overlapping_areas():
 		if not (area is BaseEnemy):
@@ -349,12 +366,16 @@ func _scan_aggro_and_maybe_charge() -> void:
 			continue
 		if enemy.state == BaseEnemy.State.DYING:
 			continue
-		if zone > 0.0 and _flag_position.distance_squared_to(enemy.global_position) > zone2:
+		if not _is_guardable(enemy):
 			continue
 		var bc: int = enemy._blockers.size()
+		var prog: float = enemy.get_path_progress() if enemy.has_method("get_path_progress") else 0.0
 		var d2: float = global_position.distance_squared_to(enemy.global_position)
-		if bc < best_block or (bc == best_block and d2 < best_d2):
+		if bc < best_block \
+				or (bc == best_block and prog > best_progress) \
+				or (bc == best_block and prog == best_progress and d2 < best_d2):
 			best_block = bc
+			best_progress = prog
 			best_d2 = d2
 			best = enemy
 	if best != null:
@@ -377,25 +398,17 @@ func _tick_charge() -> void:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
-	# Zone gate: if our target has walked out of the flag's engagement
-	# circle (the barracks's area of responsibility), it is no longer our
-	# problem — drop it and head home. Radius = leash_range, centered on
-	# the shared flag position (not this soldier's individual slot), so
-	# all squad members share one coherent zone.
-	var zone: float = data.leash_range if "leash_range" in data else 0.0
-	if _charge_target != null and is_instance_valid(_charge_target) and zone > 0.0:
-		if _flag_position.distance_squared_to(_charge_target.global_position) > zone * zone:
+	# Combat Blocking Doctrine — guard-zone gate. If the chase target has
+	# left the guard zone (path-projected when possible, world-distance
+	# fallback otherwise) the soldier disengages pre-contact and heads home.
+	# This is the "no chasing past the guard zone" rule. Once physical
+	# engagement has succeeded the lock holds regardless — that's
+	# _engaged_enemies above, which already short-circuits.
+	if _charge_target != null and is_instance_valid(_charge_target):
+		if not _is_guardable(_charge_target):
 			_charge_target = null
 			change_state(State.RETURNING)
 			return
-	# Leash: if we've drifted past leash_range from our rally slot chasing a
-	# target we still haven't contacted, give up and head home. Protects
-	# against faster-than-soldier enemies dragging us off-lane.
-	var leash: float = zone
-	if leash > 0.0 and global_position.distance_to(_blocking_position) > leash:
-		_charge_target = null
-		change_state(State.RETURNING)
-		return
 	# Lost our chase target before making contact → go home.
 	if _charge_target == null:
 		change_state(State.RETURNING)

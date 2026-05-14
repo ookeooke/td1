@@ -16,6 +16,10 @@ enum Race { NONE, HUMAN, ORC, GOBLIN, TROLL, UNDEAD }
 # Headgear drawn over the head when race != NONE. CROWN_BIG reproduces the old
 # Accent.CROWN silhouette as a hat so bosses keep their crown after migration.
 enum Hat { NONE, HORNS, HELMET, HOOD, BANDANA, CROWN_BIG }
+# Optional authored procedural profiles. DEFAULT preserves the shared unit
+# renderer; hero-specific values let one unit opt into a richer silhouette
+# without forcing the generic enemy/soldier drawer to absorb special cases.
+enum RenderProfile { DEFAULT, NECROMANCER_PREMIUM }
 
 @export var shape: Shape = Shape.CIRCLE
 @export var body_color: Color = Color(0.75, 0.2, 0.2)
@@ -26,6 +30,7 @@ enum Hat { NONE, HORNS, HELMET, HOOD, BANDANA, CROWN_BIG }
 @export var body_size: Vector2 = Vector2(50, 50)
 @export var outline_width: float = 5.0
 @export var weapon_type: WeaponType = WeaponType.SWORD
+@export var render_profile: RenderProfile = RenderProfile.DEFAULT
 # Per-squad or per-faction accent ring drawn just inside the body outline.
 # Zero alpha = disabled (default) so existing visuals are untouched. Used by
 # TowerBarracks to tint each squad's soldiers by barracks spot_id.

@@ -39,6 +39,17 @@ class_name HeroData
 # Enemies allow any number of blockers — the cap lives here.
 @export var max_block_targets: int = 2
 
+# Combat Blocking Doctrine — guard-zone fields. Heroes guard the last
+# player-issued hold point; they do not auto-hunt. See docs/COMBAT_BLOCKING_DOCTRINE.md.
+# - guard_front_px: how far ahead of the hold point the hero may intercept.
+# - guard_back_px: how far behind the hold point the hero may cleanup a passed enemy.
+# - auto_seek_radius: opt-in archetype override; > 0 enables hunting beyond the
+#   guard zone (default 0 = KR-canonical hold-ground). Never set on default heroes.
+# Author tank/melee heroes at ~150/100, ranged at 0/0 (or 60/40 with self-defense).
+@export var guard_front_px: float = 0.0
+@export var guard_back_px: float = 0.0
+@export var auto_seek_radius: float = 0.0
+
 # Active skills (player-cast via SkillBar buttons) — SkillData subclasses.
 @export var skills: Array[Resource] = []
 # Starter loadout — the skill_ids that fill the player's active slots on a

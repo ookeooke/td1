@@ -57,8 +57,8 @@ func _on_map_tap(screen_pos: Vector2, claim: RefCounted) -> void:
 	# move_to() trusts its caller, so the gate has to live here.
 	var nav_map: RID = _map.get_world_2d().navigation_map
 	if nav_map.is_valid():
-		var owner: RID = NavigationServer2D.map_get_closest_point_owner(nav_map, world_pos)
-		if not owner.is_valid():
+		var nav_owner: RID = NavigationServer2D.map_get_closest_point_owner(nav_map, world_pos)
+		if not nav_owner.is_valid():
 			return
 		var snap_pos: Vector2 = NavigationServer2D.map_get_closest_point(nav_map, world_pos)
 		if world_pos.distance_to(snap_pos) > MAX_OFFMESH_TOLERANCE:

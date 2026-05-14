@@ -3811,3 +3811,114 @@ Verification:
 - Headless boot clean, no parse errors.
 - `gut_cmdln.gd -gdir=res://tests/unit -gexit`: 37/37 pass, 272 asserts.
 - Manual primary tests pending: (a) heroic defeat → tap World Map → confirm `heroic_complete[level]` still false; (b) heroic victory → close on victory screen pre-Continue → reopen → completion persisted; (c) heroic win → confirm campaign stars NOT bumped; (d) gain XP mid-level → close mid-loop → reopen → level + xp + points consistent; (e) Knight Summon Soldiers → summoned soldier last-hits an enemy → hero XP rises; (f) MOD_HERO_XP > 1 → floating "+N XP" matches recap; (g) tactical pause during respawn / Falcon Storm / barracks respawn → countdowns freeze; (h) buy a tree node → Skills badge updates immediately, shows hero's remaining ★ not account ★.
+
+---
+
+## 2026-05-14 - Necromancer premium procedural visual pass
+
+Added an authored procedural render profile for the Necromancer without introducing painted sprites. [systems/UnitVisualData.gd](systems/UnitVisualData.gd) now exposes `RenderProfile.DEFAULT` / `RenderProfile.NECROMANCER_PREMIUM`; [heroes/data/visual_necromancer.tres](heroes/data/visual_necromancer.tres) opts into the premium profile while every other visual remains on the shared default drawer.
+
+[systems/UnitVisualDrawer.gd](systems/UnitVisualDrawer.gd) now branches the premium profile into a custom Necromancer draw path: tall torn robe polygon, layered cape/shadows, hooded face void with glowing eyes, chest soul-glow + skull pendant, bone charms, custom crooked staff with bone crescent/orb, drifting soul wisps, and a rotating ground rune. The implementation is additive helper functions appended after the existing shared accent drawer, so the generic hero/enemy/soldier renderer remains unchanged for all other content.
+
+Verification:
+- Source-level sanity pass on changed files completed.
+- Headless Godot boot attempted with the documented local `Godot_v4.6.2-stable_win64_console.exe`, but the binary crashed with signal 11 before project logs, matching the existing local verification blocker. In-editor visual verification still pending.
+
+Follow-up from in-editor screenshot: lowered the premium hood into the robe collar and added a dark collar/shoulder fill so the head no longer reads as detached from the body.
+
+Second follow-up "illustrated procedural" pass: made the robe/cape/hood less symmetrical, reduced wisp intensity, added broken cloth-fold strokes, shrank the skull into an off-center pendant with cord lines, crooked the staff shaft, irregularized the bone crescent, and made the face details smaller/asymmetric so the character reads less like perfect vector geometry.
+
+Third follow-up "ink boil" pass: added Necromancer-only rough drawing helpers (`_ink_step_time`, `_ink_jitter`, `_rough_polyline`, `_rough_line`, `_draw_rough_circle`) and applied them to outline/fold/staff/hood strokes rather than the filled body geometry. This keeps the silhouette stable while giving the linework a stepped 10 FPS pen wobble, overshot sketch corners, rough pendant/bone/orb circles, and a brief cast smear polygon around the staff release.
+
+Fourth follow-up animation pass: tuned `visual_necromancer.tres` walk animation down from the generic hero bounce into a low glide (`walk_bob_amplitude = 1.4`, slower speed, minimal squash/tilt). The premium draw path now derives a Necromancer gait signal from `walk_t` and uses it for cape flutter, robe sway, delayed hem motion, staff lag, and a steadier hood/head counter-sway. Cast animation now lifts the robe shoulders and staff top, pulls the staff through a stronger release snap, and reuses the smear polygon as a brief magical cast frame.
+
+Fifth follow-up lifecycle polish: [systems/UnitVisualDrawer.gd](systems/UnitVisualDrawer.gd) now gives the premium Necromancer a green-purple ghost veil hit flash instead of the generic white body flash. Added [vfx/NecroHeroVFX.gd](vfx/NecroHeroVFX.gd), a one-shot procedural death/respawn effect with rough soul rings, rising/pulling wisps, cloak-collapse shadow, and eye ignition. [autoloads/VFXSpawner.gd](autoloads/VFXSpawner.gd) now keeps a live/dead flag for the active hero, spawns Necromancer death/respawn VFX through EventBus, suppresses soul harvest while the hero is dead, removes the passive aura on death, and reinstalls it on respawn without duplicating it.
+
+Sixth follow-up fake 3/4 turn pass: the premium Necromancer now reads `ctx["face"]` and derives a `turn` factor while walking. Robe/cape width and hem offsets shift toward the walking direction, pendant and hood opening slide slightly, the near eye stays brighter while the far eye dims, and the staff/arms shift in the opposite depth direction so the body feels like it is turning instead of sliding flat.
+
+Review follow-up: fixed the 3/4 turn side-width math so left-walk mirrors right-walk correctly instead of always treating the right side as the near side. Also made the eye iteration use an explicit `range(eyes.size())` loop for more conservative GDScript parsing.
+
+---
+
+## 2026-05-15 - Combat blocking doctrine plan
+
+Documented the intended hero/soldier/enemy battle logic before implementation. Added [docs/COMBAT_BLOCKING_DOCTRINE.md](docs/COMBAT_BLOCKING_DOCTRINE.md) as the source of truth for guard-zone blocking: enemies do not stop on detection, only on physical `engage_combat`; soldiers and melee heroes guard zones rather than chase the map; ranged heroes attack from range and only enter close combat when enemies reach authored engage radius and the unit has block capacity. The doc includes KR-style reference links, target-selection priority, release conditions, ranged/hybrid unit policy, and a phased implementation plan for Claude covering data fields, path accessors, soldier/hero rework, projectile on-hit timing, and GUT tests.
+
+Updated [CLAUDE.md](CLAUDE.md) to point future agents at the doctrine and replaced stale auto-seek/chase movement notes with guard/hold behavior.
+
+Verification: docs-only change; no Godot run needed.
+
+---
+
+## 2026-05-15 — Combat Blocking Doctrine implementation
+
+Executed the 8-phase plan from [docs/COMBAT_BLOCKING_DOCTRINE.md](docs/COMBAT_BLOCKING_DOCTRINE.md), turning the authored doctrine into running code. Two designer-observed problems triggered this — hero felt too active (auto-sought aggressively at 2.5× attack_range), and soldiers/heroes chased fleeing enemies they couldn't catch ("kicked dog after the mail truck"). KR research confirmed the answer: blockers guard a zone, they don't hunt.
+
+Changes:
+- **Phase 1 data fields**: [HeroData.gd](heroes/HeroData.gd) gained `guard_front_px` / `guard_back_px` / `auto_seek_radius` (all default 0 — default heroes hold ground). [SoldierData.gd](soldiers/SoldierData.gd) gained `guard_front_px = 120` / `guard_back_px = 70` (basic-soldier defaults from the doctrine).
+- **Phase 2 path accessors**: added `get_path_id()` / `get_path_progress()` / `get_path_progress_ratio()` / `get_path_follow()` on [BaseEnemy](enemies/base_enemy.gd) so guard-zone math no longer reaches into `_path_follow` directly.
+- **Phase 3 GuardZone helper**: new [systems/GuardZone.gd](systems/GuardZone.gd) — static `is_guardable(enemy, hold_point, front_px, back_px)` projects the hold point onto the enemy's Curve2D via `Curve2D.get_closest_offset()` and compares progress delta. World-distance fallback when path data unavailable. Filters flying / bypass / DYING up front.
+- **Phase 4 soldier rework**: [base_soldier.gd](soldiers/base_soldier.gd) `_scan_aggro_and_maybe_charge`, `_try_engage`, `_tick_charge` now gate every candidate via `_is_guardable`. Target selection upgraded to fewest blockers → highest path progress → nearest. Old `leash_range` world-distance check replaced by guard-zone check (the data field stays in SoldierData for back-compat but is no longer read by combat code).
+- **Phase 5 hero rework**: [base_hero.gd](heroes/base_hero.gd) `_seek_target` Phase 2 (the auto-walk-toward-distant-enemy branch) is now gated by `_is_seeking_allowed()`. Default ranged heroes (guard 0/0, auto_seek 0) never enter that branch — they hold the hold point and only attack what comes into `attack_range`. New helpers `_can_pursue(enemy)` and `_is_seeking_allowed()`. `_move_step` chase abort + `_attack_step` walked-out branch use `_can_pursue` instead of the old `_within_leash` ring.
+- **Phase 6**: ranged close-combat fallback was already implicit — `_start_block` gates on the `engage_range_area` overlap, and Necromancer is already authored with `max_block_targets = 0`. No code change needed.
+- **Phase 7 bundled bug fixes**:
+  - `BaseEnemy.engage_combat` no longer resets the swing cooldown when a 2nd blocker joins mid-fight (gated on `not was_combat`).
+  - `BaseHero._pick_split_target_in_area` now uses the same fewest → highest path progress → nearest rule as soldiers.
+  - Projectile `ON_HIT_DEALT` / `ON_KILL` now fire on arrow impact via a new `BaseHero.on_projectile_impact(target, amount, killed)` callback that `Arrow._on_hit` invokes. Melee path still fires inline. Towers don't implement the callback (no AbilityHost), so the `has_method` check no-ops for tower projectiles.
+- **Phase 8 tests**: [tests/unit/test_combat_blocking.gd](tests/unit/test_combat_blocking.gd) — 8 tests covering engage_combat cooldown gate, duplicate-blocker rejection, GuardZone filters (flying, bypass, fallback distance), and `on_projectile_impact` null-safety. All pass.
+
+Verification:
+- `godot --headless --quit` boots cleanly (all 20 autoloads load, no script errors).
+- `gut -gtest=tests/unit/test_combat_blocking.gd` — 8/8 passing.
+- Full GUT suite — 45/45 passing across 8 scripts (no regressions in damage calc, save manager, content registry, etc.).
+
+Not yet verified: Test Range visual check + Campaign L1 full run + balance report. Default ranged heroes (warrior is melee with engage_radius=0, mage/ranger/necromancer with guard 0/0) will now hold position instead of seeking — expect a perceptible feel change on L1. Hardness may drift; revisit BALANCE.md after a playtest. Authoring tank/melee heroes to step out within a guard zone requires setting `guard_front_px` / `guard_back_px` on their HeroData (not done yet — the warrior currently inherits the 0/0 defaults, so it will stand still and only attack what walks into melee range; tune in a follow-up).
+
+Carved-out files (`leash_range` legacy field on SoldierData, `SEEK_RANGE_MULTIPLIER` constant on BaseHero, the SeekRange Area2D node) stayed in place to avoid scene/data churn; they're effectively dead reads now. Cleanup can land in a later session once playtests confirm no need for a fallback.
+
+---
+
+## 2026-05-15 - Hero side-facing fix
+
+Investigated the reported "back-first" left/right hero movement after the hero logic and Necromancer visual changes.
+
+Root causes found:
+- [heroes/base_hero.gd](heroes/base_hero.gd) smoothed facing before the current frame's movement velocity was chosen, so quick left/right orders could draw using the previous facing.
+- The smoothed vector was normalized after `lerp()`, which can lock an exact right-to-left flip on the old side.
+- [systems/UnitVisualDrawer.gd](systems/UnitVisualDrawer.gd) pushed the Necromancer cape and staff into the walking direction, making the rear silhouette lead the move.
+
+Changes:
+- Moved hero facing update after the state movement step and drive it from the current frame's intended `velocity`.
+- Kept smoothed facing unnormalized so side flips pass through a neutral/front pose instead of sticking on the old direction.
+- Reset horizontal smoothing to neutral on hard left/right reversals so the old side cannot remain visible as the front.
+- Rebalanced Necromancer fake side-turn: hood/eyes lead, robe turn is subtler, cape and staff trail opposite direction.
+
+Verification:
+- Attempted `Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit`, but this local Godot binary crashes with signal 11 before project logs. Needs in-editor playtest.
+
+Follow-up:
+- Reworked Necromancer cape motion so it no longer slides as one solid slab. Shoulder anchors now move minimally, lower hem vertices trail harder opposite the facing direction, and the front-side cape edge tucks inward behind the robe. Increased hood/head lead slightly so the face reads as the front during side movement.
+- Corrected left/right silhouette asymmetry: robe and hood now compress the leading side and keep more mass on the trailing side. This fixes left movement where the widened left robe/cowl was still reading as cape/body-first, while right movement had the staff as an extra front cue.
+- Split cape motion from torso facing: [base_hero.gd](heroes/base_hero.gd) now maintains a separate `_cape_lag_x` visual state and passes `ctx["cape_lag"]`; [UnitVisualDrawer.gd](systems/UnitVisualDrawer.gd) uses that delayed cape lag for Necromancer cloth while hood/robe continue using immediate facing. Result: torso turns first, cape catches up independently.
+- Calmed the follow-up vibration: cape lag now uses non-overshooting damped easing instead of a spring velocity, and Necromancer ink jitter updates more slowly with reduced amplitude so internal robe/face/staff details do not buzz as strongly.
+
+---
+
+## 2026-05-15 — Hero on the Path (visual alignment)
+
+After the Combat Blocking Doctrine landed earlier today, Warrior on L1 spawned at (1208, 549) while the path at that x sits at y≈497 — hero stood 52 px below the road and swung up at enemies parading past on the road. Designer flag: ugly in a 2D-isometric game where the path is the ground line. Wanted a flexible code solution, not per-marker / per-hero tuning.
+
+Three small changes solved it across all heroes / all levels:
+
+- **Phase 1 — Path-snap helper.** Added `GuardZone.snap_to_nearest_path(world_pos, paths_parent, slack)` in [systems/GuardZone.gd](systems/GuardZone.gd). Iterates Path2D children, projects via `Curve2D.get_closest_offset` + `sample_baked`, returns snapped point if within slack else original. Same primitives `is_guardable` already uses for path-progress checks.
+- **Phase 2 — Three call-site wraps in [base_hero.gd](heroes/base_hero.gd).** Spawn (`_ready`), respawn (`_respawn`), and player tap (`move_to`) all route `_rally_position` through `_snap_to_ground_line(pos, slack)`. `SPAWN_SNAP_SLACK = 80` for spawn/respawn (markers are intent, snap aggressively). `TAP_SNAP_SLACK = 40` for tap (deliberate off-path taps still respected). The destination-ring `_move_marker_pos` now draws at the snapped point so the player sees where the hero will land.
+- **Phase 3 — Archetype-default guard zone.** New `_effective_guard_zone()` returns authored values when set; otherwise melee archetypes (`attack_range < RANGED_ATTACK_RANGE_THRESHOLD = 150`) auto-default to 150/100. Ranged stays 0/0. `_can_pursue` and `_is_seeking_allowed` route through it. Warrior now auto-steps along the path to engage; Mage/Ranger/Necromancer stand on the path and shoot. Any future hero inherits the right behavior with zero per-hero authoring.
+
+Doctrine doc updated: [docs/COMBAT_BLOCKING_DOCTRINE.md](docs/COMBAT_BLOCKING_DOCTRINE.md) gained a "Hero on the Path — visual contract" subsection covering the three behaviors and the slack constants.
+
+Verification:
+- 6 new GUT tests in [tests/unit/test_combat_blocking.gd](tests/unit/test_combat_blocking.gd) — snap inside/outside slack, null paths_parent safety, archetype default for melee, archetype default for ranged, authored override wins. All passing.
+- Full GUT suite — 51/51 passing across 8 scripts (was 45 before; added 6 covering this change).
+- `godot --headless --quit` boots clean.
+
+Not yet verified: L1 visual playtest. Expected behavior on L1 with Warrior: hero spawns at y≈497 (snapped from 549), walks along the path to meet enemies coming from the left, fights on the road, returns to a hold-point on the road. Tap-to-move within 40 px of the road snaps; further taps respect off-path placement.

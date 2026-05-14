@@ -136,8 +136,16 @@ func _on_hit() -> void:
 	# damage still lands; the run-stats record_damage call below already guards
 	# the same way.
 	var src: Node = _source if (_source != null and is_instance_valid(_source)) else null
+	# Capture the primary target's pre-hit state so we can tell whether THIS
+	# arrow's hit transitioned it into DYING (the kill credit). Combat
+	# Blocking Doctrine Phase 7 — projectile ON_KILL must fire on impact, not
+	# at launch, so passives like lifesteal score off real arrival kills.
+	var primary_target: Node = _target if is_instance_valid(_target) else null
+	var primary_was_dying: bool = primary_target != null and "state" in primary_target and primary_target.state == BaseEnemy.State.DYING
+	var primary_dealt: float = 0.0
 	if is_instance_valid(_target) and _target.has_method("take_damage"):
-		total_dealt += _target.take_damage(_damage, _damage_type, src)
+		primary_dealt = _target.take_damage(_damage, _damage_type, src)
+		total_dealt += primary_dealt
 	if _status_effect != null and is_instance_valid(_target) and _target.has_method("apply_status_effect"):
 		_target.apply_status_effect(_status_effect)
 	if _aoe_radius > 0.0:
@@ -163,6 +171,15 @@ func _on_hit() -> void:
 		_spawn_impact_vfx(impact_pos)
 	if total_dealt > 0.0 and _source != null and is_instance_valid(_source) and _source.has_method("record_damage"):
 		_source.record_damage(total_dealt)
+	# Combat Blocking Doctrine Phase 7 — fire the source's on-impact hook so
+	# ON_HIT_DEALT / ON_KILL ability passives (lifesteal, mark-on-kill) score
+	# off the real impact, not the launch frame. Hero implements this; tower
+	# does not (no AbilityHost), so the has_method check no-ops cleanly.
+	if src != null and src.has_method("on_projectile_impact") and primary_target != null:
+		var killed: bool = (not primary_was_dying) \
+				and "state" in primary_target \
+				and primary_target.state == BaseEnemy.State.DYING
+		src.on_projectile_impact(primary_target, primary_dealt, killed)
 
 
 func _spawn_impact_vfx(impact_pos: Vector2) -> void:

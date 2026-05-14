@@ -51,6 +51,18 @@ const MELEE_ENGAGE_GAP_X: float = 55.0
 # uses MELEE_ENGAGE_GAP_X side-by-side; ranged stops at 80 % of attack_range
 # along the approach vector.
 const RANGED_ATTACK_RANGE_THRESHOLD: float = 150.0
+# Combat Blocking Doctrine — Hero on the Path. Spawn / respawn positions
+# auto-snap to the nearest level Path2D within this slack so the hero
+# stands on the road regardless of HeroSpawn marker placement. Player
+# tap-to-move uses a tighter slack (TAP_SNAP_SLACK) so deliberate off-path
+# tactical placement is still respected.
+const SPAWN_SNAP_SLACK: float = 80.0
+const TAP_SNAP_SLACK: float = 40.0
+# Archetype-default guard zone — applied when HeroData.guard_front_px and
+# guard_back_px are both 0 AND the hero is melee (attack_range below the
+# ranged threshold). Authoring overrides (any non-zero value) still win.
+const MELEE_DEFAULT_GUARD_FRONT: float = 150.0
+const MELEE_DEFAULT_GUARD_BACK: float = 100.0
 # Default block-claim radius when HeroData.engage_radius is unset (0).
 # Clamped down by attack_range so a tiny-reach hero doesn't claim blocks
 # past its own swing. See HeroData.engage_radius for the rationale.
@@ -116,12 +128,28 @@ var _hit_stop_t: float = 0.0
 const CAST_ANIM_DURATION: float = 0.25
 var _cast_t: float = 0.0
 var _cast_dir: Vector2 = Vector2.RIGHT
+# Pre-cast wind-up — when a skill is cast, the projectile / VFX spawn is
+# deferred by this many seconds so the staff orb gets to charge first.
+# Cooldown commits immediately on initiation; only the apply() call is
+# deferred. UI validates target shape upfront, so deferred apply rarely
+# no-ops on invalid input.
+const CAST_WIND_DURATION: float = 0.15
+var _cast_wind_t: float = 0.0
+var _pending_skill_idx: int = -1
+var _pending_skill_target = null
 # Idle breathing — small Y squish pulse while IDLE / COMBAT so a stationary
 # hero doesn't read as frozen.
 var _breath_t: float = 0.0
 # Facing direction for direction-aware eyes. Updated from velocity when the
 # hero moves, falls back to the active target / lunge direction otherwise.
 var _facing_dir: Vector2 = Vector2.RIGHT
+# Smoothed facing that the drawer reads. Eases toward `_facing_dir` over
+# ~0.15s so direction changes animate (body pivots through the turn)
+# instead of snapping in a single frame. Premium drawers (NECROMANCER)
+# use this for hood / robe / cape / staff-side pose.
+var _face_dir_smoothed: Vector2 = Vector2.RIGHT
+const FACE_LERP_RATE: float = 8.0
+var _cape_lag_x: float = 0.0
 var _prev_pos: Vector2 = Vector2.ZERO
 # Rally point — world position the hero leashes to. Seeded from the spawn
 # marker in _ready() and reseeded on each player-commanded move. Enemies
@@ -171,6 +199,7 @@ const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
 const _HeroSkillNodeDataScript := preload("res://heroes/HeroSkillNodeData.gd")
 const _MuzzleFlashScript := preload("res://vfx/MuzzleFlashVFX.gd")
+const _GuardZoneScript := preload("res://systems/GuardZone.gd")
 # Phase 3R-followup-3 — debug-only slider overrides. is_active() short-circuits
 # in release builds, so the multiplications below are identity at zero cost.
 const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
@@ -236,10 +265,12 @@ func _ready() -> void:
 			_ability_host.equip_ability(ab)
 	# Re-seed current_health AFTER items so spawns start at full (item-boosted) HP.
 	current_health = _effective_max_health()
-	# Seed the rally point from the spawn position; the player can reseat it
-	# by tapping to move. Position is already set by Main._spawn_hero before
-	# add_child, so global_position here is the HeroSpawn marker.
-	_rally_position = global_position
+	# Seed the rally point from the spawn position, snapped to the nearest
+	# Path2D within SPAWN_SNAP_SLACK so the hero stands on the road regardless
+	# of the HeroSpawn marker's exact placement (Combat Blocking Doctrine —
+	# "Hero on the path"). Player can reseat by tapping to move.
+	_rally_position = _snap_to_ground_line(global_position, SPAWN_SNAP_SLACK)
+	global_position = _rally_position
 	_walk_phase = randf() * TAU
 	_prev_pos = global_position
 	# Listen for confirmed taps from GameCamera's gesture classifier.
@@ -744,30 +775,28 @@ func can_cast_skill(idx: int) -> bool:
 
 func cast_skill(idx: int, target) -> bool:
 	# target: Node (for SINGLE), Vector2 (for AREA), or null (for SELF).
-	# Returns true if the skill actually fired (not on cooldown / valid target).
+	# Returns true if the cast was initiated (not on cooldown). Apply runs
+	# CAST_WIND_DURATION seconds later so the staff orb gets to charge.
 	if not can_cast_skill(idx):
 		return false
 	var skill: Resource = get_skill_data(idx)
 	if skill == null:
 		return false
-	# Phase 2 — single ctx built once: rank-scaling × chosen-mod scaling.
-	# Subclasses read `damage_mult`, `aoe_radius_mult`, `count_mult`, etc.
-	var ctx: Dictionary = _build_skill_ctx(skill)
-	# Bail without consuming cooldown if the skill explicitly no-ops (invalid
-	# target shape, missing scene refs, etc.). Subclasses returning true is
-	# the new contract; the SkillData base default is true so legacy void
-	# overrides that never opt out keep firing.
-	var fired: bool = bool(skill.apply(self, target, ctx))
-	if not fired:
-		return false
 	var effective_cd: float = get_skill_effective_cooldown(idx)
 	_skill_cooldowns[idx] = effective_cd
 	EventBus.hero_skill_used.emit(skill.skill_name)
 	EventBus.skill_cooldown_started.emit(skill.skill_name, effective_cd)
+	# Defer the skill apply by CAST_WIND_DURATION. _physics_process detects
+	# wind expiration and fires `skill.apply()` then.
+	_pending_skill_idx = idx
+	_pending_skill_target = target
+	_cast_wind_t = CAST_WIND_DURATION
 	# Cast pose — arm raised + body stretch for CAST_ANIM_DURATION so the
 	# skill activation reads as a deliberate cast rather than a silent
 	# instant. The cast direction faces the target when there is one.
-	_cast_t = CAST_ANIM_DURATION
+	# Extended by CAST_WIND_DURATION so the post-cast aftermath plays AFTER
+	# the wind-up + apply boundary.
+	_cast_t = CAST_ANIM_DURATION + CAST_WIND_DURATION
 	if target is Node2D:
 		var d: Vector2 = (target as Node2D).global_position - global_position
 		_cast_dir = d.normalized() if d.length_squared() > 0.001 else Vector2.RIGHT
@@ -779,6 +808,19 @@ func cast_skill(idx: int, target) -> bool:
 	else:
 		_cast_dir = _facing_dir
 	return true
+
+
+# Fires the deferred skill.apply() at the boundary between cast wind-up and
+# cast aftermath. Called from _physics_process when _cast_wind_t crosses 0.
+func _apply_pending_skill() -> void:
+	if _pending_skill_idx < 0:
+		return
+	var skill: Resource = get_skill_data(_pending_skill_idx)
+	if skill != null:
+		var ctx: Dictionary = _build_skill_ctx(skill)
+		skill.apply(self, _pending_skill_target, ctx)
+	_pending_skill_idx = -1
+	_pending_skill_target = null
 
 
 func _xp_needed_for_next_level() -> int:
@@ -873,14 +915,19 @@ func move_to(world_pos: Vector2) -> void:
 	_target_enemy = null
 	_attack_cooldown = 0.0
 	# Player tap reseats the rally point — the hero will leash to wherever
-	# the player sent it, not back to the original spawn.
-	_rally_position = world_pos
-	nav_agent.target_position = world_pos
-	# Move-order marker — arm the destination ring. Sits here so it only
+	# the player sent it, not back to the original spawn. Tap snaps to the
+	# nearest path within TAP_SNAP_SLACK so casual mis-taps near the road
+	# still land on the road; deliberate off-path taps are respected outside
+	# the slack (Combat Blocking Doctrine — Hero on the Path).
+	var dest: Vector2 = _snap_to_ground_line(world_pos, TAP_SNAP_SLACK)
+	_rally_position = dest
+	nav_agent.target_position = dest
+	# Move-order marker — arm the destination ring at the SNAPPED target so
+	# the player sees where the hero will actually land. Sits here so it only
 	# fires for orders that pass the DEAD/data gate above; HeroInputManager
 	# already filters illegal taps (tower spots, unselected hero) before
 	# we get here, so reaching this line means the order is legitimate.
-	_move_marker_pos = world_pos
+	_move_marker_pos = dest
 	_move_marker_t = 1.0
 	# Auto-deselect on move command — Option B. Next stray tap won't re-move
 	# the hero until the player taps the body to re-arm.
@@ -938,20 +985,17 @@ func _physics_process(delta: float) -> void:
 	if _flinch_t > 0.0:
 		_flinch_t = maxf(0.0, _flinch_t - delta)
 		queue_redraw()
+	if _cast_wind_t > 0.0:
+		var prev_wind: float = _cast_wind_t
+		_cast_wind_t = maxf(0.0, _cast_wind_t - delta)
+		queue_redraw()
+		# Fire the deferred skill apply on the falling edge so wind-up VFX
+		# (orb charge, rune brighten) has played for the full window first.
+		if _cast_wind_t == 0.0 and prev_wind > 0.0:
+			_apply_pending_skill()
 	if _move_marker_t > 0.0:
 		_move_marker_t = maxf(0.0, _move_marker_t - delta / MOVE_MARKER_DURATION)
 		queue_redraw()
-	# Facing direction — sampled from world delta. Falls back to active
-	# target direction when the hero is stationary so eyes still face the
-	# enemy during combat.
-	var dp: Vector2 = global_position - _prev_pos
-	if dp.length_squared() > 0.05:
-		_facing_dir = dp.normalized()
-	elif state == State.COMBAT and _target_enemy != null and is_instance_valid(_target_enemy):
-		var to_t: Vector2 = (_target_enemy.global_position - global_position)
-		if to_t.length_squared() > 0.001:
-			_facing_dir = to_t.normalized()
-	_prev_pos = global_position
 	_tick_skill_cooldowns(delta)
 	_tick_health_regen(delta)
 	if _ability_host != null:
@@ -976,6 +1020,28 @@ func _physics_process(delta: float) -> void:
 			_attack_step(delta)
 			_breath_t += delta
 			queue_redraw()
+	# Facing direction follows this frame's intended velocity, not last
+	# frame's position delta. That keeps side-turn visuals from lagging behind
+	# quick left/right move orders.
+	if velocity.length_squared() > 0.001:
+		_facing_dir = velocity.normalized()
+	elif state == State.COMBAT and _target_enemy != null and is_instance_valid(_target_enemy):
+		var to_t: Vector2 = (_target_enemy.global_position - global_position)
+		if to_t.length_squared() > 0.001:
+			_facing_dir = to_t.normalized()
+	_prev_pos = global_position
+	if absf(_face_dir_smoothed.x) > 0.20 and absf(_facing_dir.x) > 0.20 \
+			and signf(_face_dir_smoothed.x) != signf(_facing_dir.x):
+		_face_dir_smoothed.x = 0.0
+	var face_alpha: float = clampf(delta * FACE_LERP_RATE, 0.0, 1.0)
+	_face_dir_smoothed = _face_dir_smoothed.lerp(_facing_dir, face_alpha)
+	var cape_target: float = 0.0
+	if velocity.length_squared() > 0.001:
+		cape_target = -clampf(velocity.normalized().x, -1.0, 1.0)
+	else:
+		cape_target = -clampf(_facing_dir.x, -1.0, 1.0) * 0.20
+	var cape_rate: float = 5.5 if velocity.length_squared() > 0.001 else 2.0
+	_cape_lag_x = lerpf(_cape_lag_x, cape_target, clampf(delta * cape_rate, 0.0, 1.0))
 	move_and_slide()
 
 
@@ -1013,9 +1079,10 @@ func _lunge_offset() -> Vector2:
 
 func _move_step(delta: float) -> void:
 	# While auto-seeking, repath toward the moving enemy's engage slot.
-	# Abort chases that exit the leash — the hero is not a lawnmower.
+	# Combat Blocking Doctrine — abort chases that exit the guard zone /
+	# auto-seek radius. The hero is a guard, not a hunter.
 	if _seek_target_enemy != null:
-		if not _within_leash(_seek_target_enemy) \
+		if not _can_pursue(_seek_target_enemy) \
 				or not is_instance_valid(_seek_target_enemy) \
 				or _seek_target_enemy.state == BaseEnemy.State.DYING:
 			_seek_target_enemy = null
@@ -1050,13 +1117,15 @@ func _find_nearest_enemy_in_area(area: Area2D) -> Node:
 	return _pick_split_target_in_area(area)
 
 
-# Split-rule picker: prefers the enemy with the FEWEST current blockers so
-# friendlies spread across incoming threats instead of piling on one. Ties
-# resolved by distance. Enforces the standard filters (DYING, flying when
-# data.targets_flying is false, within-leash).
+# Combat Blocking Doctrine target selection: prefers the enemy with the
+# FEWEST current blockers (so friendlies spread across incoming threats),
+# tie-broken by HIGHEST path progress (the closer-to-exit threat is more
+# urgent), tie-broken by nearest distance. Same rule the soldier uses.
+# Filters DYING, flying-when-disallowed.
 func _pick_split_target_in_area(area: Area2D) -> Node:
 	var best: Node = null
 	var best_block: int = 1 << 30
+	var best_progress: float = -INF
 	var best_d2: float = INF
 	for a in area.get_overlapping_areas():
 		if not (a is BaseEnemy):
@@ -1069,15 +1138,24 @@ func _pick_split_target_in_area(area: Area2D) -> Node:
 		if enemy.data.is_flying and not data.targets_flying:
 			continue
 		var bc: int = enemy._blockers.size()
+		var prog: float = enemy.get_path_progress() if enemy.has_method("get_path_progress") else 0.0
 		var d2: float = global_position.distance_squared_to(enemy.global_position)
-		if bc < best_block or (bc == best_block and d2 < best_d2):
+		if bc < best_block \
+				or (bc == best_block and prog > best_progress) \
+				or (bc == best_block and prog == best_progress and d2 < best_d2):
 			best_block = bc
+			best_progress = prog
 			best_d2 = d2
 			best = enemy
 	return best
 
 
 func _seek_target() -> void:
+	# Combat Blocking Doctrine — hero is a guard, not a hunter. Hero attacks
+	# anything in attack_range from the current hold point (Phase 1). Hero
+	# only walks toward distant targets when authored to (Phase 2 gated by
+	# data.auto_seek_radius > 0 or guard zone). Otherwise drifted-from-rally
+	# returns home (Phase 3). See docs/COMBAT_BLOCKING_DOCTRINE.md.
 	# Phase 1: check attack range — immediate combat. Leash-gated so the
 	# hero never engages enemies that would pull it far from the rally.
 	var nearest_attack: Node = _find_nearest_enemy_in_area(attack_range_area)
@@ -1088,15 +1166,19 @@ func _seek_target() -> void:
 		_start_block(nearest_attack)
 		change_state(State.COMBAT)
 		return
-	# Phase 2: check seek range — auto-walk toward enemy via nav agent.
-	var nearest_seek: Node = _find_nearest_enemy_in_area(seek_range_area)
-	if nearest_seek != null and _within_leash(nearest_seek) and nearest_seek != _seek_target_enemy:
-		_seek_target_enemy = nearest_seek
-		nav_agent.target_position = _engage_position_for(nearest_seek)
-		_nav_repath_timer = 0.0
-		change_state(State.MOVING)
-		return
-	# Phase 3: no valid enemy + drifted from rally → walk back.
+	# Phase 2: gated auto-seek. Default heroes (guard zone 0/0, auto_seek 0)
+	# never run this branch — the hero holds ground. Tanks/melee heroes
+	# authored with guard_front_px/back_px > 0 may step out within the zone;
+	# hunter archetypes authored with auto_seek_radius > 0 may pursue further.
+	if _is_seeking_allowed():
+		var nearest_seek: Node = _find_nearest_enemy_in_area(seek_range_area)
+		if nearest_seek != null and _can_pursue(nearest_seek) and nearest_seek != _seek_target_enemy:
+			_seek_target_enemy = nearest_seek
+			nav_agent.target_position = _engage_position_for(nearest_seek)
+			_nav_repath_timer = 0.0
+			change_state(State.MOVING)
+			return
+	# Phase 3: no valid enemy + drifted from rally → walk back to hold point.
 	if global_position.distance_to(_rally_position) > LEASH_RETURN_TOLERANCE:
 		_seek_target_enemy = null
 		nav_agent.target_position = _rally_position
@@ -1104,10 +1186,79 @@ func _seek_target() -> void:
 
 
 # True if the target sits within LEASH_RADIUS of the current rally point.
+# Safety cap — pursuit must also pass _can_pursue (guard zone / auto-seek).
 func _within_leash(target: Node) -> bool:
 	if target == null or not is_instance_valid(target):
 		return false
 	return target.global_position.distance_to(_rally_position) <= LEASH_RADIUS
+
+
+# Combat Blocking Doctrine — may this hero step out of the hold point to
+# pursue this enemy? Default heroes refuse (guard zone 0, auto_seek 0).
+# Authored tanks/melee use guard_front_px/back_px; authored hunters use
+# auto_seek_radius. Melee archetypes (attack_range < ranged threshold) get
+# an auto-fallback guard zone via _effective_guard_zone. See systems/GuardZone.gd.
+func _can_pursue(enemy) -> bool:
+	if enemy == null or not is_instance_valid(enemy):
+		return false
+	if not _within_leash(enemy):
+		return false
+	if data == null:
+		return false
+	var seek_r: float = data.auto_seek_radius if "auto_seek_radius" in data else 0.0
+	if seek_r > 0.0:
+		return enemy.global_position.distance_to(_rally_position) <= seek_r
+	var zone: Vector2 = _effective_guard_zone()
+	if zone.x <= 0.0 and zone.y <= 0.0:
+		return false
+	return _GuardZoneScript.is_guardable(enemy, _rally_position, zone.x, zone.y)
+
+
+# True if the hero is authored (or archetype-defaults) to ever move off the
+# hold point chasing a distant target. Default ranged heroes are not — they
+# hold ground and only engage what enters attack_range. Melee heroes get an
+# auto-default guard zone via _effective_guard_zone.
+func _is_seeking_allowed() -> bool:
+	if data == null:
+		return false
+	if "auto_seek_radius" in data and data.auto_seek_radius > 0.0:
+		return true
+	var zone: Vector2 = _effective_guard_zone()
+	return zone.x > 0.0 or zone.y > 0.0
+
+
+# Combat Blocking Doctrine — Archetype-default guard zone. Returns
+# Vector2(guard_front_px, guard_back_px). Authoring wins when either is > 0;
+# otherwise melee archetypes (attack_range < ranged threshold) auto-default
+# to 150/100 so they step out to engage along the path without per-hero
+# data busywork. Ranged archetypes stay 0/0. See docs/COMBAT_BLOCKING_DOCTRINE.md.
+func _effective_guard_zone() -> Vector2:
+	if data == null:
+		return Vector2.ZERO
+	var front: float = data.guard_front_px if "guard_front_px" in data else 0.0
+	var back: float = data.guard_back_px if "guard_back_px" in data else 0.0
+	if front > 0.0 or back > 0.0:
+		return Vector2(front, back)
+	# Auto-fallback: melee archetype only.
+	if data.attack_range < RANGED_ATTACK_RANGE_THRESHOLD:
+		return Vector2(MELEE_DEFAULT_GUARD_FRONT, MELEE_DEFAULT_GUARD_BACK)
+	return Vector2.ZERO
+
+
+# Combat Blocking Doctrine — snap a world position to the nearest level
+# Path2D within `slack` px so the hero stands on the road. Outside slack,
+# returns the original position so deliberate off-path placement
+# (tactical taps, fortress side spawns) is respected. Looks up the
+# level's "Paths" Node2D parent on each call — cheap relative to the
+# call frequency (spawn/respawn/tap, not per-frame).
+func _snap_to_ground_line(pos: Vector2, slack: float) -> Vector2:
+	var scene: Node = get_tree().current_scene if get_tree() != null else null
+	if scene == null:
+		return pos
+	var paths_parent: Node = scene.get_node_or_null("Paths")
+	if paths_parent == null:
+		return pos
+	return _GuardZoneScript.snap_to_nearest_path(pos, paths_parent, slack)
 
 
 # Where the hero should stand to attack the given enemy.
@@ -1141,11 +1292,14 @@ func _attack_step(delta: float) -> void:
 		_target_enemy = null
 		change_state(State.IDLE)
 		return
-	# Enemy walked out of attack range — chase if still in leash, else drop.
+	# Combat Blocking Doctrine — enemy walked out of attack range. Chase
+	# only if still inside guard zone / auto_seek radius (i.e. authored as
+	# a pursuer). Default ranged heroes (guard 0/0, auto_seek 0) drop the
+	# target and walk back to the hold point — they don't lawnmower the lane.
 	if not (enemy in attack_range_area.get_overlapping_areas()):
 		_release_block_of(enemy)
 		_target_enemy = null
-		if _within_leash(enemy):
+		if _can_pursue(enemy):
 			_seek_target_enemy = enemy
 			nav_agent.target_position = _engage_position_for(enemy)
 			_nav_repath_timer = 0.0
@@ -1179,12 +1333,11 @@ func _attack_step(delta: float) -> void:
 	# the target (Arrow._on_hit calls take_damage). For melee heroes
 	# (projectile_scene == null), the original instant-hit path runs.
 	#
-	# ON_HIT_DEALT / ON_KILL triggers still fire here in the projectile path
-	# so lifesteal / on-hit passives behave consistently with melee — the
-	# arrow's travel time is short (~200ms at speed 1250 over 280px) so the
-	# desync is negligible. If a passive needs strict on-arrival semantics
-	# (e.g. an explosive-on-arrival item), Arrow would need to call back
-	# into the source's AbilityHost — deferred until that need exists.
+	# Combat Blocking Doctrine Phase 7 — projectile ON_HIT_DEALT / ON_KILL
+	# now fire from Arrow._on_hit via on_projectile_impact() so passives like
+	# lifesteal and mark-on-kill score off the real arrival, not the launch
+	# frame. Melee path still fires the triggers inline below since impact
+	# is simultaneous with the swing.
 	if data.projectile_scene != null:
 		var parent: Node = get_tree().current_scene
 		if parent != null:
@@ -1207,15 +1360,26 @@ func _attack_step(delta: float) -> void:
 				_MuzzleFlashScript.spawn(parent, proj.global_position, aim_angle, flash_color)
 	else:
 		enemy.take_damage(dmg, data.damage_type, self)
-	if _ability_host != null:
-		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_DEALT, {"target": enemy, "amount": dmg})
-		# Kill is inferred by post-hit state transition. BaseEnemy enters
-		# DYING inside take_damage when HP drops to 0. For the projectile
-		# path the kill detection runs on arrow arrival; we'll miss the
-		# trigger here, but ON_KILL passives are rare and the projectile
-		# itself records the damage downstream.
-		if not dying and enemy.state == BaseEnemy.State.DYING:
-			_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_KILL, {"victim": enemy})
+		# Melee path — ability triggers fire inline since impact is synchronous
+		# with the swing. Projectile path's triggers fire from Arrow._on_hit
+		# via on_projectile_impact() instead (Combat Blocking Doctrine Phase 7).
+		if _ability_host != null:
+			_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_DEALT, {"target": enemy, "amount": dmg})
+			if not dying and enemy.state == BaseEnemy.State.DYING:
+				_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_KILL, {"victim": enemy})
+
+
+# Combat Blocking Doctrine Phase 7 — projectile callback. Fired by Arrow
+# on impact so ON_HIT_DEALT / ON_KILL passives score off the real arrival,
+# not the launch frame. `killed` is true iff THIS arrow's hit transitioned
+# the target into DYING.
+func on_projectile_impact(target: Node, amount: float, killed: bool) -> void:
+	if _ability_host == null:
+		return
+	if target != null and is_instance_valid(target):
+		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_DEALT, {"target": target, "amount": amount})
+		if killed:
+			_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_KILL, {"victim": target})
 
 
 func heal(amount: float) -> void:
@@ -1337,6 +1501,9 @@ func _respawn() -> void:
 					break
 		if lvl != null and lvl.has_method("get_hero_spawn_position"):
 			spawn_pos = lvl.get_hero_spawn_position()
+	# Snap respawn position to the nearest path so the hero comes back on the
+	# road, same as the initial spawn (Combat Blocking Doctrine — Hero on the Path).
+	spawn_pos = _snap_to_ground_line(spawn_pos, SPAWN_SNAP_SLACK)
 	global_position = spawn_pos
 	_rally_position = spawn_pos
 	current_health = _effective_max_health()
@@ -1540,12 +1707,20 @@ func _draw() -> void:
 	# Build ctx for the drawer.
 	var ctx: Dictionary = {}
 	if data != null and data.visual != null:
-		ctx["face"] = _facing_dir
+		ctx["face"] = _face_dir_smoothed
 		if walk_rotation != 0.0:
 			ctx["walk_rotation"] = walk_rotation
 		var max_hp: int = _effective_max_health()
 		if max_hp > 0 and float(current_health) / float(max_hp) < 0.30:
 			ctx["low_hp"] = true
+		# Premium drawers (NECROMANCER) read these for richer idle/hit animation.
+		# Always populate — drawer gates by render_profile so the cost is zero
+		# for shared-path units that never read them.
+		ctx["breath_t"] = _breath_t
+		ctx["cape_lag"] = _cape_lag_x
+		if _flinch_t > 0.0:
+			ctx["flinch_t"] = _flinch_t / FLINCH_DURATION
+			ctx["flinch_dir"] = _flinch_dir
 		# Attack wind-up + strike sweep — derived from the same lunge curve
 		# so the held weapon follows the body offset through the swing.
 		if _lunge_t > 0.0:
@@ -1558,19 +1733,24 @@ func _draw() -> void:
 				ctx["strike_t"] = clampf((t01 - 0.30) / 0.65, 0.0, 1.0)
 				ctx["strike_dir"] = _lunge_dir
 		# Cast pose — force arm raised and pointing at the cast direction.
-		# Overrides any walk swing for the duration. Drops back to wind-up
-		# control after _cast_t hits 0.
+		# Two phases:
+		#   wind-up:   _cast_wind_t > 0 → arm fully raised, staff orb charges
+		#   aftermath: _cast_wind_t == 0 and _cast_t > 0 → arm lowers, release flash
 		if _cast_t > 0.0:
-			var ct2: float = clampf(1.0 - (_cast_t / CAST_ANIM_DURATION), 0.0, 1.0)
-			# Ramp to 1 in first half, hold, then ramp back so the arm
-			# returns smoothly to rest after the pose ends.
-			var raise_amount: float = sin(ct2 * PI) * 0.85 + 0.15
-			ctx["wind_t"] = clampf(raise_amount, 0.0, 1.0)
 			ctx["strike_dir"] = _cast_dir
-			# Staff finial release-flash strength: 1 right after the shot,
-			# 0 at the end of the cast animation. Drawer uses this to swell
-			# the orb and brighten its core for the duration.
-			ctx["cast_t"] = clampf(_cast_t / CAST_ANIM_DURATION, 0.0, 1.0)
+			if _cast_wind_t > 0.0:
+				# Wind-up: hold arm raised at full, staff finial swells.
+				ctx["wind_t"] = 1.0
+				ctx["cast_wind_t"] = clampf(_cast_wind_t / CAST_WIND_DURATION, 0.0, 1.0)
+				ctx["cast_t"] = 0.0
+			else:
+				# Aftermath: existing release-flash curve over CAST_ANIM_DURATION.
+				var ct2: float = clampf(1.0 - (_cast_t / CAST_ANIM_DURATION), 0.0, 1.0)
+				var raise_amount: float = sin(ct2 * PI) * 0.85 + 0.15
+				ctx["wind_t"] = clampf(raise_amount, 0.0, 1.0)
+				# Staff finial release-flash strength: 1 right after the shot,
+				# 0 at the end of the cast animation.
+				ctx["cast_t"] = clampf(_cast_t / CAST_ANIM_DURATION, 0.0, 1.0)
 
 	# Body draw.
 	if data != null and data.visual != null:

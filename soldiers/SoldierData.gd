@@ -25,6 +25,13 @@ class_name SoldierData
 # grunts hold one; Paladin-class variants (capacity 2+) can tank a small
 # pack solo. Enemies allow any number of blockers — the cap lives here.
 @export var max_block_targets: int = 1
+
+# Combat Blocking Doctrine — guard-zone fields. Soldiers guard their rally
+# slot; they engage enemies inside the zone, never pursue beyond it.
+# Path-projected when possible (front = toward exit, back = toward spawn);
+# falls back to world distance around rally. See docs/COMBAT_BLOCKING_DOCTRINE.md.
+@export var guard_front_px: float = 120.0
+@export var guard_back_px: float = 70.0
 # Composed passives — heal aura (Paladin), damage block (Shield Bearer),
 # enrage under HP (Berserker), etc. Same AbilityData primitive enemies use.
 @export var abilities: Array[Resource] = []

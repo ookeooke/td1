@@ -8,12 +8,18 @@ colors = PackedColorArray(0.78, 0.32, 0.95, 0.85, 0.18, 0.05, 0.30, 0.0)
 
 [node name="NecroBolt" type="Node2D"]
 script = ExtResource("1_arrow")
-shape = 5
+shape = 6
 speed = 850.0
 hit_radius = 28.0
 proj_color = Color(0.55, 0.18, 0.75, 1.0)
+flight_wander_amplitude = 18.0
+flight_wander_vertical = 22.0
+flight_wander_frequency = 1.35
+flight_wander_randomness = 0.85
 trail_color_core = Color(0.85, 0.55, 1.0, 1.0)
 trail_color_edge = Color(0.18, 0.05, 0.30, 1.0)
+trail_width_jitter = 0.55
+trail_alpha_jitter = 0.45
 trail_smooth = true
 
 [node name="Sparkles" type="CPUParticles2D" parent="."]

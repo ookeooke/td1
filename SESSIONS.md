@@ -3907,6 +3907,9 @@ Follow-up:
 - Verification for this follow-up: `git diff --check` passes. Local `Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit` still crashes with signal 11 before project logs, so in-editor visual/projectile verification is still required.
 - Torso/cape separation pass: [UnitVisualDrawer.gd](systems/UnitVisualDrawer.gd) now adds a calmer `torso_turn` channel, keeps robe shoulders nearly pinned, lets the lower robe hem carry most walk sway, draws a distinct brighter front torso panel over the robe, and adds a dark shoulder gap so the cape reads as a separate layer behind the body. Added controlled dry-ink outlines/fold strokes on cape, torso, and hood for a more hand-drawn read without reintroducing whole-character vibration. Verification: `git diff --check` passes; local headless Godot still crashes with signal 11 before script validation, so editor playtest is required.
 - Idle animation pass: added dedicated Necromancer idle channels (`idle_breath`, `idle_settle`, `idle_cape`, `idle_staff`, `idle_orb`) instead of borrowing walk math. Torso panel/chest pendant now breathe subtly, cape hem drifts late, hood settles with tiny counter-motion, and the staff orb has a slow idle pulse while the shaft only micro-sways. Verification: `git diff --check` passes; editor visual check still needed.
+- Over-separated rig correction: toned the premium Necromancer back toward a single gliding robe. Removed the visible foot-IK draw call from the premium path so leg direction no longer fights the movement, reduced torso/head/cape rig translation and rotation, narrowed the cape silhouette, halved cape lag influence, and softened the cape rim/occlusion overlay so it reads as cloth behind the body instead of wings. Verification: `git diff --check` passes; editor visual check still needed.
+- 3/4 side-pose pass: restored local facing cues without increasing whole-body puppet separation. Hood/face/eyes now shift and squash toward the facing side, the far eye dims more strongly, the front torso panel and skull pendant slide/narrow with the turn, the staff gets a small depth shift, and cape only gets a tiny asymmetry so it stays cloth-like. Verification: `git diff --check` passes; editor visual check still needed.
+- Stronger turn / burning eyes pass: increased local side-pose strength for hood/face/torso/staff while keeping cape subdued; eyes now use a larger halo/core plus small procedural flame shapes above the visible eyes, brighter during cast. Verification: `git diff --check` passes; editor visual check still needed.
 
 ---
 
@@ -4206,3 +4209,56 @@ Verification — GUT 81/81 (test_combat_blocking 44/44), headless boot clean. In
 - Mage HANDOFF (enemy crosses 90px): strides out → claimed=true, blocked=true, useProj=false (close_attack), dy=0.32 px, enemy frozen — SAME pipeline as Warrior.
 - Live tunable: BalanceOverrides engage_range_mult ×2.0 → compute_base_stats melee_engage_range 90 → 180 (reset to 1.0).
 - Warrior regression: meleeRng 280, strides out, claimed+blocked, dy=0.75 px, enemy frozen, no teleport.
+
+## 2026-05-15 — Necromancer arms: 2-bone elbows
+
+Consistency follow-up to the legs pass: generalized `_knee_ik` into shared `_two_bone_joint(a,b,bone,bow)` (knee now calls it with bow toward travel). Both Necromancer arms (free arm shoulder→hand, staff arm shoulder→grip) are now 2-bone with an elbow that bows outward+down and bends MORE as the hand pulls in (cast raise / wind-up / melee), tapered forearm — matching the legs. No longer straight sticks. Necromancer premium only.
+
+Verification: clean headless boot; full GUT.
+
+## 2026-05-15 — NecroBolt haunted flight wander
+
+Added opt-in visual-only projectile wander to the shared projectile script. `Arrow.gd` now supports per-scene `flight_wander_amplitude`, vertical wander, frequency, and randomness; the hidden `_ground_pos` still homes straight into the target, so hit timing / on-hit callbacks stay deterministic while the rendered bolt snakes up/down and side-to-side and fades back onto the target at impact.
+
+Enabled it only on `NecroBolt.tscn`: the Necromancer soul bolt now has randomized haunted movement per shot, with smooth trail samples following the visible path. Other projectiles keep zero wander defaults.
+
+Verification: `git diff --check` passes; Godot editor visual check still needed.
+
+## 2026-05-15 — NecroBolt launch/impact/shape/trail polish
+
+Follow-up to the haunted flight pass: split Necromancer's projectile off the generic `ARCANE_BOLT` into a dedicated `NECRO_BOLT` shape. The bolt now draws as an asymmetrical soul-flame with a dark core, green-violet rim, tiny eye glints, and animated flame licks instead of a clean mage capsule.
+
+Added a staff launch burst for `NECRO_BOLT` at setup time (short purple/green halo + directional rays from the staff tip), a cursed impact pop (dark smoke, expanding necrotic ring, radial soul streaks, small skull flash), and per-shot trail width/alpha jitter exported on projectile resources. `NecroBolt.tscn` opts into the new shape plus trail jitter; other projectiles keep the default zero-jitter behavior.
+
+Verification: `git diff --check` passes; local Godot headless still crashes with signal 11 before project validation, so editor visual check is still needed.
+
+## 2026-05-15 — Fixed the fast Y "snap" when a blocker matches the enemy's lane
+
+User reported heroes moving very fast specifically while aligning to the enemy's Y. Root cause: the approach steered straight at the Y-locked engage spot; with a far-X / small-Y geometry the unit direction was X-dominant so Y closed at only ~0.1–0.3× move_speed. COMBAT triggers early off-Y (engage_radius/proximity), then the settle resolved the whole residual lane offset at full move_speed in a short pure-Y burst — a 3–10× apparent vertical-speed jump (magnitude never exceeded move_speed; steering was correctly normalized, single move_and_slide, no double-move).
+
+Fix: `BaseHero._ground_line_dir` (mirrored as `BaseSoldier._ground_line_dir`), bias const APPROACH_Y_PRIORITY=1.0 / Y_ALIGN_EPS=2.0. Caps the horizontal direction component to |Δy|×PRIORITY while a lane gap remains, so the vertical gap closes no slower than the horizontal one — the blocker rises onto the enemy's Y on a ≤45° diagonal during the walk-in, then continues straight along the lane. Used in the hero approach steer + COMBAT settle and the soldier charge + engaged-settle. Speed unchanged everywhere (only direction). COMBAT settle is now a rarely-hit safety net (still uses the biased dir). Doctrine Combat Ground Line section + a new steering test added.
+
+Verification — GUT 83/83 (+2 _ground_line_dir tests), headless boot clean. In-engine (Godot MCP, slow-mo to capture trajectory):
+- Warrior, start dX=230 dY=-90: Y closed early — at dX=135 (41% X done) dY was already -1.8; planted COMBAT dX=58 dY=-0.09. No flat-then-snap.
+- Mage (ranged→melee handoff), start dX=55 dY=-60: dY -60 → -3.65 across the short approach, planted COMBAT blk=true on-Y, |v|=0.
+- time_scale restored to 1.0; dbg nodes cleaned.
+
+## 2026-05-15 — Blocker doctrine: a ranged shot target that leaves range is dropped, never chased
+
+Bug (user-identified): in BaseHero._attack_step, when _target_enemy left attack_range_area the hero pursued it whenever _can_pursue(enemy) was true — even if the enemy was only ever a RANGED SHOT target (never blocked/reserved). A Mage/Ranger/Necro would start chasing an enemy it was only shooting. Violates KR doctrine (detection ≠ combat; heroes are blockers, not hunters).
+
+Fix (heroes/base_hero.gd _attack_step): capture `was_blocking := _blocked_enemies.has(enemy)` BEFORE `_release_block_of(enemy)`; only reposition/pursue if `was_blocking and _can_pursue(enemy)` (a real melee lock following a near-leaker to the line within the guard zone). Otherwise drop the target and go IDLE → _seek_target re-acquires next shoot/melee target or returns to anchor. No chase of a shot-only target. Doctrine updated (Ranged behavior list item 4 + renumber).
+
+Verification — GUT 83/83, headless boot clean. In-engine (Godot MCP, L1):
+- Mage shooting enemy at dist 150 (shot tier: target=true, blocked=false, claimed=false, enemy not held, eHP dropping). Enemy shoved to dist 450 (out of atkR 270): Mage → st=IDLE, stayed at anchor (1421,464), seek_is_e=false, never reserved. NO chase (was the bug).
+- Warrior physically blocking (blocked=true, claimed=true). Enemy near-leaked ~130px (out of atkR 75, inside guard 280): Warrior repositioned (walked x1385→1514), re-locked (blocked=true again, eHP kept dropping). Regression preserved — a real blocker still follows a near-leaker within the guard zone.
+
+Note: same-Y / path-forward engage spot is unchanged (Combat Ground Line: enemy.y + sign(path_forward.x)*gap — deliberate Y-lock from the prior fix, not reverted).
+
+## 2026-05-15 - Hero chase guardrails: COMBAT must mean a real block
+
+Investigated continued "hero runs behind enemy after it passed" behavior. Two remaining hero-side leaks were found in `heroes/base_hero.gd`: (1) the COMBAT state's two-tier handoff treated any non-blocked target as eligible for melee re-acquire, so a ranged-shot target could be hijacked into walking/chasing when another enemy entered detection; (2) `_move_step` / `_seek_target` entered COMBAT after calling `_start_block` even when `_start_block` no-oped because the enemy was not actually inside `engage_range_area` or could not be claimed.
+
+Fix: COMBAT now only picks a new melee target when `_target_enemy == null`, so an active shot target stays a shot target until `_attack_step` drops it naturally. `_start_block` now returns bool, and hero transitions into COMBAT only when a real enemy blocker slot was claimed. Aborted approaches also clear stale `_target_enemy` if it was the same seek target. This keeps the rule strict: chosen melee target is reserved/stopped during approach, but combat/focus only becomes real once the enemy is physically blocked.
+
+Verification: attempted local GUT with `C:\Godot_v4.6.2-stable_win64.exe (1)\Godot_v4.6.2-stable_win64_console.exe --headless -s res://addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit`; local Godot crashed with signal 11 before test output. Editor/playtest verification still needed.

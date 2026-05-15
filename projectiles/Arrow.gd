@@ -6,7 +6,7 @@ class_name Arrow
 # MageBolt / ArtilleryShell). Hit detection uses the homing-linear ground
 # position; arc_height lifts the body visually so a shell reads as ballistic
 # without breaking the on-target-arrival timing.
-enum Shape { ARROW, CRYSTAL, ORB, SHELL, HERO_ARROW, ARCANE_BOLT }
+enum Shape { ARROW, CRYSTAL, ORB, SHELL, HERO_ARROW, ARCANE_BOLT, NECRO_BOLT }
 
 const _ShellImpactScript := preload("res://vfx/ShellImpactVFX.gd")
 
@@ -23,6 +23,12 @@ const _ShellImpactScript := preload("res://vfx/ShellImpactVFX.gd")
 @export var spin_speed: float = 0.0  # rad/sec
 # Peak vertical lift in pixels at mid-flight. 0 = straight homing line.
 @export var arc_height: float = 0.0
+# Optional visual-only wandering. Hit math still follows _ground_pos, so the
+# projectile can snake upward/sideways and still land cleanly on the target.
+@export var flight_wander_amplitude: float = 0.0
+@export var flight_wander_vertical: float = 0.0
+@export var flight_wander_frequency: float = 1.0
+@export_range(0.0, 1.0, 0.05) var flight_wander_randomness: float = 0.0
 # Ground shadow under the projectile — flattened ellipse at _ground_pos that
 # scales/darkens inversely with arc lift. Reads as "this is up in 3D space"
 # in 2D. Only meaningful with arc_height > 0; default off so straight-flying
@@ -46,6 +52,8 @@ var _trail: PackedVector2Array = PackedVector2Array()
 # (mage = white core, violet edge; ice = white core, cyan edge; etc.).
 @export var trail_color_core: Color = Color(0, 0, 0, 0)
 @export var trail_color_edge: Color = Color(0, 0, 0, 0)
+@export_range(0.0, 1.0, 0.05) var trail_width_jitter: float = 0.0
+@export_range(0.0, 1.0, 0.05) var trail_alpha_jitter: float = 0.0
 # Catmull-Rom smoothing for the trail polyline. Worth enabling on arcing
 # projectiles (Arrow, ArtilleryShell) where the recorded samples form a
 # parabola that reads better as a smooth ribbon than as polyline segments.
@@ -70,6 +78,13 @@ var _time: float = 0.0
 # tangent (so an arc'd arrow tilts through the parabola, not horizontally).
 var _prev_global: Vector2 = Vector2.ZERO
 var _has_prev: bool = false
+var _wander_phase_a: float = 0.0
+var _wander_phase_b: float = 0.0
+var _wander_freq_a: float = 1.0
+var _wander_freq_b: float = 1.0
+var _wander_side: float = 1.0
+var _trail_width_mult: float = 1.0
+var _trail_alpha_mult: float = 1.0
 
 
 func setup(target: Node, damage: float, damage_type: int, source: Node, status_effect = null, aoe_radius: float = 0.0, splash_pct: float = 0.5) -> void:
@@ -82,8 +97,12 @@ func setup(target: Node, damage: float, damage_type: int, source: Node, status_e
 	_splash_pct = splash_pct
 	_ground_pos = global_position
 	_start_pos = global_position
+	_randomize_flight_wander()
+	_randomize_trail_variation()
 	if is_instance_valid(target):
 		_total_dist = _start_pos.distance_to(target.global_position)
+		if shape == Shape.NECRO_BOLT and not VFXSpawner.clean_view:
+			_spawn_necro_launch_vfx(target.global_position)
 
 
 func _process(delta: float) -> void:
@@ -104,13 +123,16 @@ func _process(delta: float) -> void:
 			_trail.remove_at(0)
 	var step: float = minf(speed * delta, dist)
 	_ground_pos += to_target.normalized() * step
-	# Arc lift — visual only. _total_dist anchors progress to the original
-	# travel distance so the lift hits zero exactly on impact.
+	# Arc/wander are visual only. _total_dist anchors progress to the original
+	# travel distance so offsets hit zero exactly on impact.
+	var progress: float = 0.0
+	if _total_dist > 0.0:
+		progress = clampf(_start_pos.distance_to(_ground_pos) / _total_dist, 0.0, 1.0)
 	var arc_off: Vector2 = Vector2.ZERO
 	if arc_height > 0.0 and _total_dist > 0.0:
-		var t: float = clampf(_start_pos.distance_to(_ground_pos) / _total_dist, 0.0, 1.0)
-		arc_off.y = -arc_height * 4.0 * t * (1.0 - t)
-	global_position = _ground_pos + arc_off
+		arc_off.y = -arc_height * 4.0 * progress * (1.0 - progress)
+	var wander_off: Vector2 = _flight_wander_offset(progress, to_target)
+	global_position = _ground_pos + arc_off + wander_off
 	# Rotation tracks the visual trajectory tangent (frame-to-frame delta),
 	# so an arc'd projectile tilts up on the way up and down on the way
 	# down. First frame has no prev sample — fall back to to_target.
@@ -125,6 +147,56 @@ func _process(delta: float) -> void:
 	_prev_global = global_position
 	_has_prev = true
 	queue_redraw()
+
+
+func _randomize_flight_wander() -> void:
+	var r: float = clampf(flight_wander_randomness, 0.0, 1.0)
+	_wander_phase_a = randf_range(0.0, TAU)
+	_wander_phase_b = randf_range(0.0, TAU)
+	_wander_side = -1.0 if randf() < 0.5 else 1.0
+	_wander_freq_a = maxf(0.05, flight_wander_frequency * randf_range(1.0 - 0.28 * r, 1.0 + 0.34 * r))
+	_wander_freq_b = maxf(0.05, flight_wander_frequency * randf_range(0.62 - 0.15 * r, 0.90 + 0.20 * r))
+
+
+func _randomize_trail_variation() -> void:
+	var w: float = clampf(trail_width_jitter, 0.0, 1.0)
+	var a: float = clampf(trail_alpha_jitter, 0.0, 1.0)
+	_trail_width_mult = randf_range(1.0 - 0.35 * w, 1.0 + 0.45 * w)
+	_trail_alpha_mult = randf_range(1.0 - 0.28 * a, 1.0 + 0.35 * a)
+
+
+func _spawn_necro_launch_vfx(target_pos: Vector2) -> void:
+	var parent: Node = get_parent()
+	if parent == null:
+		parent = get_tree().current_scene
+	if parent == null:
+		return
+	var vfx := _NecroLaunchVFX.new()
+	vfx.global_position = global_position
+	vfx._aim_angle = (target_pos - global_position).angle()
+	vfx._color = proj_color
+	parent.add_child(vfx)
+
+
+func _flight_wander_offset(progress: float, to_target: Vector2) -> Vector2:
+	if flight_wander_amplitude <= 0.0 and flight_wander_vertical <= 0.0:
+		return Vector2.ZERO
+	var proximity_fade: float = clampf((to_target.length() - hit_radius) / maxf(hit_radius * 3.0, 1.0), 0.0, 1.0)
+	var fade: float = sin(clampf(progress, 0.0, 1.0) * PI) * proximity_fade
+	if fade <= 0.0:
+		return Vector2.ZERO
+	var dir: Vector2 = to_target.normalized() if to_target.length_squared() > 0.0001 else Vector2.RIGHT
+	var side: Vector2 = Vector2(-dir.y, dir.x) * _wander_side
+	var p: float = clampf(progress, 0.0, 1.0) * TAU
+	var side_wave: float = (
+		sin(p * _wander_freq_a + _wander_phase_a) * 0.72
+		+ sin(p * (_wander_freq_a * 2.15) + _wander_phase_b) * 0.28
+	)
+	var vertical_wave: float = sin(p * _wander_freq_b + _wander_phase_b)
+	return (
+		side * side_wave * flight_wander_amplitude * fade
+		+ Vector2(0.0, vertical_wave * flight_wander_vertical * fade)
+	)
 
 
 func _on_hit() -> void:
@@ -205,6 +277,12 @@ func _spawn_impact_vfx(impact_pos: Vector2) -> void:
 			burst.z_index = -1
 			burst._color = proj_color
 			parent.add_child(burst)
+		Shape.NECRO_BOLT:
+			var soul := _NecroImpactVFX.new()
+			soul.global_position = ground_pos
+			soul.z_index = -1
+			soul._color = proj_color
+			parent.add_child(soul)
 		Shape.ORB:
 			# Arcane ring — single expanding ring in proj_color.
 			var ring := _ArcaneRingVFX.new()
@@ -230,6 +308,74 @@ func _spawn_impact_vfx(impact_pos: Vector2) -> void:
 
 # Tiny inner VFX classes — kept here so the shape→effect dispatch is local
 # to Arrow.gd and we don't fan out a new .gd per impact variant.
+class _NecroLaunchVFX extends Node2D:
+	const LIFE: float = 0.18
+	var _t: float = LIFE
+	var _color: Color = Color(0.55, 0.18, 0.75)
+	var _aim_angle: float = 0.0
+	var _spokes: Array = []
+	var _spoke_reach: Array = []
+	func _ready() -> void:
+		for i in 5:
+			_spokes.append(randf_range(-0.75, 0.75))
+			_spoke_reach.append(randf_range(0.85, 1.12))
+	func _process(delta: float) -> void:
+		_t -= delta
+		if _t <= 0.0:
+			queue_free()
+			return
+		queue_redraw()
+	func _draw() -> void:
+		var k: float = clampf(1.0 - _t / LIFE, 0.0, 1.0)
+		var alpha: float = 1.0 - k
+		var halo: Color = _color
+		halo.a = alpha * 0.46
+		draw_circle(Vector2.ZERO, lerpf(8.0, 22.0, k), halo)
+		var core: Color = Color(0.92, 0.76, 1.0, alpha * 0.78)
+		draw_circle(Vector2.ZERO, lerpf(5.0, 2.0, k), core)
+		for i in range(_spokes.size()):
+			var off: float = float(_spokes[i])
+			var dir: Vector2 = Vector2.from_angle(_aim_angle + float(off))
+			var reach: float = lerpf(8.0, 34.0, k) * float(_spoke_reach[i])
+			var flame: Color = _color.lerp(Color(0.72, 1.0, 0.78), 0.18)
+			flame.a = alpha * 0.78
+			draw_line(dir * 4.0, dir * reach, flame, lerpf(4.0, 1.0, k), false)
+
+
+class _NecroImpactVFX extends Node2D:
+	const LIFE: float = 0.34
+	var _t: float = LIFE
+	var _color: Color = Color(0.55, 0.18, 0.75)
+	var _angles: Array = []
+	func _ready() -> void:
+		var base: float = randf_range(0.0, TAU)
+		for i in 7:
+			_angles.append(base + TAU * float(i) / 7.0 + randf_range(-0.18, 0.18))
+	func _process(delta: float) -> void:
+		_t -= delta
+		if _t <= 0.0:
+			queue_free()
+			return
+		queue_redraw()
+	func _draw() -> void:
+		var k: float = clampf(1.0 - _t / LIFE, 0.0, 1.0)
+		var alpha: float = 1.0 - k
+		var smoke: Color = Color(0.06, 0.02, 0.10, alpha * 0.70)
+		draw_circle(Vector2.ZERO, lerpf(10.0, 28.0, k), smoke)
+		var ring: Color = _color.lerp(Color(0.62, 1.0, 0.70), 0.25)
+		ring.a = alpha * 0.82
+		draw_arc(Vector2.ZERO, lerpf(5.0, 31.0, k), 0.0, TAU, 24, ring, lerpf(4.0, 1.0, k), false)
+		for a in _angles:
+			var dir: Vector2 = Vector2.from_angle(float(a))
+			var c: Color = _color.lerp(Color(0.82, 1.0, 0.86), 0.38)
+			c.a = alpha * 0.74
+			draw_line(dir * 3.0, dir * lerpf(10.0, 38.0, k), c, lerpf(3.0, 0.8, k), false)
+		var skull: Color = Color(0.85, 1.0, 0.80, alpha * 0.55)
+		draw_circle(Vector2(-3.0, -2.0), lerpf(2.6, 1.0, k), skull)
+		draw_circle(Vector2(3.0, -2.0), lerpf(2.6, 1.0, k), skull)
+		draw_line(Vector2(-4.0, 4.0), Vector2(4.0, 4.0), skull, lerpf(1.6, 0.5, k), false)
+
+
 class _IceShatterVFX extends Node2D:
 	const LIFE: float = 0.22
 	var _t: float = LIFE
@@ -378,8 +524,8 @@ func _draw() -> void:
 		for i in range(n_pts - 1):
 			var frac: float = float(i + 1) / float(n_pts - 1)
 			var col: Color = col_edge.lerp(col_core, frac)
-			col.a *= frac * 0.6
-			draw_line(points_local[i], points_local[i + 1], col, lerpf(3.0, 10.0, frac), false)
+			col.a *= frac * 0.6 * _trail_alpha_mult
+			draw_line(points_local[i], points_local[i + 1], col, lerpf(3.0, 10.0, frac) * _trail_width_mult, false)
 	# Glow halo under the body — flat alpha circle in proj_color.
 	if glow_enabled:
 		var glow_col: Color = proj_color
@@ -401,6 +547,8 @@ func _draw() -> void:
 			_draw_hero_arrow_shape()
 		Shape.ARCANE_BOLT:
 			_draw_arcane_bolt_shape()
+		Shape.NECRO_BOLT:
+			_draw_necro_bolt_shape()
 
 
 func _draw_arrow_shape() -> void:
@@ -505,6 +653,46 @@ func _draw_arcane_bolt_shape() -> void:
 	var mote: Color = proj_color.lerp(Color(1, 1, 1), 0.7)
 	draw_circle(p1, 2.8, mote)
 	draw_circle(p2, 2.8, mote)
+
+
+func _draw_necro_bolt_shape() -> void:
+	# Soul flame bolt: darker core, green-violet rim, asymmetrical flame tail.
+	# It keeps a forward point for direction readability, but should feel less
+	# engineered than ARCANE_BOLT.
+	var t: float = _time * 9.0
+	var pulse: float = 1.0 + sin(t) * 0.10
+	var dark_core: Color = Color(0.05, 0.00, 0.08, 0.94)
+	var soul: Color = proj_color.lerp(Color(0.70, 1.0, 0.74), 0.24)
+	var halo: Color = soul
+	halo.a = 0.26
+	draw_circle(Vector2.ZERO, 18.0 * pulse, halo)
+	var flame: PackedVector2Array = PackedVector2Array([
+		Vector2(20.0, 0.0),
+		Vector2(7.0, -8.0 - sin(t * 0.7) * 1.5),
+		Vector2(-8.0, -5.0 + cos(t * 1.1) * 1.5),
+		Vector2(-20.0, -10.0 + sin(t * 0.9) * 2.5),
+		Vector2(-14.0, 0.0),
+		Vector2(-22.0, 9.0 + cos(t * 0.8) * 2.0),
+		Vector2(-5.0, 6.0 - sin(t * 1.3) * 1.4),
+		Vector2(8.0, 7.0 + cos(t) * 1.2),
+	])
+	draw_colored_polygon(flame, soul)
+	var inner: PackedVector2Array = PackedVector2Array([
+		Vector2(14.0, 0.0),
+		Vector2(2.0, -3.5),
+		Vector2(-10.0, -2.0),
+		Vector2(-15.0, 0.0),
+		Vector2(-10.0, 2.5),
+		Vector2(2.0, 3.5),
+	])
+	draw_colored_polygon(inner, dark_core)
+	var eye_col: Color = Color(0.84, 1.0, 0.78, 0.82)
+	draw_circle(Vector2(3.0, -1.8), 2.2, eye_col)
+	draw_circle(Vector2(3.0, 2.0), 1.8, eye_col)
+	var lick: Color = proj_color.lerp(Color(1.0, 1.0, 0.9), 0.40)
+	lick.a = 0.76 + sin(t * 1.3) * 0.16
+	draw_line(Vector2(-12.0, -2.0), Vector2(-26.0, -5.0 + sin(t) * 4.0), lick, 2.0, false)
+	draw_line(Vector2(-11.0, 3.0), Vector2(-25.0, 6.0 + cos(t * 0.8) * 3.0), lick, 1.5, false)
 
 
 func _draw_crystal_shape() -> void:

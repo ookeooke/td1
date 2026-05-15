@@ -66,6 +66,7 @@ attack_damage = 1.75
 attack_range = 75.0
 move_speed = 220.0
 armor = 0.25
+max_block_targets = 1
 detection_radius_px = 280.0
 skills = Array[Resource]([ExtResource("2_summon"), ExtResource("3_bless"), ExtResource("4_bash"), ExtResource("13_rally")])
 starter_skill_ids = Array[String](["summon_soldiers", "bless"])

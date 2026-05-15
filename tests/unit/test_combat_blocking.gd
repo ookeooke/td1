@@ -234,6 +234,37 @@ func test_melee_engage_spot_vertical_path_falls_back_to_plus_x() -> void:
 	assert_almost_eq(spot.y, 200.0, 0.001, "Y still locked to enemy")
 
 
+# Combat Ground Line — approach steering must NOT starve the vertical (lane)
+# gap. From a far-X / small-Y start the steered unit direction must close Y
+# at least as fast as X (|dir.y| ≥ |dir.x|), so the blocker reaches the
+# enemy's lane during the walk-in instead of snapping to it at the end.
+func test_ground_line_dir_does_not_starve_Y() -> void:
+	var hero := BaseHero.new()
+	_spawned.append(hero)
+	hero.data = HeroData.new()
+	# Far in X (600), one lane off in Y (50) — the old raw-normalize gave
+	# dir ≈ (0.99, 0.08): Y crawls. Biased dir must have |y| ≥ |x|.
+	var d: Vector2 = hero._ground_line_dir(Vector2(600.0, 50.0))
+	assert_almost_eq(d.length(), 1.0, 0.001, "still a unit vector (speed unchanged)")
+	assert_true(absf(d.y) >= absf(d.x) - 0.001,
+		"Y must close no slower than X while a lane gap remains (got %s)" % str(d))
+	assert_true(d.x > 0.0 and d.y > 0.0, "still heads toward the target quadrant")
+
+
+func test_ground_line_dir_passthrough_when_aligned_or_Y_dominant() -> void:
+	var hero := BaseHero.new()
+	_spawned.append(hero)
+	hero.data = HeroData.new()
+	# Y already matched (≤ Y_ALIGN_EPS) → straight to target, no bias.
+	var d1: Vector2 = hero._ground_line_dir(Vector2(600.0, 1.0))
+	assert_almost_eq(d1, Vector2(600.0, 1.0).normalized(), Vector2(0.001, 0.001),
+		"aligned → plain normalized (pure horizontal slide along the lane)")
+	# Y gap already larger than X → raw normalized (never starved anyway).
+	var d2: Vector2 = hero._ground_line_dir(Vector2(20.0, 200.0))
+	assert_almost_eq(d2, Vector2(20.0, 200.0).normalized(), Vector2(0.001, 0.001),
+		"Y-dominant → unchanged")
+
+
 # Regression: the melee hero's engage spot must be exactly what the shared
 # helper produces — proves _engage_position_for routes through it (one
 # definition, no drift between hero and soldier).

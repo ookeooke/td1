@@ -1116,20 +1116,9 @@ static func _draw_necromancer_premium(ci: CanvasItem, v: UnitVisualData, walk_t:
 	_draw_necromancer_wisps(ci, v, t, soul_col, cast_t)
 	ci.draw_set_transform_matrix(rig["cape"])
 	_draw_necromancer_cape(ci, v, t, ink_t, motion)
-	# Stepping feet — drawn in the GROUND frame (rig root) so the stance
-	# foot stays planted while the body bobs over it; the robe (drawn next
-	# at the torso frame) overlaps the shins so only the lower leg + boot
-	# show. Walk-only (mv gate) → idle unchanged (hem covers the band).
-	var mv_local: float = clampf(float(motion.get("move_weight", 0.0)), 0.0, 1.0)
-	var body_off: Vector2 = (rig["torso"] as Transform2D).origin - (rig["root"] as Transform2D).origin
-	var speed01: float = clampf(float(ctx.get("move_speed01", 1.0)), 0.0, 1.0)
-	# Travel direction for the leg treadmill: smoothed facing X, with a
-	# deadzone so near-vertical movement keeps the last horizontal sign
-	# rather than collapsing the stride.
-	var face_v: Vector2 = ctx.get("face", Vector2.RIGHT)
-	var face_sign: float = -1.0 if face_v.x < -0.02 else 1.0
-	ci.draw_set_transform_matrix(rig["root"])
-	_draw_necromancer_feet(ci, v, body_r_local, gait_theta, mv_local, body_off, speed01, face_sign)
+	# Necromancer glides. Exposed foot IK made him read as a walking puppet
+	# and created wrong-direction leg cues on diagonal/vertical movement.
+	# The robe hem animation now owns locomotion.
 	ci.draw_set_transform_matrix(rig["torso"])
 	_draw_necromancer_robe(ci, v, body_col, soul_col, pulse, ink_t, cast_t, motion)
 	_draw_necromancer_arms_and_staff(ci, v, t, ink_t, motion, wind_t, strike_t, strike_dir, arm_col, magic_col, cast_t, breath_amp, cast_wind_t)
@@ -1252,11 +1241,11 @@ static func _necromancer_rig(motion: Dictionary, flinch_off: Vector2, body_r: fl
 	# lean off the attack/cast signals. Helpers still own intra-part
 	# deformation (hem sway, cloth flutter) via the unchanged gait channel.
 	var gp: Dictionary = _gait_pose(gait_theta)
-	# Walk amplitudes are sized for a small body_r (~25px) — keep them
-	# clearly above idle (~0.3px) so a step reads as a STEP, not a hover.
-	var bob_y: float = -float(gp["bob"]) * body_r * 0.16 * mv
-	var lag_y: float = -float(gp["lag_bob"]) * body_r * 0.15 * mv
-	var roll_r: float = float(gp["roll"]) * 0.065 * mv
+	# Necromancer locomotion is a glide: enough bob/roll for life, but not
+	# enough to expose a walking skeleton under the robe.
+	var bob_y: float = -float(gp["bob"]) * body_r * 0.055 * mv
+	var lag_y: float = -float(gp["lag_bob"]) * body_r * 0.045 * mv
+	var roll_r: float = float(gp["roll"]) * 0.024 * mv
 	# C3 weighted-walk channels (all gated by mv): hips slide over the
 	# stance foot; the upper body counter-rotates the pelvis with a lag
 	# (contrapposto); the head drifts opposite the hips (figure-8); a
@@ -1264,10 +1253,10 @@ static func _necromancer_rig(motion: Dictionary, flinch_off: Vector2, body_r: fl
 	var psway: float = float(gp["psway"])
 	var twist: float = float(gp["twist"])
 	var contact: float = float(gp["contact"])
-	var hip_x: float = psway * body_r * 0.055 * mv
-	var twist_r: float = twist * 0.050 * mv
-	var head_fig8: float = -psway * body_r * 0.022 * mv
-	var heel_y: float = contact * body_r * 0.030 * mv
+	var hip_x: float = psway * body_r * 0.018 * mv
+	var twist_r: float = twist * 0.016 * mv
+	var head_fig8: float = -psway * body_r * 0.007 * mv
+	var heel_y: float = contact * body_r * 0.008 * mv
 	var act: Dictionary = _action_lean(strike_t, cast_t, cast_wind_t, strike_dir, b)
 	var lean: float = float(act["lean"])
 	var drop_y: float = float(act["drop"]) * body_r * 0.05
@@ -1298,19 +1287,19 @@ static func _necromancer_rig(motion: Dictionary, flinch_off: Vector2, body_r: fl
 	# clearly yaws into the direction of travel (head leads, torso yaws,
 	# cape trails). Still pure rotation+translation about the centre — no
 	# scale, silhouette width constant (the no-mirror rule holds).
-	var turn_gain: float = 1.0 + mv * 1.10
+	var turn_gain: float = 1.0 + mv * 0.35
 	var torso: Transform2D = root * Transform2D(
-		b * 0.080 * turn_gain + roll_r * 0.70 + lean * 0.050 + idle_roll,
-		Vector2(b * body_r * 0.10 * turn_gain + lean * body_r * 0.06 + idle_x + hip_x, bob_y + drop_y + c_rear + idle_bob + heel_y))
+		b * 0.045 * turn_gain + roll_r * 0.50 + lean * 0.035 + idle_roll,
+		Vector2(b * body_r * 0.045 * turn_gain + lean * body_r * 0.040 + idle_x + hip_x, bob_y + drop_y + c_rear + idle_bob + heel_y))
 	# Head LEADS the turn, counter-rolls the pelvis (overlapping action)
 	# AND counter-twists it on a lag, drifting opposite the hips (figure-8).
 	var head: Transform2D = root * Transform2D(
-		-b * 0.105 * turn_gain - roll_r * 0.50 + twist_r + lean * 0.040 + idle_roll * 0.60 + head_scan_r,
-		Vector2(b * body_r * 0.26 * turn_gain + lean * body_r * 0.05 + idle_x * 0.80 + head_scan_x + head_fig8, lag_y + drop_y * 0.80 + c_rear * 0.90 + idle_bob * 0.80 + heel_y * 0.80))
+		-b * 0.055 * turn_gain - roll_r * 0.35 + twist_r + lean * 0.028 + idle_roll * 0.45 + head_scan_r,
+		Vector2(b * body_r * 0.105 * turn_gain + lean * body_r * 0.030 + idle_x * 0.70 + head_scan_x * 0.65 + head_fig8, lag_y + drop_y * 0.70 + c_rear * 0.80 + idle_bob * 0.70 + heel_y * 0.60))
 	# Cape TRAILS on its lag channel and counter-rolls/twists slightly.
 	var cape: Transform2D = root * Transform2D(
-		clag * 0.080 * turn_gain - roll_r * 0.30 - twist_r * 0.40,
-		Vector2(clag * body_r * 0.26 * turn_gain + c_dir * c_open * body_r * 0.06, lag_y * 1.05 + drop_y * 0.60 + c_rear * 0.55 - c_open * body_r * 0.10))
+		clag * 0.026 * turn_gain - roll_r * 0.12 - twist_r * 0.12,
+		Vector2(clag * body_r * 0.060 * turn_gain + c_dir * c_open * body_r * 0.025, lag_y * 0.55 + drop_y * 0.35 + c_rear * 0.35 - c_open * body_r * 0.035))
 	return {"root": root, "ground": root, "torso": torso, "head": head, "cape": cape}
 
 
@@ -1382,20 +1371,25 @@ static func _draw_necromancer_wisps(ci: CanvasItem, v: UnitVisualData, t: float,
 		ci.draw_arc(Vector2(x, y), 5.0 + fade * 2.5, phase * TAU, phase * TAU + PI * 0.65, 8, col, 0.9, true)
 
 
-static func _knee_ik(hip: Vector2, foot: Vector2, bone: float, face_sign: float) -> Vector2:
-	# Equal-bone 2-link IK: knee on the perpendicular bisector of hip→foot,
-	# bent toward the travel direction. bone·2 > reach, so the knee always
-	# carries a slight bend (a stick never locks), and it bends MORE as the
-	# foot lifts (hip-foot distance shrinks during swing).
-	var ax: Vector2 = foot - hip
+static func _two_bone_joint(a: Vector2, b: Vector2, bone: float, bow: Vector2) -> Vector2:
+	# Equal-bone 2-link IK: the joint sits on the perpendicular bisector of
+	# a→b, pushed to whichever side best matches `bow`. bone·2 > reach so a
+	# limb always carries a slight bend (never a locked stick) and bends
+	# MORE as the endpoints close (foot lifts / hand pulls in).
+	var ax: Vector2 = b - a
 	var d_raw: float = ax.length()
 	var d: float = clampf(d_raw, 0.001, bone * 2.0 * 0.999)
 	var hh: float = sqrt(maxf(0.0, bone * bone - d * d * 0.25))
 	var axn: Vector2 = ax / d_raw if d_raw > 0.001 else Vector2.DOWN
 	var perp: Vector2 = Vector2(-axn.y, axn.x)
-	if perp.x * face_sign < 0.0:
+	if perp.dot(bow) < 0.0:
 		perp = -perp
-	return (hip + foot) * 0.5 + perp * hh
+	return (a + b) * 0.5 + perp * hh
+
+
+static func _knee_ik(hip: Vector2, foot: Vector2, bone: float, face_sign: float) -> Vector2:
+	# Knee bows toward travel (and slightly down).
+	return _two_bone_joint(hip, foot, bone, Vector2(face_sign, 0.25))
 
 
 static func _draw_necromancer_feet(ci: CanvasItem, v: UnitVisualData, body_r: float, gait_theta: float, mv: float, body_off: Vector2, speed01: float = 1.0, face_sign: float = 1.0) -> void:
@@ -1502,7 +1496,7 @@ static func _draw_necromancer_cape(ci: CanvasItem, v: UnitVisualData, t: float, 
 	# Hood and eyes lead the direction change; cape trails opposite so the
 	# rear silhouette never reads as the front of the move.
 	var gait: float = float(motion.get("gait", 0.0))
-	var turn: float = 0.0  # rig owns directional turn (Phase 1); kept 0 so the legacy tuck math stays inert
+	var turn: float = clampf(float(motion.get("body_turn", 0.0)) * 0.18, -0.25, 0.25)
 	var cape_lag: float = float(motion.get("cape_lag", -turn))
 	var idle_weight: float = float(motion.get("idle_weight", 0.0))
 	var idle_cape: float = float(motion.get("idle_cape", 0.0))
@@ -1516,10 +1510,10 @@ static func _draw_necromancer_cape(ci: CanvasItem, v: UnitVisualData, t: float, 
 	var gait_lag: float = gait * 0.6 - sin(sct * 1.4) * 0.30
 	var idle_wave: float = (idle_cape * body_r * 0.026 + idle_settle * body_r * 0.010) * idle_weight
 	var cloth_wave: float = idle_wave + sin(sct * 1.5) * body_r * 0.035 * move_weight + gait_lag * body_r * 0.075 * move_weight
-	var cloth_trail: float = cape_lag * body_r * 0.32
-	var upper_flutter: float = cloth_wave * 0.15 + cloth_trail * 0.10
-	var mid_flutter: float = cloth_wave * 0.55 + cloth_trail * 0.55
-	var hem_flutter: float = cloth_wave + cloth_trail
+	var cloth_trail: float = cape_lag * body_r * 0.16
+	var upper_flutter: float = cloth_wave * 0.06 + cloth_trail * 0.02
+	var mid_flutter: float = cloth_wave * 0.32 + cloth_trail * 0.28
+	var hem_flutter: float = cloth_wave * 0.85 + cloth_trail
 	var cape_lift: float = -cast_weight * body_r * 0.08 + attack_weight * body_r * 0.04
 	var right_front_tuck: float = maxf(turn, 0.0) * body_r * 0.20
 	var left_front_tuck: float = maxf(-turn, 0.0) * body_r * 0.20
@@ -1530,17 +1524,17 @@ static func _draw_necromancer_cape(ci: CanvasItem, v: UnitVisualData, t: float, 
 	# Top anchors stay close to the shoulders; lower vertices trail harder.
 	# The front-side edge also tucks inward so the robe/hood lead the motion.
 	var pts: PackedVector2Array = PackedVector2Array([
-		Vector2(-body_r * 0.60 + upper_flutter + left_front_tuck * 0.30, -body_r * 0.59 + cape_lift * 0.25),
-		Vector2(body_r * 0.46 + upper_flutter - right_front_tuck * 0.30, -body_r * 0.55 + cape_lift * 0.25),
-		Vector2(body_r * 0.70 + hem_flutter - right_front_tuck, body_r * 1.20 + cape_lift),
-		Vector2(body_r * 0.36 + mid_flutter - right_front_tuck * 0.55, body_r * 1.10 + cape_lift * 0.75),
+		Vector2(-body_r * 0.54 + upper_flutter + left_front_tuck * 0.16, -body_r * 0.59 + cape_lift * 0.18),
+		Vector2(body_r * 0.42 + upper_flutter - right_front_tuck * 0.16, -body_r * 0.55 + cape_lift * 0.18),
+		Vector2(body_r * 0.58 + hem_flutter - right_front_tuck * 0.55, body_r * 1.23 + cape_lift),
+		Vector2(body_r * 0.28 + mid_flutter - right_front_tuck * 0.30, body_r * 1.10 + cape_lift * 0.75),
 		Vector2(body_r * 0.12 + hem_flutter, body_r * 1.44 + cape_lift),
 		Vector2(-body_r * 0.08 + mid_flutter, body_r * 1.23 + cape_lift * 0.75),
-		Vector2(-body_r * 0.42 + hem_flutter + left_front_tuck * 0.55, body_r * 1.42 + cape_lift),
-		Vector2(-body_r * 0.82 + hem_flutter + left_front_tuck, body_r * 1.18 + cape_lift),
+		Vector2(-body_r * 0.36 + hem_flutter + left_front_tuck * 0.30, body_r * 1.42 + cape_lift),
+		Vector2(-body_r * 0.66 + hem_flutter + left_front_tuck * 0.55, body_r * 1.22 + cape_lift),
 	])
 	ci.draw_colored_polygon(pts, cape)
-	_cel_overlay(ci, pts, Color(0.52, 0.54, 0.78, 0.26), 0.10, 1.4)
+	_cel_overlay(ci, pts, Color(0.52, 0.54, 0.78, 0.14), 0.07, 0.9)
 	_ink_weighted(ci, PackedVector2Array([pts[0], pts[7], pts[6], pts[5], pts[4], pts[3], pts[2], pts[1]]), shade, 2.0, false, ink_t, 0.35, 1.2)
 	# Dark pinned shoulder gap. The front robe is drawn later, so this reads
 	# as separation between the stable torso and the trailing cape.
@@ -1567,8 +1561,8 @@ static func _draw_necromancer_robe(ci: CanvasItem, v: UnitVisualData, body_col: 
 	# harmonic so the hem reads as 4-keyframe (contact/recoil/passing/high)
 	# rather than a pure sin wobble.
 	var gait: float = float(motion.get("gait", 0.0))
-	var turn: float = 0.0  # rig owns directional turn (Phase 1); kept 0 so the legacy width/shift math stays inert
-	var torso_turn: float = 0.0
+	var turn: float = clampf(float(motion.get("body_turn", 0.0)) * 0.50, -0.68, 0.68)
+	var torso_turn: float = turn
 	var idle_weight: float = float(motion.get("idle_weight", 0.0))
 	var idle_breath: float = float(motion.get("idle_breath", 0.0))
 	var idle_settle: float = float(motion.get("idle_settle", 0.0))
@@ -1580,7 +1574,7 @@ static func _draw_necromancer_robe(ci: CanvasItem, v: UnitVisualData, body_col: 
 	var idle_hem: float = idle_settle * body_r * 0.018 * idle_weight
 	var hem_lag: float = -step_sweep * body_r * 0.20 + idle_hem
 	var cast_lift: float = (cast_t * 0.10 + cast_weight * 0.04 + attack_weight * 0.03) * body_r
-	var torso_shift: float = torso_turn * body_r * 0.07
+	var torso_shift: float = torso_turn * body_r * 0.14
 	var torso_breath_y: float = idle_breath * body_r * 0.014 * idle_weight
 	var side_turn_shift: float = turn * body_r * 0.10
 	var hem_turn_shift: float = turn * body_r * 0.08
@@ -1640,13 +1634,15 @@ static func _draw_necromancer_robe(ci: CanvasItem, v: UnitVisualData, body_col: 
 		minf(body_col.b * 1.20 + 0.030, 1.0),
 		body_col.a
 	)
+	var panel_right_w: float = 1.0 - maxf(turn, 0.0) * 0.26 + maxf(-turn, 0.0) * 0.13
+	var panel_left_w: float = 1.0 - maxf(-turn, 0.0) * 0.26 + maxf(turn, 0.0) * 0.13
 	var front_panel: PackedVector2Array = PackedVector2Array([
-		Vector2(-body_r * 0.34 + torso_shift, -body_r * 0.52 - cast_lift * 0.80 + torso_breath_y),
-		Vector2(body_r * 0.28 + torso_shift, -body_r * 0.50 - cast_lift * 0.80 + torso_breath_y),
-		Vector2(body_r * 0.42 + torso_shift * 0.55, body_r * 0.58 + torso_breath_y * 0.20),
-		Vector2(body_r * 0.16 + hem_lag * 0.18, body_r * 1.22),
+		Vector2(-body_r * 0.34 * panel_left_w + torso_shift, -body_r * 0.52 - cast_lift * 0.80 + torso_breath_y),
+		Vector2(body_r * 0.28 * panel_right_w + torso_shift, -body_r * 0.50 - cast_lift * 0.80 + torso_breath_y),
+		Vector2(body_r * 0.42 * panel_right_w + torso_shift * 0.55, body_r * 0.58 + torso_breath_y * 0.20),
+		Vector2(body_r * 0.16 + hem_lag * 0.18 + torso_shift * 0.15, body_r * 1.22),
 		Vector2(-body_r * 0.08 + hem_lag * 0.14, body_r * 1.42),
-		Vector2(-body_r * 0.36 + torso_shift * 0.35, body_r * 0.72 + torso_breath_y * 0.20),
+		Vector2(-body_r * 0.36 * panel_left_w + torso_shift * 0.35, body_r * 0.72 + torso_breath_y * 0.20),
 	])
 	ci.draw_colored_polygon(front_panel, panel_col)
 	_cel_overlay(ci, front_panel, robe_rim, 0.10, 1.3)
@@ -1685,7 +1681,7 @@ static func _draw_necromancer_robe(ci: CanvasItem, v: UnitVisualData, body_col: 
 
 	var chest_glow: Color = soul_col
 	chest_glow.a = 0.12 + maxf(0.0, pulse) * 0.06 + maxf(0.0, idle_breath) * idle_weight * 0.035
-	var pendant_center: Vector2 = Vector2(-body_r * 0.04 + torso_shift + torso_turn * body_r * 0.08, body_r * 0.12 + torso_breath_y * 0.55)
+	var pendant_center: Vector2 = Vector2(-body_r * 0.04 + torso_shift + torso_turn * body_r * 0.26, body_r * 0.12 + torso_breath_y * 0.55)
 	_rough_line(ci, Vector2(-body_r * 0.20, -body_r * 0.28), pendant_center, Color(0.74, 0.68, 0.58, 0.70), 1.0, ink_t, 16.0, 0.20, 0.35)
 	_rough_line(ci, Vector2(body_r * 0.14, -body_r * 0.26), pendant_center, Color(0.74, 0.68, 0.58, 0.62), 1.0, ink_t, 17.0, 0.20, 0.35)
 	_draw_rough_circle(ci, pendant_center, body_r * 0.19, chest_glow, Color(0, 0, 0, 0), 0.0, ink_t, 18.0, 8, 0.09)
@@ -1702,7 +1698,7 @@ static func _draw_necromancer_arms_and_staff(ci: CanvasItem, v: UnitVisualData, 
 	var outline_w: float = maxf(1.6, v.outline_width * 0.38)
 	var cast_raise: float = sin(clampf(cast_t, 0.0, 1.0) * PI) * body_r * 0.20
 	var gait: float = float(motion.get("gait", 0.0))
-	var turn: float = 0.0  # rig owns directional turn (Phase 1); kept 0 so the legacy depth-shift math stays inert
+	var turn: float = clampf(float(motion.get("body_turn", 0.0)) * 0.62, -0.78, 0.78)
 	var staff_lag: float = float(motion.get("staff_lag", -turn * 0.08))
 	var idle_weight: float = float(motion.get("idle_weight", 0.0))
 	var move_weight: float = float(motion.get("move_weight", 0.0))
@@ -1717,11 +1713,16 @@ static func _draw_necromancer_arms_and_staff(ci: CanvasItem, v: UnitVisualData, 
 	# Phase 4 — idle hand jitter + staff sway are secondary: step on twos.
 	var sat: float = _ink_step_time(t, 12.0)
 	var left_hand: Vector2 = Vector2(-body_r * 0.72 - gait * body_r * 0.055 + depth_shift * 0.20 - attack_pull * 0.15, body_r * 0.22 + sin(sat * 1.8) * 1.8 - cast_raise)
-	_draw_arm_segment(ci, left_shoulder, left_hand, body_r * 0.18, arm_col, v.outline_color, outline_w)
+	# 2-bone arm (elbow) — bows outward + slightly down; bends more as the
+	# hand pulls in (cast raise / wind-up). Matches the legs' knee read.
+	var l_bone: float = maxf(left_shoulder.distance_to(left_hand), 1.0) * 0.56
+	var l_elbow: Vector2 = _two_bone_joint(left_shoulder, left_hand, l_bone, Vector2(signf(left_shoulder.x), 0.35))
+	_draw_arm_segment(ci, left_shoulder, l_elbow, body_r * 0.18, arm_col, v.outline_color, outline_w)
+	_draw_arm_segment(ci, l_elbow, left_hand, body_r * 0.18 * 0.82, arm_col, v.outline_color, outline_w)
 
 	# Staff lags the turn like a ritual cane; hood and eyes carry the
 	# forward read while the prop catches up a beat later.
-	var staff_sway: float = idle_staff + sin(sat * 1.35) * (0.65 + move_weight * 1.35) - gait * body_r * 0.10 + staff_lag * body_r * 0.22
+	var staff_sway: float = idle_staff + sin(sat * 1.35) * (0.65 + move_weight * 1.35) - gait * body_r * 0.10 + staff_lag * body_r * 0.18 + turn * body_r * 0.24
 	# Melee staff swing — a real arc, not a sway: anticipation cocks the
 	# staff back + up, impact sweeps it across toward the target and down,
 	# then a short follow-through settles. Off the existing strike signal;
@@ -1761,7 +1762,12 @@ static func _draw_necromancer_arms_and_staff(ci: CanvasItem, v: UnitVisualData, 
 	_rough_line(ci, staff_upper + Vector2(1.0, -4.0), staff_upper + Vector2(-2.0, 5.0), Color(0.72, 0.48, 0.28, 0.45), 1.0, ink_t, 24.0, 0.14, 0.2)
 
 	var right_shoulder: Vector2 = Vector2(body_r * 0.45 + gait * body_r * 0.025 - depth_shift * 0.12, -body_r * 0.42 - cast_raise * 0.35 - cast_weight * body_r * 0.03)
-	_draw_arm_segment(ci, right_shoulder, grip, body_r * 0.18, arm_col, v.outline_color, outline_w)
+	# 2-bone staff arm — elbow bows outward + down, bending more as the
+	# grip rises on cast/melee. Matches the legs + free arm.
+	var r_bone: float = maxf(right_shoulder.distance_to(grip), 1.0) * 0.56
+	var r_elbow: Vector2 = _two_bone_joint(right_shoulder, grip, r_bone, Vector2(signf(right_shoulder.x), 0.35))
+	_draw_arm_segment(ci, right_shoulder, r_elbow, body_r * 0.18, arm_col, v.outline_color, outline_w)
+	_draw_arm_segment(ci, r_elbow, grip, body_r * 0.18 * 0.82, arm_col, v.outline_color, outline_w)
 
 	var bone_col: Color = Color(0.86, 0.80, 0.68, 0.98)
 	ci.draw_arc(staff_top + Vector2(-1.0, 1.0), body_r * 0.22, deg_to_rad(116.0), deg_to_rad(286.0), 12, bone_col, 3.0, true)
@@ -1789,7 +1795,7 @@ static func _draw_necromancer_hood(ci: CanvasItem, v: UnitVisualData, head_col: 
 	# into the collar instead of inheriting the generic hero's high head slot.
 	# Idle breath bobs the hood Y down by ~1% body_r on the exhale frame.
 	var gait: float = float(motion.get("gait", 0.0))
-	var turn: float = 0.0  # rig owns directional turn (Phase 1); kept 0 so the legacy head-shift math stays inert
+	var turn: float = clampf(float(motion.get("body_turn", 0.0)) * 0.86, -0.95, 0.95)
 	var idle_weight: float = float(motion.get("idle_weight", 0.0))
 	var attack_weight: float = float(motion.get("attack_weight", 0.0))
 	var cast_weight: float = float(motion.get("cast_weight", 0.0))
@@ -1797,9 +1803,9 @@ static func _draw_necromancer_hood(ci: CanvasItem, v: UnitVisualData, head_col: 
 	var idle_settle: float = float(motion.get("idle_settle", 0.0))
 	var idle_nod: float = (idle_breath * body_r * 0.008 + idle_settle * body_r * 0.004) * idle_weight
 	var head_y: float = maxf(v.head_y_offset * body_r, -body_r * 1.08) - cast_t * body_r * 0.06 + breath_amp * body_r * 0.010 + idle_nod - cast_weight * body_r * 0.035 + attack_weight * body_r * 0.018
-	var head_x: float = -gait * body_r * 0.025 + turn * body_r * 0.14 + idle_settle * body_r * 0.006 * idle_weight
-	var hood_right_w: float = 1.0 - maxf(turn, 0.0) * 0.08 + maxf(-turn, 0.0) * 0.10
-	var hood_left_w: float = 1.0 - maxf(-turn, 0.0) * 0.08 + maxf(turn, 0.0) * 0.10
+	var head_x: float = -gait * body_r * 0.020 + turn * body_r * 0.16 + idle_settle * body_r * 0.006 * idle_weight
+	var hood_right_w: float = 1.0 - maxf(turn, 0.0) * 0.24 + maxf(-turn, 0.0) * 0.14
+	var hood_left_w: float = 1.0 - maxf(-turn, 0.0) * 0.24 + maxf(turn, 0.0) * 0.14
 	var hood_fill: Color = v.hat_color if v.hat_color.a > 0.0 else Color(0.08, 0.05, 0.14, 1.0)
 	var hood: PackedVector2Array = PackedVector2Array([
 		Vector2(head_x - body_r * 0.06, head_y - body_r * 0.98),
@@ -1819,13 +1825,16 @@ static func _draw_necromancer_hood(ci: CanvasItem, v: UnitVisualData, head_col: 
 	_rough_polyline(ci, hood, hood_dry_ink, 1.0, true, ink_t + 0.21, 0.14, 1.6)
 
 	var face_void: Color = Color(0.02, 0.01, 0.04, 0.96)
+	var face_x: float = head_x + turn * body_r * 0.10
+	var face_right_w: float = 1.0 - maxf(turn, 0.0) * 0.34 + maxf(-turn, 0.0) * 0.10
+	var face_left_w: float = 1.0 - maxf(-turn, 0.0) * 0.34 + maxf(turn, 0.0) * 0.10
 	var face: PackedVector2Array = PackedVector2Array([
-		Vector2(head_x - body_r * 0.02, head_y - body_r * 0.70),
-		Vector2(head_x + body_r * 0.23, head_y - body_r * 0.43),
-		Vector2(head_x + body_r * 0.19, head_y - body_r * 0.02),
-		Vector2(head_x - body_r * 0.02, head_y + body_r * 0.17),
-		Vector2(head_x - body_r * 0.25, head_y - body_r * 0.04),
-		Vector2(head_x - body_r * 0.21, head_y - body_r * 0.43),
+		Vector2(face_x - body_r * 0.02, head_y - body_r * 0.70),
+		Vector2(face_x + body_r * 0.23 * face_right_w, head_y - body_r * 0.43),
+		Vector2(face_x + body_r * 0.19 * face_right_w, head_y - body_r * 0.02),
+		Vector2(face_x - body_r * 0.02, head_y + body_r * 0.17),
+		Vector2(face_x - body_r * 0.25 * face_left_w, head_y - body_r * 0.04),
+		Vector2(face_x - body_r * 0.21 * face_left_w, head_y - body_r * 0.43),
 	])
 	ci.draw_colored_polygon(face, face_void)
 	var hood_fold: Color = Color(0.0, 0.0, 0.0, 0.22)
@@ -1837,23 +1846,35 @@ static func _draw_necromancer_hood(ci: CanvasItem, v: UnitVisualData, head_col: 
 	_rough_line(ci, Vector2(head_x - body_r * 0.14, head_y - body_r * 0.04), Vector2(head_x - body_r * 0.04, head_y + body_r * 0.09), cheek, 1.0, ink_t, 28.0, 0.18, 0.25)
 	_rough_line(ci, Vector2(head_x + body_r * 0.12, head_y - body_r * 0.07), Vector2(head_x + body_r * 0.03, head_y + body_r * 0.08), cheek, 0.9, ink_t, 29.0, 0.18, 0.25)
 
-	var eye_a: float = 0.72 + maxf(0.0, pulse) * 0.22
+	var eye_a: float = clampf(0.92 + maxf(0.0, pulse) * 0.34 + cast_weight * 0.24, 0.0, 1.35)
 	var halo: Color = soul_col
-	halo.a = 0.24 * eye_a
+	halo.a = 0.34 * eye_a
 	var eye: Color = soul_col
 	eye.a = eye_a
 	var eye_y: float = head_y - body_r * 0.25
-	var eye_l: Vector2 = Vector2(head_x - body_r * (0.13 - turn * 0.02), eye_y - body_r * 0.01)
-	var eye_r: Vector2 = Vector2(head_x + body_r * (0.11 + turn * 0.02), eye_y + body_r * 0.015)
+	var eye_l: Vector2 = Vector2(face_x - body_r * (0.13 - turn * 0.050), eye_y - body_r * 0.01)
+	var eye_r: Vector2 = Vector2(face_x + body_r * (0.11 + turn * 0.050), eye_y + body_r * 0.015)
 	var near_eye_idx: int = 1 if turn >= 0.0 else 0
 	var eyes: PackedVector2Array = PackedVector2Array([eye_l, eye_r])
 	for i in range(eyes.size()):
 		var p: Vector2 = eyes[i]
-		var visibility: float = 1.0 if absf(turn) < 0.18 or i == near_eye_idx else 0.30
-		halo.a = 0.24 * eye_a * visibility
+		var visibility: float = 1.0 if absf(turn) < 0.18 or i == near_eye_idx else 0.22
+		halo.a = 0.34 * eye_a * visibility
 		eye.a = eye_a * visibility
-		ci.draw_circle(p, body_r * 0.065, halo)
-		_draw_rough_circle(ci, p, body_r * 0.028, eye, Color(0, 0, 0, 0), 0.0, ink_t, 30.0 + p.x, 7, 0.16)
+		ci.draw_circle(p, body_r * 0.090, halo)
+		var fire: Color = soul_col.lerp(Color(1.0, 0.96, 0.78, 1.0), 0.45)
+		fire.a = clampf(0.32 * visibility + cast_weight * 0.18, 0.0, 0.70)
+		var flame_h: float = body_r * (0.17 + maxf(0.0, pulse) * 0.035 + cast_weight * 0.04)
+		var flame_w: float = body_r * 0.075
+		var flame_tip: Vector2 = p + Vector2(_ink_jitter(60.0 + float(i), ink_t, 0.20).x, -flame_h)
+		ci.draw_colored_polygon(PackedVector2Array([
+			p + Vector2(-flame_w, -body_r * 0.010),
+			flame_tip,
+			p + Vector2(flame_w, -body_r * 0.004),
+			p + Vector2(0.0, body_r * 0.045),
+		]), fire)
+		_draw_rough_circle(ci, p, body_r * 0.040, eye, Color(0, 0, 0, 0), 0.0, ink_t, 30.0 + p.x, 7, 0.16)
+		ci.draw_circle(p, body_r * 0.016, Color(1.0, 1.0, 0.88, 0.95 * visibility))
 	var mouth_col: Color = head_col
 	mouth_col.a = 0.18
-	_rough_line(ci, Vector2(head_x - body_r * 0.05, head_y + body_r * 0.06), Vector2(head_x + body_r * 0.05, head_y + body_r * 0.07), mouth_col, 0.8, ink_t, 31.0, 0.12, 0.15)
+	_rough_line(ci, Vector2(face_x - body_r * 0.05, head_y + body_r * 0.06), Vector2(face_x + body_r * 0.05, head_y + body_r * 0.07), mouth_col, 0.8, ink_t, 31.0, 0.12, 0.15)

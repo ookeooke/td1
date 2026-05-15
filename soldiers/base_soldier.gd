@@ -69,6 +69,11 @@ var _walk_phase: float = 0.0
 # edge point kept the top-row soldiers in MOVING forever.
 const ARRIVE_THRESHOLD: float = 8.0
 const STUCK_TIMEOUT: float = 1.5
+# Combat Ground Line — mirror of BaseHero. Close the vertical (lane) gap at
+# least as fast as the horizontal one while charging so the soldier reaches
+# the enemy's Y *during* the charge instead of snapping to it at the end.
+const APPROACH_Y_PRIORITY: float = 1.0
+const Y_ALIGN_EPS: float = 2.0
 var _stuck_t: float = 0.0
 var _stuck_last_pos: Vector2 = Vector2.ZERO
 var _flinch_t: float = 0.0
@@ -390,6 +395,22 @@ func _scan_aggro_and_maybe_charge() -> void:
 		change_state(State.CHARGING)
 
 
+# Combat Ground Line — unit steer that never closes the vertical (lane) gap
+# slower than the horizontal one (mirror of BaseHero._ground_line_dir), so
+# the soldier rises onto the enemy's Y during the charge, not in a fast
+# end-of-charge snap. Speed unchanged (caller × move_speed) — only direction.
+func _ground_line_dir(to_target: Vector2) -> Vector2:
+	var d: Vector2 = to_target
+	var ay: float = absf(to_target.y)
+	if ay > Y_ALIGN_EPS:
+		var x_cap: float = ay * APPROACH_Y_PRIORITY
+		if absf(to_target.x) > x_cap:
+			d = Vector2(signf(to_target.x) * x_cap, to_target.y)
+	if d.length_squared() < 0.000001:
+		return Vector2.ZERO
+	return d.normalized()
+
+
 # Moves the soldier toward its committed charge target. As soon as the
 # target enters melee_range the normal _try_engage picks it up, which fills
 # _engaged_enemies and stops forward motion. When every engagement drops
@@ -420,7 +441,7 @@ func _tick_charge() -> void:
 			var sp2: Vector2 = _GuardZoneScript.melee_engage_spot(eng.global_position, f2, g2)
 			var to_sp2: Vector2 = sp2 - global_position
 			if to_sp2.length() > 4.0:
-				velocity = to_sp2.normalized() * data.move_speed
+				velocity = _ground_line_dir(to_sp2) * data.move_speed
 				settled = false
 		if settled:
 			velocity = Vector2.ZERO
@@ -459,7 +480,7 @@ func _tick_charge() -> void:
 	if to_target.length() < 3.0:
 		velocity = Vector2.ZERO
 	else:
-		velocity = to_target.normalized() * data.move_speed
+		velocity = _ground_line_dir(to_target) * data.move_speed
 	move_and_slide()
 
 

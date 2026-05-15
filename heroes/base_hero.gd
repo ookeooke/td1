@@ -92,6 +92,16 @@ const ENGAGE_GAP_SAFETY: float = 6.0
 # Clamped down by attack_range so a tiny-reach hero doesn't claim blocks
 # past its own swing. See HeroData.engage_radius for the rationale.
 const DEFAULT_ENGAGE_RADIUS: float = 60.0
+# Combat Ground Line — approach steering bias. While walking in to a melee
+# engage spot, the vertical (lane) gap must close at least as fast as the
+# horizontal one (|dir.y| ≥ |dir.x| × 1/this until aligned) so the blocker
+# reaches the enemy's Y *during* the walk-in instead of snapping to it in a
+# fast end-of-approach burst when COMBAT triggers early off-Y. 1.0 = Y closes
+# no slower than X (smooth 45°-max diagonal onto the lane, then straight in).
+# Higher = even more Y-priority. See docs/COMBAT_BLOCKING_DOCTRINE.md.
+const APPROACH_Y_PRIORITY: float = 1.0
+# Below this |Δy| the lane is considered matched — no Y bias applied.
+const Y_ALIGN_EPS: float = 2.0
 # Hero will not chase enemies that are farther than this from its current
 # rally point. The rally point is the HeroSpawn marker at start and updates
 # to the tap position on every player-issued move command.
@@ -1117,11 +1127,11 @@ func _physics_process(delta: float) -> void:
 					queue_redraw()
 		State.COMBAT:
 			velocity = Vector2.ZERO
-			# Two-tier: if currently only SHOOTING (target not hard-blocked)
-			# and an enemy is now inside the melee-engage range, hand off to
-			# the shared melee pipeline (walk out, reserve, fight on Y) — the
-			# same rule every hero uses. Pure ranged DPS continues otherwise.
-			if _target_enemy == null or not (_target_enemy in _blocked_enemies):
+			# Two-tier: only acquire a melee target here if combat has no
+			# active target. A pure ranged-shot target is intentionally not
+			# hard-blocked, and must keep shooting/drop normally instead of
+			# being hijacked into a chase by some other enemy near the anchor.
+			if _target_enemy == null:
 				var m: Node = _pick_target_in_detection_zone()
 				if m != null:
 					_target_enemy = m
@@ -1142,7 +1152,10 @@ func _physics_process(delta: float) -> void:
 				var csp: Vector2 = _engage_position_for(_target_enemy)
 				var to_csp: Vector2 = csp - global_position
 				if to_csp.length() > 4.0:
-					velocity = to_csp.normalized() * get_effective_move_speed()
+					# Safety net only (the Y-biased approach normally lands
+					# aligned). Same Y-priority dir so if it does fire it
+					# still slides in, never a pure-Y full-speed snap.
+					velocity = _ground_line_dir(to_csp) * get_effective_move_speed()
 			_attack_step(delta)
 			_breath_t += delta
 			queue_redraw()
@@ -1228,6 +1241,26 @@ func _projectile_spawn_position(target_world_pos: Vector2, aim_angle: float) -> 
 	return fallback
 
 
+# Combat Ground Line — unit steering direction toward a melee target that
+# never lets the vertical (lane) gap close slower than the horizontal one.
+# Until |Δy| ≤ Y_ALIGN_EPS, the X component of the direction is capped to
+# |Δy| × APPROACH_Y_PRIORITY, so the blocker rises onto the enemy's lane-Y
+# *during* the walk-in (at most a 45° diagonal), then continues straight
+# along the line to the gap-offset spot. Eliminates the fast end-of-approach
+# Y "snap" the old raw-normalize produced when COMBAT triggered early off-Y.
+# Speed is unchanged (caller multiplies by move_speed) — only direction.
+func _ground_line_dir(to_target: Vector2) -> Vector2:
+	var d: Vector2 = to_target
+	var ay: float = absf(to_target.y)
+	if ay > Y_ALIGN_EPS:
+		var x_cap: float = ay * APPROACH_Y_PRIORITY
+		if absf(to_target.x) > x_cap:
+			d = Vector2(signf(to_target.x) * x_cap, to_target.y)
+	if d.length_squared() < 0.000001:
+		return Vector2.ZERO
+	return d.normalized()
+
+
 func _move_step(delta: float) -> void:
 	# While auto-seeking, repath toward the moving enemy's engage slot.
 	# Combat Blocking Doctrine — abort chases that exit the guard zone /
@@ -1242,6 +1275,8 @@ func _move_step(delta: float) -> void:
 			# _can_pursue zone-boundary check is the backstop; the doomed
 			# check bails BEFORE a long in-zone chase even starts. Archetype-
 			# free — every hero approaches melee identically.
+			if _target_enemy == _seek_target_enemy:
+				_target_enemy = null
 			_seek_target_enemy = null
 			nav_agent.target_position = _rally_position
 		else:
@@ -1258,10 +1293,10 @@ func _move_step(delta: float) -> void:
 					or spot_d <= ENGAGE_ARRIVAL_TOLERANCE \
 					or enemy_d <= MELEE_ENGAGE_DISTANCE:
 				_target_enemy = _seek_target_enemy
-				_seek_target_enemy = null
 				_attack_cooldown = 0.0
-				_start_block(_target_enemy)
-				change_state(State.COMBAT)
+				if _start_block(_target_enemy):
+					_seek_target_enemy = null
+					change_state(State.COMBAT)
 				return
 			# Not in range yet → close DIRECTLY on the Y-locked engage
 			# spot (Combat Ground Line), NOT the raw enemy centre. The
@@ -1273,7 +1308,9 @@ func _move_step(delta: float) -> void:
 			# the no-target "return to anchor" path below.
 			var to_spot: Vector2 = _engage_position_for(_seek_target_enemy) - global_position
 			if to_spot.length_squared() > 1.0:
-				velocity = to_spot.normalized() * get_effective_move_speed()
+				# Y-priority: reach the enemy's lane-Y during the walk-in so
+				# COMBAT never inherits a residual Y to burst through.
+				velocity = _ground_line_dir(to_spot) * get_effective_move_speed()
 			else:
 				velocity = Vector2.ZERO
 			return
@@ -1339,8 +1376,13 @@ func _seek_target() -> void:
 		if dist_to_spot <= ENGAGE_ARRIVAL_TOLERANCE:
 			# Already at the engage spot — start the duel immediately.
 			_attack_cooldown = 0.0
-			_start_block(target)
-			change_state(State.COMBAT)
+			if _start_block(target):
+				_seek_target_enemy = null
+				change_state(State.COMBAT)
+			else:
+				nav_agent.target_position = engage_spot
+				_nav_repath_timer = 0.0
+				change_state(State.MOVING)
 		else:
 			# Approach phase — walk to the engage spot before swinging.
 			nav_agent.target_position = engage_spot
@@ -1610,22 +1652,31 @@ func _attack_step(delta: float) -> void:
 		_target_enemy = null
 		change_state(State.IDLE)
 		return
-	# Combat Blocking Doctrine — enemy walked out of attack range. Chase
-	# only if still inside guard zone / auto_seek radius (i.e. authored as
-	# a pursuer). Default ranged heroes (guard 0/0, auto_seek 0) drop the
-	# target and walk back to the hold point — they don't lawnmower the lane.
+	# Combat Blocking Doctrine — enemy left attack range. KR rule: detection
+	# ≠ combat, and a hero is a blocker, not a hunter. Only REPOSITION after
+	# a near-leaker if the hero was *physically blocking* this enemy (it is
+	# in _blocked_enemies — a real melee lock that may follow through within
+	# the guard zone). A pure RANGED SHOT target (never blocked/reserved)
+	# that walks out is simply dropped — the hero must NOT start chasing
+	# something it was only shooting. Capture the flag BEFORE the release
+	# (which clears _blocked_enemies).
 	if not (enemy in attack_range_area.get_overlapping_areas()):
+		var was_blocking: bool = _blocked_enemies.has(enemy)
 		_release_block_of(enemy)
 		_target_enemy = null
-		if _can_pursue(enemy):
+		if was_blocking and _can_pursue(enemy):
+			# Real melee lock + still inside the guard zone → walk to the
+			# engage spot and re-lock (finish a near-leaker at the line).
 			_seek_target_enemy = enemy
 			nav_agent.target_position = _engage_position_for(enemy)
 			_nav_repath_timer = 0.0
 			change_state(State.MOVING)
 		else:
+			# Was only shooting it (or it leaked past the guard zone): drop
+			# it. IDLE → _seek_target re-acquires the next shoot/melee target
+			# or walks back to the anchor. No chase.
 			_seek_target_enemy = null
-			nav_agent.target_position = _rally_position
-			change_state(State.MOVING)
+			change_state(State.IDLE)
 		return
 	# Capacity-aware multi-block: while in combat with _target_enemy, scan
 	# for additional unblocked enemies overlapping attack range and claim
@@ -1853,16 +1904,16 @@ func _respawn() -> void:
 # enemies skip engagement entirely. Unlike the old single-slot version,
 # this does NOT release an existing block — both can coexist so the hero
 # can tank multiple enemies side-by-side.
-func _start_block(enemy: Node) -> void:
+func _start_block(enemy: Node) -> bool:
 	if enemy == null or not is_instance_valid(enemy):
-		return
+		return false
 	if enemy.data == null or enemy.data.is_flying:
-		return
+		return false
 	if _blocked_enemies.has(enemy):
-		return
+		return true
 	var cap: int = data.max_block_targets if data != null else 1
 	if _blocked_enemies.size() >= cap:
-		return
+		return false
 	# Engage gate — block claim only fires when the enemy is within the
 	# hero's engage radius. attack_range can be much wider for ranged heroes;
 	# this lets the mage shoot at 350 px while only locking enemies that
@@ -1870,9 +1921,11 @@ func _start_block(enemy: Node) -> void:
 	# unconditionally (move_step, seek_target) — the gate makes them no-op
 	# until _auto_engage_extras catches the enemy crossing into engage range.
 	if not (enemy in engage_range_area.get_overlapping_areas()):
-		return
+		return false
 	if enemy.engage_combat(self):
 		_blocked_enemies.append(enemy)
+		return true
+	return false
 
 
 # Effective block-claim radius. Reads HeroData.engage_radius; when unset (0),

@@ -462,7 +462,7 @@ static func reset_enemy_overrides() -> void:
 # ============================================================================
 
 const HERO_STAT_KEYS: Array[String] = [
-	"hp_mult", "damage_mult", "range_mult",
+	"hp_mult", "damage_mult", "range_mult", "engage_range_mult",
 	"speed_mult", "attack_speed_mult",
 	"armor_add", "mag_res_add",
 ]

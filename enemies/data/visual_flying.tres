@@ -12,6 +12,7 @@ outline_color = Color(0.18, 0.10, 0.25, 1)
 accent_color = Color(0.74, 0.62, 0.95, 0.86)
 accent_type = 3
 radius = 30.0
+flight_height_px = 40.0
 walk_bob_amplitude = 5.0
 walk_bob_speed = 10.0
 walk_squash = 0.02

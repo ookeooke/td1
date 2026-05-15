@@ -83,6 +83,12 @@ var _skin_tint: Color = Color.WHITE
 # spotting it in aggro_range. Cleared when the target dies or the soldier
 # successfully engages it (the engagement itself then holds position).
 var _charge_target: BaseEnemy = null
+# Combat Blocking Doctrine — stop-on-claim (same model as BaseHero). The
+# enemy this soldier has committed to is reserved so it halts and waits
+# while the soldier walks over, instead of being chased while moving.
+# _sync_claim() reconciles this every frame; _release_claim() clears it on
+# death/despawn (physics is skipped while DEAD).
+var _claimed_enemy: Node = null
 
 # Phase 20.5: passive-ability dispatcher (same primitive as BaseEnemy /
 # BaseHero). Paladin-style soldiers attach HealAuraAbility here; shield
@@ -201,6 +207,7 @@ func _physics_process(delta: float) -> void:
 	_prev_pos = global_position
 	if _ability_host != null:
 		_ability_host.tick(delta)
+	_sync_claim()
 	# Walk-bob accumulator — ticks in any state where we're actually moving
 	# (MOVING, CHARGING, RETURNING). Idle states use breath instead.
 	var moving_state: bool = state == State.MOVING or state == State.CHARGING or state == State.RETURNING
@@ -392,10 +399,31 @@ func _tick_charge() -> void:
 	_prune_engagements()
 	if _charge_target != null and (not is_instance_valid(_charge_target) or _charge_target.state == BaseEnemy.State.DYING):
 		_charge_target = null
-	# Holding an engagement → plant feet next to the enemy; combat_tick
-	# will run from _attack_cycle. Don't chase further targets while busy.
+	# Holding an engagement → settle onto the enemy's exact lane-Y, then
+	# plant. The engaged enemy is reserved (stop-on-claim) so it's frozen;
+	# if melee contact registered while we were still off-Y, finish closing
+	# the short remaining distance to the Y-locked spot at move_speed
+	# (continuous — no teleport, CORE RULE 13) so the duel reads on one
+	# ground line. Once aligned, hold position. Don't chase further targets.
 	if not _engaged_enemies.is_empty():
-		velocity = Vector2.ZERO
+		var eng: Node = _engaged_enemies[0]
+		var settled: bool = true
+		# Enemy is in _engaged_enemies ⇒ we hard-block it ⇒ it's frozen
+		# (BaseEnemy COMBAT doesn't advance path progress), so the Y-locked
+		# spot is stationary and safe to walk the last few px onto.
+		if eng != null and is_instance_valid(eng) and eng.state != BaseEnemy.State.DYING:
+			var mr2: float = data.melee_range if data != null and "melee_range" in data else 24.0
+			var g2: float = maxf(mr2 * 0.8, 12.0)
+			var f2: Vector2 = _GuardZoneScript.path_forward_at(eng)
+			if f2 == Vector2.ZERO:
+				f2 = Vector2(signf(eng.global_position.x - global_position.x), 0.0)
+			var sp2: Vector2 = _GuardZoneScript.melee_engage_spot(eng.global_position, f2, g2)
+			var to_sp2: Vector2 = sp2 - global_position
+			if to_sp2.length() > 4.0:
+				velocity = to_sp2.normalized() * data.move_speed
+				settled = false
+		if settled:
+			velocity = Vector2.ZERO
 		move_and_slide()
 		return
 	# Combat Blocking Doctrine — guard-zone gate. If the chase target has
@@ -413,7 +441,21 @@ func _tick_charge() -> void:
 	if _charge_target == null:
 		change_state(State.RETURNING)
 		return
-	var to_target: Vector2 = _charge_target.global_position - global_position
+	# Combat Ground Line — steer at the enemy's exact lane-Y, not its raw
+	# position. The charge target is reserved (frozen by stop-on-claim) so
+	# this spot is stable; arriving on it makes the soldier duel on the
+	# enemy's Y (shares its shadow line) instead of planting at whatever
+	# diagonal it happened to reach. Gap sits inside melee_range so the
+	# normal _try_engage above still fires on arrival. Shared with
+	# BaseHero._engage_position_for. CORE RULE 13 preserved — still a
+	# direct straight-line move, only the target Y is corrected.
+	var mr: float = data.melee_range if data != null and "melee_range" in data else 24.0
+	var gap: float = maxf(mr * 0.8, 12.0)
+	var fwd: Vector2 = _GuardZoneScript.path_forward_at(_charge_target)
+	if fwd == Vector2.ZERO:
+		fwd = Vector2(signf(_charge_target.global_position.x - global_position.x), 0.0)
+	var spot: Vector2 = _GuardZoneScript.melee_engage_spot(_charge_target.global_position, fwd, gap)
+	var to_target: Vector2 = spot - global_position
 	if to_target.length() < 3.0:
 		velocity = Vector2.ZERO
 	else:
@@ -428,6 +470,41 @@ func _release_all_engagements() -> void:
 		if e != null and is_instance_valid(e):
 			e.release_combat(self)
 	_engaged_enemies.clear()
+
+
+# Combat Blocking Doctrine — stop-on-claim reconciliation (mirrors
+# BaseHero._sync_claim). Once per frame: reserve the enemy this soldier is
+# committed to (the charge target, else the oldest engaged enemy) so it
+# halts and waits while the soldier walks over; unreserve anything else.
+# Single choke-point — covers every place _charge_target / _engaged_enemies
+# changes without touching each site. Flying / bypass enemies no-op
+# reserve(), so they keep moving (handled in BaseEnemy.reserve).
+func _sync_claim() -> void:
+	var desired: Node = null
+	if _charge_target != null and is_instance_valid(_charge_target) \
+			and _charge_target.state != BaseEnemy.State.DYING:
+		desired = _charge_target
+	elif not _engaged_enemies.is_empty():
+		var e: Node = _engaged_enemies[0]
+		if e != null and is_instance_valid(e):
+			desired = e
+	if desired == _claimed_enemy:
+		return
+	if _claimed_enemy != null and is_instance_valid(_claimed_enemy) \
+			and _claimed_enemy.has_method("unreserve"):
+		_claimed_enemy.unreserve(self)
+	_claimed_enemy = desired
+	if _claimed_enemy != null and _claimed_enemy.has_method("reserve"):
+		_claimed_enemy.reserve(self)
+
+
+# Free any held claim (death / despawn). _physics_process early-returns
+# while DEAD so _sync_claim can't reconcile then — _die() calls this.
+func _release_claim() -> void:
+	if _claimed_enemy != null and is_instance_valid(_claimed_enemy) \
+			and _claimed_enemy.has_method("unreserve"):
+		_claimed_enemy.unreserve(self)
+	_claimed_enemy = null
 
 
 # Drop dead/invalid engagements so _try_engage can pick replacements.
@@ -507,6 +584,9 @@ func take_damage(amount: float, type: int, source: Node = null) -> float:
 func _die() -> void:
 	change_state(State.DEAD)
 	_release_all_engagements()
+	# Free any claimed enemy so it resumes walking — _physics_process early-
+	# returns while DEAD so _sync_claim can't reconcile this.
+	_release_claim()
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_DEATH, {})
 	EventBus.soldier_died.emit(self)

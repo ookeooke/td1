@@ -39,13 +39,33 @@ class_name HeroData
 # Enemies allow any number of blockers — the cap lives here.
 @export var max_block_targets: int = 2
 
-# Combat Blocking Doctrine — guard-zone fields. Heroes guard the last
-# player-issued hold point; they do not auto-hunt. See docs/COMBAT_BLOCKING_DOCTRINE.md.
-# - guard_front_px: how far ahead of the hold point the hero may intercept.
-# - guard_back_px: how far behind the hold point the hero may cleanup a passed enemy.
-# - auto_seek_radius: opt-in archetype override; > 0 enables hunting beyond the
-#   guard zone (default 0 = KR-canonical hold-ground). Never set on default heroes.
-# Author tank/melee heroes at ~150/100, ranged at 0/0 (or 60/40 with self-defense).
+# Combat Blocking Doctrine — UNIFIED MELEE-ENGAGE RANGE. This is the single
+# per-hero number that differs between heroes: the radius around the hero's
+# anchor (_rally_position) within which it commits to the SHARED melee
+# pipeline (leave anchor → reserve/stop-claim the enemy → walk to the
+# Y-locked spot → hard-block → fight on the enemy's Y). The melee RULES are
+# identical for every hero (Warrior, Mage, Necro, …); only THIS range varies
+# — big for a frontline melee hero (Warrior ~280), small for casters
+# (~80-100) who mostly shoot and only melee when something gets close.
+# Ranged heroes additionally shoot any enemy inside attack_range that is
+# OUTSIDE this range (shoot tier — enemy keeps walking, never reserved).
+# 0 = derive BaseHero.DEFAULT_MELEE_ENGAGE_RANGE at runtime. Exposed to the
+# dev balance UI as engage_range_mult (BalanceOverrides / HeroTuning).
+@export var detection_radius_px: float = 0.0
+
+# Ranged-hero close-combat profile. When a ranged hero (projectile_scene
+# set) is physically blocking an enemy at engage_radius, it uses these
+# instead of its ranged shot — a weaker melee poke at its own cadence.
+# 0 / 0 / -1 = unauthored → hero keeps shooting point-blank (legacy
+# behavior, zero regression). close_attack_damage_type -1 inherits
+# data.damage_type. See docs/COMBAT_BLOCKING_DOCTRINE.md.
+@export var close_attack_damage: float = 0.0
+@export var close_attack_speed: float = 0.0
+@export var close_attack_damage_type: int = -1
+
+# Legacy guard-zone fields — superseded by detection_radius_px. Kept on the
+# resource for back-compat with .tres files but no longer read by combat
+# code. May be removed in a later pass.
 @export var guard_front_px: float = 0.0
 @export var guard_back_px: float = 0.0
 @export var auto_seek_radius: float = 0.0

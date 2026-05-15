@@ -3901,6 +3901,12 @@ Follow-up:
 - Corrected left/right silhouette asymmetry: robe and hood now compress the leading side and keep more mass on the trailing side. This fixes left movement where the widened left robe/cowl was still reading as cape/body-first, while right movement had the staff as an extra front cue.
 - Split cape motion from torso facing: [base_hero.gd](heroes/base_hero.gd) now maintains a separate `_cape_lag_x` visual state and passes `ctx["cape_lag"]`; [UnitVisualDrawer.gd](systems/UnitVisualDrawer.gd) uses that delayed cape lag for Necromancer cloth while hood/robe continue using immediate facing. Result: torso turns first, cape catches up independently.
 - Calmed the follow-up vibration: cape lag now uses non-overshooting damped easing instead of a spring velocity, and Necromancer ink jitter updates more slowly with reduced amplitude so internal robe/face/staff details do not buzz as strongly.
+- Option 1 layered procedural rig trial: [UnitVisualDrawer.gd](systems/UnitVisualDrawer.gd) now computes explicit Necromancer motion channels (`body_turn`, `robe_turn`, `hood_turn`, `cape_lag`, `staff_lag`, `gait`) in `_necromancer_motion_channels()`. Each visual layer consumes its own channel, so cape, robe, staff, and hood no longer all read the same turn value.
+- Added state-weighted Necromancer animation channels (`idle_weight`, `move_weight`, `attack_weight`, `strike_weight`, `cast_weight`). Idle now keeps cape/staff/hood subtle, movement emphasizes cape trail and hood lead, and attack/cast lift/pull cape, robe shoulders, staff, and hood separately.
+- Fixed projectile launch origin for staff heroes: [base_hero.gd](heroes/base_hero.gd) now routes projectile spawn through `_projectile_spawn_position()`. Necromancer projectiles start near the drawn staff orb instead of the hero center; generic staff users get a staff-tip offset, while bow/other projectiles keep the previous forward muzzle fallback.
+- Verification for this follow-up: `git diff --check` passes. Local `Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit` still crashes with signal 11 before project logs, so in-editor visual/projectile verification is still required.
+- Torso/cape separation pass: [UnitVisualDrawer.gd](systems/UnitVisualDrawer.gd) now adds a calmer `torso_turn` channel, keeps robe shoulders nearly pinned, lets the lower robe hem carry most walk sway, draws a distinct brighter front torso panel over the robe, and adds a dark shoulder gap so the cape reads as a separate layer behind the body. Added controlled dry-ink outlines/fold strokes on cape, torso, and hood for a more hand-drawn read without reintroducing whole-character vibration. Verification: `git diff --check` passes; local headless Godot still crashes with signal 11 before script validation, so editor playtest is required.
+- Idle animation pass: added dedicated Necromancer idle channels (`idle_breath`, `idle_settle`, `idle_cape`, `idle_staff`, `idle_orb`) instead of borrowing walk math. Torso panel/chest pendant now breathe subtly, cape hem drifts late, hood settles with tiny counter-motion, and the staff orb has a slow idle pulse while the shaft only micro-sways. Verification: `git diff --check` passes; editor visual check still needed.
 
 ---
 
@@ -3922,3 +3928,281 @@ Verification:
 - `godot --headless --quit` boots clean.
 
 Not yet verified: L1 visual playtest. Expected behavior on L1 with Warrior: hero spawns at y≈497 (snapped from 549), walks along the path to meet enemies coming from the left, fights on the road, returns to a hold-point on the road. Tap-to-move within 40 px of the road snaps; further taps respect off-path placement.
+
+---
+
+## 2026-05-15 — Engage-spot rework (walk-in, face-off, no doomed chase)
+
+A code trace exposed that the "hero walks to a spot then duels" model was half-implemented: melee heroes snap-engaged ~20 px short of the spot, the spot side was world-geometry (could land behind the enemy), enemies never turned to face their blocker, and a melee hero would trail a faster enemy across the whole detection zone. Four changes:
+
+- **Change 2 — engage spot ahead along path.** New `GuardZone.path_forward_at(enemy)` (samples the enemy's Curve2D tangent ±4 px, exit-ward). `BaseHero._enemy_path_forward` wraps it with fallbacks (enemy `_facing_dir` → `Vector2.RIGHT`). `_engage_position_for` melee branch now returns `enemy + fwd * MELEE_ENGAGE_GAP_X` — always in front of the enemy, never a behind-tackle.
+- **Change 1 — melee reaches the spot before swinging.** `_move_step` combat-start trigger split: ranged heroes still early-fire on `attack_range_area` entry; melee heroes transition to COMBAT only on arrival (`distance ≤ ENGAGE_ARRIVAL_TOLERANCE = 18 px`) or face-contact (`MELEE_ENGAGE_DISTANCE = 30 px`). The 18 px constant was previously dead — now load-bearing.
+- **Change 4 — no doomed chase.** New `_melee_chase_is_doomed(enemy)`: drops the target pre-approach if the enemy is faster than the hero AND pulling away exit-ward (`path_forward · hero→enemy > 0.25`). `_can_pursue` zone-boundary check stays as the backstop.
+- **Change 3 — enemy faces its blocker.** `base_enemy.gd` facing-sample block: while `COMBAT` with blockers, `_facing_dir` points at `_blockers[0]` instead of freezing on last path heading. Fixes the "face forward, punch backward" read; idle body now agrees with the swing animation (which already aimed at `_blockers[0]`).
+
+Ranged heroes (Mage/Ranger/Necro) unchanged by design — attack_range 270-320 > detection radius 200, so they fire from the anchor and never enter the approach phase.
+
+Verification:
+- 3 new GUT tests in test_combat_blocking.gd (path-forward tangent exit-ward, no-path returns zero, doomed-chase early-out when enemy slower). 18/18 in that file.
+- Full GUT suite — 55/55 across 8 scripts.
+- `godot --headless --quit` boots clean.
+
+Not verified: L1 playtest. Expected — Warrior strides to a point in front of an oncoming enemy, plants, duels; enemy turns to face him; Warrior drops a faster fleeing enemy early and walks back to anchor; Mage still fires from anchor without moving. Doctrine doc updated with the engage-spot geometry, combat-start trigger, no-doomed-chase, and enemy-faces-blocker rules.
+
+---
+
+## 2026-05-15 — Ranged hero distinct close attack
+
+A code trace answered "does a ranged hero in melee still shoot?" — yes, it fired full-DPS projectiles point-blank because `_attack_step` had no melee/ranged distinction. User chose: implement the long-deferred authored close-combat profile.
+
+- **HeroData**: added `close_attack_damage` / `close_attack_speed` / `close_attack_damage_type` (default 0/0/-1 = unauthored → keep shooting, zero regression; -1 inherits `data.damage_type`).
+- **BaseHero**: new pure helpers `_has_close_attack`, `_in_close_combat` (trigger = ranged archetype + authored + `_target_enemy in _blocked_enemies`), `_resolve_attack_profile` → `{damage, speed, dtype, use_projectile}`. Close damage scales by the same gear/talent ratio (`_effective_damage()/attack_damage`) the ranged shot gets, so equipment still matters up close. `_attack_step` rewired to consume the profile — the existing instant-hit branch (Warrior melee) is now shared by ranged-hero close pokes; one code path, no duplication.
+- **Authored** (starter, balance-tunable): Ranger 0.6 dmg / 0.9 spd PHYSICAL, Mage 0.5 / 0.7 PHYSICAL, Necromancer 0.55 / 0.8 PHYSICAL. Lower damage than the ranged shot, faster cadence, PHYSICAL so the caster's MAGIC identity doesn't carry into the desperate jab — being meleed is meant to be a bad time.
+- Trigger reuses existing `_blocked_enemies` state — no new Area2D, state, or constant. `max_block_targets = 0` heroes never block so never enter close mode (Necro is now cap=1, so he scythe-pokes).
+
+Verification:
+- 4 new GUT resolver tests (unauthored→ranged, authored-not-blocking→ranged, blocking→close with gear-ratio + speed + type, -1 type inherits). 22/22 in the file.
+- Full GUT suite — 59/59 across 8 scripts.
+- `godot --headless --quit` boots clean.
+- Doctrine doc "Ranged and Hybrid Units" §4 marked IMPLEMENTED with trigger, gear-ratio, opt-in fallback, and the authored values.
+
+Not verified: L1 playtest. Expected — Necromancer (cap=1) holds an enemy and does a faster weaker scythe jab (PHYSICAL, lower floating numbers) instead of bolts; resumes bolts when moved back to range. Ranger/Mage same. Balance pass against BALANCE.md hero DPS bands still owed before final.
+
+---
+
+## 2026-05-15 — Engage settle (Option D)
+
+Melee hero could lock into COMBAT up to ~30 px short of the engage spot (the face-contact anti-jitter fallback). User picked Option D: smoothly slide onto the exact spot on COMBAT entry.
+
+- `ENGAGE_SETTLE_DURATION = 0.1` + `_settle_t / _settle_start / _settle_target` vars on BaseHero.
+- `_begin_combat_settle(enemy)` — melee-only (ranged gated out by `attack_range >= RANGED_ATTACK_RANGE_THRESHOLD`); captures start + exact `_engage_position_for` spot, arms `_settle_t`.
+- Called at both melee COMBAT-entry sites (`_move_step` arrival branch, `_seek_target` immediate branch). Ranged early-fire branch deliberately does not call it.
+- COMBAT branch of `_physics_process` lerps `global_position` start→spot with `smoothstep` ease; `velocity` stays 0 so `move_and_slide` is inert (no physics fight). Snaps exact on completion.
+- `change_state` clears `_settle_t` when leaving COMBAT so a kill/dismiss/move mid-slide can't yank the hero.
+
+Verification: 2 new GUT tests (settle armed for melee, zero for ranged). 24/24 in file, full suite 61/61, boot clean. Doctrine doc gained an "Engage settle" paragraph.
+
+Not verified: L1 playtest — expected: Warrior visibly slides the last few px onto the road line (ease-in/out) before swinging; no teleport pop, no jitter; Mage/Ranger unchanged; pause mid-settle freezes cleanly.
+
+## 2026-05-15 — Necromancer AAA pass: part-rig + weighted posing
+
+Necromancer premium drawer reworked toward AAA hand-drawn (NECROMANCER_PREMIUM path only; generic path + other heroes untouched).
+
+- **Phase 0**: fixed build-breaking undeclared `t` in `_draw_necromancer_hood` (game did not boot).
+- **Phase 1**: introduced a real part-rig — `_necromancer_rig()` builds a `Transform2D` per part (ground/cape/torso/head) composed via `draw_set_transform_matrix` (absolute, parent-multiplied). Turn is now a rigid head-leads / torso-leans / cape-trails pose about pivots; `_necromancer_neuter_turn()` zeroes the legacy in-helper turn channels so the old asymmetric-width/tuck math (the silhouette-compression bug class behind the reverted scale.x mirror) is structurally gone. Flinch folded into the rig root.
+- **Phase 2**: `_gait_pose()` keyframed pelvis bob (pow-biased contact snap) + weight-shift roll + lagged head/cape bob; `_action_lean()` adds anticipation + follow-through + settle on existing strike/cast signals. Helpers keep intra-part deformation via the unchanged gait channel.
+- **Phase 3**: `_spring1()` semi-implicit damped spring on base_hero; face + cape easing moved from linear lerp to slightly-underdamped spring (overshoot/settle). `_flinch_t` deliberately left as-is so the generic hero path is byte-identical. Removed dead `FACE_LERP_RATE`.
+- **Phase 4**: hybrid cadence — idle harmonics, glow shimmer, cape flutter, idle staff/hand sway stepped to ~12 fps via existing `_ink_step_time`; locomotion (gait, rig bob) + springs stay smooth 60 fps. No signature churn (stepped clock derived in-helper).
+
+Files: systems/UnitVisualDrawer.gd (premium path), heroes/base_hero.gd (spring state + 2 lerp swaps). No .tres / schema / autoload changes.
+
+Verification: clean headless boot after every phase; full GUT 61/61 after Phase 3. Not verified: in-editor visual pass (walk left/right turn read, weighted step, spring settle, stepped secondary cadence) — pending user playtest.
+
+---
+
+## 2026-05-15 — Hero stops chasing leakers (forward path-progress cutoff)
+
+Players reported the hero turning around and chasing enemies that already walked past it. Root cause: the detection zone is a circle around the anchor, so a leaked enemy is still "in zone" and stayed a valid target; the only abort (`_melee_chase_is_doomed`) fired only when the enemy was faster than the hero. Web research (KR forward-guard + auto-return, game-AI hysteresis literature) confirmed the fix: a forward path-progress cutoff with a grace margin.
+
+- `GUARD_BACK_MARGIN_PX = 50` on BaseHero.
+- New pure helper `_has_leaked_past_anchor(enemy)` = `GuardZone.progress_delta(enemy, _rally_position) > 50` (measured along the enemy's own path; returns false when no path data).
+- `_pick_target_in_detection_zone`: skip leaked enemies (never acquire).
+- `_can_pursue`: reject leaked enemies (in-progress approach aborts the instant the target crosses the margin → `_move_step` walks the hero back to anchor).
+- No separate hysteresis needed: once `_start_block` fires the enemy is halted so its progress can't oscillate across the margin; pre-contact the 50 px grace + the speed-based `_melee_chase_is_doomed` damp any flap.
+- The circle still bounds *how far*; the progress test bounds *which direction* (KR forward-guard pattern). Reused the existing `GuardZone.progress_delta` primitive — no new state/Area2D, guard_front/back fields not revived.
+
+Verification: 4 new GUT tests (leaked→true, approaching→false, within-grace→false, no-path→false). 28/28 in file, full suite 65/65, boot clean. Doctrine doc gained a "Forward cutoff — don't chase leakers" paragraph.
+
+Not verified: L1 playtest — expected: hero ignores enemies that slipped past while it was busy, returns to anchor and faces the next approaching one; a near-line duel (≤50 px past) still completes; fast runners still dropped by the speed guard; ranged heroes unaffected.
+
+## 2026-05-15 — Necromancer cleanup: removed Phase-1 turn-neuter shim
+
+Finished the Phase-1 deferral. Removed `_necromancer_neuter_turn()` (per-frame `Dictionary.duplicate()` that masked dead code) and pass `motion` directly to the 4 premium helpers. Each helper now forces its local `turn`/`torso_turn` to a literal `0.0` with a comment (rig owns directional turn) — vertex math left untouched (already identity at runtime; no regression surface). Dropped the 3 never-consumed motion keys `torso_turn`/`robe_turn`/`hood_turn`. Dropped the dead `_t` param on `_draw_necromancer_hood` + its call arg. `cape_lag`/`staff_lag` kept (live secondary motion). `base_hero` `walk_rotation` ctx left as-is (shared with generic path).
+
+Behaviour-preserving by construction. Verification: clean headless boot; full GUT 65/65. Not verified: in-editor visual parity (must look identical to pre-cleanup).
+
+---
+
+## 2026-05-15 — Combat audit fixes (2 real bugs + cleanup)
+
+Full re-audit (2 parallel cross-checks) after the session's ~8 layered combat features. System sound; found 2 real bugs + minor cleanup. (One audit false-flagged GuardZone.progress_delta as dead — it's called by _has_leaked_past_anchor; kept.)
+
+- **H1 (structural)** — `_engage_position_for` melee used a fixed 55 px gap while `_start_block` needs the enemy inside `_effective_engage_radius`. Independent constants; Warrior survived by a 5 px coincidence, any short-reach melee hero would walk to a spot outside its own block circle → permanent no-block. Fix: gap = `min(MELEE_ENGAGE_GAP_X, _effective_engage_radius() − ENGAGE_GAP_SAFETY)` clamped ≥ `MELEE_ENGAGE_DISTANCE` → always inside the circle by construction. New `ENGAGE_GAP_SAFETY = 6`.
+- **H2** — acquire & pursue both rejected leakers at the same 50 px margin → hero lurched toward an enemy near the boundary then dropped it mid-approach (feint/flicker). Fix: asymmetric hysteresis — `_has_leaked_past_anchor(enemy, margin)` now takes a margin; acquisition uses `GUARD_ACQUIRE_MARGIN_PX = 0` (only start on enemies at/before the anchor), pursuit keeps `GUARD_BACK_MARGIN_PX = 50` follow-through.
+- **M1** — settle lerp could leave the hero frozen mid-slide if the enemy left/died during the 0.1 s plant. Fix: `_attack_step` walked-out branch gated on `_settle_t <= 0`; DYING/invalid branches snap `global_position = _settle_target` before leaving COMBAT.
+- **L1** — deleted dead `_is_seeking_allowed()` (zero callers after the detection-zone refactor).
+- **M2** — doctrine: documented the soldier(rally-hold) vs hero(detection+approach+settle) split as a permanent intentional divergence; updated the engage-spot + forward-cutoff paragraphs for the radius-bounded gap and acquire/pursue hysteresis.
+
+Verification: 4 new GUT tests (acquire-vs-pursue margin asymmetry; engage-spot inside block circle for Warrior-shaped + synthetic short-reach hero). File 31/31, full suite 68/68, boot clean.
+
+Not verified: L1 playtest — expected: Warrior engages reliably (no "in COMBAT but enemy walks on"), no lurch-then-abandon near the rear boundary, no mid-air freeze if enemy dies on the plant, still ignores true leakers. Ranged heroes + soldiers unaffected.
+
+## 2026-05-15 — Necromancer choreography pass (C1 + C2)
+
+C1 cast 3-beat: `_action_lean` cast curve now coils back during wind-up, snaps forward on release, then a short counter-settle lobe (was a flat decay). Added `cast_rear` (chest rears UP while channelling, commits down on release) and `cast_open` (cape billows out toward cast dir on the release frame); `dir` returned for the billow. Rig applies these to torso/head Y + cape X/Y.
+
+C2 idle life: rig adds a slow weight-shift (pelvis roll + side X + micro-bob) and head scan, driven by the always-advancing gait clock, FULLY gated by idle_weight (zero while moving or acting). No new state, no extra signals.
+
+Necromancer-only (rig path). Additive + bounded. Verification: clean headless boot; full GUT 68/68. Not verified: in-editor visual (cast gesture reads as coil/snap/settle with cape billow; idle no longer static; walk/turn unchanged).
+
+---
+
+## 2026-05-15 — Fixed the two real runtime bugs (verified IN-ENGINE via MCP)
+
+The recurring "enemies don't stop / hero chases" + "blockers fight at wrong Y" complaints were caused by over-engineering I added this session. Root cause confirmed by code trace + Level1.tscn geometry (NOT collision — verified enemy=Area2D layer 2, hero EngageRange mask 6 matches):
+
+- **Bug B:** `_engage_position_for` melee returned `enemy.pos + path_tangent * gap`. L1's `left` curve slopes hard, so the tangent's Y component planted the blocker ~20-25 px off the enemy's lane-Y.
+- **Bug A:** the engage spot was placed *ahead of a still-moving enemy* and the hero pursued it via `NavigationAgent2D` (path-follow lag) → never closed → `_start_block` never fired → enemy never entered COMBAT → endless chase.
+
+Fix = collapse to the proven soldier model (CORE RULE 13):
+1. `_engage_position_for` melee → `Vector2(enemy.x + sign(fwd.x)·gap, enemy.y)` — Y locked to the enemy's ground line.
+2. `_move_step` melee → decisive COMBAT trigger is `enemy in engage_range_area` (proximity, soldier-parity); spot-arrival/face-contact kept as backups.
+3. `_move_step` melee pursuit → drive `velocity` straight at the enemy (no nav-agent lag); nav-agent only for the no-target return-to-anchor path.
+Doctrine doc rewritten (lead-spot/settle paragraph → simplified soldier-parity model). Dead `_is_seeking_allowed` already removed earlier.
+
+**Verification — in-engine via Godot MCP (not an unverified playtest):** played Main.tscn, scripted Warrior + L1, called a wave, sampled live state:
+- Captured: `hero state=2 (COMBAT) blocked=2`; both `_blocked_enemies` `state=1 (COMBAT = halted)`; yDelta `0.00` and `12.36`. Enemies **stop**; hero stands on the **enemy's exact Y**. Bugs A & B fixed, observed live.
+- Hero repeatedly died tanking 2 enemies solo with zero tower/soldier support (scripted straight into Main, bypassing the build phase) — expected balance, not a combat-logic bug.
+- GUT: full suite 69/69 (added `test_engage_spot_locks_to_enemy_Y_on_sloped_path` as the bug-B regression guard). `--headless --quit` boots clean.
+
+Residual (separate, minor, NOT blocking): on spawn/respawn the hero sits at the raw HeroSpawn marker (1208,549) instead of path-snapping to the lane (~y≈497) — `_snap_to_ground_line` isn't relocating it at rest. Engagement Y-lock makes the *combat* visual correct; the at-rest off-path spawn is cosmetic. Follow-up: investigate why SPAWN_SNAP_SLACK=80 snap misses the L1 path (likely the Path2D/NavigationRegion node offset (1,-65) not accounted for in the snap projection).
+
+## 2026-05-15 — Necromancer C3: weighted walk polish
+
+`_gait_pose` extended: `psway` (lateral hip weight-shift, in-phase with roll), `twist` (contrapposto, lagged 0.55 rad), `contact` (heel-strike spike at footfall, pow(1-lift,6)). `_necromancer_rig` consumes them, all `* mv`: hip lateral shift on torso.x; torso pelvis-roll coupling reduced to 0.70 so the head counter-twist (`+twist_r`) produces readable spine torsion; head figure-8 (drifts opposite hips); heel-strike settle on torso/head.y; cape counter-twists slightly. Necromancer rig path only; additive; zero effect when not walking (mv gate).
+
+Verification: clean headless boot; full GUT 69/69. Not verified: in-editor visual (hips shift over stance foot, contrapposto lag, footfall settle, head figure-8; idle/cast/turn + other units unchanged).
+
+## 2026-05-15 — Necromancer walk: amplitude boost + stepping feet
+
+Walk read ≈ idle because rig amplitudes were sub-pixel on the small body_r (~25px, 50x50 square). Boosted rig walk channels ~3x (bob 0.05→0.16, lag 0.05→0.15, roll 0.030→0.065, hip 0.020→0.055, twist 0.024→0.050, fig8 0.010→0.022, heel 0.015→0.030); idle untouched. Added `_draw_necromancer_feet`: two stepping legs (reuses `_draw_arm_segment`) + chunky boots that peek below the robe hem, drawn under the torso rig transform before the robe, gated walk-only (mv) so idle is unchanged. Necromancer premium path only.
+
+Verification: clean headless boot; full GUT 69/69. Not verified: in-editor visual (clear stepping vs idle; feet poke below hem and stride; idle/cast/other units unchanged).
+
+## 2026-05-15 — Necromancer C4: motion polish (M1-M4)
+
+M1 foot ground-lock: `_draw_necromancer_feet` now drawn in the rig ROOT (ground) frame with `body_off = torso.origin - root.origin`; 2-state stance/swing treadmill cycle (stance 62%). Stance foot pinned to ground line, hip follows body bob → leg extends/compresses (knee read). M2 dust scuff: stateless contact-keyed puff (arc + 2 specks) at footfall, ground frame, fades over first 16% of stride. M3 speed stride: base_hero adds `ctx["move_speed01"]` (velocity/effective_move_speed); feet scale stride length lerp(0.55,1.15) + lift slightly; cadence untouched. M4 melee swing: replaced ±5px strike sway with a real arc via `_window_sin` windows (anticipation cock-back/up → impact sweep across+down → follow-through) on staff_sway + melee_y on grip/staff_top/staff_upper; cast path untouched.
+
+Necromancer premium path only (+1 independent base_hero ctx key). Verification: clean headless boot (Necromancer code compiles + runs). GUT regression NOT run-comparable this session: an unrelated in-flight base_hero.gd rewrite (+348/-112, engage-settle feature removed) left tests/unit/test_combat_blocking.gd referencing deleted BaseHero.ENGAGE_SETTLE_DURATION/_settle_t, aborting part of the suite (69→37 run, 2 failing). Not caused by the Necromancer work; M3 ctx one-liner was green at the earlier 69/69 M3 checkpoint.
+
+---
+
+## 2026-05-15 — Stop-on-claim (Option 1): enemy halts on commit, hero walks in
+
+User decision after the teleport investigation: when the hero commits to an enemy, that enemy stops and waits; the hero walks over at move_speed (no chase, no teleport). Reverses the old "enemies never stop on detection" rule into two stages: claim=soft-stop, contact=hard-fight.
+
+Changes:
+- **BaseEnemy** — `_reservers` + `reserve()/unreserve()/is_held()`. WALKING branch freezes path progress while reserved (stays WALKING so it resumes cleanly; no counter-attack until physically blocked). Flying/bypass ignore reservations.
+- **BaseHero** — `_sync_claim(delta)` once-per-frame choke-point reserves the current target (`_target_enemy` in COMBAT else `_seek_target_enemy`), unreserves anything else; `CLAIM_TIMEOUT=4s` drops a claim that never reaches contact; `_release_claim()` called from `_die()` (physics skipped while DEAD). Direct-move at the now-stationary enemy.
+- **Engage-settle deleted entirely** (const, 3 vars, `_begin_combat_settle` + 2 call sites, COMBAT-branch lerp, 2 `_attack_step` snap guards, `change_state` clear) — it was the teleport, and a stationary claimed enemy makes any settle pointless. Hero plants where contact is made, soldier-parity.
+- Doctrine Core Rule 1 rewritten (claim=soft-stop, contact=hard-fight); melee-approach section updated; settle paragraph removed.
+
+Verification:
+- GUT: full suite 70/70 (added 3 reservation tests: reserve freezes progress / unreserve resumes / flying ignores / hero release clears; deleted the 2 obsolete settle tests).
+- `godot --headless --quit` clean.
+- **In-engine (Godot MCP), captured evidence:**
+  - 90-frame capture: hero COMBAT, position CONSTANT (1161,452), enemy state=COMBAT, path-progress CONSTANT 1183 → enemy stopped, hero planted, zero teleport.
+  - 120-frame capture: hero COMBAT constant (1174,475), enemy progress FROZEN 1211 → same.
+  - Discrete approach samples progressed (1208,549)→(1105,367)→(1140,440)→(1161,452)→(1174,475): continuous walking toward the enemy, no discontinuous jump.
+  - Confirmed a misleading "won't claim / stuck" observation was an artifact of `get_tree().paused == true`, not a logic bug — once unpaused the hero immediately went MOVING and engaged.
+- Not visually captured: a single recorder frame with `is_held()==true` (the brief pre-contact soft-stop) — the approach is <0.5 s and recorders attached a beat late / waves ran dry. Covered by the unit test (reserve freezes progress) + every COMBAT capture showing the enemy's progress frozen and the hero arriving by continuous motion.
+
+Net: enemies stop, hero walks in at move_speed, no teleport, no endless chase. Residual at-rest spawn-not-path-snapped follow-up still open (separate).
+
+## 2026-05-15 — Necromancer leg invert fix
+
+Leg treadmill cycle + boot toe were hardcoded to forward=+x, so walking LEFT moonwalked. Added `face_sign` param to `_draw_necromancer_feet` (derived in premium from ctx `face`.x with a -0.02 deadzone, default +1). Stance/swing stride x and the boot toe polygon now multiply by face_sign → legs/boots invert correctly for left vs right travel; left/right leg lateral separation (anchor_x) unchanged. Necromancer premium only.
+
+Verification: fully clean headless boot (the earlier unrelated base_hero engage-settle/test mismatch resolved externally); full GUT 70/70.
+
+---
+
+## 2026-05-15 — Soldiers unified onto stop-on-claim + closed test/doc gaps
+
+Post-churn full code review found the hero stop-on-claim core sound but soldiers still on the old chase model (the other half of the user's "hero OR soldiers chase / wrong Y" complaint). Unified soldiers onto the same model:
+
+- **base_soldier.gd**: added `_claimed_enemy` + `_sync_claim()` (once/frame: reserve `_charge_target` else oldest engaged enemy; unreserve on change) + `_release_claim()` called from `_die()`. Reuses the generic `BaseEnemy.reserve()/unreserve()` (hero-proven). Soldier now reserves its committed guard-zone target (it halts), then closes with the existing direct straight-line move (CORE RULE 13) and blocks on `melee_range` — no chasing a moving enemy. Guard-zone gate (`_is_guardable`) still decides *which* enemy to commit to.
+- **base_enemy.gd**: clarifying comment at the `_reservers` early-return — effects/abilities/hit-stop/death tick BEFORE it; held only freezes path+anim; holding does NOT pause debuff duration (deliberate, no refund exploit).
+- **Doctrine**: Core Rule 1 now explicitly universal (heroes AND soldiers); Soldier Behavior section rewritten for reserve-on-commit; the stale "intentional divergence" callout replaced with "shared stop-on-claim, different zone shape" (heroes range a circle, soldiers hold the rally guard zone — only the *zone shape* differs now, the engage mechanism is unified); recorded the held-doesn't-pause-debuffs decision.
+- **Tests** (+5): hero `_sync_claim` reserve/switch/clear; stale-claim-after-freed-enemy; soldier reserve-on-charge / unreserve-on-drop / release-on-death; `GuardZone.progress_delta` sign. (CLAIM_TIMEOUT left to in-engine — its drop path touches `nav_agent`, null on a bare hero; over-mocking avoided.)
+
+Verification:
+- GUT: file 37/37, full suite **74/74**. `--headless --quit` clean.
+- **In-engine (Godot MCP)**: script-spawned a Basic soldier on L1's left path, called a wave, frame-recorder captured: `ss2(1357,487) cttrue eng1 est1 hfalse p1382 d57 yd-20` then `ss4 ... eng0 none`. Soldier walked rally(1421,464)→(1357,487) continuously (no teleport), enemy **state=COMBAT, path-progress FROZEN at 1382** (stopped, not chased), yDelta −20 (≈same ground line); on soldier death the claim released cleanly (`_claimed_enemy → none`). Hero stop-on-claim previously verified in-engine (enemy frozen, hero planted, no teleport).
+
+Net: both heroes and soldiers now stop-on-claim — committed enemy halts and waits, blocker walks in at move_speed, no chase, no teleport, fights on the enemy's ground line. Open follow-up (separate): at-rest spawn not path-snapped; dead HeroData guard_* fields (harmless, comment-noted).
+
+---
+
+## 2026-05-15 — Soft-claim gated to melee blockers (ranged heroes don't freeze shot enemies)
+
+"How do ranged heroes do melee?" exposed a bug in the stop-on-claim unification: `BaseHero._sync_claim` reserved `_target_enemy` whenever `state == COMBAT`, so a ranged hero (Mage/Ranger/Necro) shooting from 250-320 px soft-claimed and **froze every enemy it shot from across the screen** — destroying the ranged/melee distinction and making soldiers pointless next to a Mage.
+
+Model clarified + fixed:
+- Soft-claim (`reserve()` → halt before contact) is a **melee-blocker** mechanic (soldiers + melee heroes only). Ranged heroes shoot in place; enemies keep walking; a ranged hero only melees when an enemy physically reaches its `engage_radius` and it has `max_block_targets > 0` — then it *hard*-blocks via `_blockers`/COMBAT and uses the weaker authored `close_attack_*` poke (already implemented; unchanged).
+- `base_hero.gd _sync_claim`: `is_ranged = get_effective_attack_range() >= RANGED_ATTACK_RANGE_THRESHOLD`; ranged → `desired = null` (never soft-claims, releases any prior claim). CLAIM_TIMEOUT branch already guarded by `_claimed_enemy != null` so it can't fire for ranged. Melee/soldier paths unchanged.
+- Doctrine Core Rule 1 + Ranged/Hybrid section rewritten: soft-claim melee-only; ranged shoots while enemies keep moving (intended).
+- Tests: +`test_ranged_hero_does_not_soft_claim`, +`test_melee_hero_still_soft_claims`; fixed 2 pre-existing `_sync_claim` tests whose `_hero_anchored_at` made a default HeroData (attack_range 150 == ranged threshold → now classified ranged) by setting `attack_range = 75` (melee).
+
+Verification:
+- GUT: file 39/39, full suite **76/76**. `--headless --quit` clean.
+- In-engine (Godot MCP, Mage on L1): Mage held its anchor (1208,549) — did NOT move (ranged stands still); `_claimed_enemy` null in every sample; an enemy that physically reached it was hard-blocked (`blk1`, enemy `State.COMBAT`, `is_held()==false` → stopped by `_blockers` not soft-claim — correct hard stage); a mid-range enemy being shot (d=134, beyond engage) had `is_held()==false`, Mage `claimed==false`, and on the next poll was gone (kept moving → died/leaked, not frozen). Unit `test_ranged_hero_does_not_soft_claim` directly asserts the gate. (Frame-recorder node flaked intermittently as before; discrete samples + unit test are the decisive evidence.)
+
+Net: ranged heroes shoot without freezing the lane; melee heroes + soldiers still stop-on-claim. Ranged→melee fallback (close_attack on hard contact) intact. Open follow-ups unchanged (at-rest spawn-snap; dead HeroData guard_* fields).
+
+## 2026-05-15 — Necromancer cel-shading extended
+
+Extended `_cel_overlay` (occlusion wash + light-facing rim) to the remaining readable masses: robe front_panel + collar (warm soul rim, reuses robe_rim) and boots (rim-only, occ 0 since near-black — adds a leather sheen on the lit edge; collar/boot polygons extracted to vars). Now covers robe, cape, hood, front panel, collar, boots. Thin limbs/staff intentionally skipped (rim on a thin capsule is marginal). Necromancer premium only; tunable per call (occ_a, rim alpha/width).
+
+Verification: clean headless boot; full GUT 76/76.
+
+## 2026-05-15 — Necromancer #2: variable-weight inked outline
+
+Added `_ink_weighted` (mirror of `_rough_polyline` + per-edge width from the same centroid-vs-light test as `_cel_overlay`): shadow-facing edges ~1.7x, lit edges ~0.5x, plus a small ink pool dab at shadow-side corners. Swapped the robe / hood / cape main silhouette outlines to it (cape dry-ink texture pass + minor _rough_line details left uniform). Necromancer premium only; light = NECRO_LIGHT (shared with cel pass).
+
+Verification: clean headless boot; full GUT.
+
+## 2026-05-15 — Combat Ground Line: every melee blocker fights on the enemy's Y
+
+Problem: melee fights read as diagonal off-Y skirmishes. Soldiers planted on melee-range contact wherever they reached (~30–50 px off-Y); the melee hero's approach steered at the raw enemy centre (not its Y-locked engage spot) so the proximity-block fired ~31 px off-Y; both then froze with no settle.
+
+Fix (one shared "Combat Ground Line" = engaged enemy's `global_position.y`, which already bakes in its v_offset lane; walk-bob/flight are draw-only):
+- `GuardZone.melee_engage_spot(enemy_pos, forward, gap)` — single Y-lock helper (enemy's exact Y, horizontal gap toward path-exit). Used by hero + soldier.
+- `BaseHero._engage_position_for` melee branch routes through it (refactor, no behavior change).
+- `BaseHero` melee approach steers at the engage spot, not the raw enemy; COMBAT state continues closing the last few px to the spot at move_speed while the (frozen) blocked enemy is in `_blocked_enemies` — continuous, no teleport.
+- `BaseSoldier._tick_charge` steers the charge at the engage spot; the "engaged → plant" branch first settles onto the spot at move_speed before zeroing velocity.
+- Always-visible faint warm engage_radius ring under every hero in `BaseHero._draw()` (zoom-scaled; skipped if engage_radius ≈ 0).
+- Doctrine: new "Combat Ground Line" section in COMBAT_BLOCKING_DOCTRINE.md.
+
+Verification (in-engine MCP, L1, numeric Δy = |hero/soldier.y − enemy.y| while engaged):
+- Warrior vs −50-lane enemy: dy 31.25 → 14.58 (approach fix) → **1.48 px** (COMBAT settle); enemy frozen (path progress static), stable, taking damage, no teleport.
+- Script-spawned soldier vs +50-lane enemy: dy 44.68 → **3.70 px**; enemy frozen, stable, dealing damage.
+- Mage (ranged) regression: does NOT soft-claim (`_claimed_enemy` null, reservers 0), enemy KEEPS walking (path progress increases), Mage holds anchor and shoots — unchanged/correct.
+- Screenshot: warrior + orc on one ground line, faint engage ring visible.
+- GUT 79/79 (was 76; +3: `melee_engage_spot` Y-lock, vertical-path fallback, hero-matches-shared-helper). Clean headless boot.
+
+## 2026-05-15 — Hero melee-engage range review + Necro/Mage fix
+
+Reviewed the three distances that gate hero melee (attack_range archetype gate 150; detection_radius_px acquire scan; engage_radius = the melee-start circle, now the visible orange ring). Finding: Necromancer `engage_radius = 30` was degenerate — the Y-locked engage spot's gap clamps to `max(min(55,30−6),30)=30 = engage_radius`, so the block spot sat exactly on the circle boundary → flaky melee trigger despite an authored `close_attack`. Mage had no authored engage_radius so it inherited the full 60 (large face-tank bubble, inconsistent with Ranger 50 / Necro).
+
+Fix (data only): Necromancer `engage_radius 30 → 45`; Mage authored `engage_radius = 45` (between Ranger 50 and the old 60, consistent "ranged pokes only on close contact"). Now gap = `max(min(55,45−6),30)=39 < 45` → spot reliably inside the engage circle.
+
+Verification (in-engine, Necromancer): on contact it hard-blocks reliably — `_blocked_enemies` set, `use_projectile=false` (close_attack profile, dmg 1.65), enemy frozen, dy 2.27 px (fights on enemy Y). Clean headless boot.
+
+## 2026-05-15 — Necromancer legs AAA pass (knee + easing + boot roll + fade)
+
+Review found legs were C0-continuous but mechanical: constant-speed linear slide with a sharp velocity reversal at toe-off, downward-velocity hard stop at footfall, straight stick (no knee), rigid boot, binary appear/disappear. Fixed all: (1) `_knee_ik` equal-bone 2-link — hip→knee→foot, knee bends toward travel + auto-bends more in swing; thigh full width, shin tapered. (2) Swing X smoothstepped + Y arc peaks ~45% and eases to zero slope at touchdown (soft landing); stance kept linear (no foot skate). (3) Boot rotates about the ankle via _window_sin lobes (heel-strike→flat→toe-off→level). (4) Continuous fade `fb` from speed01·mv (smoothstep) scales alpha+stride+lift so feet fade in/out under the hem instead of popping. Necromancer premium only.
+
+Verification: clean headless boot; full GUT.
+
+## 2026-05-15 — Unified hero melee: one pipeline, only the engage RANGE differs (balance-tunable)
+
+Collapsed the melee/ranged archetype split in BaseHero into ONE shared melee pipeline used by every hero; the only per-hero difference is now the melee-engage range. Two-tier: enemy inside the range → shared pipeline (reserve/stop-claim → walk to Y-locked spot → hard-block → fight on enemy Y, ranged heroes auto-swap to weaker close_attack); enemy outside it but in attack_range with a projectile → shoot in place, enemy keeps walking, never reserved. Lane-flow guarantee is now structural (a pure shot target is not _seek_target_enemy and not in _blocked_enemies, so _sync_claim never reserves it) — no archetype `if`.
+
+Changes: base_hero.gd (_sync_claim / _move_step / COMBAT settle / _engage_position_for / _effective_detection_radius all archetype-free; added ranged-shoot tier in _seek_target + shoot→melee handoff in COMBAT; ring drawn at melee-engage range; removed MELEE/RANGED_DEFAULT_DETECTION_RADIUS, added DEFAULT_MELEE_ENGAGE_RANGE=160; plumbed engage_range_mult → melee_engage_range stat). HeroData.gd doc rewrite. Per-hero ranges: Warrior 280, Mage 90, Ranger 100, Necro 80. Dev balance UI: engage_range_mult added to BalanceOverrides.HERO_STAT_KEYS + HeroTuning + BalanceSliders (slider + bake-to-.tres, same pattern as range_mult). Doctrine Core Rule 1/6 + Ranged section rewritten. Tests reworked (ranged-not-reserved-when-shooting, any-hero-soft-claims-approach, single-default-no-split, melee_engage_range plumb).
+
+Verification — GUT 81/81 (test_combat_blocking 44/44), headless boot clean. In-engine (Godot MCP, L1, numeric):
+- Mage SHOOT tier: holds anchor (1371,461 static), enemy prog 1300→1329 KEEPS WALKING, held=false, claimed=false, useProj=true, taking ranged dmg.
+- Mage HANDOFF (enemy crosses 90px): strides out → claimed=true, blocked=true, useProj=false (close_attack), dy=0.32 px, enemy frozen — SAME pipeline as Warrior.
+- Live tunable: BalanceOverrides engage_range_mult ×2.0 → compute_base_stats melee_engage_range 90 → 180 (reset to 1.0).
+- Warrior regression: meleeRng 280, strides out, claimed+blocked, dy=0.75 px, enemy frozen, no teleport.

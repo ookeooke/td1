@@ -58,11 +58,36 @@ const RANGED_ATTACK_RANGE_THRESHOLD: float = 150.0
 # tactical placement is still respected.
 const SPAWN_SNAP_SLACK: float = 80.0
 const TAP_SNAP_SLACK: float = 40.0
-# Archetype-default guard zone — applied when HeroData.guard_front_px and
-# guard_back_px are both 0 AND the hero is melee (attack_range below the
-# ranged threshold). Authoring overrides (any non-zero value) still win.
-const MELEE_DEFAULT_GUARD_FRONT: float = 150.0
-const MELEE_DEFAULT_GUARD_BACK: float = 100.0
+# Detection zone — circle of this radius around the hero's anchor
+# (_rally_position). When an enemy enters the zone, hero leaves the anchor,
+# walks to the engage spot (approach phase = State.MOVING), aligns Y with
+# the enemy, then starts the duel. Authored per hero via
+# HeroData.detection_radius_px; single default below when authored=0.
+# Unified across archetypes — there is one melee pipeline; the only per-hero
+# difference is THIS range (big for the Warrior, small for casters). See
+# COMBAT_BLOCKING_DOCTRINE.md.
+const DEFAULT_MELEE_ENGAGE_RANGE: float = 160.0
+# How close the hero must be to the engage spot before the swing starts.
+# Below this, hero is "in position" → State.COMBAT. Above, hero keeps walking.
+const ENGAGE_ARRIVAL_TOLERANCE: float = 18.0
+# Combat Blocking Doctrine — how far (px of path progress) past the anchor
+# an enemy may be and still get engaged. Lets the hero finish a near-leaker
+# right at the line (small grace); beyond it the enemy has "won" the
+# position and is left to the towers. Also acts as chase/return hysteresis:
+# once an enemy is this far past, it's dropped and won't re-acquire.
+const GUARD_BACK_MARGIN_PX: float = 50.0
+# Acquire-side leak margin (hysteresis). The hero only *starts* an approach
+# on an enemy still at/before the anchor (0 = no grace); once committed it
+# may follow through up to GUARD_BACK_MARGIN_PX. Asymmetric so the hero
+# never lurches toward an enemy that's about to leak. Tunable: a small
+# positive value lets it grab something right at its feet.
+const GUARD_ACQUIRE_MARGIN_PX: float = 0.0
+# Safety shrink so the melee engage spot always lands INSIDE the hero's
+# block circle (_effective_engage_radius). Without this, a short-reach
+# melee hero would walk to a spot outside its own engage radius and
+# _start_block would perpetually no-op.
+const ENGAGE_GAP_SAFETY: float = 6.0
+
 # Default block-claim radius when HeroData.engage_radius is unset (0).
 # Clamped down by attack_range so a tiny-reach hero doesn't claim blocks
 # past its own swing. See HeroData.engage_radius for the rationale.
@@ -99,6 +124,14 @@ var _blocked_enemies: Array[Node] = []
 # Auto-seek: enemy the hero is walking toward (not yet in attack range).
 var _seek_target_enemy: Node = null
 var _nav_repath_timer: float = 0.0
+# Combat Blocking Doctrine — stop-on-claim. The hero reserves the enemy it
+# has committed to (approach target, or COMBAT focus) so it halts and waits
+# while the hero walks over. _sync_claim() reconciles this every frame from
+# the current target; _claim_age drops a claim that never reaches contact
+# (pathing failure) so an enemy can't be frozen forever.
+var _claimed_enemy: Node = null
+var _claim_age: float = 0.0
+const CLAIM_TIMEOUT: float = 4.0
 
 var _lunge_dir: Vector2 = Vector2.ZERO
 var _lunge_t: float = 0.0
@@ -148,8 +181,26 @@ var _facing_dir: Vector2 = Vector2.RIGHT
 # instead of snapping in a single frame. Premium drawers (NECROMANCER)
 # use this for hood / robe / cape / staff-side pose.
 var _face_dir_smoothed: Vector2 = Vector2.RIGHT
-const FACE_LERP_RATE: float = 8.0
 var _cape_lag_x: float = 0.0
+# Phase 3 — spring (not linear lerp) easing for face + cape so turns and
+# stops overshoot slightly and settle, instead of gliding in robotically.
+# Velocity state lives here on the host; the drawer stays stateless.
+var _face_vel: Vector2 = Vector2.ZERO
+var _cape_lag_vel: float = 0.0
+# Slightly under-damped (zeta ≈ 0.9) — crisp with a hint of overshoot.
+const FACE_SPRING_K: float = 180.0
+const FACE_SPRING_D: float = 24.0
+# Softer + whippier (zeta ≈ 0.63) — the cape trails and rebounds more.
+const CAPE_SPRING_K: float = 90.0
+const CAPE_SPRING_D: float = 12.0
+
+
+# Semi-implicit (symplectic) damped-spring step. Returns
+# Vector2(new_value, new_velocity). Stable for k·dt² ≪ 1 at 60 Hz.
+static func _spring1(cur: float, vel: float, target: float, k: float, d: float, dt: float) -> Vector2:
+	var accel: float = k * (target - cur) - d * vel
+	var nv: float = vel + accel * dt
+	return Vector2(cur + nv * dt, nv)
 var _prev_pos: Vector2 = Vector2.ZERO
 # Rally point — world position the hero leashes to. Seeded from the spawn
 # marker in _ready() and reseeded on each player-commanded move. Enemies
@@ -406,6 +457,15 @@ static func compute_base_stats(hero_data: HeroData, level_arg: int) -> Dictionar
 	var bo_atk_spd: float = _BalanceOverrides.get_hero_mult(hid, "attack_speed_mult")
 	var bo_armor: float = _BalanceOverrides.get_hero_mult(hid, "armor_add")
 	var bo_mag: float = _BalanceOverrides.get_hero_mult(hid, "mag_res_add")
+	var bo_eng: float = _BalanceOverrides.get_hero_mult(hid, "engage_range_mult")
+	# Unified melee-engage range — the single per-hero distance at which ANY
+	# hero commits to the shared melee pipeline. Authored on
+	# HeroData.detection_radius_px (0 = derive a default at runtime). Carried
+	# through the stat dict so the dev balance UI (engage_range_mult) + bake
+	# apply, exactly like attack_range. See COMBAT_BLOCKING_DOCTRINE.md.
+	var raw_eng: float = 0.0
+	if "detection_radius_px" in hero_data:
+		raw_eng = float(hero_data.detection_radius_px)
 	return {
 		"max_health": float(hero_data.max_health) * hp_mult * bo_hp,
 		"damage": hero_data.attack_damage * dmg_mult * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_HERO_DAMAGE) * bo_dmg,
@@ -414,6 +474,7 @@ static func compute_base_stats(hero_data: HeroData, level_arg: int) -> Dictionar
 		"attack_speed": hero_data.attack_speed * bo_atk_spd,
 		"move_speed": hero_data.move_speed * bo_spd,
 		"attack_range": hero_data.attack_range * bo_rng,
+		"melee_engage_range": raw_eng * bo_eng,
 		"xp_gain_mult": 1.0,
 		"skill_power": 1.0,
 		# Phase 49 — additive stats. Reflective apply_modifiers() picks up
@@ -477,6 +538,44 @@ func _effective_damage() -> float:
 	if data == null:
 		return 0.0
 	return float(current_stats.get("damage", data.attack_damage))
+
+
+# Combat Blocking Doctrine — ranged-hero close combat. A ranged hero
+# (projectile_scene set) that is physically blocking its focus enemy at
+# engage_radius swaps its ranged shot for an authored melee poke. Opt-in:
+# heroes with close_attack_damage == 0 keep shooting point-blank.
+func _has_close_attack() -> bool:
+	return data != null and "close_attack_damage" in data and data.close_attack_damage > 0.0
+
+
+func _in_close_combat() -> bool:
+	return data != null and data.projectile_scene != null \
+		and _has_close_attack() and _target_enemy != null \
+		and _target_enemy in _blocked_enemies
+
+
+# Returns {damage, speed, dtype, use_projectile}. Pure given the predicates
+# above — unit-testable without a scene. Close damage scales by the same
+# gear/talent multiplier the ranged shot gets so equipment still matters.
+func _resolve_attack_profile() -> Dictionary:
+	if _in_close_combat():
+		var base: float = maxf(0.01, data.attack_damage)
+		var mult: float = _effective_damage() / base
+		var dt: int = data.close_attack_damage_type
+		if dt < 0:
+			dt = data.damage_type
+		return {
+			"damage": data.close_attack_damage * mult,
+			"speed": maxf(0.01, data.close_attack_speed),
+			"dtype": dt,
+			"use_projectile": false,
+		}
+	return {
+		"damage": _effective_damage(),
+		"speed": get_effective_attack_speed(),
+		"dtype": data.damage_type if data != null else 0,
+		"use_projectile": data != null and data.projectile_scene != null,
+	}
 
 
 # ---------------------------------------------------------------------------
@@ -1000,6 +1099,7 @@ func _physics_process(delta: float) -> void:
 	_tick_health_regen(delta)
 	if _ability_host != null:
 		_ability_host.tick(delta)
+	_sync_claim(delta)
 	match state:
 		State.IDLE:
 			velocity = Vector2.ZERO
@@ -1017,6 +1117,32 @@ func _physics_process(delta: float) -> void:
 					queue_redraw()
 		State.COMBAT:
 			velocity = Vector2.ZERO
+			# Two-tier: if currently only SHOOTING (target not hard-blocked)
+			# and an enemy is now inside the melee-engage range, hand off to
+			# the shared melee pipeline (walk out, reserve, fight on Y) — the
+			# same rule every hero uses. Pure ranged DPS continues otherwise.
+			if _target_enemy == null or not (_target_enemy in _blocked_enemies):
+				var m: Node = _pick_target_in_detection_zone()
+				if m != null:
+					_target_enemy = m
+					_seek_target_enemy = m
+					nav_agent.target_position = _engage_position_for(m)
+					_nav_repath_timer = 0.0
+					change_state(State.MOVING)
+					return
+			# Settle onto the enemy's exact lane-Y, then plant. The claimed
+			# enemy is reserved (stop-on-claim) so it's frozen; if the
+			# proximity-block fired while the hero was still off-Y (entered
+			# engage_radius mid-stride), finish closing the short remaining
+			# gap to the Y-locked spot at move_speed — continuous, never a
+			# teleport (Combat Ground Line). Archetype-free: gated on actually
+			# hard-blocking this enemy (a pure shot target never settles).
+			if _target_enemy != null and is_instance_valid(_target_enemy) \
+					and _target_enemy in _blocked_enemies:
+				var csp: Vector2 = _engage_position_for(_target_enemy)
+				var to_csp: Vector2 = csp - global_position
+				if to_csp.length() > 4.0:
+					velocity = to_csp.normalized() * get_effective_move_speed()
 			_attack_step(delta)
 			_breath_t += delta
 			queue_redraw()
@@ -1033,15 +1159,19 @@ func _physics_process(delta: float) -> void:
 	if absf(_face_dir_smoothed.x) > 0.20 and absf(_facing_dir.x) > 0.20 \
 			and signf(_face_dir_smoothed.x) != signf(_facing_dir.x):
 		_face_dir_smoothed.x = 0.0
-	var face_alpha: float = clampf(delta * FACE_LERP_RATE, 0.0, 1.0)
-	_face_dir_smoothed = _face_dir_smoothed.lerp(_facing_dir, face_alpha)
+		_face_vel.x = 0.0  # drop stale spring velocity on a hard L↔R snap
+	var fx: Vector2 = _spring1(_face_dir_smoothed.x, _face_vel.x, _facing_dir.x, FACE_SPRING_K, FACE_SPRING_D, delta)
+	var fy: Vector2 = _spring1(_face_dir_smoothed.y, _face_vel.y, _facing_dir.y, FACE_SPRING_K, FACE_SPRING_D, delta)
+	_face_dir_smoothed = Vector2(fx.x, fy.x)
+	_face_vel = Vector2(fx.y, fy.y)
 	var cape_target: float = 0.0
 	if velocity.length_squared() > 0.001:
 		cape_target = -clampf(velocity.normalized().x, -1.0, 1.0)
 	else:
 		cape_target = -clampf(_facing_dir.x, -1.0, 1.0) * 0.20
-	var cape_rate: float = 5.5 if velocity.length_squared() > 0.001 else 2.0
-	_cape_lag_x = lerpf(_cape_lag_x, cape_target, clampf(delta * cape_rate, 0.0, 1.0))
+	var cape_step: Vector2 = _spring1(_cape_lag_x, _cape_lag_vel, cape_target, CAPE_SPRING_K, CAPE_SPRING_D, delta)
+	_cape_lag_x = cape_step.x
+	_cape_lag_vel = cape_step.y
 	move_and_slide()
 
 
@@ -1077,6 +1207,27 @@ func _lunge_offset() -> Vector2:
 	return _lunge_dir * (LUNGE_DISTANCE * offset_scale)
 
 
+func _projectile_spawn_position(target_world_pos: Vector2, aim_angle: float) -> Vector2:
+	var fallback: Vector2 = global_position + Vector2.from_angle(aim_angle) * 18.0
+	if data == null or data.visual == null:
+		return fallback
+	var v: UnitVisualData = data.visual
+	var body_r: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
+	var visual_offset: Vector2 = _lunge_offset()
+	var face_x: float = clampf(_face_dir_smoothed.x, -1.0, 1.0)
+	if absf(face_x) < 0.08:
+		var aim_x: float = target_world_pos.x - global_position.x
+		face_x = signf(aim_x) if absf(aim_x) > 1.0 else 0.0
+	if v.render_profile == UnitVisualData.RenderProfile.NECROMANCER_PREMIUM:
+		var depth_shift: float = face_x * body_r * 0.16
+		var staff_tip_local: Vector2 = Vector2(body_r * 0.69 - depth_shift * 0.55, -body_r * 2.05)
+		return global_position + visual_offset + staff_tip_local
+	if v.weapon_type == UnitVisualData.WeaponType.STAFF:
+		var generic_staff_tip_local: Vector2 = Vector2(body_r * 0.62, -body_r * 1.50)
+		return global_position + visual_offset + generic_staff_tip_local
+	return fallback
+
+
 func _move_step(delta: float) -> void:
 	# While auto-seeking, repath toward the moving enemy's engage slot.
 	# Combat Blocking Doctrine — abort chases that exit the guard zone /
@@ -1084,7 +1235,13 @@ func _move_step(delta: float) -> void:
 	if _seek_target_enemy != null:
 		if not _can_pursue(_seek_target_enemy) \
 				or not is_instance_valid(_seek_target_enemy) \
-				or _seek_target_enemy.state == BaseEnemy.State.DYING:
+				or _seek_target_enemy.state == BaseEnemy.State.DYING \
+				or _melee_chase_is_doomed(_seek_target_enemy):
+			# Drop the approach and walk home when the target leaves the
+			# melee-engage range, dies, or out-runs the hero exit-ward. The
+			# _can_pursue zone-boundary check is the backstop; the doomed
+			# check bails BEFORE a long in-zone chase even starts. Archetype-
+			# free — every hero approaches melee identically.
 			_seek_target_enemy = null
 			nav_agent.target_position = _rally_position
 		else:
@@ -1092,17 +1249,34 @@ func _move_step(delta: float) -> void:
 			if _nav_repath_timer <= 0.0:
 				_nav_repath_timer = NAV_REPATH_INTERVAL
 				nav_agent.target_position = _engage_position_for(_seek_target_enemy)
-			# Check if enemy entered attack range while we walk toward it.
-			var atk_target: Node = _find_nearest_enemy_in_area(attack_range_area)
-			if atk_target != null and _within_leash(atk_target):
-				var dist: float = global_position.distance_to(atk_target.global_position)
-				if dist <= MELEE_ENGAGE_DISTANCE or atk_target in attack_range_area.get_overlapping_areas():
-					_target_enemy = atk_target
-					_seek_target_enemy = null
-					_attack_cooldown = 0.0
-					_start_block(atk_target)
-					change_state(State.COMBAT)
-					return
+			# UNIFIED melee-start gate (every hero). The instant the enemy is
+			# physically inside the block circle, engage it — the enemy halts.
+			# Spot-arrival / face-contact are kept as backups.
+			var spot_d: float = global_position.distance_to(nav_agent.target_position)
+			var enemy_d: float = global_position.distance_to(_seek_target_enemy.global_position)
+			if _seek_target_enemy in engage_range_area.get_overlapping_areas() \
+					or spot_d <= ENGAGE_ARRIVAL_TOLERANCE \
+					or enemy_d <= MELEE_ENGAGE_DISTANCE:
+				_target_enemy = _seek_target_enemy
+				_seek_target_enemy = null
+				_attack_cooldown = 0.0
+				_start_block(_target_enemy)
+				change_state(State.COMBAT)
+				return
+			# Not in range yet → close DIRECTLY on the Y-locked engage
+			# spot (Combat Ground Line), NOT the raw enemy centre. The
+			# enemy is reserved (stop-on-claim) so the spot is stationary;
+			# steering at it lands the hero on the enemy's exact Y instead
+			# of proximity-blocking ~30 px off-Y while walking in at a
+			# diagonal. Same definition the soldier charge uses. Soldier
+			# model / CORE RULE 13 — straight vector, nav-agent only for
+			# the no-target "return to anchor" path below.
+			var to_spot: Vector2 = _engage_position_for(_seek_target_enemy) - global_position
+			if to_spot.length_squared() > 1.0:
+				velocity = to_spot.normalized() * get_effective_move_speed()
+			else:
+				velocity = Vector2.ZERO
+			return
 	# Follow nav agent path.
 	if nav_agent.is_navigation_finished():
 		velocity = Vector2.ZERO
@@ -1151,38 +1325,114 @@ func _pick_split_target_in_area(area: Area2D) -> Node:
 
 
 func _seek_target() -> void:
-	# Combat Blocking Doctrine — hero is a guard, not a hunter. Hero attacks
-	# anything in attack_range from the current hold point (Phase 1). Hero
-	# only walks toward distant targets when authored to (Phase 2 gated by
-	# data.auto_seek_radius > 0 or guard zone). Otherwise drifted-from-rally
-	# returns home (Phase 3). See docs/COMBAT_BLOCKING_DOCTRINE.md.
-	# Phase 1: check attack range — immediate combat. Leash-gated so the
-	# hero never engages enemies that would pull it far from the rally.
-	var nearest_attack: Node = _find_nearest_enemy_in_area(attack_range_area)
-	if nearest_attack != null and _within_leash(nearest_attack):
-		_target_enemy = nearest_attack
-		_seek_target_enemy = null
-		_attack_cooldown = 0.0
-		_start_block(nearest_attack)
-		change_state(State.COMBAT)
-		return
-	# Phase 2: gated auto-seek. Default heroes (guard zone 0/0, auto_seek 0)
-	# never run this branch — the hero holds ground. Tanks/melee heroes
-	# authored with guard_front_px/back_px > 0 may step out within the zone;
-	# hunter archetypes authored with auto_seek_radius > 0 may pursue further.
-	if _is_seeking_allowed():
-		var nearest_seek: Node = _find_nearest_enemy_in_area(seek_range_area)
-		if nearest_seek != null and _can_pursue(nearest_seek) and nearest_seek != _seek_target_enemy:
-			_seek_target_enemy = nearest_seek
-			nav_agent.target_position = _engage_position_for(nearest_seek)
+	# Combat Blocking Doctrine — hero anchors at _rally_position. When an
+	# enemy enters the detection zone (circle of detection_radius_px around
+	# the anchor), hero walks to the engage spot (approach phase), aligns Y
+	# with the enemy on the path, then duels. After release/leak, hero
+	# walks back to the anchor. See docs/COMBAT_BLOCKING_DOCTRINE.md.
+	var target: Node = _pick_target_in_detection_zone()
+	if target != null:
+		_target_enemy = target
+		_seek_target_enemy = target
+		var engage_spot: Vector2 = _engage_position_for(target)
+		var dist_to_spot: float = global_position.distance_to(engage_spot)
+		if dist_to_spot <= ENGAGE_ARRIVAL_TOLERANCE:
+			# Already at the engage spot — start the duel immediately.
+			_attack_cooldown = 0.0
+			_start_block(target)
+			change_state(State.COMBAT)
+		else:
+			# Approach phase — walk to the engage spot before swinging.
+			nav_agent.target_position = engage_spot
 			_nav_repath_timer = 0.0
 			change_state(State.MOVING)
+		return
+	# RANGED-SHOOT TIER. No enemy inside the melee-engage range, but if this
+	# hero has a projectile and an enemy is within attack_range, shoot it from
+	# where it stands — the enemy KEEPS WALKING (never reserved: _seek_target_
+	# enemy stays null and it won't be in _blocked_enemies). Casters keep
+	# being ranged DPS; melee only ever triggers via the tier above.
+	if data != null and data.projectile_scene != null:
+		var shoot: Node = _find_nearest_enemy_in_area(attack_range_area)
+		if shoot != null and _within_leash(shoot):
+			_target_enemy = shoot
+			_seek_target_enemy = null
+			_attack_cooldown = 0.0
+			change_state(State.COMBAT)
 			return
-	# Phase 3: no valid enemy + drifted from rally → walk back to hold point.
+	# No valid target — if drifted from anchor, walk back.
 	if global_position.distance_to(_rally_position) > LEASH_RETURN_TOLERANCE:
 		_seek_target_enemy = null
 		nav_agent.target_position = _rally_position
 		change_state(State.MOVING)
+
+
+# Combat Blocking Doctrine — pick the most urgent enemy inside the detection
+# zone (circle of _effective_detection_radius around _rally_position). Same
+# split rule as soldier: fewest blockers → highest path progress → nearest
+# (world distance from hero, not anchor — biases toward the closer threat
+# once the hero is already moving).
+func _pick_target_in_detection_zone() -> Node:
+	if data == null:
+		return null
+	var zone_radius: float = _effective_detection_radius()
+	if zone_radius <= 0.0:
+		return null
+	var zone_r2: float = zone_radius * zone_radius
+	var best: Node = null
+	var best_block: int = 1 << 30
+	var best_progress: float = -INF
+	var best_d2: float = INF
+	for node in get_tree().get_nodes_in_group("enemies"):
+		if not (node is BaseEnemy):
+			continue
+		var enemy: BaseEnemy = node
+		if enemy.state == BaseEnemy.State.DYING:
+			continue
+		if enemy.data == null:
+			continue
+		if enemy.data.is_flying and not data.targets_flying:
+			continue
+		if "bypass_engagement" in enemy.data and enemy.data.bypass_engagement:
+			# Bypass-engagement enemies refuse all blocker locks — leaks past
+			# heroes the same way they do past soldiers. AoE towers' job.
+			continue
+		if _rally_position.distance_squared_to(enemy.global_position) > zone_r2:
+			continue
+		if _has_leaked_past_anchor(enemy, GUARD_ACQUIRE_MARGIN_PX):
+			# Acquire-side hysteresis: only START an approach on an enemy
+			# still at/before the anchor. Once committed, _can_pursue uses
+			# the wider GUARD_BACK_MARGIN_PX for follow-through. Prevents
+			# the hero lurching toward an enemy that's about to leak.
+			continue
+		var bc: int = enemy._blockers.size()
+		var prog: float = enemy.get_path_progress() if enemy.has_method("get_path_progress") else 0.0
+		var d2: float = global_position.distance_squared_to(enemy.global_position)
+		if bc < best_block \
+				or (bc == best_block and prog > best_progress) \
+				or (bc == best_block and prog == best_progress and d2 < best_d2):
+			best_block = bc
+			best_progress = prog
+			best_d2 = d2
+			best = enemy
+	return best
+
+
+# Unified melee-engage range — the single per-hero distance at which ANY hero
+# commits to the shared melee pipeline (walk out → reserve → fight on enemy Y).
+# Reads the computed stat (so the dev balance slider engage_range_mult + bake
+# apply), falling back to authored HeroData.detection_radius_px, then one
+# archetype-free default. NOT split by attack_range — every hero uses the same
+# pipeline; only this number differs. See COMBAT_BLOCKING_DOCTRINE.md.
+func _effective_detection_radius() -> float:
+	if data == null:
+		return 0.0
+	var v: float = float(current_stats.get("melee_engage_range", 0.0))
+	if v <= 0.0 and "detection_radius_px" in data:
+		v = float(data.detection_radius_px)
+	if v > 0.0:
+		return v
+	return DEFAULT_MELEE_ENGAGE_RANGE
 
 
 # True if the target sits within LEASH_RADIUS of the current rally point.
@@ -1193,11 +1443,9 @@ func _within_leash(target: Node) -> bool:
 	return target.global_position.distance_to(_rally_position) <= LEASH_RADIUS
 
 
-# Combat Blocking Doctrine — may this hero step out of the hold point to
-# pursue this enemy? Default heroes refuse (guard zone 0, auto_seek 0).
-# Authored tanks/melee use guard_front_px/back_px; authored hunters use
-# auto_seek_radius. Melee archetypes (attack_range < ranged threshold) get
-# an auto-fallback guard zone via _effective_guard_zone. See systems/GuardZone.gd.
+# Combat Blocking Doctrine — may this hero step out of the anchor to pursue
+# this enemy? True iff enemy is inside the detection zone AND within the
+# safety leash. Used by _move_step to abort chases that exit the zone.
 func _can_pursue(enemy) -> bool:
 	if enemy == null or not is_instance_valid(enemy):
 		return false
@@ -1205,44 +1453,78 @@ func _can_pursue(enemy) -> bool:
 		return false
 	if data == null:
 		return false
-	var seek_r: float = data.auto_seek_radius if "auto_seek_radius" in data else 0.0
-	if seek_r > 0.0:
-		return enemy.global_position.distance_to(_rally_position) <= seek_r
-	var zone: Vector2 = _effective_guard_zone()
-	if zone.x <= 0.0 and zone.y <= 0.0:
+	var zone_r: float = _effective_detection_radius()
+	if zone_r <= 0.0:
 		return false
-	return _GuardZoneScript.is_guardable(enemy, _rally_position, zone.x, zone.y)
-
-
-# True if the hero is authored (or archetype-defaults) to ever move off the
-# hold point chasing a distant target. Default ranged heroes are not — they
-# hold ground and only engage what enters attack_range. Melee heroes get an
-# auto-default guard zone via _effective_guard_zone.
-func _is_seeking_allowed() -> bool:
-	if data == null:
+	if _has_leaked_past_anchor(enemy):
 		return false
-	if "auto_seek_radius" in data and data.auto_seek_radius > 0.0:
-		return true
-	var zone: Vector2 = _effective_guard_zone()
-	return zone.x > 0.0 or zone.y > 0.0
+	return enemy.global_position.distance_to(_rally_position) <= zone_r
 
 
-# Combat Blocking Doctrine — Archetype-default guard zone. Returns
-# Vector2(guard_front_px, guard_back_px). Authoring wins when either is > 0;
-# otherwise melee archetypes (attack_range < ranged threshold) auto-default
-# to 150/100 so they step out to engage along the path without per-hero
-# data busywork. Ranged archetypes stay 0/0. See docs/COMBAT_BLOCKING_DOCTRINE.md.
-func _effective_guard_zone() -> Vector2:
-	if data == null:
-		return Vector2.ZERO
-	var front: float = data.guard_front_px if "guard_front_px" in data else 0.0
-	var back: float = data.guard_back_px if "guard_back_px" in data else 0.0
-	if front > 0.0 or back > 0.0:
-		return Vector2(front, back)
-	# Auto-fallback: melee archetype only.
-	if data.attack_range < RANGED_ATTACK_RANGE_THRESHOLD:
-		return Vector2(MELEE_DEFAULT_GUARD_FRONT, MELEE_DEFAULT_GUARD_BACK)
-	return Vector2.ZERO
+# Combat Blocking Doctrine — true if `enemy` has leaked past the hero's
+# anchor by more than the grace margin, measured along the enemy's OWN path
+# (not world distance). The hero never chases leakers backward — they're
+# the towers' problem now. progress_delta returns 0.0 when there's no path
+# data (flying / off-path), so those are never treated as leakers here
+# (flying is already filtered upstream anyway). Pure → unit-testable.
+func _has_leaked_past_anchor(enemy, margin: float = GUARD_BACK_MARGIN_PX) -> bool:
+	return _GuardZoneScript.progress_delta(enemy, _rally_position) > margin
+
+
+# Combat Blocking Doctrine — stop-on-claim reconciliation. Once per frame:
+# reserve whatever the hero is currently committed to (COMBAT focus, else
+# the approach target) and unreserve anything else, so a claimed enemy
+# halts and waits while the hero walks over. Single choke-point — covers
+# every place _seek_target_enemy / _target_enemy changes without touching
+# each site. A claim that never reaches contact (pathing failure) is
+# dropped after CLAIM_TIMEOUT so an enemy can't be frozen forever.
+func _sync_claim(delta: float) -> void:
+	# Unified, archetype-free. Soft-claim (reserve = halt the enemy BEFORE
+	# contact so the blocker can walk to it) fires for EVERY hero whenever it
+	# is committed to a MELEE engagement: the approach target (melee tier,
+	# within melee-engage range) or the enemy it currently hard-blocks. A
+	# pure ranged SHOT target is in _target_enemy but is NOT _seek_target_enemy
+	# and NOT in _blocked_enemies → not reserved → the shot enemy keeps
+	# walking (the lane is only ever stopped by a hero standing in it, never
+	# from afar). The lane-flow guarantee is now structural, not an
+	# archetype if. See docs/COMBAT_BLOCKING_DOCTRINE.md Core Rule 1.
+	var desired: Node = null
+	if _seek_target_enemy != null:
+		desired = _seek_target_enemy
+	elif state == State.COMBAT and _target_enemy != null and _target_enemy in _blocked_enemies:
+		desired = _target_enemy
+	if desired != null and not is_instance_valid(desired):
+		desired = null
+	if desired != _claimed_enemy:
+		if _claimed_enemy != null and is_instance_valid(_claimed_enemy) \
+				and _claimed_enemy.has_method("unreserve"):
+			_claimed_enemy.unreserve(self)
+		_claimed_enemy = desired
+		_claim_age = 0.0
+		if _claimed_enemy != null and _claimed_enemy.has_method("reserve"):
+			_claimed_enemy.reserve(self)
+	if _claimed_enemy != null and state != State.COMBAT:
+		_claim_age += delta
+		if _claim_age > CLAIM_TIMEOUT:
+			if is_instance_valid(_claimed_enemy) and _claimed_enemy.has_method("unreserve"):
+				_claimed_enemy.unreserve(self)
+			_claimed_enemy = null
+			_seek_target_enemy = null
+			nav_agent.target_position = _rally_position
+			change_state(State.MOVING)
+	else:
+		_claim_age = 0.0
+
+
+# Combat Blocking Doctrine — release any held claim (death / respawn). Safe
+# to call when nothing is claimed. _physics_process early-returns while DEAD
+# so _sync_claim can't reconcile then — _die() must clear explicitly.
+func _release_claim() -> void:
+	if _claimed_enemy != null and is_instance_valid(_claimed_enemy) \
+			and _claimed_enemy.has_method("unreserve"):
+		_claimed_enemy.unreserve(self)
+	_claimed_enemy = null
+	_claim_age = 0.0
 
 
 # Combat Blocking Doctrine — snap a world position to the nearest level
@@ -1261,23 +1543,59 @@ func _snap_to_ground_line(pos: Vector2, slack: float) -> Vector2:
 	return _GuardZoneScript.snap_to_nearest_path(pos, paths_parent, slack)
 
 
-# Where the hero should stand to attack the given enemy.
-#   Melee (attack_range < threshold): side-by-side — same Y as the enemy,
-#     offset horizontally by MELEE_ENGAGE_GAP_X on whichever side the hero
-#     is currently on. Produces the "line up next to each other" look.
-#   Ranged: keep 80 % of attack_range between hero and enemy, along the
-#     hero's current approach vector, so casters don't walk into melee.
+# Combat Blocking Doctrine change 4 — true if a melee hero should NOT start
+# (or continue) an approach toward this enemy because it's faster than the
+# hero AND moving exit-ward away from it: the hero can never close the gap,
+# so chasing just looks silly. Returns false when the enemy is slower, or
+# faster but still heading toward the hero (a closing duel is winnable).
+func _melee_chase_is_doomed(enemy) -> bool:
+	if enemy == null or not is_instance_valid(enemy):
+		return false
+	var enemy_spd: float = enemy._effective_speed() if enemy.has_method("_effective_speed") else 0.0
+	if enemy_spd <= get_effective_move_speed():
+		return false
+	# Enemy is faster. Only doomed if it's pulling AWAY (path-forward roughly
+	# agrees with the hero→enemy vector — enemy is ahead and accelerating off).
+	var fwd: Vector2 = _enemy_path_forward(enemy)
+	if fwd == Vector2.ZERO:
+		return false
+	var to_enemy: Vector2 = enemy.global_position - global_position
+	if to_enemy.length_squared() < 1.0:
+		return false
+	return fwd.dot(to_enemy.normalized()) > 0.25
+
+
+# Combat Blocking Doctrine — unit tangent of the enemy's path at its
+# current progress, pointing exit-ward. Falls back to the enemy's facing
+# (a Node2D it exposes) then Vector2.RIGHT when no path data is available.
+func _enemy_path_forward(enemy: Node) -> Vector2:
+	var fwd: Vector2 = _GuardZoneScript.path_forward_at(enemy)
+	if fwd != Vector2.ZERO:
+		return fwd
+	if enemy != null and is_instance_valid(enemy) and "_facing_dir" in enemy:
+		var f: Vector2 = enemy._facing_dir
+		if f.length_squared() > 0.0001:
+			return f.normalized()
+	return Vector2.RIGHT
+
+
+# Where the hero should stand to MELEE the given enemy. Unified for every
+# hero (the melee pipeline is archetype-free now — ranged heroes that drop
+# into melee within their melee-engage range close to this exact spot too;
+# their ranged shooting happens in place via the shoot tier and never calls
+# this). One body-gap AHEAD of the enemy along the path (exit-ward) so the
+# hero blocks the road instead of tackling from behind; Y LOCKED to the
+# enemy's lane-Y via the shared Combat Ground Line helper so every blocker
+# (hero + BaseSoldier) duels on the enemy's exact Y.
 func _engage_position_for(enemy: Node) -> Vector2:
 	var epos: Vector2 = enemy.global_position
-	var atk_range: float = get_effective_attack_range()
-	if atk_range < RANGED_ATTACK_RANGE_THRESHOLD:
-		var dx: float = global_position.x - epos.x
-		var side: float = signf(dx) if absf(dx) > 5.0 else 1.0
-		return Vector2(epos.x + side * MELEE_ENGAGE_GAP_X, epos.y)
-	var to_hero: Vector2 = global_position - epos
-	if to_hero.length_squared() < 1.0:
-		to_hero = Vector2.RIGHT
-	return epos + to_hero.normalized() * (atk_range * 0.8)
+	var fwd: Vector2 = _enemy_path_forward(enemy)
+	# Gap is bounded by the block circle so the spot is always inside
+	# _effective_engage_radius — guarantees _start_block registers
+	# regardless of how short the hero's reach is authored.
+	var gap: float = minf(MELEE_ENGAGE_GAP_X, _effective_engage_radius() - ENGAGE_GAP_SAFETY)
+	gap = maxf(gap, MELEE_ENGAGE_DISTANCE)
+	return _GuardZoneScript.melee_engage_spot(epos, fwd, gap)
 
 
 func _attack_step(delta: float) -> void:
@@ -1323,35 +1641,34 @@ func _attack_step(delta: float) -> void:
 	_attack_cooldown -= delta
 	if _attack_cooldown > 0.0:
 		return
-	_attack_cooldown = 1.0 / maxf(0.01, get_effective_attack_speed())
+	# Combat Blocking Doctrine — resolve which attack to use this swing.
+	# Ranged heroes that are physically blocking the focus enemy switch to
+	# an authored melee poke (use_projectile=false); everyone else uses
+	# their normal profile.
+	var prof: Dictionary = _resolve_attack_profile()
+	_attack_cooldown = 1.0 / maxf(0.01, float(prof["speed"]))
 	_start_lunge(enemy.global_position)
-	var dmg: float = _effective_damage()
+	var dmg: float = float(prof["damage"])
+	var dtype: int = int(prof["dtype"])
 	var dying: bool = enemy.state == BaseEnemy.State.DYING
-	# Phase 3R-followup-3 — Ranger-style projectile firing. When the hero's
-	# HeroData authors a projectile_scene, spawn an Arrow (or other Arrow.gd
-	# Shape) targeting the enemy. Damage lands when the projectile reaches
-	# the target (Arrow._on_hit calls take_damage). For melee heroes
-	# (projectile_scene == null), the original instant-hit path runs.
+	# Phase 3R-followup-3 — Ranger-style projectile firing. When the profile
+	# resolves use_projectile (ranged shot, not a close poke), spawn an Arrow
+	# targeting the enemy. Damage lands on projectile arrival (Arrow._on_hit).
 	#
 	# Combat Blocking Doctrine Phase 7 — projectile ON_HIT_DEALT / ON_KILL
-	# now fire from Arrow._on_hit via on_projectile_impact() so passives like
-	# lifesteal and mark-on-kill score off the real arrival, not the launch
-	# frame. Melee path still fires the triggers inline below since impact
-	# is simultaneous with the swing.
-	if data.projectile_scene != null:
+	# fire from Arrow._on_hit via on_projectile_impact(). The instant-hit
+	# branch (Warrior melee AND ranged-hero close poke) fires them inline
+	# since impact is simultaneous with the swing.
+	if bool(prof["use_projectile"]):
 		var parent: Node = get_tree().current_scene
 		if parent != null:
 			var proj: Node2D = data.projectile_scene.instantiate()
 			parent.add_child(proj)
-			# Offset the spawn slightly toward the target so the arrow starts
-			# at the hero's hand-line, not their feet — matches tower muzzle
-			# offsets visually without per-hero authoring.
 			var aim: Vector2 = enemy.global_position - global_position
 			var aim_angle: float = aim.angle() if aim.length_squared() > 0.0001 else 0.0
-			var muzzle_offset: Vector2 = Vector2.from_angle(aim_angle) * 18.0
-			proj.global_position = global_position + muzzle_offset
+			proj.global_position = _projectile_spawn_position(enemy.global_position, aim_angle)
 			if proj.has_method("setup"):
-				proj.setup(enemy, dmg, data.damage_type, self)
+				proj.setup(enemy, dmg, dtype, self)
 			# Muzzle flash, tinted by projectile color so each hero's archetype
 			# (green ranger arrow, future arcane bolt, etc.) reads at the
 			# launch point too. Skipped on clean_view.
@@ -1359,10 +1676,9 @@ func _attack_step(delta: float) -> void:
 				var flash_color: Color = proj.proj_color if "proj_color" in proj else Color(1.0, 0.95, 0.6)
 				_MuzzleFlashScript.spawn(parent, proj.global_position, aim_angle, flash_color)
 	else:
-		enemy.take_damage(dmg, data.damage_type, self)
-		# Melee path — ability triggers fire inline since impact is synchronous
-		# with the swing. Projectile path's triggers fire from Arrow._on_hit
-		# via on_projectile_impact() instead (Combat Blocking Doctrine Phase 7).
+		enemy.take_damage(dmg, dtype, self)
+		# Instant-hit path — Warrior melee OR ranged-hero close poke. Ability
+		# triggers fire inline since impact is synchronous with the swing.
 		if _ability_host != null:
 			_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_HIT_DEALT, {"target": enemy, "amount": dmg})
 			if not dying and enemy.state == BaseEnemy.State.DYING:
@@ -1442,6 +1758,9 @@ func _die() -> void:
 	velocity = Vector2.ZERO
 	set_selected(false)
 	_release_block()
+	# Free any claimed enemy so it resumes walking — _physics_process early-
+	# returns while DEAD so _sync_claim can't reconcile this.
+	_release_claim()
 	_target_enemy = null
 	_seek_target_enemy = null
 	if _ability_host != null:
@@ -1651,6 +1970,19 @@ func _draw() -> void:
 	if atk_r >= RANGED_ATTACK_RANGE_THRESHOLD:
 		draw_arc(Vector2.ZERO, atk_r, 0.0, TAU, 64,
 			Color(0.85, 0.92, 1.0, 0.22), 1.2 * zs)
+	# Always-visible melee-engage ring — THE per-hero "range where melee
+	# combat starts" (the unified melee-engage range, == the balance tunable
+	# engage_range_mult). An enemy crossing this triggers the shared melee
+	# pipeline for every hero. Faint warm tint so it reads as a melee danger
+	# zone, distinct from the cool attack-range ring above.
+	if data != null:
+		var eng_r: float = _effective_detection_radius()
+		if eng_r > 1.0:
+			# Faint warm fill so the zone reads as an area, plus a clearly
+			# visible solid stroke. Drawn under the body shadow/sprite below.
+			draw_circle(Vector2.ZERO, eng_r, Color(1.0, 0.45, 0.30, 0.06))
+			draw_arc(Vector2.ZERO, eng_r, 0.0, TAU, 64,
+				Color(1.0, 0.50, 0.30, 0.55), 2.0 * zs)
 	# Skill targeting range circle (Phase 20) — drawn first.
 	if _skill_range_preview > 0.0:
 		draw_circle(Vector2.ZERO, _skill_range_preview, Color(1.0, 0.9, 0.3, 0.08))
@@ -1718,6 +2050,10 @@ func _draw() -> void:
 		# for shared-path units that never read them.
 		ctx["breath_t"] = _breath_t
 		ctx["cape_lag"] = _cape_lag_x
+		# Normalised travel speed (0 = still, 1 = full move speed) so the
+		# premium walk can scale stride length with how fast we actually move.
+		var _ems: float = get_effective_move_speed()
+		ctx["move_speed01"] = clampf(velocity.length() / _ems, 0.0, 1.0) if _ems > 0.0 else 0.0
 		if _flinch_t > 0.0:
 			ctx["flinch_t"] = _flinch_t / FLINCH_DURATION
 			ctx["flinch_dir"] = _flinch_dir

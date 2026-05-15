@@ -90,6 +90,40 @@ static func snap_to_nearest_path(world_pos: Vector2, paths_parent: Node, slack: 
 	return best
 
 
+# Unit tangent of the enemy's path at its current progress, in world space,
+# pointing toward the exit (increasing progress / spawn → exit). Used by the
+# hero to place its engage spot AHEAD of the enemy along the road so it
+# blocks the way instead of tackling from behind. Returns Vector2.ZERO when
+# no path data is available — callers fall back to their own heuristic.
+static func path_forward_at(enemy) -> Vector2:
+	if enemy == null or not is_instance_valid(enemy):
+		return Vector2.ZERO
+	if not enemy.has_method("get_path_follow"):
+		return Vector2.ZERO
+	var pf = enemy.get_path_follow()
+	if pf == null or not is_instance_valid(pf):
+		return Vector2.ZERO
+	var path = pf.get_parent()
+	if path == null or not (path is Path2D) or path.curve == null:
+		return Vector2.ZERO
+	var curve: Curve2D = path.curve
+	var off: float = enemy.get_path_progress()
+	var baked_len: float = curve.get_baked_length()
+	if baked_len <= 0.0:
+		return Vector2.ZERO
+	# Sample slightly ahead and behind, clamped, to get a stable tangent even
+	# at the curve ends. Transform both into world space before differencing.
+	var step: float = 4.0
+	var a: float = clampf(off - step, 0.0, baked_len)
+	var b: float = clampf(off + step, 0.0, baked_len)
+	var pa: Vector2 = path.to_global(curve.sample_baked(a))
+	var pb: Vector2 = path.to_global(curve.sample_baked(b))
+	var fwd: Vector2 = pb - pa
+	if fwd.length_squared() < 0.0001:
+		return Vector2.ZERO
+	return fwd.normalized()
+
+
 # Returns the enemy's path-progress delta from `hold_point` in pixels.
 # Positive = enemy has passed the hold point (toward exit).
 # Negative = enemy is still approaching.
@@ -110,3 +144,17 @@ static func progress_delta(enemy, hold_point: Vector2) -> float:
 	var local_pt: Vector2 = path.to_local(hold_point)
 	var hold_offset: float = curve.get_closest_offset(local_pt)
 	return enemy.get_path_progress() - hold_offset
+
+
+# Combat Ground Line — the single Y every melee blocker fights at. Returns the
+# blocking spot: the enemy's exact lane-Y (top-down ground line) with a
+# horizontal `gap` offset toward the path-exit side so the blocker stands in
+# the enemy's way instead of on top of / behind it. `enemy_pos.y` already
+# includes the enemy's v_offset lane (walk-bob / flight-lift are draw-only and
+# never in global_position), so matching it puts blocker + enemy on the same
+# shadow line. Used by BaseHero._engage_position_for AND BaseSoldier so every
+# melee blocker (soldier, melee hero, ranged hero in close-combat) duels on the
+# enemy's exact Y. See docs/COMBAT_BLOCKING_DOCTRINE.md — Combat Ground Line.
+static func melee_engage_spot(enemy_pos: Vector2, forward: Vector2, gap: float) -> Vector2:
+	var dir_x: float = signf(forward.x) if absf(forward.x) > 0.05 else 1.0
+	return Vector2(enemy_pos.x + dir_x * gap, enemy_pos.y)

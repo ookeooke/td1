@@ -42,6 +42,12 @@ var _effects: Dictionary = {}
 # Counter-attacks focus on _blockers[0] — the oldest engager — so the
 # telegraph arc points at one stable target instead of flickering.
 var _blockers: Array[Node] = []
+# Combat Blocking Doctrine — stop-on-claim. A blocker that COMMITS to this
+# enemy (picks it as its approach target) reserves it: the enemy halts in
+# place (soft-stop) and waits, but does NOT counter-attack until a blocker
+# physically reaches it (engage_combat → _blockers → hard-fight). Flying /
+# bypass_engagement enemies ignore reservations (they never stop).
+var _reservers: Array[Node] = []
 var _combat_cooldown: float = 0.0
 # Strike animation state — set by _start_strike(); decays in _physics_process.
 # While > 0, body lunges forward toward _strike_dir then eases back.
@@ -203,11 +209,22 @@ func _physics_process(delta: float) -> void:
 		queue_redraw()
 	if _ability_host != null:
 		_ability_host.tick(delta)
-	# Facing direction sampled from world-position delta — survives any
+	# Facing direction. While engaged (COMBAT, halted) the enemy turns to
+	# face its oldest blocker so the body agrees with the swing animation
+	# (which already aims at _blockers[0]) instead of staying frozen on the
+	# last path heading — fixes the "face forward, punch backward" read.
+	# Otherwise sampled from world-position delta so it survives any
 	# path/lane configuration and matches what the player sees move.
-	var dp: Vector2 = global_position - _prev_pos
-	if dp.length_squared() > 0.05:
-		_facing_dir = dp.normalized()
+	if state == State.COMBAT and not _blockers.is_empty():
+		var b: Node = _blockers[0]
+		if b != null and is_instance_valid(b) and b is Node2D:
+			var to_b: Vector2 = (b as Node2D).global_position - global_position
+			if to_b.length_squared() > 0.05:
+				_facing_dir = to_b.normalized()
+	else:
+		var dp: Vector2 = global_position - _prev_pos
+		if dp.length_squared() > 0.05:
+			_facing_dir = dp.normalized()
 	_prev_pos = global_position
 	# Slow-ghost trail history: only sampled while the slow effect is active
 	# so we don't burn memory on every enemy. Records {pos, time}; older than
@@ -233,6 +250,26 @@ func _physics_process(delta: float) -> void:
 		return
 	match state:
 		State.WALKING:
+			# Combat Blocking Doctrine — stop-on-claim. Prune stale reservers,
+			# then freeze in place while reserved (a blocker has committed and
+			# is walking over). Stays in WALKING so it resumes the instant the
+			# claim is released; no counter-attack (that needs _blockers).
+			if not _reservers.is_empty():
+				var live: Array[Node] = []
+				for r in _reservers:
+					if r != null and is_instance_valid(r):
+						live.append(r)
+				if live.size() != _reservers.size():
+					_reservers = live
+			if not _reservers.is_empty():
+				# Held only freezes path progress + walk anim. Status effects,
+				# ability host, hit-stop and death all tick ABOVE this match
+				# (so a held enemy still takes damage, dies, and burns
+				# slow/stun duration — holding does NOT pause debuffs; this
+				# is a deliberate design decision, see COMBAT_BLOCKING_DOCTRINE).
+				_breath_t += delta
+				queue_redraw()
+				return
 			_path_follow.progress += _effective_speed() * delta
 			if _path_follow.progress_ratio >= 1.0:
 				_reach_end()
@@ -300,6 +337,34 @@ func release_combat(blocker: Node = null) -> void:
 		_combat_cooldown = 0.0
 		if state == State.COMBAT:
 			change_state(State.WALKING)
+
+
+# Combat Blocking Doctrine — stop-on-claim (soft stop). A blocker that
+# commits to this enemy reserves it; while reserved the enemy freezes its
+# path progress (see the WALKING gate) but does NOT counter-attack until a
+# blocker physically engages it. Flying / bypass enemies never stop, so
+# reservation is a no-op for them. Returns true iff newly reserved.
+func reserve(by: Node) -> bool:
+	if by == null or state == State.DYING:
+		return false
+	if data != null:
+		if "is_flying" in data and data.is_flying:
+			return false
+		if "bypass_engagement" in data and data.bypass_engagement:
+			return false
+	if _reservers.has(by):
+		return false
+	_reservers.append(by)
+	return true
+
+
+func unreserve(by: Node) -> void:
+	_reservers.erase(by)
+
+
+func is_held() -> bool:
+	# Reserved but not yet in physical COMBAT → standing still, waiting.
+	return not _reservers.is_empty() and _blockers.is_empty()
 
 
 func _combat_tick(delta: float) -> void:

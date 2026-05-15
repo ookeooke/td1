@@ -36,6 +36,17 @@ enum RenderProfile { DEFAULT, NECROMANCER_PREMIUM }
 # TowerBarracks to tint each squad's soldiers by barracks spot_id.
 @export var accent_band_color: Color = Color(0, 0, 0, 0)
 
+# Flight lift — body sprite draws offset upward by this many pixels; the
+# ground shadow stays glued to the unit's true ground position so size +
+# placement read at a glance. Universal AAA convention (KR / Bloons / PvZ /
+# Brawl Stars). Shadow auto-shrinks and dims with height in
+# UnitVisualDrawer.draw_ground_shadow. 0 = ground unit. Author 35-50 for
+# harpies / bats; 50-70 for big dragon bosses. Same field applies to future
+# flying heroes — engagement gating (max_block_targets, guard zone,
+# is_flying filters) is data-authored separately.
+@export_group("Flight")
+@export_range(0.0, 80.0, 1.0) var flight_height_px: float = 0.0
+
 # Procedural walk animation — applied by base_enemy in _draw() while WALKING.
 # Amplitude 0 disables bob; squash 0 disables squash/stretch. Defaults are
 # subtle so every existing enemy reads as "alive" without per-tres editing.

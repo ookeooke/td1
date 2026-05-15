@@ -25,12 +25,12 @@ Kingdom Rush-style references consistently frame barracks as chokepoint tools:
 
 ## Core Rules
 
-1. Enemies do not stop on detection.
-2. Enemies stop only while `BaseEnemy._blockers` is non-empty.
+1. **Stop-on-claim, two stages — ONE melee pipeline for EVERY hero + soldiers. The only per-hero difference is the melee-engage RANGE.** Every hero uses the identical melee pipeline: when it commits to an enemy inside its **melee-engage range** (`HeroData.detection_radius_px`, the single per-hero tunable — big for the Warrior, small for casters), it `reserve()`s that enemy → the enemy **soft-stops** (halts path progress, stands and waits, does NOT counter-attack) → the hero walks to the Y-locked spot → on contact `engage_combat`/`_blockers` begins the **hard fight** (mutual damage, telegraphs). Soldiers do the same on a charge. There is **no melee/ranged archetype branch** in this pipeline. *Ranged DPS is a second tier, not a different melee rule:* a hero with a `projectile_scene` also shoots any enemy that is inside `attack_range` but **outside** its melee-engage range — that enemy is **never reserved and keeps walking** (the lane is only ever stopped by a hero/soldier standing in it, never from afar; the guarantee is now structural — a pure shot target is not `_seek_target_enemy` and not in `_blocked_enemies`, so `_sync_claim` never reserves it). When a shot enemy crosses into the melee-engage range the same melee pipeline takes over, and `_resolve_attack_profile()` swaps the shot for the weaker authored `close_attack_*` poke (a hero with no `close_attack_*` keeps shooting point-blank). Soft-stop ≠ combat; only contact is combat. Flying / `bypass_engagement` enemies ignore reservations (never stop). **Holding does NOT pause status-effect duration:** a held enemy still takes damage and still burns slow/stun/poison timers (the early-return only freezes path progress + walk animation; effects/abilities/death tick before it). Deliberate — setting up a slow then holding the enemy is not a duration-refund exploit. The melee-engage range is exposed to the dev balance UI as `engage_range_mult` (`BalanceOverrides` → `HeroTuning`/`BalanceSliders`, bake-to-`.tres` supported) and drawn as the always-visible warm ring under every hero.
+2. A reserved OR `_blockers`-non-empty enemy holds position; it resumes the instant both are clear.
 3. A blocker may intercept only inside its guard zone.
 4. Once physical engagement succeeds, the lock persists until enemy death, blocker death, player move/rally reset, bypass behavior, or an explicit authored escape mechanic.
 5. Blockers choose targets by protecting the line, not by tunnel vision.
-6. Ranged units use ranged weapons by default. They enter close combat only when an enemy reaches their authored close-engage radius and the unit has block capacity.
+6. Ranged DPS is a *second tier on top of* the one shared melee pipeline, not a separate melee rule: a projectile hero shoots enemies inside `attack_range` but outside its (small) melee-engage range; enemies inside the melee-engage range are meleed by the exact same pipeline the Warrior uses.
 7. Flying and `bypass_engagement` enemies ignore normal blocker locks unless an enemy/resource explicitly opts into being blockable.
 
 ## Zones and Ranges
@@ -74,13 +74,13 @@ Soldiers are primary blockers.
 State flow:
 
 1. Hold at rally slot.
-2. Detect enemies inside the rally guard zone.
-3. Step/charge only within guard zone.
-4. When in `melee_range`, call `enemy.engage_combat(self)`.
+2. Detect enemies inside the rally guard zone (`_is_guardable` → `GuardZone.is_guardable`).
+3. Commit to the best in-guard-zone enemy → `reserve()` it (stop-on-claim, Core Rule 1): **the enemy halts and waits**. Soldier then closes via direct straight-line move (CORE RULE 13) at the now-stationary enemy — it does NOT chase a moving target.
+4. When in `melee_range`, call `enemy.engage_combat(self)` (hard fight).
 5. On success, stop moving and fight until one release condition occurs.
 6. After release, scan again; if no guard-zone target exists, return to rally slot.
 
-No long chase. If a target leaves the guard zone before contact, drop it and return.
+`_sync_claim()` reconciles the reservation every frame (reserve the charge target / oldest engaged enemy, unreserve anything else); `_release_claim()` clears it on death/despawn. No long chase — if a target leaves the guard zone before contact it is unreserved (resumes walking) and the soldier returns to rally. Same stop-on-claim model as the hero.
 
 ## Hero Behavior
 
@@ -106,26 +106,71 @@ Heroes share the path Y with enemies during idle, attack, and return-to-hold. Th
 
 - **Spawn / respawn auto-snap.** The hero's spawn position (from the `HeroSpawn` Marker2D) is auto-snapped to the nearest level `Path2D` within `SPAWN_SNAP_SLACK = 80 px`. Outside the slack, the marker wins (deliberate off-path spawns are still possible). Implemented in `BaseHero._snap_to_ground_line` via `GuardZone.snap_to_nearest_path`.
 - **Tap-to-move auto-snap.** Player taps within `TAP_SNAP_SLACK = 40 px` of a path snap to the path. Outside the slack the raw tap wins, so the player can still place the hero off-road tactically (e.g. on a side rock). The destination ring (`_move_marker_pos`) draws at the snapped point so the visual matches where the hero will land.
-- **Archetype-default guard zone.** Heroes with `attack_range < RANGED_ATTACK_RANGE_THRESHOLD` (150 px) auto-default to `guard_front_px = 150`, `guard_back_px = 100` when both are 0. Ranged heroes stay 0/0 (hold, shoot, don't chase). Any non-zero authored value wins. Implemented in `BaseHero._effective_guard_zone`; `_can_pursue` and `_is_seeking_allowed` route through it.
+- **Detection zone + approach phase (current model).** Hero anchors at `_rally_position` (the last player tap, or HeroSpawn at start). A circle of radius `HeroData.detection_radius_px` around the anchor is the operating zone. When an enemy enters the zone, hero leaves the anchor, walks to the engage spot (approach phase = `State.MOVING`, target = `_engage_position_for(enemy)` which Y-aligns hero with enemy on the path), then enters `State.COMBAT` once within `ENGAGE_ARRIVAL_TOLERANCE = 18 px` of the spot. The duel starts only after the hero arrives — never snap-engaged from a standing position. After release (enemy dies / leaks the zone / player issues a new move command), hero walks back to the anchor.
+
+  No archetype split: the melee-engage range is `HeroData.detection_radius_px` for every hero (one single `DEFAULT_MELEE_ENGAGE_RANGE = 160` when authored 0), passed through the stat dict as `melee_engage_range` so the dev `engage_range_mult` slider + bake apply. Authored values: Warrior 280 (strides out far), Mage 90 / Ranger 100 / Necromancer 80 (small — they mostly shoot). Implemented in `BaseHero._effective_detection_radius` (reads `current_stats`) and `_pick_target_in_detection_zone`; `_seek_target` and `_can_pursue` route through them. The legacy `guard_front_px / guard_back_px / auto_seek_radius` fields remain on `HeroData` for back-compat but are no longer read.
+
+  When multiple enemies are inside the detection zone, the **split rule** picks: fewest current blockers → highest path progress → nearest. Once engaged, `_auto_engage_extras` may claim additional targets up to `max_block_targets`; the rest walk past unblocked.
+
+  **Melee approach = stop-on-claim + soldier-model direct move.** When the hero commits to an enemy it `reserve()`s it (Core Rule 1): the enemy halts where it stands and waits. The hero then closes the gap mirroring `BaseSoldier` (CORE RULE 13):
+  - **Hero claims, enemy freezes.** `_sync_claim` (once/frame) reserves the hero's current target (`_target_enemy` in COMBAT, else `_seek_target_enemy`) and unreserves anything else — one choke-point, covers every target change. A claim that never reaches contact within `CLAIM_TIMEOUT = 4 s` (pathing failure) is dropped so an enemy can't be frozen forever. `_die()` calls `_release_claim()` explicitly (physics is skipped while DEAD).
+  - **Close directly on the (now stationary) enemy.** The hero drives `velocity` straight at the enemy's position — no nav-agent path-following lag, and the target isn't moving, so it closes cleanly. Nav-agent is used only for the no-target "walk back to anchor" path.
+  - **Engage spot Y is locked to the enemy's Y.** `_engage_position_for` melee returns `Vector2(enemy.x + sign(path_forward.x)·gap, enemy.y)` — same ground line, horizontal offset only. `gap = min(MELEE_ENGAGE_GAP_X, _effective_engage_radius() − ENGAGE_GAP_SAFETY)` clamped ≥ `MELEE_ENGAGE_DISTANCE`, always inside the block circle.
+  - **Block on proximity (hard fight).** The decisive COMBAT trigger is `enemy in engage_range_area` — on contact `_start_block`/`engage_combat` begins mutual damage. Spot-arrival / face-contact remain backups. The hero **plants exactly where contact is made — no settle, lerp, or snap** (an earlier 0.1 s settle was removed: combined with the proximity trigger it caused a visible teleport, and stop-on-claim makes any settle pointless since the enemy is stationary). Ranged heroes are unchanged — they fire from where they stand when the enemy enters `attack_range_area`; the reservation just stops it walking out of range.
+
+  **No doomed chase.** Before a melee hero commits to an approach, `_melee_chase_is_doomed` drops the target if the enemy is *faster* than the hero AND pulling away exit-ward (`path_forward · hero→enemy > 0.25`). The hero returns to the anchor instead of trailing a target it can never catch. The `_can_pursue` detection-zone boundary check remains the backstop for every other "stop chasing" case.
+
+  **Forward cutoff — don't chase leakers.** The detection zone is a *circle* (it bounds *how far* the hero ranges); a separate path-progress test bounds *which direction*. `_has_leaked_past_anchor(enemy)` is true when the enemy's progress along its own path exceeds the anchor's projection by more than `GUARD_BACK_MARGIN_PX = 50`. Such enemies are skipped in `_pick_target_in_detection_zone` (never acquired) and rejected by `_can_pursue` (an in-progress approach aborts the instant the target crosses the margin → hero walks back to the anchor). This is the KR forward-guard + grace-margin pattern: the circle says "near me," the progress test says "still *in front of* me." **Acquire vs pursue use asymmetric margins (hysteresis):** `_pick_target_in_detection_zone` only *starts* an approach on an enemy still at/before the anchor (`GUARD_ACQUIRE_MARGIN_PX = 0`); once committed, `_can_pursue` allows follow-through up to `GUARD_BACK_MARGIN_PX = 50`. Harder to start a chase than to continue one — the hero never lurches toward an enemy that's about to leak, and an enemy hovering at the boundary (e.g. slowed) can't cause acquire/drop flicker. Beyond the pursue margin the enemy has won the position and belongs to the towers. `progress_delta` returns 0 with no path data (flying / off-path) so those are never mis-flagged as leakers (flying is filtered upstream regardless).
+
+  **Soldier vs hero — shared stop-on-claim, different zone shape.** Both reserve their committed target so it halts and both close by direct move (no chasing a moving enemy). They still differ in *which* enemy they commit to: heroes use a detection-radius **circle** around a player-placed anchor (+ leaker cutoff / acquire-hysteresis); soldiers use the rally **guard zone** (`GuardZone.is_guardable`). That zone-shape split is intentional (heroes range, soldiers hold a chokepoint) — the engage *mechanism* (stop-on-claim) is now unified.
+
+  **Enemy faces its blocker.** While halted in `State.COMBAT`, the enemy turns `_facing_dir` toward `_blockers[0]` instead of freezing on its last path heading, so the idle body agrees with the swing animation (which already aims at `_blockers[0]`).
 
 Net effect: the Warrior (`attack_range=75`) auto-gets a 150/100 guard zone and walks along the path to meet incoming enemies (via the existing `_engage_position_for` which already aligns hero Y to enemy Y on melee engagement). The Mage / Ranger / Necromancer stand on the path and shoot from there. Any future hero — melee or ranged — inherits the right behavior with zero per-hero authoring.
 
+### Combat Ground Line — every melee blocker fights at the enemy's Y
+
+There is no single map "ground line" — enemies march in 3 lanes (`PathFollow2D.v_offset ∈ {−LANE_SPACING, 0, +LANE_SPACING}`, ±50 px, randomized per non-boss in `WaveManager.spawn_enemy`). The **authoritative ground line for a given enemy is its own `global_position.y`** — `v_offset` is baked into it, while walk-bob and `flight_height_px` are *draw-only* (applied in `UnitVisualDrawer`, never in `global_position`; the shadow sits at the true origin). So a blocker that matches the engaged enemy's `global_position.y` shares that enemy's lane *and* its shadow line — the duel reads as one fight on the road.
+
+**Invariant:** every melee blocker — soldier, melee hero, and a ranged hero dropped into close-combat — picks its blocking spot via the single shared helper `GuardZone.melee_engage_spot(enemy_pos, path_forward, gap)`, which returns `Vector2(enemy_pos.x + sign(path_forward.x)·gap, enemy_pos.y)`: enemy's exact Y, horizontal `gap` offset toward the path-exit side only.
+
+- `BaseHero._engage_position_for` (melee branch) calls it directly.
+- `BaseSoldier._tick_charge` steers the straight-line charge at it (`gap = max(melee_range·0.8, 12)` so the spot stays inside `melee_range` and the normal `_try_engage` still fires on arrival; path-forward via `GuardZone.path_forward_at`, falling back to the horizontal sign toward the enemy). CORE RULE 13 preserved — still a direct straight-line move, only the *target* Y is corrected. Previously the soldier planted on melee-range contact wherever it happened to be (~30–50 px off-Y diagonally).
+- The committed target is reserved (stop-on-claim) and therefore frozen, so the spot is stable while the blocker walks in — no moving-target jitter.
+- **Never pull the enemy to the path centerline** — that would teleport it up to 50 px and break the swarm read. The blocker comes to the enemy's lane, not the reverse.
+- **Ranged-while-shooting is the deliberate exception.** A ranged hero firing from `attack_range` stands at `enemy + dir·(attack_range·0.8)` (Y free, far away) — it is not duelling, so it does not share the enemy's Y.
+
+The block-claim circle a melee hero detects fightable enemies in is `_effective_engage_radius()` (NOT the larger `detection_radius_px` acquire scan). It is drawn as an always-visible faint warm ring under every hero in `BaseHero._draw()` (zoom-scaled; suppressed when `engage_radius ≈ 0`, i.e. a pure-sniper archetype that never melees).
+
+### Flying units — body lift, shadow as ground truth
+
+Flying enemies (and future flying heroes) use `UnitVisualData.flight_height_px` to lift their body sprite while the ground shadow stays glued to the unit's true ground-Y. Universal AAA convention — Kingdom Rush, Bloons, PvZ, Brawl Stars all do this. Wired in [UnitVisualDrawer.draw_unit](../systems/UnitVisualDrawer.gd) (body offset) + [UnitVisualDrawer.draw_ground_shadow](../systems/UnitVisualDrawer.gd) (height-aware scale + alpha).
+
+- **Body draws at `-flight_height_px`** above the unit's local origin. Walk-bob and other animation offsets compose on top.
+- **Shadow stays at `torso_r * 0.95` below local origin** (true ground position).
+- **Shadow scales `1.0 → 0.55`** and **alpha dims `0.28 → 0.16`** linearly as flight height approaches `_MAX_FLIGHT_HEIGHT = 80 px`.
+- Ground units leave the field at 0 (default).
+
+Suggested values: small flyers (bats / harpies) `35-45`, medium fliers (eagles, gargoyles) `45-55`, dragon-class bosses `60-75`. Engagement gating (`max_block_targets`, `guard_front_px`, `is_flying`, `bypass_engagement`) remains data-authored separately — `flight_height_px` is *purely visual* and doesn't change what blocks / aggros what.
+
 ## Ranged and Hybrid Units
 
-Ranged units should not voluntarily walk into melee just because they detected a target.
+Ranged DPS is a **second tier layered on the one shared melee pipeline**, not a different melee rule (Core Rule 1). The melee rules are identical for every hero; casters simply have a **small melee-engage range** so they mostly shoot and only melee when something gets close. The "enemy KEEPS WALKING while shot from afar" guarantee is now **structural**: a pure shot target is not the approach target (`_seek_target_enemy`) and not in `_blocked_enemies`, so `BaseHero._sync_claim` never `reserve()`s it — there is no archetype `if`. An enemy shot from 250–320 px is not frozen because it is *outside the melee-engage range*, not because the hero "is ranged".
 
 Default ranged behavior:
 
-1. If target is in `attack_range`, fire projectile/ranged attack.
-2. Enemy keeps walking unless physically blocked by someone.
-3. If enemy enters `engage_radius` and the ranged unit has `max_block_targets > 0`, switch to close-combat engagement.
-4. Close engagement can use a simple fallback melee profile at first, but long term should be authored data:
-   - `close_attack_damage`
-   - `close_attack_speed`
-   - `close_damage_type`
-   - optional `can_block`
+1. Enemy inside `attack_range` but **outside** the melee-engage range → fire projectile; enemy keeps walking (never reserved).
+2. Enemy crosses **into** the melee-engage range → the *same* melee pipeline every hero uses takes over: reserve (soft-stop) → walk to the Y-locked spot → hard-block.
+3. While hard-blocking (`_target_enemy in _blocked_enemies`), `_resolve_attack_profile()` swaps the shot for the weaker authored `close_attack_*` poke (`max_block_targets` still caps how many it can hold; `close_attack_damage = 0` ⇒ keeps shooting point-blank).
+4. **Close-combat attack — IMPLEMENTED (authored).** When a ranged hero (`projectile_scene` set) is physically blocking its focus enemy (`_target_enemy in _blocked_enemies`), `_resolve_attack_profile()` swaps the ranged shot for an authored melee poke:
+   - `HeroData.close_attack_damage` — base poke damage (0 = unauthored → keep shooting point-blank, zero regression)
+   - `HeroData.close_attack_speed` — poke cadence (typically faster than the ranged shot — you're flailing, not aiming)
+   - `HeroData.close_attack_damage_type` — `-1` inherits `data.damage_type`; authored heroes use `0` (PHYSICAL) so the caster's MAGIC identity doesn't carry into the desperate jab
+   - Close damage scales by the same gear/talent multiplier the ranged shot gets (`_effective_damage() / data.attack_damage`), so equipment still matters in melee — no "gear does nothing up close" cliff.
+   - Trigger reuses existing block state (`_blocked_enemies`), no new Area2D/state. The instant-hit branch of `_attack_step` is shared with the Warrior's melee — one code path, fires `ON_HIT_DEALT/ON_KILL` inline.
+   - Authored values (starter, balance-tunable): Ranger 0.6 dmg / 0.9 spd, Mage 0.5 / 0.7, Necromancer 0.55 / 0.8 — all PHYSICAL.
 
-Ranged units with `max_block_targets = 0` never stop enemies. This is appropriate for fragile casters like Necromancer unless a skill/summon provides the blockers.
+Ranged units with `max_block_targets = 0` never stop enemies, so they never enter close mode. This is appropriate for fragile casters unless a skill/summon provides the blockers. (Necromancer is now `max_block_targets = 1` — he can hold one enemy and scythe-poke it.)
 
 Hybrid heroes are allowed, but should be authored deliberately. They are not the default ranged behavior.
 
@@ -163,7 +208,7 @@ Add conservative data fields:
 - `HeroData.auto_seek_radius: float = 0.0`
 - `HeroData.guard_front_px: float = 0.0`
 - `HeroData.guard_back_px: float = 0.0`
-- optional later: `HeroData.close_attack_damage`, `close_attack_speed`, `close_damage_type`
+- ~~optional later~~ DONE: `HeroData.close_attack_damage`, `close_attack_speed`, `close_attack_damage_type` — see "Ranged and Hybrid Units" §4
 - `SoldierData.guard_front_px: float = 120.0`
 - `SoldierData.guard_back_px: float = 70.0`
 

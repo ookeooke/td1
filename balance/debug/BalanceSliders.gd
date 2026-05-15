@@ -475,6 +475,7 @@ const _HERO_STAT_DEFS: Array = [
 	{"key": "attack_speed_mult",  "mode": "mult", "label": "AtkSpeed",   "prop": "attack_speed"},
 	{"key": "damage_mult",        "mode": "mult", "label": "Damage",     "prop": "attack_damage"},
 	{"key": "range_mult",         "mode": "mult", "label": "Range",      "prop": "attack_range"},
+	{"key": "engage_range_mult",  "mode": "mult", "label": "EngageRng",  "prop": "detection_radius_px"},
 ]
 
 
@@ -773,6 +774,7 @@ func _hero_step_for(stat_key: String, authored: float) -> float:
 		"speed_mult":         return 5.0
 		"damage_mult":        return 0.25 if authored < 10.0 else 0.5
 		"range_mult":         return 5.0 if authored < 100.0 else 10.0
+		"engage_range_mult":  return 5.0 if authored < 100.0 else 10.0
 		"attack_speed_mult":  return 0.05
 	return 1.0
 
@@ -784,6 +786,7 @@ func _format_hero_value(stat_key: String, mode: String, absolute: float, overrid
 		"hp_mult":           return "%d  (×%.2f)" % [int(round(absolute)), override]
 		"damage_mult":       return "%.1f  (×%.2f)" % [absolute, override]
 		"range_mult":        return "%d  (×%.2f)" % [int(round(absolute)), override]
+		"engage_range_mult": return "%d  (×%.2f)" % [int(round(absolute)), override]
 		"speed_mult":        return "%d  (×%.2f)" % [int(round(absolute)), override]
 		"attack_speed_mult": return "%.2f  (×%.2f)" % [absolute, override]
 	return "%.2f  (×%.2f)" % [absolute, override]

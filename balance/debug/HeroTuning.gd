@@ -25,6 +25,7 @@ const _HERO_STAT_DEFS: Array = [
 	{"key": "attack_speed_mult",  "mode": "mult", "label": "AtkSpeed",   "prop": "attack_speed"},
 	{"key": "damage_mult",        "mode": "mult", "label": "Damage",     "prop": "attack_damage"},
 	{"key": "range_mult",         "mode": "mult", "label": "Range",      "prop": "attack_range"},
+	{"key": "engage_range_mult",  "mode": "mult", "label": "EngageRng",  "prop": "detection_radius_px"},
 ]
 
 # Skill stat keys parallel SkillData fields. aoe_radius is subclass-specific
@@ -57,6 +58,7 @@ const _LIVE_STAT_DEFS: Array = [
 	{"key": "attack_speed",      "label": "Attack Speed", "fmt": "decimal_2_per_s"},
 	{"key": "move_speed",        "label": "Move Speed",   "fmt": "int"},
 	{"key": "attack_range",      "label": "Attack Range", "fmt": "int"},
+	{"key": "melee_engage_range","label": "Melee Eng Rng","fmt": "int"},
 	{"key": "armor",             "label": "Armor",        "fmt": "percent"},
 	{"key": "magic_resist",      "label": "Magic Resist", "fmt": "percent"},
 	{"key": "health_regen",      "label": "HP Regen",     "fmt": "decimal_1_per_s"},
@@ -443,6 +445,7 @@ func _step_for(stat_key: String, authored: float) -> float:
 		"speed_mult":         return 5.0
 		"damage_mult":        return 0.25 if authored < 10.0 else 0.5
 		"range_mult":         return 5.0 if authored < 100.0 else 10.0
+		"engage_range_mult":  return 5.0 if authored < 100.0 else 10.0
 		"attack_speed_mult":  return 0.05
 		"cooldown_mult":      return 0.5
 		"aoe_radius_mult":    return 5.0

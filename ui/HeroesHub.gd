@@ -534,7 +534,6 @@ func _refresh_hero_hall() -> void:
 	var need: int = 0
 	if lvl - 1 >= 0 and lvl - 1 < hero_data.xp_per_level.size():
 		need = int(hero_data.xp_per_level[lvl - 1])
-	var dmg_type: String = "Magic" if int(hero_data.damage_type) == 1 else "Physical"
 	_hall_name_label.text = String(hero_data.hero_name)
 	_hall_level_label.text = "Lv %d" % lvl
 	if lvl >= max_lvl or need <= 0:
@@ -547,6 +546,9 @@ func _refresh_hero_hall() -> void:
 	# (Preventive Bug Rule). Don't read hero_data.max_health / .attack_damage
 	# etc. directly for display anywhere — those skip the modifier stack.
 	var stats: Dictionary = _HeroStats.effective_for(hid)
+	# Phase 3 — damage type follows the equipped weapon (compute_stats_for
+	# exposes "damage_type"); fall back to HeroData when unset (byte-identical).
+	var dmg_type: String = "Magic" if int(stats.get("damage_type", int(hero_data.damage_type))) == 1 else "Physical"
 	_hall_stats_label.text = "%s\nHP   %d\nDMG  %d\nRNG  %d\nSPD  %.2f\nARM  %d%%" % [
 		dmg_type,
 		int(round(float(stats.get("max_health", 0.0)))),

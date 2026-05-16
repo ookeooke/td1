@@ -288,6 +288,9 @@ var _ability_host: RefCounted = null
 # Tracked so _resolve_affinities() can detach stale grants and re-attach
 # cleanly (idempotent re-entrant resolve).
 var _affinity_abilities: Array = []
+# Phase 3 — active WeaponProfileAbility (Pure-B). null ⇒ unarmed: every
+# _profile_* helper falls back to HeroData (byte-identical default).
+var _weapon_profile = null
 var _death_tween: Tween = null
 
 # Melee-combat debug — why the nearest enemy was NOT acquired by
@@ -477,6 +480,83 @@ func recompute_stats() -> void:
 	current_stats = apply_modifiers(base_stats, _modifier_sources)
 
 
+# Phase 3 — WeaponProfileAbility lifecycle (mirrors register_modifier_source).
+# LAST-WINS: only the WEAPON slot equips a profile-carrying item at a time so
+# this is moot in practice; documented deterministic for the edge case of a
+# non-weapon item authoring one.
+func set_weapon_profile(p) -> void:
+	_weapon_profile = p
+	# Weapon owns reach — push the (possibly new) range onto the Area2D
+	# shapes. _resize_range_shapes is null-safe so this is safe even when
+	# called from the _ready() equip loop before nodes settle.
+	_resize_range_shapes()
+
+
+func clear_weapon_profile(p) -> void:
+	# Identity-checked so a stale ability's ON_UNEQUIP can't wipe a profile
+	# that a newer equip already replaced.
+	if _weapon_profile == p:
+		_weapon_profile = null
+		_resize_range_shapes()
+
+
+func get_weapon_profile():
+	return _weapon_profile
+
+
+# ── Profile fallback helpers ────────────────────────────────────────────
+# Each returns the weapon's value when a profile is active and that facet is
+# set, else the HeroData value (today's literal). With no profile every one
+# is byte-identical to the pre-Phase-3 expression.
+
+func _profile_uses_projectile() -> bool:
+	if _weapon_profile != null:
+		return _weapon_profile.projectile_scene != null
+	return data != null and data.projectile_scene != null
+
+
+func _profile_projectile_scene() -> PackedScene:
+	if _weapon_profile != null and _weapon_profile.projectile_scene != null:
+		return _weapon_profile.projectile_scene
+	return data.projectile_scene if data != null else null
+
+
+func _profile_damage_type() -> int:
+	if _weapon_profile != null and _weapon_profile.weapon_damage_type >= 0:
+		return _weapon_profile.weapon_damage_type
+	return data.damage_type if data != null else 0
+
+
+# Base-replace damage: apply the StatModifier affix stack as a RATIO over the
+# hero's authored base so item +damage% is counted exactly once (mirrors the
+# proven close-combat ratio). weapon_base_damage <= 0 ⇒ keep hero base ⇒
+# returns _effective_damage() unchanged (byte-identical).
+func _profile_damage() -> float:
+	if _weapon_profile == null or _weapon_profile.weapon_base_damage <= 0.0:
+		return _effective_damage()
+	var hero_base: float = maxf(0.01, data.attack_damage) if data != null else 0.01
+	var mult: float = _effective_damage() / hero_base
+	return _weapon_profile.weapon_base_damage * mult
+
+
+func _profile_close_damage() -> float:
+	if _weapon_profile != null and _weapon_profile.close_attack_damage > 0.0:
+		return _weapon_profile.close_attack_damage
+	return data.close_attack_damage if data != null else 0.0
+
+
+func _profile_close_speed() -> float:
+	if _weapon_profile != null and _weapon_profile.close_attack_speed > 0.0:
+		return _weapon_profile.close_attack_speed
+	return data.close_attack_speed if data != null else 0.0
+
+
+func _profile_close_damage_type() -> int:
+	if _weapon_profile != null and _weapon_profile.close_attack_damage > 0.0:
+		return _weapon_profile.close_attack_damage_type
+	return data.close_attack_damage_type if data != null else -1
+
+
 # Phase 2 — hero affinity rank: pure function of hero level via the level
 # curve. Unauthored curve ⇒ rank 1 at every level (rank-1 affinities
 # always-on, higher ranks dormant — byte-identical to Phase 1 default).
@@ -633,13 +713,33 @@ static func compute_stats_for(hero_data: HeroData, level_arg: int, equipped: Arr
 	# runtime hero uses the two-step seed/recompute path above instead.
 	var base: Dictionary = compute_base_stats(hero_data, level_arg)
 	var mods: Array = []
+	var wprof = null  # last WeaponProfileAbility among equipped (LAST-WINS)
 	for inst in equipped:
 		if inst == null:
 			continue
 		for ab in inst.build_runtime_abilities(ContentRegistry):
-			if ab != null:
-				mods.append(ab)
+			if ab == null:
+				continue
+			mods.append(ab)
+			if ab is WeaponProfileAbility:
+				wprof = ab
 	var current: Dictionary = apply_modifiers(base, mods)
+	# Phase 3 — weapon owns the attack profile for DISPLAY too (Preventive
+	# Bug Rule 1: the dressing room must not lie). Mirror the runtime
+	# get_effective_* fallback rules. No weapon ⇒ untouched (byte-identical).
+	current["damage_type"] = int(hero_data.damage_type) if hero_data != null else 0
+	current["uses_projectile"] = hero_data != null and hero_data.projectile_scene != null
+	if wprof != null:
+		if wprof.weapon_attack_range > 0.0:
+			current["attack_range"] = wprof.weapon_attack_range
+		if wprof.weapon_attack_speed > 0.0:
+			current["attack_speed"] = wprof.weapon_attack_speed
+		if wprof.weapon_base_damage > 0.0:
+			var hbase: float = maxf(0.01, float(hero_data.attack_damage))
+			current["damage"] = wprof.weapon_base_damage * (float(current.get("damage", 0.0)) / hbase)
+		if wprof.weapon_damage_type >= 0:
+			current["damage_type"] = wprof.weapon_damage_type
+		current["uses_projectile"] = wprof.projectile_scene != null
 	# Derived DPS — kept here so dressing-room and any future "build summary"
 	# preview share the same definition of "DPS".
 	current["dps"] = float(current.get("damage", 0.0)) * float(current.get("attack_speed", 0.0))
@@ -665,11 +765,13 @@ func _effective_damage() -> float:
 # yet; the close visual/attack mode is separate from the enemy stop lock.
 # Opt-in: heroes with close_attack_damage == 0 keep shooting point-blank.
 func _has_close_attack() -> bool:
-	return data != null and "close_attack_damage" in data and data.close_attack_damage > 0.0
+	# Phase 3 — close-attack values come from the active weapon profile when
+	# present, else HeroData (byte-identical with no profile).
+	return _profile_close_damage() > 0.0
 
 
 func _should_use_close_attack(enemy: Node, in_close_range: bool) -> bool:
-	return data != null and data.projectile_scene != null \
+	return _profile_uses_projectile() \
 		and _has_close_attack() \
 		and enemy != null and is_instance_valid(enemy) \
 		and in_close_range \
@@ -689,22 +791,25 @@ func _in_close_combat() -> bool:
 # gear/talent multiplier the ranged shot gets so equipment still matters.
 func _resolve_attack_profile() -> Dictionary:
 	if _in_close_combat():
+		# Gear ratio is over the hero's authored base (intentional — the close
+		# poke scales with gear like the ranged shot). Close facets come from
+		# the weapon profile when present, else HeroData (byte-identical).
 		var base: float = maxf(0.01, data.attack_damage)
 		var mult: float = _effective_damage() / base
-		var dt: int = data.close_attack_damage_type
+		var dt: int = _profile_close_damage_type()
 		if dt < 0:
-			dt = data.damage_type
+			dt = _profile_damage_type()
 		return {
-			"damage": data.close_attack_damage * mult,
-			"speed": maxf(0.01, data.close_attack_speed),
+			"damage": _profile_close_damage() * mult,
+			"speed": maxf(0.01, _profile_close_speed()),
 			"dtype": dt,
 			"use_projectile": false,
 		}
 	return {
-		"damage": _effective_damage(),
+		"damage": _profile_damage(),
 		"speed": get_effective_attack_speed(),
-		"dtype": data.damage_type if data != null else 0,
-		"use_projectile": data != null and data.projectile_scene != null,
+		"dtype": _profile_damage_type(),
+		"use_projectile": _profile_uses_projectile(),
 	}
 
 
@@ -727,18 +832,26 @@ func get_current_health() -> int:
 
 
 func get_effective_damage() -> float:
-	return _effective_damage()
+	# Phase 3 — weapon base-replace (byte-identical when no weapon base set:
+	# _profile_damage returns _effective_damage()).
+	return _profile_damage()
 
 
 func get_effective_attack_speed() -> float:
 	if data == null:
 		return 0.0
+	if _weapon_profile != null and _weapon_profile.weapon_attack_speed > 0.0:
+		return _weapon_profile.weapon_attack_speed
 	return float(current_stats.get("attack_speed", data.attack_speed))
 
 
 func get_effective_attack_range() -> float:
 	if data == null:
 		return 0.0
+	# Weapon owns reach. No weapon range set ⇒ unchanged (current_stats keeps
+	# the StatModifier attack_range_pct stack — byte-identical).
+	if _weapon_profile != null and _weapon_profile.weapon_attack_range > 0.0:
+		return _weapon_profile.weapon_attack_range
 	return float(current_stats.get("attack_range", data.attack_range))
 
 
@@ -1599,7 +1712,7 @@ func _seek_target() -> void:
 	# where it stands — the enemy KEEPS WALKING (never reserved: _seek_target_
 	# enemy stays null and it won't be in _blocked_enemies). Casters keep
 	# being ranged DPS; melee only ever triggers via the tier above.
-	if data != null and data.projectile_scene != null:
+	if _profile_uses_projectile():
 		var shoot: Node = _pick_shootable_target_in_area(attack_range_area)
 		if shoot != null and _within_leash(shoot):
 			_target_enemy = shoot
@@ -1986,7 +2099,7 @@ func _attack_step(delta: float) -> void:
 	if bool(prof["use_projectile"]):
 		var parent: Node = get_tree().current_scene
 		if parent != null:
-			var proj: Node2D = data.projectile_scene.instantiate()
+			var proj: Node2D = _profile_projectile_scene().instantiate()
 			parent.add_child(proj)
 			var aim: Vector2 = enemy.global_position - global_position
 			var aim_angle: float = aim.angle() if aim.length_squared() > 0.0001 else 0.0

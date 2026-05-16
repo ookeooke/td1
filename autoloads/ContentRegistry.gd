@@ -138,6 +138,7 @@ func _validate_ids() -> void:
 	_assert_level_ids()
 	_assert_affinities()
 	_assert_curves()
+	_assert_weapon_profiles()
 
 
 # Levels are sub_resources inside level_list.tres (not standalone files), so
@@ -216,6 +217,39 @@ func _assert_curves() -> void:
 				print("[ContentRegistry/DRIFT] hero \"%s\" active_slot_unlock_levels not sorted" % hid)
 				break
 			prev = int(t)
+
+
+# Phase 3 — Naked Baseline executable guard (Preventive Bug Rule 4).
+# Every hero's HeroData fallback must be attack-viable so a hero with NO
+# weapon still fights (BALANCE.md invariant). Every WEAPON-slot item base
+# carrying a WeaponProfileAbility must itself be attack-viable, and if it is
+# hero-restricted, not regress that hero's authored damage. Warnings only.
+func _assert_weapon_profiles() -> void:
+	for h in heroes:
+		if h == null or not ("attack_damage" in h):
+			continue
+		var hid: String = h.hero_id if "hero_id" in h else "?"
+		var viable: bool = h.attack_damage > 0.0 and h.attack_speed > 0.0 \
+			and (h.projectile_scene != null or h.attack_range > 0.0)
+		if not viable:
+			print("[ContentRegistry/DRIFT] hero \"%s\" fallback not attack-viable (Naked Baseline risk)" % hid)
+	for b in item_bases:
+		if b == null or not ("slot" in b) or int(b.slot) != 0:
+			continue
+		if not ("implicit_abilities" in b):
+			continue
+		for ab in b.implicit_abilities:
+			if ab == null or not ("weapon_base_damage" in ab):
+				continue  # not a WeaponProfileAbility
+			var bid: String = b.base_id if "base_id" in b else b.resource_path
+			var w_viable: bool = ab.projectile_scene != null or ab.weapon_attack_range > 0.0
+			if not w_viable:
+				print("[ContentRegistry/DRIFT] weapon \"%s\" profile not attack-viable (no projectile and no range)" % bid)
+			for rid in b.hero_restriction:
+				var hd: Resource = find_hero(rid)
+				if hd != null and "attack_damage" in hd and ab.weapon_base_damage > 0.0 \
+						and ab.weapon_base_damage < hd.attack_damage:
+					print("[ContentRegistry/DRIFT] weapon \"%s\" damage %.2f < restricted hero \"%s\" base %.2f (regression)" % [bid, ab.weapon_base_damage, rid, hd.attack_damage])
 
 
 func _assert_ids(arr: Array, field: String) -> void:

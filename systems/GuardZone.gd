@@ -155,6 +155,32 @@ static func progress_delta(enemy, hold_point: Vector2) -> float:
 # shadow line. Used by BaseHero._engage_position_for AND BaseSoldier so every
 # melee blocker (soldier, melee hero, ranged hero in close-combat) duels on the
 # enemy's exact Y. See docs/COMBAT_BLOCKING_DOCTRINE.md — Combat Ground Line.
-static func melee_engage_spot(enemy_pos: Vector2, forward: Vector2, gap: float) -> Vector2:
+#
+# `slot` is the blocker's enemy-owned fan-out index (BaseEnemy.block_slot_for).
+# slot 0 is byte-identical to the legacy single-spot result — the dominant
+# case (all shipped heroes + soldiers are max_block_targets = 1) is unchanged,
+# so the approach-steer / settle math and every existing test are unaffected.
+# When 2+ blockers pile on ONE enemy (more friendlies than enemies), extra
+# blockers spread by SLOT_SPREAD_PX along the road-width axis (perpendicular
+# to path-forward), alternating sides around the slot-0 front duelist. They
+# stay on the exit-side wall and ~on the ground line; only the off-center
+# stagger prevents the shadows/bodies merging into one blob.
+const SLOT_SPREAD_PX: float = 28.0
+
+static func melee_engage_spot(enemy_pos: Vector2, forward: Vector2, gap: float, slot: int = 0) -> Vector2:
 	var dir_x: float = signf(forward.x) if absf(forward.x) > 0.05 else 1.0
-	return Vector2(enemy_pos.x + dir_x * gap, enemy_pos.y)
+	var spot: Vector2 = Vector2(enemy_pos.x + dir_x * gap, enemy_pos.y)
+	if slot <= 0:
+		return spot
+	# Perpendicular to travel = the road-width axis (≈ world-Y for the
+	# horizontal paths this game ships). Alternate sides so the front
+	# duelist (slot 0) stays centered and extras fan symmetrically:
+	# slot 1 → +1 step, 2 → −1, 3 → +2, 4 → −2 …
+	var perp: Vector2 = Vector2(-forward.y, forward.x)
+	if perp.length_squared() < 0.0001:
+		perp = Vector2(0.0, 1.0)
+	perp = perp.normalized()
+	@warning_ignore("integer_division")
+	var rank: int = (slot + 1) / 2
+	var side: float = 1.0 if (slot % 2) == 1 else -1.0
+	return spot + perp * (side * float(rank) * SLOT_SPREAD_PX)

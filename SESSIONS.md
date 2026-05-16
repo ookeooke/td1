@@ -5032,3 +5032,122 @@ Review of the Dragon MVP found two issues; both fixed.
 
 189/189 GUT green, zero `[ContentRegistry/DRIFT]`, clean import. Commit
 3bc5440. Air-intercept still gated behind the multi-mode arbitration doc.
+
+---
+
+## 2026-05-17 (cont.) - Dragon visual identity pass
+
+User asked to adjust Dragon so it actually reads as a dragon.
+
+Fix:
+- Added `UnitVisualData.RenderProfile.DRAGON_PREMIUM` and moved
+  `visual_dragon.tres` off the accidental Necromancer premium profile.
+- Added a dedicated procedural Dragon renderer: long horizontal body, tail
+  barb, bat wings with flapping membrane, claws, back spines, horned snout,
+  glowing eye, and mouth charge glow.
+- Added Dragon-specific hit flash so damage feedback matches the dragon
+  silhouette instead of a generic circle/old profile.
+- Dragon projectile visuals now use `projectiles/DragonBreath.tscn`, an ember
+  bolt/trail scene based on the existing projectile system.
+- Dragon projectile spawn now comes from the mouth, and Dragon projectile
+  attacks use ranged visual mode so the body breathes/casts instead of
+  lunge-poking like a melee unit.
+
+No gameplay, damage, targeting, cooldown, body profile, or balance values
+changed. This is a visual-only identity pass.
+
+Verification: `git diff --check` passes. Local Godot headless still crashes
+with signal 11 before script diagnostics, so an in-editor visual pass is still
+needed.
+
+---
+
+## 2026-05-17 (cont.) - Dragon wing readability fix
+
+User reported the Dragon still did not look convincing and asked why the wings
+were not working.
+
+Root cause: the first Dragon premium renderer did draw custom wings, but they
+were too tucked behind the body, low contrast against the red body, and easy to
+read as small fins at gameplay zoom. The Dragon renderer returns before the old
+generic `Accent.WINGS` bars, so only the custom wing geometry matters.
+
+Fix:
+- Rebuilt Dragon wings as broad paired bat wings with larger span, membrane
+  notches, visible bone strokes, stronger outline, and higher-contrast ember
+  membrane color.
+- Enlarged the Dragon body slightly, lengthened the tail/barb, and increased
+  highlight contrast so the silhouette reads more like a dragon and less like a
+  red flying blob.
+- Widened the Dragon ground shadow so the airborne footprint matches the new
+  wing span.
+
+No gameplay, damage, targeting, cooldown, body profile, or balance values
+changed.
+
+Verification: `git diff --check` passes. Local Godot headless still crashes
+with signal 11 before script diagnostics; needs in-editor visual tuning.
+
+---
+
+## 2026-05-17 (cont.) - Ground-shadow standardization (visual-only)
+
+User asked to finish/standardize the existing ground-shadow system rather than
+build it from scratch. Root cause: every shadow caller gated on
+`data.visual.race != Race.NONE`, so the two `race == NONE` visuals
+(`visual_dragon.tres`, `visual_soldier.tres`) drew no shadow and read as
+floating. `draw_ground_shadow()` itself was already race-independent and
+correctly sized from radius/body_size + faded by flight_height_px — only the
+callers blocked it.
+
+Fix (one-condition relaxation per call site, race≠NONE units unaffected):
+- `enemies/base_enemy.gd:702`, `soldiers/base_soldier.gd:711`,
+  `heroes/base_hero.gd:2595` — guard changed from
+  `... and data.visual.race != Race.NONE` to `data != null and data.visual != null`.
+- `enemies/bosses/base_boss.gd` needed no edit — its `_draw()` is `super._draw()`,
+  so the BaseEnemy change covers bosses transitively. The `race != NONE` guard at
+  base_boss.gd:138 is HP-bar-Y math, deliberately left untouched.
+- `draw_ground_shadow()` unchanged; the race==NONE returns at
+  UnitVisualDrawer.gd:925/943 belong to draw_stun_stars/draw_slow_ghost — untouched.
+
+Outcome: Dragon hero (race NONE, flight 44 → small faint road shadow) and the
+race-NONE soldier now render road-anchored shadows; flying/boss/Necromancer
+shadows mathematically unchanged. No combat/blocking geometry touched
+(visual-only; shadow draws at the node transform, ignores walk-bob/lunge/flight).
+
+Verification: GUT full suite 189/189 passing (15 scripts, 640 asserts, 4.3s) —
+combat/blocking + hero-targeting regressions clean. In-editor visual pass (Dragon
++ flying + soldiers in frame) still recommended; not run headlessly.
+
+## 2026-05-17 (cont.) - Multi-blocker fan-out (combat positioning)
+
+User asked to fix the multi-blocker pile-up: when more friendlies than enemies
+forced 2+ soldiers/heroes onto ONE enemy, every blocker targeted the identical
+spot `(enemy.x+gap, enemy.y)` and stacked into one body/shadow blob (exposed by
+the new race-independent shadows). Doctrine-sensitive — read
+COMBAT_BLOCKING_DOCTRINE.md "Blocker coordination invariants" first.
+
+Design (enemy-owned slot, honors "blockers coordinate ONLY through enemy
+ownership"):
+- `GuardZone.melee_engage_spot(..., slot = 0)` — slot 0 byte-identical to the
+  legacy result (regression-locked by test); slot > 0 adds `SLOT_SPREAD_PX` (28)
+  perpendicular to path-forward (the road-width axis), alternating sides around
+  the centered slot-0 duelist (1→+1, 2→−1, 3→+2, …).
+- `BaseEnemy.block_slot_for(blocker)` — stable index: hard `_blockers` first
+  (oldest = slot 0 = counter-attack focus), then soft `_reservers` not yet
+  hard-blocking (approachers pre-spread). Unknown → next free slot.
+- Wired at the 3 call sites: `BaseSoldier._tick_charge` (settled + charge),
+  `BaseHero._engage_position_for`. `has_method` guarded.
+- Slots compact as front blockers die (next blocker re-centers).
+
+Why safe: all shipped heroes + soldiers are `max_block_targets = 1` (one blocker
+per enemy), so slot 0 is the universal path and is provably unchanged — every
+approach-steer/settle path and prior test untouched. Only the >1-on-1 pile-up
+case changes. Doctrine updated (Combat Ground Line — multi-blocker fan-out
+subsection) incl. the AoE-splash-counter trade-off note.
+
+Verification: GUT full suite 193/193 passing (4 new fan-out tests: slot-0
+legacy lock, perpendicular alternating spread, block_slot_for ordering,
+front-blocker compaction). In-editor playtest (overload a chokepoint so 3+
+soldiers stack one enemy; confirm they fan instead of merging) still
+recommended; not runnable headlessly.

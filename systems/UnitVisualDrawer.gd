@@ -233,6 +233,11 @@ static func draw_hit_flash(ci: CanvasItem, v: UnitVisualData, amount: float, off
 		if has_xform:
 			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		return
+	if v.render_profile == UnitVisualData.RenderProfile.DRAGON_PREMIUM:
+		_draw_dragon_hit_flash(ci, v, col)
+		if has_xform:
+			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	if v.shape == UnitVisualData.Shape.CIRCLE:
 		ci.draw_circle(Vector2.ZERO, v.radius, col)
 	else:
@@ -327,6 +332,12 @@ static func draw_unit(ci: CanvasItem, v: UnitVisualData, offset: Vector2 = Vecto
 	var head_col: Color = v.head_color * skin_tint
 	var leg_col: Color = v.leg_color * skin_tint
 	var arm_col: Color = v.arm_color * skin_tint
+
+	if v.render_profile == UnitVisualData.RenderProfile.DRAGON_PREMIUM:
+		_draw_dragon_premium(ci, v, walk_t, walk_phase, ctx, body_col)
+		if has_xform:
+			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 
 	if v.render_profile == UnitVisualData.RenderProfile.NECROMANCER_PREMIUM:
 		# The premium rig uses ABSOLUTE draw_set_transform_matrix, which wipes
@@ -608,6 +619,233 @@ static func _draw_mage_hit_flash(ci: CanvasItem, v: UnitVisualData, col: Color) 
 	ci.draw_colored_polygon(hood, col)
 
 
+static func _draw_dragon_hit_flash(ci: CanvasItem, v: UnitVisualData, col: Color) -> void:
+	var r: float = _dragon_radius(v)
+	var wing_top: PackedVector2Array = PackedVector2Array([
+		Vector2(-r * 0.36, -r * 0.22),
+		Vector2(-r * 1.42, -r * 1.50),
+		Vector2(-r * 0.18, -r * 2.18),
+		Vector2(r * 0.74, -r * 0.42),
+	])
+	var wing_bot: PackedVector2Array = PackedVector2Array([
+		Vector2(-r * 0.28, r * 0.22),
+		Vector2(-r * 1.24, r * 1.36),
+		Vector2(-r * 0.08, r * 1.84),
+		Vector2(r * 0.62, r * 0.36),
+	])
+	ci.draw_colored_polygon(wing_top, col)
+	ci.draw_colored_polygon(wing_bot, col)
+	ci.draw_colored_polygon(PackedVector2Array([
+		Vector2(-r * 1.72, r * 0.02),
+		Vector2(-r * 0.48, -r * 0.28),
+		Vector2(-r * 0.34, r * 0.24),
+	]), col)
+	ci.draw_colored_polygon(_ellipse_points(Vector2.ZERO, r * 0.88, r * 0.52, 14), col)
+	ci.draw_colored_polygon(PackedVector2Array([
+		Vector2(r * 0.58, -r * 0.28),
+		Vector2(r * 1.22, -r * 0.48),
+		Vector2(r * 1.58, -r * 0.22),
+		Vector2(r * 1.46, r * 0.16),
+		Vector2(r * 1.02, r * 0.30),
+		Vector2(r * 0.56, r * 0.12),
+	]), col)
+
+
+static func _draw_dragon_premium(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_phase: float, ctx: Dictionary, body_col: Color) -> void:
+	var r: float = _dragon_radius(v)
+	var t: float = walk_t if walk_t >= 0.0 else float(Time.get_ticks_msec()) * 0.001
+	var theta: float = t * maxf(2.0, v.walk_bob_speed) + walk_phase
+	var wing_flap: float = sin(theta * 1.65) * r * 0.24
+	var tail_sway: float = sin(theta * 0.82 + 0.6) * r * 0.10
+	var cast_t: float = clampf(float(ctx.get("cast_t", 0.0)), 0.0, 1.0)
+	var wind_t: float = clampf(float(ctx.get("wind_t", 0.0)), 0.0, 1.0)
+	var face_dir: Vector2 = ctx.get("face", Vector2.RIGHT)
+	var face_x: float = signf(face_dir.x) if face_dir.length_squared() > 0.0001 and absf(face_dir.x) > 0.08 else 1.0
+	var outline_w: float = maxf(2.0, v.outline_width * 0.58)
+	var outline: Color = v.outline_color
+	var belly: Color = v.accent_color.lerp(Color(1.0, 0.92, 0.62, 1.0), 0.28)
+	belly.a = 0.92
+	var membrane: Color = Color(0.92, 0.20, 0.08, 0.82)
+	var bone_col: Color = body_col.lightened(0.18)
+	var glow: Color = v.weapon_glow_color if v.weapon_glow_color.a > 0.0 else v.accent_color
+
+	_draw_dragon_tail(ci, r, face_x, tail_sway, body_col, outline, outline_w)
+	_draw_dragon_wings(ci, r, face_x, wing_flap, membrane, bone_col, outline, outline_w)
+
+	var body_pts: PackedVector2Array = _ellipse_points(Vector2(-face_x * r * 0.08, 0.0), r * 0.98, r * 0.46, 18)
+	ci.draw_colored_polygon(body_pts, body_col)
+	_draw_closed_polyline(ci, body_pts, outline, outline_w)
+	var belly_pts: PackedVector2Array = PackedVector2Array([
+		Vector2(-face_x * r * 0.52, -r * 0.18),
+		Vector2(face_x * r * 0.42, -r * 0.20),
+		Vector2(face_x * r * 0.58, r * 0.08),
+		Vector2(face_x * r * 0.20, r * 0.34),
+		Vector2(-face_x * r * 0.38, r * 0.28),
+	])
+	ci.draw_colored_polygon(belly_pts, belly)
+	var belly_line: Color = outline
+	belly_line.a = 0.42
+	_draw_closed_polyline(ci, belly_pts, belly_line, maxf(1.2, outline_w * 0.35))
+
+	_draw_dragon_spines(ci, r, face_x, outline, v.highlight_color)
+	_draw_dragon_legs(ci, r, face_x, body_col.darkened(0.08), outline, outline_w)
+	_draw_dragon_head(ci, r, face_x, body_col, belly, outline, outline_w, glow, cast_t, wind_t)
+
+
+static func _draw_dragon_tail(ci: CanvasItem, r: float, face_x: float, tail_sway: float, body_col: Color, outline: Color, outline_w: float) -> void:
+	var pts: PackedVector2Array = PackedVector2Array([
+		Vector2(-face_x * r * 0.50, -r * 0.18),
+		Vector2(-face_x * r * 1.48, -r * 0.16 + tail_sway),
+		Vector2(-face_x * r * 2.18, r * 0.06 + tail_sway * 0.8),
+		Vector2(-face_x * r * 1.34, r * 0.22 + tail_sway),
+		Vector2(-face_x * r * 0.42, r * 0.20),
+	])
+	ci.draw_colored_polygon(pts, body_col.darkened(0.06))
+	_draw_closed_polyline(ci, pts, outline, outline_w)
+	var barb: PackedVector2Array = PackedVector2Array([
+		Vector2(-face_x * r * 2.14, r * 0.06 + tail_sway * 0.8),
+		Vector2(-face_x * r * 2.42, -r * 0.18 + tail_sway * 0.7),
+		Vector2(-face_x * r * 2.32, r * 0.28 + tail_sway * 0.7),
+	])
+	ci.draw_colored_polygon(barb, body_col)
+	_draw_closed_polyline(ci, barb, outline, maxf(1.4, outline_w * 0.55))
+
+
+static func _draw_dragon_wings(ci: CanvasItem, r: float, face_x: float, flap: float, membrane: Color, bone_col: Color, outline: Color, outline_w: float) -> void:
+	for wing_y in [-1.0, 1.0]:
+		var y_sign: float = wing_y
+		var lift: float = flap * -y_sign
+		var root: Vector2 = Vector2(-face_x * r * 0.08, y_sign * r * 0.18)
+		var shoulder: Vector2 = Vector2(face_x * r * 0.28, y_sign * r * 0.08)
+		var knuckle: Vector2 = Vector2(-face_x * r * 0.72, y_sign * (r * 1.08 + lift * 0.38))
+		var tip: Vector2 = Vector2(-face_x * r * 0.20, y_sign * (r * 2.18 + lift))
+		var front_tip: Vector2 = Vector2(face_x * r * 0.88, y_sign * (r * 0.76 + lift * 0.18))
+		var inner_notch: Vector2 = Vector2(face_x * r * 0.38, y_sign * (r * 0.46 + lift * 0.12))
+		var mid_notch: Vector2 = Vector2(-face_x * r * 0.28, y_sign * (r * 1.30 + lift * 0.55))
+		var rear_notch: Vector2 = Vector2(-face_x * r * 0.82, y_sign * (r * 0.76 + lift * 0.22))
+		var wing: PackedVector2Array = PackedVector2Array([
+			root,
+			knuckle,
+			tip,
+			mid_notch,
+			front_tip,
+			inner_notch,
+			shoulder,
+		])
+		var col: Color = membrane if y_sign < 0.0 else membrane.darkened(0.10)
+		ci.draw_colored_polygon(wing, col)
+		_draw_closed_polyline(ci, wing, outline, maxf(2.0, outline_w * 0.55))
+		ci.draw_line(root, knuckle, bone_col, maxf(2.6, outline_w * 0.52), false)
+		ci.draw_line(knuckle, tip, bone_col, maxf(2.4, outline_w * 0.48), false)
+		ci.draw_line(knuckle, front_tip, bone_col.darkened(0.05), maxf(2.0, outline_w * 0.40), false)
+		ci.draw_line(root, shoulder, bone_col.lightened(0.05), maxf(2.8, outline_w * 0.56), false)
+		var crease: Color = outline
+		crease.a = 0.36
+		ci.draw_line(knuckle, mid_notch, crease, maxf(1.2, outline_w * 0.24), false)
+		ci.draw_line(knuckle, rear_notch, crease, maxf(1.2, outline_w * 0.24), false)
+
+
+static func _draw_dragon_spines(ci: CanvasItem, r: float, face_x: float, outline: Color, highlight: Color) -> void:
+	var spine_col: Color = highlight if highlight.a > 0.0 else Color(1.0, 0.70, 0.28, 1.0)
+	spine_col.a = maxf(spine_col.a, 0.88)
+	for i in range(5):
+		var k: float = float(i) / 4.0
+		var x: float = lerpf(-face_x * r * 0.52, face_x * r * 0.46, k)
+		var y: float = -r * (0.46 + 0.09 * sin(k * PI))
+		var h: float = r * lerpf(0.16, 0.24, 1.0 - absf(k - 0.5) * 2.0)
+		var pts: PackedVector2Array = PackedVector2Array([
+			Vector2(x - face_x * r * 0.06, y + r * 0.05),
+			Vector2(x, y - h),
+			Vector2(x + face_x * r * 0.06, y + r * 0.05),
+		])
+		ci.draw_colored_polygon(pts, spine_col)
+		_draw_closed_polyline(ci, pts, outline, 1.2)
+
+
+static func _draw_dragon_legs(ci: CanvasItem, r: float, face_x: float, leg_col: Color, outline: Color, outline_w: float) -> void:
+	for x_mul in [-0.38, 0.38]:
+		var hip: Vector2 = Vector2(face_x * r * x_mul, r * 0.34)
+		var knee: Vector2 = hip + Vector2(face_x * r * 0.10, r * 0.30)
+		var claw: Vector2 = knee + Vector2(face_x * r * 0.24, r * 0.04)
+		ci.draw_line(hip, knee, outline, maxf(5.0, outline_w * 1.15), false)
+		ci.draw_line(knee, claw, outline, maxf(4.5, outline_w), false)
+		ci.draw_line(hip, knee, leg_col, maxf(2.8, outline_w * 0.55), false)
+		ci.draw_line(knee, claw, leg_col, maxf(2.4, outline_w * 0.48), false)
+		for c in range(3):
+			var off: float = float(c - 1) * r * 0.06
+			ci.draw_line(claw + Vector2(0.0, off), claw + Vector2(face_x * r * 0.16, off + r * 0.02), Color(1.0, 0.82, 0.52, 1.0), 1.3, false)
+
+
+static func _draw_dragon_head(ci: CanvasItem, r: float, face_x: float, head_col: Color, jaw_col: Color, outline: Color, outline_w: float, glow: Color, cast_t: float, wind_t: float) -> void:
+	var neck: PackedVector2Array = PackedVector2Array([
+		Vector2(face_x * r * 0.44, -r * 0.26),
+		Vector2(face_x * r * 1.00, -r * 0.34),
+		Vector2(face_x * r * 1.10, r * 0.10),
+		Vector2(face_x * r * 0.42, r * 0.22),
+	])
+	ci.draw_colored_polygon(neck, head_col.darkened(0.04))
+	_draw_closed_polyline(ci, neck, outline, outline_w)
+	var head: PackedVector2Array = PackedVector2Array([
+		Vector2(face_x * r * 0.92, -r * 0.46),
+		Vector2(face_x * r * 1.38, -r * 0.40),
+		Vector2(face_x * r * 1.66, -r * 0.18),
+		Vector2(face_x * r * 1.54, r * 0.16),
+		Vector2(face_x * r * 1.16, r * 0.32),
+		Vector2(face_x * r * 0.86, r * 0.10),
+	])
+	ci.draw_colored_polygon(head, head_col)
+	_draw_closed_polyline(ci, head, outline, outline_w)
+	var jaw: PackedVector2Array = PackedVector2Array([
+		Vector2(face_x * r * 1.20, r * 0.02),
+		Vector2(face_x * r * 1.58, -r * 0.06),
+		Vector2(face_x * r * 1.48, r * 0.18),
+		Vector2(face_x * r * 1.18, r * 0.22),
+	])
+	ci.draw_colored_polygon(jaw, jaw_col)
+	_draw_closed_polyline(ci, jaw, outline, maxf(1.2, outline_w * 0.42))
+
+	for side_y in [-1.0, 1.0]:
+		var horn_base: Vector2 = Vector2(face_x * r * 1.08, -r * 0.30 + side_y * r * 0.10)
+		var horn_tip: Vector2 = horn_base + Vector2(-face_x * r * 0.28, -r * 0.34 + side_y * r * 0.03)
+		ci.draw_line(horn_base, horn_tip, Color(1.0, 0.82, 0.52, 1.0), maxf(2.0, outline_w * 0.38), false)
+
+	var eye: Vector2 = Vector2(face_x * r * 1.34, -r * 0.18)
+	var eye_col: Color = glow
+	eye_col.a = maxf(eye_col.a, 0.9)
+	var eye_halo: Color = eye_col
+	eye_halo.a = 0.28
+	ci.draw_circle(eye, r * 0.13, eye_halo)
+	ci.draw_circle(eye, r * 0.045, eye_col)
+	var charge: float = maxf(cast_t, wind_t * 0.55)
+	if charge > 0.0:
+		var mouth: Vector2 = Vector2(face_x * r * 1.64, -r * 0.04)
+		var flame: Color = glow
+		flame.a = 0.22 + charge * 0.38
+		ci.draw_circle(mouth, r * (0.18 + charge * 0.16), flame)
+		ci.draw_circle(mouth + Vector2(face_x * r * 0.20, -r * 0.02), r * (0.10 + charge * 0.10), flame.lightened(0.18))
+
+
+static func _dragon_radius(v: UnitVisualData) -> float:
+	return v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
+
+
+static func _ellipse_points(center: Vector2, rx: float, ry: float, count: int = 16) -> PackedVector2Array:
+	var pts: PackedVector2Array = PackedVector2Array()
+	var n: int = maxi(6, count)
+	for i in n:
+		var a: float = TAU * float(i) / float(n)
+		pts.append(center + Vector2(cos(a) * rx, sin(a) * ry))
+	return pts
+
+
+static func _draw_closed_polyline(ci: CanvasItem, pts: PackedVector2Array, col: Color, width: float) -> void:
+	if pts.size() < 2:
+		return
+	var closed: PackedVector2Array = PackedVector2Array(pts)
+	closed.append(pts[0])
+	ci.draw_polyline(closed, col, width, false)
+
+
 static func _draw_armor_plates(ci: CanvasItem, v: UnitVisualData) -> void:
 	var torso_r: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
 	var plate: Color = v.armor_plate_color
@@ -673,6 +911,9 @@ static func draw_ground_shadow(ci: CanvasItem, v: UnitVisualData) -> void:
 	var alpha: float = lerpf(0.28, 0.16, height_t)
 	var w: float = torso_r * 1.3 * shadow_scale
 	var h: float = torso_r * 0.32 * shadow_scale
+	if v.render_profile == UnitVisualData.RenderProfile.DRAGON_PREMIUM:
+		w = torso_r * 2.7 * shadow_scale
+		h = torso_r * 0.48 * shadow_scale
 	var y: float = torso_r * 0.95
 	# Approximate ellipse via filled polygon. Chunky shadow reads fine at
 	# 10 verts and matches the silhouette polygonal feel.

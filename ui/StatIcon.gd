@@ -23,6 +23,8 @@ static func draw(canvas: CanvasItem, kind: String, center: Vector2, radius: floa
 			_draw_damage(canvas, center, radius, fill_color)
 		"attack_speed":
 			_draw_atk_speed(canvas, center, radius, fill_color)
+		"attack_range":
+			_draw_attack_range(canvas, center, radius, fill_color)
 		"max_health":
 			_draw_max_hp(canvas, center, radius, fill_color)
 		"armor":
@@ -74,6 +76,19 @@ static func _draw_atk_speed(canvas: CanvasItem, c: Vector2, r: float, col: Color
 	])
 	canvas.draw_colored_polygon(pts, col)
 	canvas.draw_polyline(PackedVector2Array(pts + PackedVector2Array([pts[0]])), outline, 1.2, true)
+
+
+# Crosshair ring for attack range. This keeps range visually distinct from
+# damage and speed while staying legible at compact stat-row sizes.
+static func _draw_attack_range(canvas: CanvasItem, c: Vector2, r: float, col: Color) -> void:
+	var outline: Color = _outline_color(col)
+	canvas.draw_circle(c, r * 0.72, col.darkened(0.15))
+	canvas.draw_arc(c, r * 0.72, 0.0, TAU, 24, outline, 1.4, true)
+	canvas.draw_arc(c, r * 0.36, 0.0, TAU, 18, outline, 1.0, true)
+	canvas.draw_line(c + Vector2(-r * 0.95, 0), c + Vector2(-r * 0.25, 0), outline, 1.2)
+	canvas.draw_line(c + Vector2(r * 0.25, 0), c + Vector2(r * 0.95, 0), outline, 1.2)
+	canvas.draw_line(c + Vector2(0, -r * 0.95), c + Vector2(0, -r * 0.25), outline, 1.2)
+	canvas.draw_line(c + Vector2(0, r * 0.25), c + Vector2(0, r * 0.95), outline, 1.2)
 
 
 # Heart — classic two-lobe + point silhouette for HP.

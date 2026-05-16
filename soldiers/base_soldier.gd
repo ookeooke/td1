@@ -511,7 +511,8 @@ func _tick_charge() -> void:
 			var f2: Vector2 = _GuardZoneScript.path_forward_at(eng)
 			if f2 == Vector2.ZERO:
 				f2 = Vector2(signf(eng.global_position.x - global_position.x), 0.0)
-			var sp2: Vector2 = _GuardZoneScript.melee_engage_spot(eng.global_position, f2, g2)
+			var slot2: int = eng.block_slot_for(self) if eng.has_method("block_slot_for") else 0
+			var sp2: Vector2 = _GuardZoneScript.melee_engage_spot(eng.global_position, f2, g2, slot2)
 			var to_sp2: Vector2 = sp2 - global_position
 			if to_sp2.length() > 4.0:
 				velocity = _ground_line_dir(to_sp2) * data.move_speed
@@ -552,7 +553,8 @@ func _tick_charge() -> void:
 	var fwd: Vector2 = _GuardZoneScript.path_forward_at(_charge_target)
 	if fwd == Vector2.ZERO:
 		fwd = Vector2(signf(_charge_target.global_position.x - global_position.x), 0.0)
-	var spot: Vector2 = _GuardZoneScript.melee_engage_spot(_charge_target.global_position, fwd, gap)
+	var slot: int = _charge_target.block_slot_for(self) if _charge_target.has_method("block_slot_for") else 0
+	var spot: Vector2 = _GuardZoneScript.melee_engage_spot(_charge_target.global_position, fwd, gap, slot)
 	var to_target: Vector2 = spot - global_position
 	if to_target.length() < 3.0:
 		velocity = Vector2.ZERO
@@ -708,7 +710,9 @@ func _die() -> void:
 
 func _draw() -> void:
 	# 1. Ground shadow — anchored under feet, ignores body offset/scale.
-	if data != null and data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
+	# Race-independent: race==NONE soldier visuals still get a shadow
+	# (draw_ground_shadow sizes from body_size). Visual-only.
+	if data != null and data.visual != null:
 		UnitVisualDrawer.draw_ground_shadow(self, data.visual)
 
 	# 2. Compose body offset + scale.

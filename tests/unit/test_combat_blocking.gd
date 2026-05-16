@@ -869,3 +869,62 @@ func test_get_claim_count_counts_unique_claimers() -> void:
 	var other: Node = _make_blocker_stub("v")
 	enemy.engage_combat(other)
 	assert_eq(enemy.get_claim_count(), 2, "distinct claimers counted separately")
+
+
+# ── Multi-blocker fan-out (enemy-owned slot spread) ─────────────────────
+# When 2+ blockers pile on ONE enemy they must NOT all target the same
+# pixel. The enemy owns slot assignment; the shared helper turns the slot
+# into a deterministic spread along the road-width axis. slot 0 stays
+# byte-identical to the legacy single-spot result (regression lock).
+
+func test_melee_engage_spot_slot0_is_legacy_unchanged() -> void:
+	var epos := Vector2(640, 360)
+	var fwd := Vector2(0.707, 0.707)
+	var legacy: Vector2 = _GuardZone.melee_engage_spot(epos, fwd, 50.0)        # no slot arg
+	var slot0: Vector2 = _GuardZone.melee_engage_spot(epos, fwd, 50.0, 0)      # explicit 0
+	assert_almost_eq(slot0, legacy, Vector2(0.0001, 0.0001),
+		"slot 0 must be byte-identical to the legacy single-spot result")
+	assert_almost_eq(slot0.y, 360.0, 0.001, "slot 0 still locks the enemy's exact Y")
+
+
+func test_melee_engage_spot_slots_fan_perpendicular_alternating() -> void:
+	var epos := Vector2(0, 0)
+	var fwd := Vector2(1, 0)   # horizontal path → perp is world-Y (road width)
+	var s0: Vector2 = _GuardZone.melee_engage_spot(epos, fwd, 40.0, 0)
+	var s1: Vector2 = _GuardZone.melee_engage_spot(epos, fwd, 40.0, 1)
+	var s2: Vector2 = _GuardZone.melee_engage_spot(epos, fwd, 40.0, 2)
+	var s3: Vector2 = _GuardZone.melee_engage_spot(epos, fwd, 40.0, 3)
+	var step: float = _GuardZone.SLOT_SPREAD_PX
+	assert_almost_eq(s1.x, s0.x, 0.001, "fan is perpendicular only — X (gap) unchanged")
+	assert_almost_eq(s1.y, s0.y + step, 0.001, "slot 1 = +1 step along road width")
+	assert_almost_eq(s2.y, s0.y - step, 0.001, "slot 2 = −1 step (opposite side)")
+	assert_almost_eq(s3.y, s0.y + 2.0 * step, 0.001, "slot 3 = +2 steps (next rank)")
+
+
+func test_block_slot_for_stable_order_and_next_free() -> void:
+	var enemy: BaseEnemy = _make_enemy(1.0)
+	var a: Node = _make_blocker_stub("a")
+	var b: Node = _make_blocker_stub("b")
+	var c: Node = _make_blocker_stub("c")
+	enemy.engage_combat(a)   # slot 0 (oldest = focus)
+	enemy.engage_combat(b)   # slot 1
+	assert_eq(enemy.block_slot_for(a), 0, "oldest hard blocker is slot 0 (the focus)")
+	assert_eq(enemy.block_slot_for(b), 1, "second hard blocker is slot 1")
+	assert_eq(enemy.block_slot_for(c), 2,
+		"a unit not yet claiming gets the next free slot (about to append)")
+	# Reserver-not-yet-blocking pre-spreads after the hard blockers.
+	enemy.reserve(c)
+	assert_eq(enemy.block_slot_for(c), 2,
+		"soft reserver slots after hard blockers so it doesn't walk onto slot 0")
+
+
+func test_block_slot_for_compacts_when_front_blocker_leaves() -> void:
+	var enemy: BaseEnemy = _make_enemy(1.0)
+	var a: Node = _make_blocker_stub("a")
+	var b: Node = _make_blocker_stub("b")
+	enemy.engage_combat(a)
+	enemy.engage_combat(b)
+	assert_eq(enemy.block_slot_for(b), 1, "b starts at slot 1")
+	enemy._blockers.erase(a)   # front blocker dies / releases
+	assert_eq(enemy.block_slot_for(b), 0,
+		"front blocker gone → b promotes to slot 0 and re-centers next tick")

@@ -407,6 +407,30 @@ func get_claim_count() -> int:
 	return unique.size()
 
 
+func block_slot_for(blocker: Node) -> int:
+	# Enemy-owned fan-out index for melee blockers (Combat Blocking Doctrine —
+	# "blockers coordinate ONLY through enemy ownership"). Stable ordered list:
+	# hard blockers first (oldest = slot 0 = the counter-attack focus, so the
+	# front duelist is also the one taking the telegraphed hit), then soft
+	# reservers not yet hard-blocked (still approaching — they pre-spread so
+	# they don't all walk onto the slot-0 spot then collide). A unit in both
+	# lists is counted once at its _blockers position (mirrors get_claim_count
+	# unique-claimer rule). Unknown blocker → next free slot (defensive; it is
+	# about to append to _blockers anyway).
+	_prune_blockers()
+	var idx: int = _blockers.find(blocker)
+	if idx >= 0:
+		return idx
+	var slot: int = _blockers.size()
+	for r in _reservers:
+		if r == null or not is_instance_valid(r) or _blockers.has(r):
+			continue
+		if r == blocker:
+			return slot
+		slot += 1
+	return _blockers.size()
+
+
 func _combat_tick(delta: float) -> void:
 	# Prune stale / dead blockers each tick so an engager that was freed
 	# (soldier died, hero respawned elsewhere) doesn't hold the slot.
@@ -699,7 +723,10 @@ func _spawn_walk_dust(plant_idx: int) -> void:
 
 func _draw() -> void:
 	# 1. Ground shadow — fixed under feet, ignores walk-bob / breath / flinch.
-	if data != null and data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
+	# Race-independent: draw_ground_shadow sizes from radius/body_size and
+	# fades by flight_height_px, so race==NONE units (e.g. Dragon) still
+	# get a road-anchored shadow. Visual-only — no combat geometry touched.
+	if data != null and data.visual != null:
 		UnitVisualDrawer.draw_ground_shadow(self, data.visual)
 
 	# 2. Slow-ghost trail at the lagged position (behind a slowed enemy).

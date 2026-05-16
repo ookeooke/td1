@@ -1551,6 +1551,9 @@ func _projectile_spawn_position(target_world_pos: Vector2, aim_angle: float) -> 
 	if v.render_profile == UnitVisualData.RenderProfile.MAGE_PREMIUM:
 		var mage_staff_tip_local: Vector2 = Vector2(body_r * 0.52 + face_x * body_r * 0.10, -body_r * 2.35)
 		return global_position + visual_offset + mage_staff_tip_local
+	if v.render_profile == UnitVisualData.RenderProfile.DRAGON_PREMIUM:
+		var dragon_mouth_local: Vector2 = Vector2(face_x * body_r * 1.64, -body_r * 0.04)
+		return global_position + visual_offset + dragon_mouth_local
 	if v.weapon_type == UnitVisualData.WeaponType.STAFF:
 		var generic_staff_tip_local: Vector2 = Vector2(body_r * 0.62, -body_r * 1.50)
 		return global_position + visual_offset + generic_staff_tip_local
@@ -2103,7 +2106,8 @@ func _engage_position_for(enemy: Node) -> Vector2:
 	# regardless of how short the hero's reach is authored.
 	var gap: float = minf(MELEE_ENGAGE_GAP_X, _effective_engage_radius() - ENGAGE_GAP_SAFETY)
 	gap = maxf(gap, MELEE_ENGAGE_DISTANCE)
-	return _GuardZoneScript.melee_engage_spot(epos, fwd, gap)
+	var slot: int = enemy.block_slot_for(self) if enemy.has_method("block_slot_for") else 0
+	return _GuardZoneScript.melee_engage_spot(epos, fwd, gap, slot)
 
 
 func _attack_step(delta: float) -> void:
@@ -2167,7 +2171,10 @@ func _attack_step(delta: float) -> void:
 	var visual_mode: String = "melee"
 	if bool(prof["use_projectile"]) \
 			and data != null and data.visual != null \
-			and data.visual.render_profile == UnitVisualData.RenderProfile.MAGE_PREMIUM:
+			and (
+				data.visual.render_profile == UnitVisualData.RenderProfile.MAGE_PREMIUM
+				or data.visual.render_profile == UnitVisualData.RenderProfile.DRAGON_PREMIUM
+			):
 		visual_mode = "ranged"
 	_start_lunge(enemy.global_position, visual_mode, float(prof["speed"]))
 	var dmg: float = float(prof["damage"])
@@ -2586,7 +2593,9 @@ func _draw() -> void:
 		draw_arc(Vector2.ZERO, SELECTION_RING_RADIUS - 8.0, 0, TAU, 24,
 			Color(1.0, 0.85, 0.35, 0.55 * pulse), 1.5 * zs)
 	# Ground shadow under the hero — anchored, doesn't bob with the body.
-	if data != null and data.visual != null and data.visual.race != UnitVisualData.Race.NONE:
+	# Race-independent: Dragon (race==NONE, flight_height_px=44) now gets a
+	# small faint road shadow instead of reading as floating. Visual-only.
+	if data != null and data.visual != null:
 		UnitVisualDrawer.draw_ground_shadow(self, data.visual)
 
 	# Compose body offset + scale.
@@ -2648,7 +2657,10 @@ func _draw() -> void:
 		if _lunge_t > 0.0:
 			var t01: float = 1.0 - (_lunge_t / maxf(0.0001, _lunge_dur))
 			ctx["attack_visual"] = _lunge_visual
-			if _lunge_visual == "ranged" and data.visual.render_profile == UnitVisualData.RenderProfile.MAGE_PREMIUM:
+			if _lunge_visual == "ranged" and (
+					data.visual.render_profile == UnitVisualData.RenderProfile.MAGE_PREMIUM
+					or data.visual.render_profile == UnitVisualData.RenderProfile.DRAGON_PREMIUM
+			):
 				ctx["wind_t"] = 1.0
 				ctx["cast_t"] = clampf(1.0 - t01, 0.0, 1.0)
 				ctx["strike_dir"] = _lunge_dir

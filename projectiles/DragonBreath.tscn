@@ -1,0 +1,40 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://projectiles/Arrow.gd" id="1_arrow"]
+
+[sub_resource type="Gradient" id="Gradient_ember"]
+offsets = PackedFloat32Array(0.0, 0.45, 1.0)
+colors = PackedColorArray(1.0, 1.0, 0.76, 0.88, 1.0, 0.40, 0.08, 0.68, 0.45, 0.04, 0.0, 0.0)
+
+[node name="DragonBreath" type="Node2D"]
+script = ExtResource("1_arrow")
+shape = 5
+speed = 940.0
+hit_radius = 30.0
+proj_color = Color(1.0, 0.34, 0.08, 1.0)
+glow_enabled = true
+glow_radius = 26.0
+flight_wander_amplitude = 5.0
+flight_wander_vertical = 3.0
+flight_wander_frequency = 1.25
+flight_wander_randomness = 0.35
+trail_color_core = Color(1.0, 0.92, 0.54, 1.0)
+trail_color_edge = Color(0.85, 0.12, 0.02, 1.0)
+trail_width_jitter = 0.3
+trail_alpha_jitter = 0.25
+trail_smooth = true
+
+[node name="EmberSparks" type="CPUParticles2D" parent="."]
+amount = 16
+lifetime = 0.34
+local_coords = false
+spread = 130.0
+direction = Vector2(-1, 0)
+gravity = Vector2(0, 0)
+initial_velocity_min = 10.0
+initial_velocity_max = 38.0
+scale_amount_min = 0.7
+scale_amount_max = 1.9
+damping_min = 4.0
+damping_max = 8.0
+color_ramp = SubResource("Gradient_ember")

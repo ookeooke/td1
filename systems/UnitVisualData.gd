@@ -19,7 +19,7 @@ enum Hat { NONE, HORNS, HELMET, HOOD, BANDANA, CROWN_BIG }
 # Optional authored procedural profiles. DEFAULT preserves the shared unit
 # renderer; hero-specific values let one unit opt into a richer silhouette
 # without forcing the generic enemy/soldier drawer to absorb special cases.
-enum RenderProfile { DEFAULT, NECROMANCER_PREMIUM, MAGE_PREMIUM }
+enum RenderProfile { DEFAULT, NECROMANCER_PREMIUM, MAGE_PREMIUM, DRAGON_PREMIUM }
 
 @export var shape: Shape = Shape.CIRCLE
 @export var body_color: Color = Color(0.75, 0.2, 0.2)

@@ -50,7 +50,11 @@ func _enforce_cap(parent: Node, hero: Node) -> void:
 	var cap: int = maxi(1, int(trap_data.max_active))
 	var mine: Array = []
 	for t in parent.get_tree().get_nodes_in_group("hero_traps"):
-		if t != null and is_instance_valid(t) and t.get("_summoner") == hero:
+		# Skip traps already _die()'d this frame — queue_free is deferred so
+		# they linger in the group until end-of-frame; counting them would
+		# let a same-frame double-cast transiently exceed max_active (R4).
+		if t != null and is_instance_valid(t) and not t.is_queued_for_deletion() \
+				and t.get("_summoner") == hero:
 			mine.append(t)
 	# Group order is spawn order → oldest first. Free from the front until
 	# there's room for one more.

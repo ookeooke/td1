@@ -23,6 +23,16 @@ class_name WeaponProfileAbility
 # Damage is BASE-REPLACE, not additive: BaseHero applies the StatModifier
 # affix stack via a ratio so item +damage% is never double-counted (see
 # BaseHero._profile_damage).
+#
+# WEAPON-FACET ASYMMETRY (intentional contract — design decision 2026-05-16):
+#   - weapon_base_damage : CARRIES the affix stack via ratio. Item +damage%
+#     still matters when a weapon sets base damage.
+#   - weapon_attack_range / weapon_attack_speed : ABSOLUTE OVERRIDES. While
+#     a weapon sets either, item attack_range_pct / attack_speed_pct affixes
+#     are intentionally VOID (the weapon's number wins flat). Authoring
+#     implication: a weapon that sets range/speed must bake the intended
+#     FINAL value — do not expect gear to scale it. This asymmetry is
+#     deliberate, not a bug; there is no DRIFT check because it is intended.
 
 @export var projectile_scene: PackedScene = null
 @export var weapon_attack_range: float = 0.0

@@ -8,6 +8,7 @@ extends GutTest
 # Damage is BASE-REPLACE via a ratio so the affix stack is counted once.
 
 var _spawned: Array[Node] = []
+var _added_bases: Array = []
 
 
 func after_each() -> void:
@@ -15,6 +16,9 @@ func after_each() -> void:
 		if is_instance_valid(n):
 			n.free()
 	_spawned.clear()
+	for b in _added_bases:
+		ContentRegistry.item_bases.erase(b)
+	_added_bases.clear()
 
 
 func _hero(projectile: bool, dmg: float = 10.0, dtype: int = 0) -> BaseHero:
@@ -141,3 +145,53 @@ func test_boot_check_all_shipped_heroes_viable() -> void:
 			and (h.projectile_scene != null or h.attack_range > 0.0)
 		assert_true(viable,
 			"%s fallback must be attack-viable (Naked Baseline)" % h.hero_id)
+
+
+# ── R3b — full equip chain: ItemInstance → AbilityHost → set_weapon_profile ─
+# Prior weapon tests inject via set_weapon_profile / w.apply directly. This
+# drives the REAL runtime path: implicit WeaponProfileAbility on a base →
+# ItemInstance.build_runtime_abilities (duplication) → AbilityHost.equip_
+# ability (ON_EQUIP phase dispatch) → set_weapon_profile → attack profile.
+
+func test_equip_chain_applies_weapon_profile() -> void:
+	var melee_hero: BaseHero = _hero(true)  # ranged HeroData fallback (has projectile)
+	# Author a melee SWORD base whose implicit ability is a WeaponProfile.
+	var base := ItemBase.new()
+	base.base_id = "base_test_chain_sword"
+	base.slot = 0
+	var impl: Array[Resource] = [_profile(null, 0.0, 0)]  # null projectile ⇒ melee
+	base.implicit_abilities = impl
+	ContentRegistry.item_bases.append(base)
+	_added_bases.append(base)
+	var inst := ItemInstance.new()
+	inst.base_id = "base_test_chain_sword"
+	# Mirror BaseHero._ready()'s real equip loop exactly.
+	melee_hero._ability_host = AbilityHost.new(melee_hero)
+	for ab in inst.build_runtime_abilities(ContentRegistry):
+		melee_hero._ability_host.equip_ability(ab)
+	assert_not_null(melee_hero.get_weapon_profile(),
+		"WeaponProfileAbility reached set_weapon_profile through the real host")
+	assert_false(melee_hero._resolve_attack_profile()["use_projectile"],
+		"equipped sword (via full chain) makes the ranged hero MELEE")
+
+
+func test_equip_chain_unequip_restores_fallback() -> void:
+	var h: BaseHero = _hero(true)  # ranged fallback
+	var base := ItemBase.new()
+	base.base_id = "base_test_chain_bow"
+	base.slot = 0
+	var impl: Array[Resource] = [_profile(PackedScene.new())]  # ranged weapon
+	base.implicit_abilities = impl
+	ContentRegistry.item_bases.append(base)
+	_added_bases.append(base)
+	var inst := ItemInstance.new()
+	inst.base_id = "base_test_chain_bow"
+	h._ability_host = AbilityHost.new(h)
+	var built: Array = inst.build_runtime_abilities(ContentRegistry)
+	for ab in built:
+		h._ability_host.equip_ability(ab)
+	assert_not_null(h.get_weapon_profile(), "profile set via chain")
+	for ab in built:
+		h._ability_host.unequip_ability(ab)
+	assert_null(h.get_weapon_profile(),
+		"unequip through the host clears the profile (ON_UNEQUIP phase)")

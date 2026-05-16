@@ -531,6 +531,8 @@ func _profile_damage_type() -> int:
 # hero's authored base so item +damage% is counted exactly once (mirrors the
 # proven close-combat ratio). weapon_base_damage <= 0 ⇒ keep hero base ⇒
 # returns _effective_damage() unchanged (byte-identical).
+# CONTRACT: damage CARRIES affixes (this ratio) — deliberately UNLIKE
+# weapon range/speed which are absolute overrides. See WeaponProfileAbility.gd.
 func _profile_damage() -> float:
 	if _weapon_profile == null or _weapon_profile.weapon_base_damage <= 0.0:
 		return _effective_damage()
@@ -591,10 +593,12 @@ func _affinity_rank() -> int:
 
 
 # Phase 1 — grant/revoke HeroItemAffinityData bonus abilities for the current
-# equipped item set. Idempotent and re-entrant: fully detaches prior grants
-# then re-attaches whatever currently qualifies, so it is safe to call again
-# whenever equipment changes. With no item_affinities authored this is a
-# no-op (byte-identical behavior). Owner-agnostic per CORE RULE 11 — the
+# equipped item set. Called ONCE from _ready() (line ~361). That is correct
+# and sufficient because gear is locked at level spawn — there is no mid-run
+# equip. The idempotent re-entrant design (fully detach then re-attach) is
+# forward-looking insurance for a future mid-level gear-swap, not a current
+# code path. With no item_affinities authored this is a no-op (byte-
+# identical). Owner-agnostic per CORE RULE 11 — the
 # attached abilities are plain AbilityData duplicated so the shared authored
 # resource is never mutated (mirrors equipped-passive / item-ability pattern).
 func _resolve_affinities() -> void:
@@ -607,16 +611,9 @@ func _resolve_affinities() -> void:
 	var affinities: Array = data.item_affinities if "item_affinities" in data else []
 	if affinities.is_empty():
 		return
-	# Union of item_tags across every equipped instance.
-	var tag_set: Dictionary = {}
-	for inst in InventoryManager.get_all_equipped(data.hero_id):
-		if inst == null:
-			continue
-		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
-		if base == null or not ("item_tags" in base):
-			continue
-		for t in base.item_tags:
-			tag_set[t] = true
+	# Union of item_tags across every equipped instance (shared static helper
+	# — compute_stats_for uses the SAME one so display == runtime, R1).
+	var tag_set: Dictionary = _collect_equipped_item_tags(InventoryManager.get_all_equipped(data.hero_id))
 	for ability in _affinities_to_grant(affinities, tag_set, _affinity_rank()):
 		var dup: Resource = ability.duplicate(true)
 		_ability_host.equip_ability(dup)
@@ -649,6 +646,23 @@ static func _affinities_to_grant(affinities: Array, tag_set: Dictionary, rank: i
 			if ability != null:
 				out.append(ability)
 	return out
+
+
+# Union of item_tags across an equipped ItemInstance array. Shared by the
+# runtime (_resolve_affinities) and the display path (compute_stats_for) so
+# affinity resolution is single-source — display can never disagree with the
+# live hero (R1, Preventive Bug Rule 1). Resolves bases via ContentRegistry.
+static func _collect_equipped_item_tags(equipped: Array) -> Dictionary:
+	var tag_set: Dictionary = {}
+	for inst in equipped:
+		if inst == null:
+			continue
+		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+		if base == null or not ("item_tags" in base):
+			continue
+		for t in base.item_tags:
+			tag_set[t] = true
+	return tag_set
 
 
 # ---------------------------------------------------------------------------
@@ -747,10 +761,25 @@ static func compute_stats_for(hero_data: HeroData, level_arg: int, equipped: Arr
 			mods.append(ab)
 			if ab is WeaponProfileAbility:
 				wprof = ab
+	# Phase 6 / R1 — affinities contribute to DISPLAY too, via the SAME two
+	# static helpers the live hero's _resolve_affinities uses. Display ==
+	# runtime by construction (Preventive Bug Rule 1). Empty affinities or
+	# unsatisfied tags ⇒ no extra mods ⇒ value-identical (backward compat).
+	if hero_data != null:
+		var affs: Array = hero_data.item_affinities if "item_affinities" in hero_data else []
+		if not affs.is_empty():
+			var tag_set: Dictionary = _collect_equipped_item_tags(equipped)
+			var rank: int = hero_data.get_level_curve().affinity_rank_for_level(level_arg)
+			for ab in _affinities_to_grant(affs, tag_set, rank):
+				if ab != null:
+					mods.append(ab)
 	var current: Dictionary = apply_modifiers(base, mods)
 	# Phase 3 — weapon owns the attack profile for DISPLAY too (Preventive
 	# Bug Rule 1: the dressing room must not lie). Mirror the runtime
-	# get_effective_* fallback rules. No weapon ⇒ untouched (byte-identical).
+	# get_effective_* fallback rules. No weapon ⇒ values unchanged. NOTE:
+	# the two keys below are now always present (shape-additive); this is
+	# value-identical, not byte-identical at the dict-shape level — benign,
+	# every reader uses .get() with a default, none compares dict keys.
 	current["damage_type"] = int(hero_data.damage_type) if hero_data != null else 0
 	current["uses_projectile"] = hero_data != null and hero_data.projectile_scene != null
 	if wprof != null:
@@ -864,6 +893,8 @@ func get_effective_damage() -> float:
 func get_effective_attack_speed() -> float:
 	if data == null:
 		return 0.0
+	# ABSOLUTE override: weapon speed wins flat; item attack_speed_pct affixes
+	# are intentionally void here (contract — see WeaponProfileAbility.gd).
 	if _weapon_profile != null and _weapon_profile.weapon_attack_speed > 0.0:
 		return _weapon_profile.weapon_attack_speed
 	return float(current_stats.get("attack_speed", data.attack_speed))
@@ -872,8 +903,10 @@ func get_effective_attack_speed() -> float:
 func get_effective_attack_range() -> float:
 	if data == null:
 		return 0.0
-	# Weapon owns reach. No weapon range set ⇒ unchanged (current_stats keeps
-	# the StatModifier attack_range_pct stack — byte-identical).
+	# Weapon owns reach. ABSOLUTE override: item attack_range_pct affixes are
+	# intentionally void while a weapon sets range (contract — see
+	# WeaponProfileAbility.gd). No weapon range ⇒ unchanged (current_stats
+	# keeps the attack_range_pct stack — byte-identical).
 	if _weapon_profile != null and _weapon_profile.weapon_attack_range > 0.0:
 		return _weapon_profile.weapon_attack_range
 	return float(current_stats.get("attack_range", data.attack_range))

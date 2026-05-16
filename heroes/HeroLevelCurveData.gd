@@ -21,6 +21,11 @@ class_name HeroLevelCurveData
 # CORE RULE 20: rank/points derived from level via this resource, never a
 # per-hero variable; no save reshape (all runtime-derived).
 
+# AUTHORING CAUTION: skill_points_by_level / affinity_rank_by_level keys are
+# looked up with an INT level (`.has(lvl)` where lvl:int). Author keys as
+# INTEGERS (5: 3), never floats (5.0: 3) — a float key silently misses and
+# the curve falls back to +1 / rank 1. (Godot Inspector dictionaries can
+# round-trip numeric keys as floats; double-check the .tres text.)
 @export var health_pct_per_level: float = 0.15
 @export var damage_pct_per_level: float = 0.10
 @export var attack_speed_pct_per_level: float = 0.0

@@ -121,3 +121,35 @@ func test_invariant_engageable_ground_unchanged() -> void:
 		"#1 is_engageable_ground still rejects flyers (Phase 4 didn't touch it)")
 	assert_true(_enemy(false).is_engageable_ground(),
 		"#1 ground enemy still engageable")
+
+
+# ── R3c — bias INSIDE a real picker (not just the helper in isolation) ──
+# Covers `pri = bc + _targeting_bias(enemy)` integration in
+# _pick_shootable_from + the 1<<30 no-candidate sentinel interaction.
+
+func test_ground_first_picker_prefers_ground_on_tie() -> void:
+	var bp := HeroBodyProfile.new()
+	bp.targeting_priority = HeroBodyProfile.TargetingPriority.GROUND_FIRST
+	var h: BaseHero = _hero(1, bp)
+	h.data.targets_flying = true  # ranged hero CAN shoot flyers
+	var flyer: BaseEnemy = _enemy(true)
+	var ground: BaseEnemy = _enemy(false)
+	# Co-located so claim-count(0) / progress(0) / distance all tie — the
+	# body-profile bias is the ONLY discriminator.
+	flyer.global_position = Vector2(10, 0)
+	ground.global_position = Vector2(10, 0)
+	assert_eq(h._pick_shootable_from([flyer, ground]), ground,
+		"GROUND_FIRST: ground wins the tie via the in-picker bias")
+
+
+func test_ground_first_picker_still_picks_lone_flyer() -> void:
+	# Sentinel safety: a de-prioritized flyer is the only candidate ⇒ still
+	# selected (bias 1<<20 < the 1<<30 no-candidate sentinel).
+	var bp := HeroBodyProfile.new()
+	bp.targeting_priority = HeroBodyProfile.TargetingPriority.GROUND_FIRST
+	var h: BaseHero = _hero(1, bp)
+	h.data.targets_flying = true
+	var flyer: BaseEnemy = _enemy(true)
+	flyer.global_position = Vector2(10, 0)
+	assert_eq(h._pick_shootable_from([flyer]), flyer,
+		"lone de-prioritized flyer is still picked (bias < no-candidate sentinel)")

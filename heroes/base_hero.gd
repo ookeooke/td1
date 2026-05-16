@@ -284,6 +284,10 @@ const _GuardZoneScript := preload("res://systems/GuardZone.gd")
 # in release builds, so the multiplications below are identity at zero cost.
 const _BalanceOverrides := preload("res://balance/debug/BalanceOverrides.gd")
 var _ability_host: RefCounted = null
+# Phase 1 — abilities currently granted by satisfied HeroItemAffinityData.
+# Tracked so _resolve_affinities() can detach stale grants and re-attach
+# cleanly (idempotent re-entrant resolve).
+var _affinity_abilities: Array = []
 var _death_tween: Tween = null
 
 # Melee-combat debug — why the nearest enemy was NOT acquired by
@@ -350,6 +354,8 @@ func _ready() -> void:
 			continue
 		for ab in inst.build_runtime_abilities(ContentRegistry):
 			_ability_host.equip_ability(ab)
+	# Phase 1 — grant weapon-family affinity bonuses for the equipped item set.
+	_resolve_affinities()
 	# Re-seed current_health AFTER items so spawns start at full (item-boosted) HP.
 	current_health = _effective_max_health()
 	# Seed the rally point from the spawn position, snapped to the nearest
@@ -469,6 +475,74 @@ func recompute_stats() -> void:
 	# same modifier set always yields the same current value: additive flats
 	# apply first, then multiplicative pcts as a product of (1 + pct).
 	current_stats = apply_modifiers(base_stats, _modifier_sources)
+
+
+# Phase 1 — hero affinity rank. Pure function of hero level; Phase 2 wires the
+# HeroLevelCurveData thresholds here. Until then every hero is rank 1, so
+# rank-1 affinities are always-on and higher ranks are dormant (default-safe).
+func _affinity_rank() -> int:
+	return 1
+
+
+# Phase 1 — grant/revoke HeroItemAffinityData bonus abilities for the current
+# equipped item set. Idempotent and re-entrant: fully detaches prior grants
+# then re-attaches whatever currently qualifies, so it is safe to call again
+# whenever equipment changes. With no item_affinities authored this is a
+# no-op (byte-identical behavior). Owner-agnostic per CORE RULE 11 — the
+# attached abilities are plain AbilityData duplicated so the shared authored
+# resource is never mutated (mirrors equipped-passive / item-ability pattern).
+func _resolve_affinities() -> void:
+	if _ability_host == null or data == null:
+		return
+	# Detach previous affinity grants first (re-entrant safety).
+	for ab in _affinity_abilities:
+		_ability_host.unequip_ability(ab)
+	_affinity_abilities.clear()
+	var affinities: Array = data.item_affinities if "item_affinities" in data else []
+	if affinities.is_empty():
+		return
+	# Union of item_tags across every equipped instance.
+	var tag_set: Dictionary = {}
+	for inst in InventoryManager.get_all_equipped(data.hero_id):
+		if inst == null:
+			continue
+		var base: Resource = ContentRegistry.find_item_base(inst.base_id)
+		if base == null or not ("item_tags" in base):
+			continue
+		for t in base.item_tags:
+			tag_set[t] = true
+	for ability in _affinities_to_grant(affinities, tag_set, _affinity_rank()):
+		var dup: Resource = ability.duplicate(true)
+		_ability_host.equip_ability(dup)
+		_affinity_abilities.append(dup)
+
+
+# Pure matcher (no scene / no autoload deps) so the affinity-grant contract is
+# unit-testable without spawning a hero. Returns the flat list of authored
+# bonus AbilityData whose owning affinity is satisfied: rank met AND every
+# required tag present in tag_set. Empty required tags never qualify (an
+# always-on affinity would be a stat item, not an affinity).
+static func _affinities_to_grant(affinities: Array, tag_set: Dictionary, rank: int) -> Array:
+	var out: Array = []
+	for aff in affinities:
+		if aff == null or not ("required_item_tags" in aff):
+			continue
+		if rank < int(aff.min_affinity_rank):
+			continue
+		var required: Array = aff.required_item_tags
+		if required.is_empty():
+			continue
+		var satisfied: bool = true
+		for t in required:
+			if not tag_set.has(t):
+				satisfied = false
+				break
+		if not satisfied:
+			continue
+		for ability in aff.bonus_abilities:
+			if ability != null:
+				out.append(ability)
+	return out
 
 
 # ---------------------------------------------------------------------------

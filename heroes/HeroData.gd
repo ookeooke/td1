@@ -118,6 +118,16 @@ class_name HeroData
 @export var slot_anchors: Dictionary = {}
 @export_range(0.0, 1.0) var paperdoll_alpha: float = 0.35
 
+# Hero-platform layer (Pure-B architecture). Empty defaults = today's behavior
+# byte-identical; populated only after balance sign-off.
+# - item_affinities: HeroItemAffinityData[] — weapon-family masteries granted
+#   when equipped items carry the required tags (see HeroItemAffinityData).
+# - role_tags: declarative platform tags (ground/flying/blocker/ranged/...).
+#   Asserted consistent with body/combat profiles at boot — NOT a second
+#   source of truth (Preventive Bug Rule 4).
+@export var item_affinities: Array[Resource] = []
+@export var role_tags: Array[String] = []
+
 @export_multiline var encyclopedia_entry: String = ""
 
 

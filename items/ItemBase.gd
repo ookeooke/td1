@@ -12,6 +12,12 @@ enum Rarity { COMMON, MAGIC, RARE, EPIC, LEGENDARY }
 @export var base_id: String = ""                       # stable; must equal filename basename
 @export var base_name: String = "Item"
 @export var slot: int = Slot.WEAPON
+# Weapon-family / classification tags (e.g. "sword", "shield", "bow", "staff",
+# "relic", "trap", "claw", "scale", "dragon_gem"). Empty = untagged: item still
+# works everywhere, just never matches a HeroItemAffinityData. Heroes gain
+# affinity bonuses when their authored affinities' required tags are all present
+# among equipped items' tags. See HeroItemAffinityData / CORE RULE 11.
+@export var item_tags: Array[String] = []
 @export var rarity: int = Rarity.COMMON
 # Player Power Tier — see balance/BALANCE.md. Default 0 means "derive from
 # rarity at read time" (COMMON=1, MAGIC=2, RARE=3, EPIC=4, LEGENDARY=5).

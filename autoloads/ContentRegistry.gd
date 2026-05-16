@@ -136,6 +136,7 @@ func _validate_ids() -> void:
 	_assert_ids(affixes, "affix_id")
 	_assert_ids(affix_pools, "pool_id")
 	_assert_level_ids()
+	_assert_affinities()
 
 
 # Levels are sub_resources inside level_list.tres (not standalone files), so
@@ -157,6 +158,36 @@ func _assert_level_ids() -> void:
 		if seen.has(id):
 			print("[ContentRegistry/DRIFT] duplicate level_id \"%s\"" % id)
 		seen[id] = true
+
+
+# Phase 1 — HeroItemAffinityData live on HeroData.item_affinities (not a
+# standalone catalog). Assert every authored affinity is well-formed so a
+# typo'd tag or a non-AbilityData bonus surfaces at boot, not as a silent
+# never-granted mastery. Warnings only (consistent with _assert_ids).
+func _assert_affinities() -> void:
+	var seen: Dictionary = {}
+	for h in heroes:
+		if h == null or not ("item_affinities" in h):
+			continue
+		var hid: String = h.hero_id if "hero_id" in h else "?"
+		for aff in h.item_affinities:
+			if aff == null:
+				print("[ContentRegistry/DRIFT] hero \"%s\" has a null item_affinities entry" % hid)
+				continue
+			if not ("affinity_id" in aff):
+				print("[ContentRegistry/DRIFT] hero \"%s\" affinity is not a HeroItemAffinityData" % hid)
+				continue
+			var aid: String = aff.affinity_id
+			if aid == "":
+				print("[ContentRegistry/DRIFT] hero \"%s\" has an affinity with empty affinity_id" % hid)
+			elif seen.has(aid):
+				print("[ContentRegistry/DRIFT] duplicate affinity_id \"%s\"" % aid)
+			seen[aid] = true
+			if aff.required_item_tags.is_empty():
+				print("[ContentRegistry/DRIFT] affinity \"%s\" has empty required_item_tags (never grants)" % aid)
+			for ability in aff.bonus_abilities:
+				if ability == null or not ("trigger" in ability):
+					print("[ContentRegistry/DRIFT] affinity \"%s\" bonus_abilities has a non-AbilityData entry" % aid)
 
 
 func _assert_ids(arr: Array, field: String) -> void:

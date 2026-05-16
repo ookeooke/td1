@@ -4,13 +4,29 @@
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_volley.tres" id="2_volley"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_snare_trap.tres" id="3_snare"]
 [ext_resource type="Resource" path="res://heroes/data/visual_ranger.tres" id="4_vis"]
-[ext_resource type="Resource" path="res://items/bases/base_starter_sword.tres" id="5_s_sword"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_bow.tres" id="5_s_bow"]
 [ext_resource type="Resource" path="res://items/bases/base_starter_tunic.tres" id="6_s_tunic"]
 [ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="7_s_charm"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_hunter_stance.tres" id="8_stance"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_marked_shot.tres" id="9_marked"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_falcon_storm.tres" id="10_falcon"]
 [ext_resource type="PackedScene" path="res://projectiles/HeroArrow.tscn" id="11_arrow"]
+[ext_resource type="Script" uid="uid://cmkn2yydoyx0i" path="res://systems/HeroItemAffinityData.gd" id="12_aff"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="13_mod"]
+
+[sub_resource type="Resource" id="BowMastery_Bonus"]
+script = ExtResource("13_mod")
+ability_id = "ranger_bow_mastery_bonus"
+trigger = 7
+attack_speed_pct = 0.10
+
+[sub_resource type="Resource" id="Aff_BowMastery"]
+script = ExtResource("12_aff")
+affinity_id = "aff_ranger_bow_mastery"
+display_name = "Bow Mastery"
+required_item_tags = Array[String](["bow"])
+bonus_abilities = Array[Resource]([SubResource("BowMastery_Bonus")])
+min_affinity_rank = 1
 
 [resource]
 script = ExtResource("1_data")
@@ -36,5 +52,6 @@ skills = Array[Resource]([ExtResource("2_volley"), ExtResource("3_snare"), ExtRe
 starter_skill_ids = Array[String](["volley", "snare_trap"])
 visual = ExtResource("4_vis")
 projectile_scene = ExtResource("11_arrow")
-starter_items = Array[Resource]([ExtResource("5_s_sword"), ExtResource("6_s_tunic"), ExtResource("7_s_charm")])
+item_affinities = Array[Resource]([SubResource("Aff_BowMastery")])
+starter_items = Array[Resource]([ExtResource("5_s_bow"), ExtResource("6_s_tunic"), ExtResource("7_s_charm")])
 encyclopedia_entry = "Ranged hunter. Multi-shot volleys clear groups; snares lock down ground enemies for the towers to finish. Light armor, fragile in melee — kite, don't tank."

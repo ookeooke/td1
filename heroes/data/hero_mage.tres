@@ -8,12 +8,14 @@
 [ext_resource type="Script" path="res://systems/abilities/LifestealAbility.gd" id="7_lifesteal"]
 [ext_resource type="Script" path="res://systems/abilities/OnHitBonusDamageAbility.gd" id="8_bonusdmg"]
 [ext_resource type="Resource" path="res://heroes/data/visual_mage.tres" id="9_vis"]
-[ext_resource type="Resource" path="res://items/bases/base_starter_sword.tres" id="10_s_sword"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_staff.tres" id="10_s_staff"]
 [ext_resource type="Resource" path="res://items/bases/base_starter_tunic.tres" id="11_s_tunic"]
 [ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="12_s_charm"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_frost_nova.tres" id="13_nova"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_meteor.tres" id="14_meteor"]
 [ext_resource type="PackedScene" path="res://projectiles/MageBolt.tscn" id="15_bolt"]
+[ext_resource type="Script" uid="uid://cmkn2yydoyx0i" path="res://systems/HeroItemAffinityData.gd" id="16_aff"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="17_mod"]
 
 [sub_resource type="Resource" id="MageRegen"]
 script = ExtResource("6_regen")
@@ -59,6 +61,20 @@ description = "+5 bonus magic damage on every attack."
 star_cost = 3
 ability = SubResource("MageBonusDmg")
 
+[sub_resource type="Resource" id="StaffMastery_Bonus"]
+script = ExtResource("17_mod")
+ability_id = "mage_staff_mastery_bonus"
+trigger = 7
+skill_power_pct = 0.10
+
+[sub_resource type="Resource" id="Aff_StaffMastery"]
+script = ExtResource("16_aff")
+affinity_id = "aff_mage_staff_mastery"
+display_name = "Staff Mastery"
+required_item_tags = Array[String](["staff"])
+bonus_abilities = Array[Resource]([SubResource("StaffMastery_Bonus")])
+min_affinity_rank = 1
+
 [resource]
 script = ExtResource("1_data")
 hero_name = "Mage"
@@ -85,5 +101,6 @@ starter_skill_ids = Array[String](["fireball", "mana_shield"])
 talents = Array[Resource]([SubResource("Talent_Meditation"), SubResource("Talent_Siphon"), SubResource("Talent_ArcanePower")])
 visual = ExtResource("9_vis")
 projectile_scene = ExtResource("15_bolt")
-starter_items = Array[Resource]([ExtResource("10_s_sword"), ExtResource("11_s_tunic"), ExtResource("12_s_charm")])
+item_affinities = Array[Resource]([SubResource("Aff_StaffMastery")])
+starter_items = Array[Resource]([ExtResource("10_s_staff"), ExtResource("11_s_tunic"), ExtResource("12_s_charm")])
 encyclopedia_entry = "Fragile ranged caster. High magic damage, crowd control, and self-sustain. Keep away from melee."

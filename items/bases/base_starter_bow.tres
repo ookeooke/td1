@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=6 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+[ext_resource type="Script" uid="uid://cri7bq4ls2stg" path="res://systems/abilities/WeaponProfileAbility.gd" id="3_wp"]
+[ext_resource type="PackedScene" path="res://projectiles/HeroArrow.tscn" id="4_arrow"]
+
+[sub_resource type="Resource" id="Impl_StarterBow"]
+script = ExtResource("2_mod")
+ability_id = "impl_starter_bow"
+trigger = 7
+damage_flat = 2.0
+
+[sub_resource type="Resource" id="Wp_StarterBow"]
+script = ExtResource("3_wp")
+ability_id = "wp_starter_bow"
+trigger = 7
+projectile_scene = ExtResource("4_arrow")
+weapon_attack_range = 320.0
+weapon_damage_type = 0
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_starter_bow"
+base_name = "Training Bow"
+item_tags = Array[String](["weapon", "bow", "ranged", "physical"])
+icon_glyph = "generic"
+icon_color = Color(0.55, 0.4, 0.25, 1)
+implicit_abilities = Array[Resource]([SubResource("Impl_StarterBow"), SubResource("Wp_StarterBow")])
+drop_weight = 0.0
+grid_height = 2
+description = "A practice shortbow. Frayed string, true enough aim."

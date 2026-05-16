@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="ItemBase" load_steps=6 format=3]
+
+[ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
+[ext_resource type="Script" uid="uid://cri7bq4ls2stg" path="res://systems/abilities/WeaponProfileAbility.gd" id="3_wp"]
+[ext_resource type="PackedScene" path="res://projectiles/MageBolt.tscn" id="4_bolt"]
+
+[sub_resource type="Resource" id="Impl_StarterStaff"]
+script = ExtResource("2_mod")
+ability_id = "impl_starter_staff"
+trigger = 7
+damage_flat = 2.0
+
+[sub_resource type="Resource" id="Wp_StarterStaff"]
+script = ExtResource("3_wp")
+ability_id = "wp_starter_staff"
+trigger = 7
+projectile_scene = ExtResource("4_bolt")
+weapon_attack_range = 320.0
+weapon_damage_type = 1
+
+[resource]
+script = ExtResource("1_base")
+base_id = "base_starter_staff"
+base_name = "Training Staff"
+item_tags = Array[String](["weapon", "staff", "ranged", "magic"])
+icon_glyph = "generic"
+icon_color = Color(0.6, 0.5, 0.85, 1)
+implicit_abilities = Array[Resource]([SubResource("Impl_StarterStaff"), SubResource("Wp_StarterStaff")])
+drop_weight = 0.0
+grid_height = 2
+description = "A plain birch rod from the academy. It hums faintly."

@@ -3,12 +3,20 @@
 [ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
 [ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
 [ext_resource type="Texture2D" uid="uid://bwofs26iv5wro" path="res://items/art/generated/base_starter_sword_white_tier.png" id="3_tex"]
+[ext_resource type="Script" uid="uid://cri7bq4ls2stg" path="res://systems/abilities/WeaponProfileAbility.gd" id="4_wp"]
 
 [sub_resource type="Resource" id="Impl_StarterSword"]
 script = ExtResource("2_mod")
 damage_flat = 2.0
 ability_id = "impl_starter_sword"
 trigger = 7
+
+[sub_resource type="Resource" id="Wp_StarterSword"]
+script = ExtResource("4_wp")
+ability_id = "wp_starter_sword"
+trigger = 7
+weapon_attack_range = 75.0
+weapon_damage_type = 0
 
 [resource]
 script = ExtResource("1_base")
@@ -18,7 +26,7 @@ item_tags = Array[String](["weapon", "sword", "melee"])
 icon_glyph = "sword_starter"
 icon_color = Color(0.85, 0.85, 0.9, 1)
 icon_texture = ExtResource("3_tex")
-implicit_abilities = Array[Resource]([SubResource("Impl_StarterSword")])
+implicit_abilities = Array[Resource]([SubResource("Impl_StarterSword"), SubResource("Wp_StarterSword")])
 drop_weight = 0.0
 grid_height = 2
 description = "A well-worn blade from the training yard."

@@ -7,9 +7,25 @@
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_soul_nova.tres" id="5_nova"]
 [ext_resource type="Resource" path="res://heroes/data/visual_necromancer.tres" id="6_vis"]
 [ext_resource type="PackedScene" path="res://projectiles/NecroBolt.tscn" id="7_bolt"]
-[ext_resource type="Resource" path="res://items/bases/base_starter_sword.tres" id="8_s_sword"]
+[ext_resource type="Resource" path="res://items/bases/base_bone_relic.tres" id="8_s_relic"]
 [ext_resource type="Resource" path="res://items/bases/base_starter_tunic.tres" id="9_s_tunic"]
 [ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="10_s_charm"]
+[ext_resource type="Script" uid="uid://cmkn2yydoyx0i" path="res://systems/HeroItemAffinityData.gd" id="11_aff"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="12_mod"]
+
+[sub_resource type="Resource" id="RelicMastery_Bonus"]
+script = ExtResource("12_mod")
+ability_id = "necro_relic_mastery_bonus"
+trigger = 7
+skill_power_pct = 0.10
+
+[sub_resource type="Resource" id="Aff_RelicMastery"]
+script = ExtResource("11_aff")
+affinity_id = "aff_necro_relic_mastery"
+display_name = "Relic Mastery"
+required_item_tags = Array[String](["relic"])
+bonus_abilities = Array[Resource]([SubResource("RelicMastery_Bonus")])
+min_affinity_rank = 1
 
 [resource]
 script = ExtResource("1_data")
@@ -37,5 +53,6 @@ skills = Array[Resource]([ExtResource("2_raise"), ExtResource("3_mark"), ExtReso
 starter_skill_ids = Array[String](["raise_skeletons", "death_mark"])
 visual = ExtResource("6_vis")
 projectile_scene = ExtResource("7_bolt")
-starter_items = Array[Resource]([ExtResource("8_s_sword"), ExtResource("9_s_tunic"), ExtResource("10_s_charm")])
+item_affinities = Array[Resource]([SubResource("Aff_RelicMastery")])
+starter_items = Array[Resource]([ExtResource("8_s_relic"), ExtResource("9_s_tunic"), ExtResource("10_s_charm")])
 encyclopedia_entry = "Fragile backline caster. Curses enemies with Death Mark so towers finish them faster; raises skeletons from corpses to plug the line. Never tank — keep him behind your soldiers."

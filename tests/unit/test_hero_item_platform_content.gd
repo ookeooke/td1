@@ -1,25 +1,31 @@
 extends GutTest
 
-# Hero Item-First Platform — authored CONTENT validation (vertical slice:
-# Warrior + sword). Asserts the shipped .tres (item tags, weapon profiles,
-# Warrior Sword Mastery) and the HeroAffinityPreview teaching helper against
+# Hero Item-First Platform — authored CONTENT validation. Asserts the
+# shipped .tres (item tags, weapon profiles, per-hero starter weapons,
+# Mastery affinities) and the HeroAffinityPreview teaching helper against
 # the REAL ContentRegistry catalog — integration, not pure helpers.
+#
+# Each hero now has its OWN archetype starter weapon, which dissolved the
+# old "starter sword must be profile-less" exception (ranged heroes no
+# longer auto-equip a sword). EVERY weapon base now carries a profile.
 
 const _WEAPON_BASES := [
 	"base_starter_sword", "base_wooden_sword", "base_iron_sword",
 	"base_steel_sword", "base_elven_blade", "base_hunter_bow",
-	"base_apprentice_staff",
+	"base_apprentice_staff", "base_starter_staff", "base_starter_bow",
+	"base_bone_relic",
 ]
 const _SWORD_BASES := [
 	"base_starter_sword", "base_wooden_sword", "base_iron_sword",
 	"base_steel_sword", "base_elven_blade",
 ]
-# Player-equipped swords carry a WeaponProfileAbility; the universally
-# auto-equipped starter sword deliberately does NOT (it would melee-lock
-# ranged heroes at spawn — Naked Baseline / identity).
+# Every weapon base now carries a WeaponProfileAbility (the exception is
+# gone — each hero has its own archetype starter).
 const _PROFILED_WEAPONS := [
-	"base_wooden_sword", "base_iron_sword", "base_steel_sword",
-	"base_elven_blade", "base_hunter_bow", "base_apprentice_staff",
+	"base_starter_sword", "base_wooden_sword", "base_iron_sword",
+	"base_steel_sword", "base_elven_blade", "base_hunter_bow",
+	"base_apprentice_staff", "base_starter_staff", "base_starter_bow",
+	"base_bone_relic",
 ]
 
 
@@ -69,11 +75,13 @@ func test_profiled_weapons_are_attack_viable() -> void:
 		assert_true(viable, "%s profile attack-viable" % id)
 
 
-func test_starter_sword_has_no_weapon_profile() -> void:
-	# Shared by ALL heroes' starter_items — a melee profile here would
-	# silently melee-lock Mage/Ranger/Necro at spawn (Naked Baseline).
-	assert_null(_weapon_profile(_base("base_starter_sword")),
-		"starter sword stays profile-less (ranged heroes keep their fallback)")
+func test_starter_sword_now_has_melee_profile() -> void:
+	# Exception dissolved: each hero now has its own archetype starter, so
+	# the starter sword is honest — a real melee weapon (Warrior only).
+	var wp: Resource = _weapon_profile(_base("base_starter_sword"))
+	assert_not_null(wp, "starter sword now carries a WeaponProfileAbility")
+	assert_null(wp.projectile_scene, "starter sword is melee (no projectile)")
+	assert_eq(int(wp.weapon_damage_type), 0, "starter sword is PHYSICAL")
 
 
 func test_swords_are_melee_physical_profiles() -> void:
@@ -181,3 +189,98 @@ func test_overview_line_warrior_lists_best_with() -> void:
 	var line: String = HeroAffinityPreview.overview_line("hero_warrior")
 	assert_true(line.to_lower().contains("sword"),
 		"Warrior overview advertises 'Best With: sword'")
+
+
+# ── Per-hero starter weapon identity (the wiring) ───────────────────────
+
+func _hero_starter_weapon(hero_id: String) -> Resource:
+	# First slot-0 (weapon) item in the hero's authored starter_items.
+	var hd: Resource = ContentRegistry.find_hero(hero_id)
+	for it in hd.starter_items:
+		if it != null and "slot" in it and int(it.slot) == 0:
+			return it
+	return null
+
+
+func test_warrior_starter_is_melee() -> void:
+	var wp: Resource = _weapon_profile(_hero_starter_weapon("hero_warrior"))
+	assert_not_null(wp, "Warrior starter weapon has a profile")
+	assert_null(wp.projectile_scene, "Warrior starts MELEE")
+
+
+func test_mage_starter_is_magic_projectile() -> void:
+	var sw: Resource = _hero_starter_weapon("hero_mage")
+	assert_eq(sw.base_id, "base_starter_staff", "Mage starts with a staff, not a sword")
+	var wp: Resource = _weapon_profile(sw)
+	assert_not_null(wp.projectile_scene, "Mage starter fires a projectile")
+	assert_eq(int(wp.weapon_damage_type), 1, "Mage starter is MAGIC")
+
+
+func test_ranger_starter_is_arrow_projectile() -> void:
+	var sw: Resource = _hero_starter_weapon("hero_ranger")
+	assert_eq(sw.base_id, "base_starter_bow", "Ranger starts with a bow")
+	var wp: Resource = _weapon_profile(sw)
+	assert_not_null(wp.projectile_scene, "Ranger starter fires an arrow projectile")
+	assert_eq(int(wp.weapon_damage_type), 0, "Ranger starter is PHYSICAL")
+
+
+func test_necromancer_starter_is_magic_projectile() -> void:
+	var sw: Resource = _hero_starter_weapon("hero_necromancer")
+	assert_eq(sw.base_id, "base_bone_relic", "Necromancer starts with the Bone Relic")
+	var wp: Resource = _weapon_profile(sw)
+	assert_not_null(wp.projectile_scene, "Necro starter fires a soul projectile")
+	assert_eq(int(wp.weapon_damage_type), 1, "Necro starter is MAGIC")
+
+
+func test_no_ranged_hero_starts_with_a_sword() -> void:
+	for hid in ["hero_mage", "hero_ranger", "hero_necromancer"]:
+		var sw: Resource = _hero_starter_weapon(hid)
+		assert_false(sw.item_tags.has("sword"),
+			"%s must NOT auto-equip a sword at spawn (identity / Naked Baseline)" % hid)
+
+
+# ── Mage / Ranger / Necro Mastery I affinities ──────────────────────────
+
+func test_mage_staff_mastery_active_with_starter() -> void:
+	var m: Resource = ContentRegistry.find_hero("hero_mage")
+	assert_eq(m.item_affinities.size(), 1, "Mage has Staff Mastery")
+	var p: Dictionary = HeroAffinityPreview.preview_for_item(
+		"hero_mage", _base("base_starter_staff"), [])
+	assert_true(bool(p.get("active", false)), "Mage + staff ⇒ Staff Mastery active")
+
+
+func test_ranger_bow_mastery_active_with_starter() -> void:
+	var r: Resource = ContentRegistry.find_hero("hero_ranger")
+	assert_eq(r.item_affinities.size(), 1, "Ranger has Bow Mastery")
+	var p: Dictionary = HeroAffinityPreview.preview_for_item(
+		"hero_ranger", _base("base_starter_bow"), [])
+	assert_true(bool(p.get("active", false)), "Ranger + bow ⇒ Bow Mastery active")
+
+
+func test_necro_relic_mastery_active_with_starter() -> void:
+	var n: Resource = ContentRegistry.find_hero("hero_necromancer")
+	assert_eq(n.item_affinities.size(), 1, "Necro has Relic Mastery")
+	var p: Dictionary = HeroAffinityPreview.preview_for_item(
+		"hero_necromancer", _base("base_bone_relic"), [])
+	assert_true(bool(p.get("active", false)), "Necro + relic ⇒ Relic Mastery active")
+
+
+func test_mage_staff_mastery_grants_skill_power() -> void:
+	# Staff Mastery I = +10% skill_power. Mage + starter staff vs no items.
+	var m: Resource = ContentRegistry.find_hero("hero_mage")
+	var bare: Dictionary = BaseHero.compute_stats_for(m, 1, [])
+	var armed: Dictionary = BaseHero.compute_stats_for(m, 1, [_inst("base_starter_staff")])
+	assert_gt(float(armed.get("skill_power", 0.0)), float(bare.get("skill_power", 0.0)),
+		"Staff Mastery raises Mage skill_power above the bare baseline")
+
+
+func test_cross_family_still_allowed_no_mastery() -> void:
+	# Mage equipping a sword: melees (weapon owns attack), but NO Staff
+	# Mastery (off-family) — freedom inside lanes, never broken.
+	var d: Dictionary = BaseHero.compute_stats_for(
+		ContentRegistry.find_hero("hero_mage"), 1, [_inst("base_iron_sword")])
+	assert_false(bool(d.get("uses_projectile", true)),
+		"Mage + sword melees (weapon owns the attack)")
+	var p: Dictionary = HeroAffinityPreview.preview_for_item(
+		"hero_mage", _base("base_iron_sword"), [])
+	assert_false(bool(p.get("active", true)), "no Staff Mastery from a sword")

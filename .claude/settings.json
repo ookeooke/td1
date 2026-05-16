@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(git add items/ItemBase.gd systems/HeroItemAffinityData.gd heroes/HeroData.gd heroes/base_hero.gd autoloads/ContentRegistry.gd tests/unit/test_affinity.gd)",
+      "PowerShell(\"---\")"
+    ]
+  }
+}

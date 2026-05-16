@@ -3752,6 +3752,25 @@ Verification:
 
 ---
 
+## 2026-05-17 - Slightly-better weapon profile art batch
+
+Generated six "slightly better than starter" weapon/profile item pictures as magic-tier-style transparent cutouts. These are art-only future assets because no matching item bases currently exist for these exact IDs:
+
+- `base_short_sword_magic_tier.png` - fast melee short sword.
+- `base_greatsword_magic_tier.png` - slow, high-damage melee greatsword.
+- `base_wand_magic_tier.png` - fast magic projectile wand.
+- `base_longbow_magic_tier.png` - long-range bow.
+- `base_crossbow_magic_tier.png` - slow, high-damage projectile crossbow.
+- `base_trap_kit_magic_tier.png` - future trap-placing kit.
+
+Kept the generated chroma-key source PNGs beside the final cutouts and added matching Godot `.import` metadata. Regenerated/reframed the wand and greatsword once after contact-sheet review so the wand reads less like a staff and the greatsword reads heavier than the short sword.
+
+Verification:
+- Confirmed all six final PNGs are 512x640 and have transparent corners.
+- Reviewed `tmp/imagegen/slightly_better_weapon_contact_sheet.png` at the 120x144 equipment-cell framing.
+
+---
+
 ## 2026-05-14 - Skills page unification + dead-code cleanup
 
 Replaced the split Skills / Talents tabs in `HeroesHub` with one unified Skills page. The active loadout, passive loadout, mod choice, and skill-tree purchases now live on a single embedded screen with a tab-filtered tree list and a right-side inspector. Rejected Gemini's "Pan & Zoom Web" proposal — trees are intentionally curated at ~25 nodes per hero, so a Diablo-Immortal-style list + tabs + side inspector fits the data better than a Path-of-Exile-scale canvas.
@@ -4989,3 +5008,27 @@ Verification: 187/187 GUT green, zero `[ContentRegistry/DRIFT]`, clean
 remains gated behind the multi-mode arbitration design doc. Remaining
 manual step: in-editor visual playtest that the Dragon floats, never
 blocks ground, and prefers flyers (mechanism proven by tests).
+
+---
+
+## 2026-05-17 (cont.) — Dragon review fixes (P1 chase bug, P3 portrait)
+
+Review of the Dragon MVP found two issues; both fixed.
+
+- **P1 (correctness):** a no-block hero still ran melee acquisition.
+  `detection_radius_px=0` resolves to `DEFAULT_MELEE_ENGAGE_RANGE` (160),
+  so `_seek_target` → `_pick_target_in_detection_zone` returned a ground
+  enemy, the Dragon walked at it, `_start_block` failed (cap 0), and it
+  jittered instead of shooting (the melee tier's `return` never reached
+  the RANGED-SHOOT tier). Fix: new `_can_block_ground()` (cap>0 AND
+  `body_profile.blocks_ground`); `_pick_target_in_detection_zone`
+  early-returns null when false → no-block bodies fall straight through
+  to ranged. Default heroes (cap>=1, humanoid) → true → byte-identical.
+- **P3 (polish):** `HeroHudPortrait` gained a `hero_dragon` case (ember
+  crimson + swept-wings glyph) instead of the generic dot/steel.
+- Tests: `_can_block_ground` predicate (Dragon false / Warrior true) +
+  `_pick_target_in_detection_zone` returns null for Dragon (scene-free,
+  the guard short-circuits before `get_tree()`).
+
+189/189 GUT green, zero `[ContentRegistry/DRIFT]`, clean import. Commit
+3bc5440. Air-intercept still gated behind the multi-mode arbitration doc.

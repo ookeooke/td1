@@ -1,0 +1,62 @@
+[gd_resource type="Resource" script_class="HeroData" format=3]
+
+[ext_resource type="Script" path="res://heroes/HeroData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_fireball.tres" id="2_fireball"]
+[ext_resource type="Resource" path="res://heroes/data/skills/skill_meteor.tres" id="3_meteor"]
+[ext_resource type="Resource" path="res://heroes/data/visual_dragon.tres" id="4_vis"]
+[ext_resource type="PackedScene" path="res://projectiles/MageBolt.tscn" id="5_bolt"]
+[ext_resource type="Resource" path="res://items/bases/base_dragon_gem.tres" id="6_s_gem"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_tunic.tres" id="7_s_tunic"]
+[ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="8_s_charm"]
+[ext_resource type="Script" uid="uid://csqyjfw4hrhp5" path="res://systems/HeroBodyProfile.gd" id="9_body"]
+[ext_resource type="Script" uid="uid://cmkn2yydoyx0i" path="res://systems/HeroItemAffinityData.gd" id="10_aff"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="11_mod"]
+
+[sub_resource type="Resource" id="Body_Dragon"]
+script = ExtResource("9_body")
+is_flying = true
+blocks_ground = false
+targeting_priority = 2
+flight_height_px = 36.0
+
+[sub_resource type="Resource" id="DragonMastery_Bonus"]
+script = ExtResource("11_mod")
+ability_id = "dragon_gem_mastery_bonus"
+trigger = 7
+skill_power_pct = 0.10
+
+[sub_resource type="Resource" id="Aff_DragonMastery"]
+script = ExtResource("10_aff")
+affinity_id = "aff_dragon_gem_mastery"
+display_name = "Dragon Mastery"
+required_item_tags = Array[String](["dragon_gem"])
+bonus_abilities = Array[Resource]([SubResource("DragonMastery_Bonus")])
+min_affinity_rank = 1
+
+[resource]
+script = ExtResource("1_data")
+hero_name = "Dragon"
+hero_id = "hero_dragon"
+requires_unlock = true
+power_tier = 3
+max_health = 45
+attack_damage = 1.0
+attack_range = 320.0
+attack_speed = 0.6
+move_speed = 200.0
+armor = 0.1
+magic_resist = 0.25
+damage_type = 1
+respawn_time = 34.0
+max_block_targets = 0
+detection_radius_px = 0.0
+targets_flying = true
+skills = Array[Resource]([ExtResource("2_fireball"), ExtResource("3_meteor")])
+starter_skill_ids = Array[String](["fireball"])
+visual = ExtResource("4_vis")
+projectile_scene = ExtResource("5_bolt")
+body_profile = SubResource("Body_Dragon")
+role_tags = Array[String](["flying", "dragon", "ranged", "anti_air"])
+item_affinities = Array[Resource]([SubResource("Aff_DragonMastery")])
+starter_items = Array[Resource]([ExtResource("6_s_gem"), ExtResource("7_s_tunic"), ExtResource("8_s_charm")])
+encyclopedia_entry = "Flying hunter. Soars above the battlefield, never blocks ground, and rains breath on enemies — prioritising other flyers. Equip dragon gems / scales / claws to grow its power."

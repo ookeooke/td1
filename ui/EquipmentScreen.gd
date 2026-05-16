@@ -132,7 +132,7 @@ const _STATS_LAYOUT: Array = [
 	# Phase 3F stats are legible on gear. skill_power deliberately omitted —
 	# see the comment block below _STATS_LAYOUT for the rationale.
 	["POWER",   [["dps", "DPS"], ["max_health", "Health"]]],
-	["OFFENSE", [["damage", "Damage"], ["attack_speed", "Atk Speed"]]],
+	["OFFENSE", [["damage", "Damage"], ["attack_range", "Range"], ["attack_speed", "Atk Speed"]]],
 	["DEFENSE", [["armor", "Armor"], ["magic_resist", "Magic Resist"], ["health_regen", "HP Regen"]]],
 	["UTILITY", [["move_speed", "Move Speed"], ["xp_gain_mult", "XP Gain"], ["cooldown_reduction", "Cooldown Reduction"]]],
 ]
@@ -999,6 +999,8 @@ func _format_stat_value(key: String, value: float) -> String:
 	match key:
 		"damage":
 			return "%d" % int(round(value))
+		"attack_range":
+			return "%d" % int(round(value))
 		"dps":
 			return "%.1f" % value
 		"max_health":
@@ -1030,7 +1032,7 @@ func _format_stat_value(key: String, value: float) -> String:
 # attack speed. Sign always shown so "+3" vs "-2" reads at a glance.
 func _format_stat_delta(key: String, diff: float) -> String:
 	match key:
-		"damage", "max_health", "move_speed":
+		"damage", "attack_range", "max_health", "move_speed":
 			return "%+d" % int(round(diff))
 		"dps":
 			return "%+.1f" % diff
@@ -1084,6 +1086,12 @@ func _format_item_details(inst) -> String:
 		_resolve_slot_label(clampi(int(base.slot), 0, SLOT_COUNT - 1)),
 	])
 	lines.append("")
+	var weapon_profile: Resource = _find_weapon_profile(base)
+	if weapon_profile != null:
+		var weapon_profile_lines: Array[String] = _format_weapon_profile_lines(weapon_profile)
+		if weapon_profile_lines.size() > 0:
+			lines.append("Weapon Profile:")
+			lines.append_array(weapon_profile_lines)
 	# Implicit abilities (always-on, inherent to the base). Gather body
 	# lines first; only emit the header if at least one non-empty body line
 	# exists — otherwise an item whose abilities all _format_ability_line to
@@ -1149,6 +1157,49 @@ func _format_item_details(inst) -> String:
 	for al in aff_prev.get("lines", []):
 		lines.append("  " + String(al))
 	return "\n".join(lines)
+
+
+func _find_weapon_profile(base: Resource) -> Resource:
+	if base == null or not ("implicit_abilities" in base):
+		return null
+	for ab in base.implicit_abilities:
+		if ab != null and "weapon_attack_range" in ab:
+			return ab
+	return null
+
+
+func _format_weapon_profile_lines(profile: Resource) -> Array[String]:
+	var lines: Array[String] = []
+	if profile == null:
+		return lines
+	var attack_kind: String = "Projectile" if profile.projectile_scene != null else "Melee"
+	var damage_type: String = _weapon_damage_type_name(int(profile.weapon_damage_type))
+	lines.append("  %s - %s" % [attack_kind, damage_type])
+	var range: float = float(profile.weapon_attack_range)
+	if range > 0.0:
+		lines.append("  Range %d" % int(round(range)))
+	var speed: float = float(profile.weapon_attack_speed)
+	if speed > 0.0:
+		lines.append("  Speed %.2f/s" % speed)
+	var base_damage: float = float(profile.weapon_base_damage)
+	if base_damage > 0.0:
+		lines.append("  Base Damage %d" % int(round(base_damage)))
+	var close_damage: float = float(profile.close_attack_damage)
+	if close_damage > 0.0:
+		lines.append("  Close Damage %d" % int(round(close_damage)))
+	return lines
+
+
+func _weapon_damage_type_name(damage_type: int) -> String:
+	match damage_type:
+		DamageCalculator.DamageType.PHYSICAL:
+			return "Physical"
+		DamageCalculator.DamageType.MAGIC:
+			return "Magic"
+		DamageCalculator.DamageType.TRUE:
+			return "True"
+		_:
+			return "Hero Type"
 
 
 func _format_ability_line(ability: Resource) -> String:

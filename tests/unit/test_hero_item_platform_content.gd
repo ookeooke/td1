@@ -65,6 +65,13 @@ func test_bow_and_staff_family_tags() -> void:
 	assert_true(_base("base_apprentice_staff").item_tags.has("staff"), "staff tagged 'staff'")
 
 
+func test_bow_and_staff_icons_are_family_specific() -> void:
+	for id in ["base_starter_bow", "base_hunter_bow"]:
+		assert_eq(String(_base(id).icon_glyph), "bow", "%s uses bow icon glyph" % id)
+	for id in ["base_starter_staff", "base_apprentice_staff"]:
+		assert_eq(String(_base(id).icon_glyph), "staff", "%s uses staff icon glyph" % id)
+
+
 # ── Phase 1: weapon profiles ────────────────────────────────────────────
 
 func test_profiled_weapons_are_attack_viable() -> void:
@@ -147,6 +154,8 @@ func test_mage_with_sword_melees_in_display() -> void:
 	var d: Dictionary = BaseHero.compute_stats_for(m, 1, [_inst("base_iron_sword")])
 	assert_false(bool(d.get("uses_projectile", true)),
 		"Mage equipping a sword MELEES (sword profile, null projectile)")
+	assert_almost_eq(float(d.get("attack_range", 0.0)), 75.0, 0.01,
+		"Mage+sword range comes from the sword profile")
 
 
 func test_mage_with_bow_fires_projectile_in_display() -> void:
@@ -157,6 +166,8 @@ func test_mage_with_bow_fires_projectile_in_display() -> void:
 	var d: Dictionary = BaseHero.compute_stats_for(m, 1, [_inst("base_hunter_bow")])
 	assert_true(bool(d.get("uses_projectile", false)),
 		"Mage equipping a bow FIRES the bow (bow profile projectile)")
+	assert_almost_eq(float(d.get("attack_range", 0.0)), 320.0, 0.01,
+		"Mage+bow range comes from the bow profile")
 
 
 # ── Phase 3: HeroAffinityPreview teaching helper ────────────────────────
@@ -284,3 +295,95 @@ func test_cross_family_still_allowed_no_mastery() -> void:
 	var p: Dictionary = HeroAffinityPreview.preview_for_item(
 		"hero_mage", _base("base_iron_sword"), [])
 	assert_false(bool(p.get("active", true)), "no Staff Mastery from a sword")
+
+
+# ── Dragon — flying archetype (system stress-test, single-mode MVP) ─────
+
+var _dragon_spawned: Array[Node] = []
+
+
+func after_each() -> void:
+	for n in _dragon_spawned:
+		if is_instance_valid(n):
+			n.free()
+	_dragon_spawned.clear()
+
+
+func _dragon() -> Resource:
+	return ContentRegistry.find_hero("hero_dragon")
+
+
+func _enemy(is_flying: bool) -> BaseEnemy:
+	var e := BaseEnemy.new()
+	var d := EnemyData.new()
+	d.is_flying = is_flying
+	d.max_health = 10
+	e.data = d
+	e.state = BaseEnemy.State.WALKING
+	_dragon_spawned.append(e)
+	return e
+
+
+func test_dragon_exists_and_is_unlock_gated() -> void:
+	var dr: Resource = _dragon()
+	assert_not_null(dr, "hero_dragon auto-registered from heroes/data/")
+	assert_true(bool(dr.requires_unlock), "Dragon is a premium (unlock-gated) hero")
+
+
+func test_dragon_body_is_flying_no_ground_block() -> void:
+	var dr: Resource = _dragon()
+	var bp: Resource = dr.get_body_profile()
+	assert_true(bp.is_flying, "Dragon body is flying")
+	assert_false(bp.blocks_ground, "Dragon never blocks ground")
+	assert_eq(int(dr.max_block_targets), 0,
+		"max_block_targets=0 — the real never-block mechanism (assert-enforced)")
+	assert_true(dr.role_tags.has("flying"), "role_tags advertises 'flying'")
+
+
+func test_dragon_targeting_is_air_first() -> void:
+	var bp: Resource = _dragon().get_body_profile()
+	assert_eq(int(bp.targeting_priority),
+		HeroBodyProfile.TargetingPriority.AIR_FIRST, "Dragon prefers flyers")
+
+
+func test_dragon_never_enters_ground_block() -> void:
+	var h := BaseHero.new()
+	h.data = _dragon()
+	_dragon_spawned.append(h)
+	var ground: BaseEnemy = _enemy(false)
+	assert_true(ground.is_engageable_ground(), "control: ground enemy engageable")
+	assert_false(h._start_block(ground),
+		"Dragon (max_block_targets=0) never melee-blocks ground")
+
+
+func test_dragon_air_first_bias_prefers_flyer() -> void:
+	var h := BaseHero.new()
+	h.data = _dragon()
+	_dragon_spawned.append(h)
+	assert_eq(h._targeting_bias(_enemy(true)), 0, "flyer unbiased (preferred)")
+	assert_gt(h._targeting_bias(_enemy(false)), 0,
+		"ground de-prioritized vs flyers (AIR_FIRST)")
+
+
+func test_dragon_starter_is_magic_projectile() -> void:
+	var sw: Resource = _hero_starter_weapon("hero_dragon")
+	assert_eq(sw.base_id, "base_dragon_gem", "Dragon starts with the Ember Gem")
+	var wp: Resource = _weapon_profile(sw)
+	assert_not_null(wp.projectile_scene, "Dragon breath is a projectile")
+	assert_eq(int(wp.weapon_damage_type), 1, "Dragon breath is MAGIC")
+
+
+func test_dragon_mastery_active_with_gem() -> void:
+	assert_eq(_dragon().item_affinities.size(), 1, "Dragon has Dragon Mastery")
+	var p: Dictionary = HeroAffinityPreview.preview_for_item(
+		"hero_dragon", _base("base_dragon_gem"), [])
+	assert_true(bool(p.get("active", false)), "Dragon + gem ⇒ Dragon Mastery active")
+
+
+func test_dragon_fallback_attack_viable() -> void:
+	# Naked-Baseline-style guard parity: every hero's no-weapon fallback
+	# must still attack. Dragon: projectile + range + speed > 0.
+	var dr: Resource = _dragon()
+	var viable: bool = dr.attack_damage > 0.0 and dr.attack_speed > 0.0 \
+		and (dr.projectile_scene != null or dr.attack_range > 0.0)
+	assert_true(viable, "Dragon fallback attack-viable")

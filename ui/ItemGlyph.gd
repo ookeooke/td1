@@ -26,6 +26,11 @@ static func draw(canvas: CanvasItem, glyph: String, center: Vector2, radius: flo
 			_draw_sword_steel(canvas, center, radius, fill_color)
 		"sword_elven":
 			_draw_sword_elven(canvas, center, radius, fill_color)
+		# Ranged weapons.
+		"bow":
+			_draw_bow(canvas, center, radius, fill_color)
+		"staff":
+			_draw_staff(canvas, center, radius, fill_color)
 		# Armor — generic "shield" maps to chainmail so legacy bases still
 		# render something armor-like rather than a literal shield.
 		"shield", "armor_chainmail":
@@ -402,6 +407,59 @@ static func _draw_sword_elven(canvas: CanvasItem, c: Vector2, r: float, col: Col
 	canvas.draw_polyline(PackedVector2Array(pommel + PackedVector2Array([pommel[0]])), outline, 1.3, true)
 	# Embedded gem — small bright dot near the center of the pommel.
 	canvas.draw_circle(c + Vector2(0, r * 0.75), r * 0.04, col.lightened(0.6))
+
+
+# --- RANGED WEAPONS ----------------------------------------------------------
+
+static func _draw_bow(canvas: CanvasItem, c: Vector2, r: float, col: Color) -> void:
+	var outline: Color = _outline_color(col)
+	var string_col: Color = Color(0.88, 0.82, 0.66, 1.0)
+	var top: Vector2 = c + Vector2(-r * 0.20, -r * 0.90)
+	var mid: Vector2 = c + Vector2(r * 0.28, 0.0)
+	var bot: Vector2 = c + Vector2(-r * 0.20, r * 0.90)
+	var bow_curve := PackedVector2Array([
+		top,
+		c + Vector2(r * 0.45, -r * 0.45),
+		mid,
+		c + Vector2(r * 0.45, r * 0.45),
+		bot,
+	])
+	canvas.draw_polyline(bow_curve, outline, maxf(3.0, r * 0.18), true)
+	canvas.draw_polyline(bow_curve, col.lightened(0.18), maxf(1.8, r * 0.10), true)
+	canvas.draw_line(top, bot, string_col, maxf(1.0, r * 0.045))
+	var shaft_a: Vector2 = c + Vector2(-r * 0.70, r * 0.05)
+	var shaft_b: Vector2 = c + Vector2(r * 0.75, r * 0.05)
+	canvas.draw_line(shaft_a, shaft_b, Color(0.72, 0.58, 0.38, 1.0), maxf(1.4, r * 0.07))
+	var head := PackedVector2Array([
+		shaft_b + Vector2(r * 0.18, 0.0),
+		shaft_b + Vector2(-r * 0.10, -r * 0.13),
+		shaft_b + Vector2(-r * 0.10, r * 0.13),
+	])
+	canvas.draw_colored_polygon(head, Color(0.86, 0.86, 0.82, 1.0))
+	canvas.draw_polyline(PackedVector2Array(head + PackedVector2Array([head[0]])), outline, 1.0, true)
+	canvas.draw_line(shaft_a, shaft_a + Vector2(-r * 0.16, -r * 0.12), Color(0.45, 0.75, 0.40, 1.0), 1.2)
+	canvas.draw_line(shaft_a, shaft_a + Vector2(-r * 0.16, r * 0.12), Color(0.45, 0.75, 0.40, 1.0), 1.2)
+
+
+static func _draw_staff(canvas: CanvasItem, c: Vector2, r: float, col: Color) -> void:
+	var outline: Color = _outline_color(col)
+	var wood: Color = Color(0.50, 0.33, 0.18, 1.0)
+	var top: Vector2 = c + Vector2(r * 0.20, -r * 0.85)
+	var bot: Vector2 = c + Vector2(-r * 0.35, r * 0.85)
+	canvas.draw_line(top + Vector2(1.5, 1.5), bot + Vector2(1.5, 1.5), outline, maxf(3.0, r * 0.16))
+	canvas.draw_line(top, bot, wood.lightened(0.12), maxf(2.0, r * 0.10))
+	canvas.draw_circle(top, r * 0.18, Color(0.78, 0.46, 0.22, 1.0))
+	canvas.draw_arc(top, r * 0.18, 0.0, TAU, 14, outline, 1.1, true)
+	var gem_center: Vector2 = top + Vector2(r * 0.02, -r * 0.22)
+	var gem := PackedVector2Array([
+		gem_center + Vector2(0, -r * 0.34),
+		gem_center + Vector2(r * 0.25, 0),
+		gem_center + Vector2(0, r * 0.34),
+		gem_center + Vector2(-r * 0.25, 0),
+	])
+	canvas.draw_colored_polygon(gem, col.lightened(0.28))
+	canvas.draw_polyline(PackedVector2Array(gem + PackedVector2Array([gem[0]])), outline, 1.1, true)
+	canvas.draw_circle(gem_center + Vector2(-r * 0.06, -r * 0.08), r * 0.06, Color(0.92, 0.95, 1.0, 0.75))
 
 
 # --- ARMOR VARIANTS ----------------------------------------------------------

@@ -139,6 +139,7 @@ func _validate_ids() -> void:
 	_assert_affinities()
 	_assert_curves()
 	_assert_weapon_profiles()
+	_assert_body_profiles()
 
 
 # Levels are sub_resources inside level_list.tres (not standalone files), so
@@ -250,6 +251,35 @@ func _assert_weapon_profiles() -> void:
 				if hd != null and "attack_damage" in hd and ab.weapon_base_damage > 0.0 \
 						and ab.weapon_base_damage < hd.attack_damage:
 					print("[ContentRegistry/DRIFT] weapon \"%s\" damage %.2f < restricted hero \"%s\" base %.2f (regression)" % [bid, ab.weapon_base_damage, rid, hd.attack_damage])
+
+
+# Phase 4 — body-profile consistency (Preventive Bug Rule 4: declarative
+# flags must agree with the real mechanism, never a 2nd source of truth).
+# A flying body must NOT block ground, and the only working never-block
+# mechanism is HeroData.max_block_targets == 0 — assert the declaration
+# matches it. Also assert role_tags agree with the profile. Warnings only.
+func _assert_body_profiles() -> void:
+	for h in heroes:
+		if h == null or not ("body_profile" in h):
+			continue
+		var bp = h.body_profile
+		if bp == null:
+			continue  # null ⇒ DEFAULT_HUMANOID, always valid
+		var hid: String = h.hero_id if "hero_id" in h else "?"
+		if not ("is_flying" in bp):
+			print("[ContentRegistry/DRIFT] hero \"%s\" body_profile is not a HeroBodyProfile" % hid)
+			continue
+		if bp.is_flying and bp.blocks_ground:
+			print("[ContentRegistry/DRIFT] hero \"%s\" body is flying but blocks_ground=true (contradiction)" % hid)
+		if bp.is_flying and "max_block_targets" in h and int(h.max_block_targets) != 0:
+			print("[ContentRegistry/DRIFT] hero \"%s\" is flying but max_block_targets=%d (must be 0 — the real never-block mechanism)" % [hid, int(h.max_block_targets)])
+		if not bp.blocks_ground and "max_block_targets" in h and int(h.max_block_targets) != 0:
+			print("[ContentRegistry/DRIFT] hero \"%s\" blocks_ground=false but max_block_targets=%d (must be 0)" % [hid, int(h.max_block_targets)])
+		var tags: Array = h.role_tags if "role_tags" in h else []
+		if bp.is_flying and not tags.has("flying"):
+			print("[ContentRegistry/DRIFT] hero \"%s\" body is flying but role_tags lacks \"flying\"" % hid)
+		if (not bp.is_flying) and tags.has("flying"):
+			print("[ContentRegistry/DRIFT] hero \"%s\" role_tags has \"flying\" but body is not flying" % hid)
 
 
 func _assert_ids(arr: Array, field: String) -> void:

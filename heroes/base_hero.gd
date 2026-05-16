@@ -557,6 +557,30 @@ func _profile_close_damage_type() -> int:
 	return data.close_attack_damage_type if data != null else -1
 
 
+# Phase 4 — body-profile targeting bias. Added to an enemy's claim count in
+# the existing pickers' comparator so a de-prioritized class loses ties but
+# is still selectable when alone (bias < the 1<<30 "no candidate" sentinel).
+# NEAREST (default / DEFAULT_HUMANOID) ⇒ always 0 ⇒ byte-identical order.
+# Pure comparator tweak: does NOT touch is_engageable_ground() or the
+# targets_flying gate (Blocker invariants #1, #2 preserved verbatim).
+const _TARGETING_DEPRIORITIZE: int = 1 << 20
+
+func _targeting_bias(enemy) -> int:
+	if data == null:
+		return 0
+	var tp: int = data.get_body_profile().targeting_priority
+	if tp == HeroBodyProfile.TargetingPriority.NEAREST:
+		return 0
+	if enemy == null or not (enemy is BaseEnemy) or enemy.data == null:
+		return 0
+	var flying: bool = enemy.data.is_flying
+	if tp == HeroBodyProfile.TargetingPriority.GROUND_FIRST and flying:
+		return _TARGETING_DEPRIORITIZE
+	if tp == HeroBodyProfile.TargetingPriority.AIR_FIRST and not flying:
+		return _TARGETING_DEPRIORITIZE
+	return 0
+
+
 # Phase 2 — hero affinity rank: pure function of hero level via the level
 # curve. Unauthored curve ⇒ rank 1 at every level (rank-1 affinities
 # always-on, higher ranks dormant — byte-identical to Phase 1 default).
@@ -1632,10 +1656,11 @@ func _pick_shootable_from(enemies: Array) -> Node:
 		var bc: int = enemy.get_claim_count() if enemy.has_method("get_claim_count") else enemy._blockers.size()
 		var prog: float = enemy.get_path_progress() if enemy.has_method("get_path_progress") else 0.0
 		var d2: float = global_position.distance_squared_to(enemy.global_position)
-		if bc < best_block \
-				or (bc == best_block and prog > best_progress) \
-				or (bc == best_block and prog == best_progress and d2 < best_d2):
-			best_block = bc
+		var pri: int = bc + _targeting_bias(enemy)
+		if pri < best_block \
+				or (pri == best_block and prog > best_progress) \
+				or (pri == best_block and prog == best_progress and d2 < best_d2):
+			best_block = pri
 			best_progress = prog
 			best_d2 = d2
 			best = enemy
@@ -1667,10 +1692,11 @@ func _pick_split_target_in_area(area: Area2D) -> Node:
 		var bc: int = enemy.get_claim_count() if enemy.has_method("get_claim_count") else enemy._blockers.size()
 		var prog: float = enemy.get_path_progress() if enemy.has_method("get_path_progress") else 0.0
 		var d2: float = global_position.distance_squared_to(enemy.global_position)
-		if bc < best_block \
-				or (bc == best_block and prog > best_progress) \
-				or (bc == best_block and prog == best_progress and d2 < best_d2):
-			best_block = bc
+		var pri: int = bc + _targeting_bias(enemy)
+		if pri < best_block \
+				or (pri == best_block and prog > best_progress) \
+				or (pri == best_block and prog == best_progress and d2 < best_d2):
+			best_block = pri
 			best_progress = prog
 			best_d2 = d2
 			best = enemy
@@ -1784,10 +1810,11 @@ func _pick_target_in_detection_zone() -> Node:
 		var bc: int = enemy.get_claim_count() if enemy.has_method("get_claim_count") else enemy._blockers.size()
 		var prog: float = enemy.get_path_progress() if enemy.has_method("get_path_progress") else 0.0
 		var d2: float = global_position.distance_squared_to(enemy.global_position)
-		if bc < best_block \
-				or (bc == best_block and prog > best_progress) \
-				or (bc == best_block and prog == best_progress and d2 < best_d2):
-			best_block = bc
+		var pri: int = bc + _targeting_bias(enemy)
+		if pri < best_block \
+				or (pri == best_block and prog > best_progress) \
+				or (pri == best_block and prog == best_progress and d2 < best_d2):
+			best_block = pri
 			best_progress = prog
 			best_d2 = d2
 			best = enemy

@@ -5,6 +5,8 @@ class_name HeroData
 # Resolved by get_level_curve() when level_curve is unauthored. One shared
 # read-only instance; never mutate.
 static var _DEFAULT_LEVEL_CURVE: HeroLevelCurveData = null
+# Phase 4 — shared default body profile (ground, blocks, NEAREST targeting).
+static var _DEFAULT_BODY_PROFILE: HeroBodyProfile = null
 
 
 # Authored curve, or the shared all-defaults curve (byte-identical to the
@@ -15,6 +17,16 @@ func get_level_curve() -> HeroLevelCurveData:
 	if _DEFAULT_LEVEL_CURVE == null:
 		_DEFAULT_LEVEL_CURVE = HeroLevelCurveData.new()
 	return _DEFAULT_LEVEL_CURVE
+
+
+# Authored body profile, or the shared all-defaults humanoid (ground,
+# blocks, NEAREST targeting — byte-identical to pre-Phase-4).
+func get_body_profile() -> HeroBodyProfile:
+	if body_profile is HeroBodyProfile:
+		return body_profile
+	if _DEFAULT_BODY_PROFILE == null:
+		_DEFAULT_BODY_PROFILE = HeroBodyProfile.new()
+	return _DEFAULT_BODY_PROFILE
 
 # Phase 18: hero stats. XP / leveling fields are present so Phase 19 can
 # read them without re-saving every .tres, but unused this phase.
@@ -146,6 +158,9 @@ func get_level_curve() -> HeroLevelCurveData:
 # affinity-rank schedule). Null ⇒ DEFAULT_LEVEL_CURVE, whose values equal
 # the pre-Phase-2 hardcoded numbers (byte-identical).
 @export var level_curve: Resource = null
+# Phase 4 — body/movement platform. Null ⇒ DEFAULT_HUMANOID (ground, blocks,
+# NEAREST targeting = byte-identical to pre-Phase-4).
+@export var body_profile: Resource = null
 
 @export_multiline var encyclopedia_entry: String = ""
 

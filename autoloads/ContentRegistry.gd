@@ -137,6 +137,7 @@ func _validate_ids() -> void:
 	_assert_ids(affix_pools, "pool_id")
 	_assert_level_ids()
 	_assert_affinities()
+	_assert_curves()
 
 
 # Levels are sub_resources inside level_list.tres (not standalone files), so
@@ -188,6 +189,33 @@ func _assert_affinities() -> void:
 			for ability in aff.bonus_abilities:
 				if ability == null or not ("trigger" in ability):
 					print("[ContentRegistry/DRIFT] affinity \"%s\" bonus_abilities has a non-AbilityData entry" % aid)
+
+
+# Phase 2 — HeroLevelCurveData lives on HeroData.level_curve. Assert authored
+# curves are sane so a negative growth or a slot-unlock list missing level 1
+# surfaces at boot, not as silently-wrong progression. Warnings only.
+func _assert_curves() -> void:
+	for h in heroes:
+		if h == null or not ("level_curve" in h):
+			continue
+		var lc = h.level_curve
+		if lc == null:
+			continue  # null ⇒ default curve, always valid
+		var hid: String = h.hero_id if "hero_id" in h else "?"
+		if not ("health_pct_per_level" in lc):
+			print("[ContentRegistry/DRIFT] hero \"%s\" level_curve is not a HeroLevelCurveData" % hid)
+			continue
+		if lc.health_pct_per_level < 0.0 or lc.damage_pct_per_level < 0.0 \
+				or lc.attack_speed_pct_per_level < 0.0:
+			print("[ContentRegistry/DRIFT] hero \"%s\" level_curve has negative growth" % hid)
+		if lc.active_slot_unlock_levels.is_empty() or int(lc.active_slot_unlock_levels[0]) != 1:
+			print("[ContentRegistry/DRIFT] hero \"%s\" active_slot_unlock_levels must start at 1" % hid)
+		var prev: int = -1
+		for t in lc.active_slot_unlock_levels:
+			if int(t) < prev:
+				print("[ContentRegistry/DRIFT] hero \"%s\" active_slot_unlock_levels not sorted" % hid)
+				break
+			prev = int(t)
 
 
 func _assert_ids(arr: Array, field: String) -> void:

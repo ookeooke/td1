@@ -420,6 +420,16 @@ func add_hero_skill_points(hero_id: String, count: int) -> void:
 # write the new skill points before hero_progress.level/xp catch up — a
 # process kill in that window leaves the player with phantom points and
 # stale XP/level on next boot.
+# Phase 2 — points granted when `hero_id` reaches `lvl`, read from the
+# hero's level curve. Default curve ⇒ +1 (historical). Resolved per-call so
+# no per-hero state and no save reshape (CORE RULE 20).
+func _points_for_level(hero_id: String, lvl: int) -> int:
+	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
+	if hero_data == null or not hero_data.has_method("get_level_curve"):
+		return 1
+	return hero_data.get_level_curve().points_for_level(lvl)
+
+
 func _grant_skill_points_silent(hero_id: String, count: int) -> void:
 	if hero_id == "" or count == 0:
 		return
@@ -547,8 +557,9 @@ func sync_hero_progression_to_level(hero_id: String) -> void:
 		# write below to land in the SAME save as the granted points, not a
 		# mid-loop flush that could leave the cursor stale on a process kill.
 		if cursor > 1:
-			_grant_skill_points_silent(hero_id, 1)
-			granted += 1
+			var pts: int = _points_for_level(hero_id, cursor)
+			_grant_skill_points_silent(hero_id, pts)
+			granted += pts
 		_auto_purchase_slot_unlocks_at_level(hero_id, cursor)
 	entry["last_synced_level"] = cursor
 	if granted > 0:
@@ -635,11 +646,11 @@ func add_hero_xp(hero_id: String, amount: int) -> int:
 		xp -= needed
 		lvl += 1
 		EventBus.hero_leveled_up.emit(lvl)
-		# Phase 1 — one hero point per level-up. Granted via the silent
-		# variant so we don't flush a partial save while entry["level"] /
-		# ["xp"] are still mid-loop. The single _persist() after the loop
-		# body commits the consistent state.
-		_grant_skill_points_silent(hero_id, 1)
+		# Phase 1/2 — per-level hero points from the hero's level curve
+		# (default ⇒ +1, historical). Granted via the silent variant so we
+		# don't flush a partial save while entry["level"] / ["xp"] are still
+		# mid-loop. The single _persist() after the loop commits consistently.
+		_grant_skill_points_silent(hero_id, _points_for_level(hero_id, lvl))
 		# Phase 3P — auto-purchase SLOT_UNLOCK nodes whose threshold is now met.
 		# Slot caps already gate by hero level in LoadoutState; this just keeps
 		# the skill-tree UI visibly in sync (the player sees "★ Slot Unlocked"

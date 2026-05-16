@@ -477,11 +477,13 @@ func recompute_stats() -> void:
 	current_stats = apply_modifiers(base_stats, _modifier_sources)
 
 
-# Phase 1 — hero affinity rank. Pure function of hero level; Phase 2 wires the
-# HeroLevelCurveData thresholds here. Until then every hero is rank 1, so
-# rank-1 affinities are always-on and higher ranks are dormant (default-safe).
+# Phase 2 — hero affinity rank: pure function of hero level via the level
+# curve. Unauthored curve ⇒ rank 1 at every level (rank-1 affinities
+# always-on, higher ranks dormant — byte-identical to Phase 1 default).
 func _affinity_rank() -> int:
-	return 1
+	if data == null or not data.has_method("get_level_curve"):
+		return 1
+	return data.get_level_curve().affinity_rank_for_level(level)
 
 
 # Phase 1 — grant/revoke HeroItemAffinityData bonus abilities for the current
@@ -557,8 +559,13 @@ static func compute_base_stats(hero_data: HeroData, level_arg: int) -> Dictionar
 	# wide upgrade multipliers baked in). No modifier stack here.
 	if hero_data == null:
 		return {}
-	var hp_mult: float = 1.0 + float(level_arg - 1) * LEVEL_HEALTH_GROWTH
-	var dmg_mult: float = 1.0 + float(level_arg - 1) * LEVEL_DAMAGE_GROWTH
+	# Phase 2 — growth rates come from the hero's level curve. Unauthored
+	# curve returns the same constants below (byte-identical). The consts are
+	# retained as the documented default source (HeroLevelCurveData defaults
+	# mirror them).
+	var _lc: HeroLevelCurveData = hero_data.get_level_curve()
+	var hp_mult: float = 1.0 + float(level_arg - 1) * _lc.health_pct_per_level
+	var dmg_mult: float = 1.0 + float(level_arg - 1) * _lc.damage_pct_per_level
 	# Phase 3R-followup-3 — debug slider overrides. Identity in release builds
 	# (BalanceOverrides.get_hero_mult returns 1.0 / 0.0 when is_active is false).
 	var hid: String = String(hero_data.hero_id)

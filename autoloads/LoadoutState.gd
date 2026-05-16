@@ -149,9 +149,15 @@ func get_active_slot_cap(hero_id: String) -> int:
 	if hero_id == "":
 		return ACTIVE_SLOT_UNLOCK_LEVELS.size()  # default to max for safety
 	var lvl: int = MetaProgression.get_hero_level(hero_id)
+	# Phase 2 — unlock levels come from the hero's level curve; unauthored
+	# curve returns [1, 8] == ACTIVE_SLOT_UNLOCK_LEVELS (byte-identical).
+	var thresholds: Array = ACTIVE_SLOT_UNLOCK_LEVELS
+	var hero_data: Resource = ContentRegistry.find_hero(hero_id)
+	if hero_data != null and hero_data.has_method("get_level_curve"):
+		thresholds = hero_data.get_level_curve().active_slot_unlock_levels
 	var cap: int = 0
-	for threshold in ACTIVE_SLOT_UNLOCK_LEVELS:
-		if lvl >= threshold:
+	for threshold in thresholds:
+		if lvl >= int(threshold):
 			cap += 1
 	return maxi(1, cap)
 

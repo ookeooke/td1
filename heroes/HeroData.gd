@@ -1,6 +1,21 @@
 extends Resource
 class_name HeroData
 
+# Phase 2 — shared default level curve (all-historical-defaults instance).
+# Resolved by get_level_curve() when level_curve is unauthored. One shared
+# read-only instance; never mutate.
+static var _DEFAULT_LEVEL_CURVE: HeroLevelCurveData = null
+
+
+# Authored curve, or the shared all-defaults curve (byte-identical to the
+# pre-Phase-2 hardcoded numbers). Always returns a valid HeroLevelCurveData.
+func get_level_curve() -> HeroLevelCurveData:
+	if level_curve is HeroLevelCurveData:
+		return level_curve
+	if _DEFAULT_LEVEL_CURVE == null:
+		_DEFAULT_LEVEL_CURVE = HeroLevelCurveData.new()
+	return _DEFAULT_LEVEL_CURVE
+
 # Phase 18: hero stats. XP / leveling fields are present so Phase 19 can
 # read them without re-saving every .tres, but unused this phase.
 
@@ -127,6 +142,10 @@ class_name HeroData
 #   source of truth (Preventive Bug Rule 4).
 @export var item_affinities: Array[Resource] = []
 @export var role_tags: Array[String] = []
+# Phase 2 — per-hero level pacing (growth + skill-point + slot-unlock +
+# affinity-rank schedule). Null ⇒ DEFAULT_LEVEL_CURVE, whose values equal
+# the pre-Phase-2 hardcoded numbers (byte-identical).
+@export var level_curve: Resource = null
 
 @export_multiline var encyclopedia_entry: String = ""
 

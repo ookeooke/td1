@@ -28,6 +28,7 @@ armor = 0.0
 respawn_time = 28.0
 max_block_targets = 1
 detection_radius_px = 100.0
+guard_back_px = 70.0
 close_attack_damage = 0.6
 close_attack_speed = 0.9
 close_attack_damage_type = 0

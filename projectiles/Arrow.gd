@@ -193,10 +193,14 @@ func _flight_wander_offset(progress: float, to_target: Vector2) -> Vector2:
 		+ sin(p * (_wander_freq_a * 2.15) + _wander_phase_b) * 0.28
 	)
 	var vertical_wave: float = sin(p * _wander_freq_b + _wander_phase_b)
-	return (
+	var off: Vector2 = (
 		side * side_wave * flight_wander_amplitude * fade
 		+ Vector2(0.0, vertical_wave * flight_wander_vertical * fade)
 	)
+	if shape == Shape.NECRO_BOLT:
+		var surge: float = sin(p * 2.2 + _wander_phase_a * 0.7) * 2.0 * fade
+		off += dir * surge
+	return off
 
 
 func _on_hit() -> void:
@@ -309,16 +313,19 @@ func _spawn_impact_vfx(impact_pos: Vector2) -> void:
 # Tiny inner VFX classes — kept here so the shape→effect dispatch is local
 # to Arrow.gd and we don't fan out a new .gd per impact variant.
 class _NecroLaunchVFX extends Node2D:
-	const LIFE: float = 0.18
+	const LIFE: float = 0.22
 	var _t: float = LIFE
 	var _color: Color = Color(0.55, 0.18, 0.75)
 	var _aim_angle: float = 0.0
 	var _spokes: Array = []
 	var _spoke_reach: Array = []
+	var _wisp_angles: Array = []
 	func _ready() -> void:
-		for i in 5:
-			_spokes.append(randf_range(-0.75, 0.75))
+		for i in 4:
+			_spokes.append(randf_range(-0.62, 0.62))
 			_spoke_reach.append(randf_range(0.85, 1.12))
+		for i in 3:
+			_wisp_angles.append(randf_range(0.0, TAU))
 	func _process(delta: float) -> void:
 		_t -= delta
 		if _t <= 0.0:
@@ -328,18 +335,31 @@ class _NecroLaunchVFX extends Node2D:
 	func _draw() -> void:
 		var k: float = clampf(1.0 - _t / LIFE, 0.0, 1.0)
 		var alpha: float = 1.0 - k
+		var aim: Vector2 = Vector2.from_angle(_aim_angle)
+		var side: Vector2 = Vector2.from_angle(_aim_angle + PI * 0.5)
 		var halo: Color = _color
-		halo.a = alpha * 0.46
-		draw_circle(Vector2.ZERO, lerpf(8.0, 22.0, k), halo)
-		var core: Color = Color(0.92, 0.76, 1.0, alpha * 0.78)
-		draw_circle(Vector2.ZERO, lerpf(5.0, 2.0, k), core)
+		halo.a = alpha * 0.30
+		draw_circle(Vector2.ZERO, lerpf(11.0, 4.0, k), halo)
+		var rune: Color = _color.lerp(Color(0.72, 1.0, 0.78), 0.32)
+		rune.a = alpha * 0.34
+		draw_arc(Vector2.ZERO, lerpf(13.0, 4.0, k), _aim_angle - PI * 0.82, _aim_angle + PI * 0.82, 18, rune, lerpf(1.3, 0.45, k), false)
+		draw_arc(Vector2.ZERO, lerpf(8.0, 2.0, k), _aim_angle + PI * 0.20, _aim_angle + PI * 1.55, 10, rune, lerpf(0.9, 0.35, k), false)
+		var core: Color = Color(0.92, 0.76, 1.0, alpha * 0.62)
+		draw_circle(aim * lerpf(-2.0, 5.0, k), lerpf(4.0, 1.4, k), core)
+		for i in range(_wisp_angles.size()):
+			var a: float = float(_wisp_angles[i]) + k * 2.6
+			var pull: float = 1.0 - k
+			var p: Vector2 = Vector2(cos(a), sin(a) * 0.55) * lerpf(13.0, 3.0, k)
+			p += aim * k * 5.0 + side * sin(k * PI + float(i)) * pull
+			var wc: Color = Color(0.68, 1.0, 0.70, alpha * 0.32)
+			draw_circle(p, lerpf(1.6, 0.7, k), wc)
 		for i in range(_spokes.size()):
 			var off: float = float(_spokes[i])
 			var dir: Vector2 = Vector2.from_angle(_aim_angle + float(off))
-			var reach: float = lerpf(8.0, 34.0, k) * float(_spoke_reach[i])
+			var reach: float = lerpf(4.0, 22.0, k) * float(_spoke_reach[i])
 			var flame: Color = _color.lerp(Color(0.72, 1.0, 0.78), 0.18)
-			flame.a = alpha * 0.78
-			draw_line(dir * 4.0, dir * reach, flame, lerpf(4.0, 1.0, k), false)
+			flame.a = alpha * 0.38
+			draw_line(dir * 3.0, dir * reach, flame, lerpf(2.0, 0.6, k), false)
 
 
 class _NecroImpactVFX extends Node2D:
@@ -518,6 +538,8 @@ func _draw() -> void:
 		else:
 			for pw in _trail:
 				points_local.append((pw - global_position).rotated(inv_rot))
+		if shape == Shape.NECRO_BOLT:
+			_draw_necro_trail_underlay(points_local)
 		# Per-segment color/alpha/width by position along the trail. frac = 0
 		# at the tail, 1.0 at the head — alpha and width grow toward the body.
 		var n_pts: int = points_local.size()
@@ -526,6 +548,8 @@ func _draw() -> void:
 			var col: Color = col_edge.lerp(col_core, frac)
 			col.a *= frac * 0.6 * _trail_alpha_mult
 			draw_line(points_local[i], points_local[i + 1], col, lerpf(3.0, 10.0, frac) * _trail_width_mult, false)
+		if shape == Shape.NECRO_BOLT:
+			_draw_necro_trail_overlay(points_local)
 	# Glow halo under the body — flat alpha circle in proj_color.
 	if glow_enabled:
 		var glow_col: Color = proj_color
@@ -618,81 +642,148 @@ func _draw_hero_arrow_shape() -> void:
 
 
 func _draw_arcane_bolt_shape() -> void:
-	# Wand-fired arcane bolt — distinct silhouette from the soft round
-	# MageBolt (tower) and from any future ORB users. Reads as a charged,
-	# directional spell: an elongated capsule of energy with a bright white
-	# core, two small orbiting motes, and a faint crackle of rune lines.
-	# Symmetric around the long axis so rotation looks deliberate.
-	var t: float = _time * 6.0
+	# Wand-fired arcane bolt — distinct from soft round ORB users. Reads as a
+	# charged, directional spell: a faceted shard with a bright white core,
+	# cyan crackle, and a few disciplined rune sparks.
+	# Mage basic attacks now use this as a shard: sharp silhouette first,
+	# tiny rune sparks second.
+	var t: float = _time * 7.5
+	var pulse: float = 1.0 + sin(t) * 0.055
 	# Outer halo — proj_color, soft.
 	var halo: Color = proj_color
-	halo.a = 0.30
-	draw_circle(Vector2.ZERO, 16.0, halo)
-	# Elongated energy capsule — diamond-ish, lit toward the front.
-	var capsule: PackedVector2Array = PackedVector2Array([
-		Vector2(18, 0), Vector2(4, -6), Vector2(-14, -3),
-		Vector2(-14, 3), Vector2(4, 6)
+	halo.a = 0.22
+	draw_circle(Vector2.ZERO, 15.0 * pulse, halo)
+	# Faceted energy shard — diamond-ish, lit toward the front.
+	var rim: Color = Color(0.42, 0.28, 1.0, 0.88)
+	var shard: PackedVector2Array = PackedVector2Array([
+		Vector2(20.0, 0.0),
+		Vector2(6.0, -6.8),
+		Vector2(-10.0, -4.0),
+		Vector2(-18.0, 0.0),
+		Vector2(-10.0, 4.0),
+		Vector2(6.0, 6.8),
 	])
-	var body: Color = proj_color.lerp(Color(1, 1, 1), 0.35)
-	draw_colored_polygon(capsule, body)
+	draw_colored_polygon(shard, rim)
+	var body: Color = proj_color.lerp(Color(1.0, 1.0, 1.0), 0.42)
+	var inner: PackedVector2Array = PackedVector2Array([
+		Vector2(17.0, 0.0),
+		Vector2(4.0, -4.8),
+		Vector2(-9.0, -2.4),
+		Vector2(-13.0, 0.0),
+		Vector2(-9.0, 2.4),
+		Vector2(4.0, 4.8),
+	])
+	draw_colored_polygon(inner, body)
 	# Bright core — slim, brighter near the tip.
 	var core: PackedVector2Array = PackedVector2Array([
-		Vector2(16, 0), Vector2(0, -2), Vector2(-10, 0), Vector2(0, 2)
+		Vector2(16.5, 0.0),
+		Vector2(0.5, -1.7),
+		Vector2(-10.5, 0.0),
+		Vector2(0.5, 1.7),
 	])
 	draw_colored_polygon(core, Color(1.0, 1.0, 1.0, 0.95))
-	# Crackle — three short rune lines fanning back, alpha pulsing.
+	var highlight: Color = Color(1.0, 1.0, 1.0, 0.62)
+	draw_line(Vector2(17.0, 0.0), Vector2(4.0, -4.8), highlight, 1.0, false)
+	draw_line(Vector2(4.0, -4.8), Vector2(-9.0, -2.4), Color(0.72, 0.96, 1.0, 0.42), 0.8, false)
+	# Crackle — short rune lines fanning back, alpha pulsing.
 	var crackle: Color = proj_color.lerp(Color(1, 1, 1), 0.6)
-	crackle.a = 0.55 + 0.35 * sin(t)
-	draw_line(Vector2(-12, -4), Vector2(-18, -7), crackle, 1.5, false)
-	draw_line(Vector2(-12, 4), Vector2(-18, 7), crackle, 1.5, false)
-	draw_line(Vector2(-14, 0), Vector2(-22, 0), crackle, 1.5, false)
-	# Two orbiting motes — counter-rotating, sell the "magic" feel.
-	var orbit_r: float = 11.0
-	var p1: Vector2 = Vector2(cos(t) * orbit_r, sin(t) * orbit_r * 0.5)
-	var p2: Vector2 = Vector2(cos(t + PI) * orbit_r, sin(t + PI) * orbit_r * 0.5)
-	var mote: Color = proj_color.lerp(Color(1, 1, 1), 0.7)
-	draw_circle(p1, 2.8, mote)
-	draw_circle(p2, 2.8, mote)
+	crackle.a = 0.42 + 0.22 * maxf(0.0, sin(t * 1.4))
+	draw_line(Vector2(-10.0, -3.0), Vector2(-19.0, -6.0 + sin(t) * 1.2), crackle, 1.0, false)
+	draw_line(Vector2(-10.0, 3.0), Vector2(-19.0, 6.0 + cos(t * 0.8) * 1.2), crackle, 1.0, false)
+	# Tiny gold sparks give Mage a disciplined arcane accent.
+	var gold: Color = Color(1.0, 0.86, 0.34, 0.52)
+	for i in 3:
+		var a: float = t * (0.55 + float(i) * 0.12) + float(i) * TAU / 3.0
+		var p: Vector2 = Vector2(-5.0 + cos(a) * 6.5, sin(a) * 3.2)
+		draw_circle(p, 1.0 if i == 0 else 0.75, gold)
 
 
 func _draw_necro_bolt_shape() -> void:
-	# Soul flame bolt: darker core, green-violet rim, asymmetrical flame tail.
-	# It keeps a forward point for direction readability, but should feel less
-	# engineered than ARCANE_BOLT.
+	# Soul flame bolt: green soul core inside a smoky violet shell. It keeps a
+	# forward point for direction readability, but the flickering skull/eye
+	# hints make it read as "alive" rather than engineered magic.
 	var t: float = _time * 9.0
 	var pulse: float = 1.0 + sin(t) * 0.10
 	var dark_core: Color = Color(0.05, 0.00, 0.08, 0.94)
-	var soul: Color = proj_color.lerp(Color(0.70, 1.0, 0.74), 0.24)
+	var soul: Color = proj_color.lerp(Color(0.70, 1.0, 0.74), 0.34)
+	var smoke: Color = Color(0.06, 0.015, 0.10, 0.22)
 	var halo: Color = soul
-	halo.a = 0.26
-	draw_circle(Vector2.ZERO, 18.0 * pulse, halo)
+	halo.a = 0.16
+	draw_circle(Vector2.ZERO, 13.5 * pulse, halo)
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(10.5, -6.0),
+		Vector2(-1.5, -11.0 - sin(t * 0.8) * 1.2),
+		Vector2(-16.0, -5.6 + cos(t * 0.7) * 1.2),
+		Vector2(-12.5, 6.2 + sin(t * 0.9) * 1.2),
+		Vector2(0.0, 10.5 + cos(t * 0.6)),
+		Vector2(12.5, 4.2),
+	]), smoke)
 	var flame: PackedVector2Array = PackedVector2Array([
-		Vector2(20.0, 0.0),
-		Vector2(7.0, -8.0 - sin(t * 0.7) * 1.5),
-		Vector2(-8.0, -5.0 + cos(t * 1.1) * 1.5),
-		Vector2(-20.0, -10.0 + sin(t * 0.9) * 2.5),
-		Vector2(-14.0, 0.0),
-		Vector2(-22.0, 9.0 + cos(t * 0.8) * 2.0),
-		Vector2(-5.0, 6.0 - sin(t * 1.3) * 1.4),
-		Vector2(8.0, 7.0 + cos(t) * 1.2),
+		Vector2(15.0, 0.0),
+		Vector2(5.2, -6.0 - sin(t * 0.7)),
+		Vector2(-6.0, -3.8 + cos(t * 1.1)),
+		Vector2(-15.0, -7.5 + sin(t * 0.9) * 1.4),
+		Vector2(-10.5, 0.0),
+		Vector2(-16.0, 6.8 + cos(t * 0.8) * 1.2),
+		Vector2(-3.8, 4.6 - sin(t * 1.3)),
+		Vector2(6.0, 5.2 + cos(t) * 0.8),
 	])
 	draw_colored_polygon(flame, soul)
+	var crescent: Color = Color(0.86, 0.80, 0.68, 0.72)
+	draw_arc(Vector2(5.8, 0.4), 7.0 + sin(t * 0.6) * 0.5, deg_to_rad(-72.0), deg_to_rad(68.0), 10, crescent, 1.3, true)
 	var inner: PackedVector2Array = PackedVector2Array([
-		Vector2(14.0, 0.0),
-		Vector2(2.0, -3.5),
-		Vector2(-10.0, -2.0),
-		Vector2(-15.0, 0.0),
-		Vector2(-10.0, 2.5),
-		Vector2(2.0, 3.5),
+		Vector2(10.0, 0.0),
+		Vector2(1.5, -2.5),
+		Vector2(-7.0, -1.5),
+		Vector2(-10.5, 0.0),
+		Vector2(-7.0, 1.8),
+		Vector2(1.5, 2.5),
 	])
 	draw_colored_polygon(inner, dark_core)
-	var eye_col: Color = Color(0.84, 1.0, 0.78, 0.82)
-	draw_circle(Vector2(3.0, -1.8), 2.2, eye_col)
-	draw_circle(Vector2(3.0, 2.0), 1.8, eye_col)
+	var eye_col: Color = Color(0.84, 1.0, 0.78, 0.46 + 0.16 * maxf(0.0, sin(t * 1.4)))
+	draw_circle(Vector2(2.0, -1.4), 1.45, eye_col)
+	draw_circle(Vector2(2.2, 1.5), 1.15, eye_col)
+	var skull_jaw: Color = Color(0.84, 1.0, 0.78, 0.28)
+	draw_line(Vector2(-2.0, 3.2), Vector2(3.3, 3.0 + sin(t * 1.7) * 0.6), skull_jaw, 0.8, false)
 	var lick: Color = proj_color.lerp(Color(1.0, 1.0, 0.9), 0.40)
-	lick.a = 0.76 + sin(t * 1.3) * 0.16
-	draw_line(Vector2(-12.0, -2.0), Vector2(-26.0, -5.0 + sin(t) * 4.0), lick, 2.0, false)
-	draw_line(Vector2(-11.0, 3.0), Vector2(-25.0, 6.0 + cos(t * 0.8) * 3.0), lick, 1.5, false)
+	lick.a = 0.42 + sin(t * 1.3) * 0.08
+	draw_line(Vector2(-8.5, -1.4), Vector2(-17.5, -3.4 + sin(t) * 2.0), lick, 1.0, false)
+	draw_line(Vector2(-8.0, 2.1), Vector2(-17.0, 4.0 + cos(t * 0.8) * 1.6), lick, 0.8, false)
+	var mote_col: Color = Color(0.68, 1.0, 0.70, 0.35)
+	for i in 2:
+		var a: float = t * (0.7 + float(i) * 0.11) + float(i) * TAU / 3.0
+		var p: Vector2 = Vector2(-6.0 + cos(a) * 5.5, sin(a) * 3.0)
+		draw_circle(p, 1.2 if i == 0 else 0.9, mote_col)
+
+
+func _draw_necro_trail_underlay(points_local: PackedVector2Array) -> void:
+	var n: int = points_local.size()
+	if n < 2:
+		return
+	for i in range(n - 1):
+		var frac: float = float(i + 1) / float(n - 1)
+		var smoke: Color = Color(0.025, 0.0, 0.045, 0.07 * frac * _trail_alpha_mult)
+		draw_line(points_local[i], points_local[i + 1], smoke, lerpf(5.0, 9.0, frac) * _trail_width_mult, false)
+
+
+func _draw_necro_trail_overlay(points_local: PackedVector2Array) -> void:
+	var n: int = points_local.size()
+	if n < 2:
+		return
+	var thread: Color = Color(0.66, 1.0, 0.68, 0.32 * _trail_alpha_mult)
+	for i in range(n - 1):
+		var frac: float = float(i + 1) / float(n - 1)
+		var col: Color = thread
+		col.a *= frac
+		draw_line(points_local[i], points_local[i + 1], col, lerpf(0.5, 1.1, frac), false)
+	var mote_count: int = 2 if n >= 4 else 1
+	for j in mote_count:
+		var idx: int = clampi(n - 2 - j * 2, 1, n - 1)
+		var p: Vector2 = points_local[idx]
+		var a: float = _time * 4.3 + float(j) * 1.7
+		var drift: Vector2 = Vector2(cos(a), sin(a * 0.7)) * (1.1 + float(j) * 0.4)
+		var mote: Color = Color(0.74, 1.0, 0.72, 0.16 * (1.0 - float(j) * 0.15))
+		draw_circle(p + drift, 0.8 + float(j % 2) * 0.4, mote)
 
 
 func _draw_crystal_shape() -> void:

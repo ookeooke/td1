@@ -4224,6 +4224,12 @@ Enabled it only on `NecroBolt.tscn`: the Necromancer soul bolt now has randomize
 
 Verification: `git diff --check` passes; Godot editor visual check still needed.
 
+## 2026-05-16 — NecroBolt speed tuning
+
+Data-only projectile feel tweak: reduced `NecroBolt.tscn` speed from 850 to 700 so the haunted wander / soul-flame shape has a little more screen time before impact. Damage, cooldown, targeting, and hit radius unchanged.
+
+Verification: `git diff --check` passes; Godot editor visual check still needed.
+
 ## 2026-05-15 — NecroBolt launch/impact/shape/trail polish
 
 Follow-up to the haunted flight pass: split Necromancer's projectile off the generic `ARCANE_BOLT` into a dedicated `NECRO_BOLT` shape. The bolt now draws as an asymmetrical soul-flame with a dark core, green-violet rim, tiny eye glints, and animated flame licks instead of a clean mage capsule.
@@ -4231,6 +4237,14 @@ Follow-up to the haunted flight pass: split Necromancer's projectile off the gen
 Added a staff launch burst for `NECRO_BOLT` at setup time (short purple/green halo + directional rays from the staff tip), a cursed impact pop (dark smoke, expanding necrotic ring, radial soul streaks, small skull flash), and per-shot trail width/alpha jitter exported on projectile resources. `NecroBolt.tscn` opts into the new shape plus trail jitter; other projectiles keep the default zero-jitter behavior.
 
 Verification: `git diff --check` passes; local Godot headless still crashes with signal 11 before project validation, so editor visual check is still needed.
+
+## 2026-05-16 — Necromancer low-hover silhouette
+
+Moved Necromancer further into the floating caster read. `visual_necromancer.tres` now uses a small visual-only `flight_height_px = 7`, so the body/robe sit slightly above the ground shadow without changing collision or blocking. `BaseHero._projectile_spawn_position` now includes visual flight height when computing staff-tip projectile launch points, so NecroBolt still releases from the visible staff after the hover lift.
+
+Removed the two small bone/leg-like marks inside the lower robe and replaced them with a dark under-robe void plus faint soul mist near the hem. `draw_ground_shadow` now adds a subtle necromancer-only soul ring/mist over the ground shadow, reinforcing "hovering inches above the path" rather than walking.
+
+Verification: `git diff --check` passes; Godot editor visual check still needed.
 
 ## 2026-05-15 — Fixed the fast Y "snap" when a blocker matches the enemy's lane
 
@@ -4262,3 +4276,442 @@ Investigated continued "hero runs behind enemy after it passed" behavior. Two re
 Fix: COMBAT now only picks a new melee target when `_target_enemy == null`, so an active shot target stays a shot target until `_attack_step` drops it naturally. `_start_block` now returns bool, and hero transitions into COMBAT only when a real enemy blocker slot was claimed. Aborted approaches also clear stale `_target_enemy` if it was the same seek target. This keeps the rule strict: chosen melee target is reserved/stopped during approach, but combat/focus only becomes real once the enemy is physically blocked.
 
 Verification: attempted local GUT with `C:\Godot_v4.6.2-stable_win64.exe (1)\Godot_v4.6.2-stable_win64_console.exe --headless -s res://addons/gut/gut_cmdln.gd -gdir=res://tests/unit -gexit`; local Godot crashed with signal 11 before test output. Editor/playtest verification still needed.
+
+## 2026-05-15 - Stop-on-claim race and dogpile fix
+
+Follow-up investigation for fast enemies not stopping reliably / heroes appearing to lose focus. Root cause was not Y positioning: it was target ownership. Target selection only counted `enemy._blockers.size()` (hard combat locks), ignoring `_reservers` (soft stop-on-claim). During approach every uncontacted enemy still looked like "0 blockers", so multiple heroes/soldiers could dogpile the same reserved enemy while another enemy walked through. Because hero/soldier `_sync_claim` also ran before target acquisition, a newly chosen target was not reserved until the next physics frame; fast enemies made that one-frame race visible.
+
+Fix: `BaseEnemy.get_claim_count()` now returns live soft reservations + hard blockers. Hero and soldier target picking use that count for split targeting. Hero and soldier now reserve immediately when they commit to a seek/charge target, instead of waiting for next frame reconciliation. Hero melee start was simplified further: COMBAT begins only from a real `engage_range_area` overlap + successful `_start_block`; merely reaching the engage spot no longer creates fake combat.
+
+Verification: `git diff --check` passes. Local Godot headless GUT still crashes with signal 11 before test output, so in-editor playtest remains required.
+
+## 2026-05-15 - Combat debug overlay for stuck hero/enemy focus
+
+Added debug-build visual diagnostics for the exact "hero stands close but does not attack" case. `BaseHero._draw_combat_debug()` now appears when the hero is selected or in a combat path, showing state, attack cooldown, target / seek / claim ids, blocked count, claim age, attack-overlap, engage-overlap, hard-block status, enemy claim count, distance, path leak delta, pursue gate, and doomed-chase gate. While seeking, it also draws a yellow line/dot to the computed engage spot. `BaseEnemy._draw_combat_debug()` now appears only when the enemy is reserved/blocked/in combat, showing enemy state, HP, reservers, blockers, held flag, and focus blocker.
+
+How to read it in editor: if the hero is visually close but says `eng:n`, the engage Area2D/radius is not overlapping. If it says `eng:Y hard:n`, `_start_block()` or enemy `engage_combat()` is failing. If enemy says `res:1 blk:0 held:Y`, stop-on-claim worked but hard contact never happened. If hero says `COMBAT` with `hard:n`, focus is invalid and should be fixed next.
+
+Verification: `git diff --check` passes. Local Godot still crashes with signal 11 even on `--headless --quit --path .`, so visual/editor verification is required.
+
+## 2026-05-16 - Fixed combat debug overlay freed-reference crash
+
+User hit a Godot runtime error in `BaseHero._draw_combat_debug`: `_debug_node_label(n: Node)` was typed as `Node`, but the debug overlay can receive a previously-freed object reference from `_target_enemy` / `_seek_target_enemy` / `_claimed_enemy` before the normal combat cleanup has run. Godot rejects the freed Object at the typed function boundary, so the function body never reached `is_instance_valid()`.
+
+Fix: loosened `_debug_node_label(n)` in hero and enemy debug overlays so freed references can be validated safely. Added `BaseHero._prune_debug_refs()` before drawing the overlay to clear invalid target/seek/claim references and strip freed entries from `_blocked_enemies`. Also changed the debug `inspect_enemy` local to untyped so it cannot fail on stale references.
+
+Verification: `git diff --check` passes. Needs editor replay of the screenshot scenario.
+
+## 2026-05-15 — Combat: assist-in-lull (help finish the last enemy)
+
+Blockers (soldiers + hero) now converge to finish a lone straggler instead of one unit dueling it while the rest idle — without weakening block-many/spread (still primary). WaveManager tracks alive GROUND enemies (excludes flying) and emits `EventBus.combat_lull_changed(in_lull)` when only the last one remains (LULL_MAX=1); event-driven off existing spawn/exit counters, zero per-frame group scans; `lone_enemy()` accessor self-prunes freed refs. base_soldier + base_hero cache the lull; when idle (no guardable/in-zone target, not hard-blocking) they acquire `WaveManager.lone_enemy()` and charge it bypassing the guard-zone/leash/doomed cancels, capped at ASSIST_MAX_DIST=1100. Assist is lowest-priority and fully preempted: a normal target, lull-ending (more enemies → resume spread), or a player move order all drop it; a unit that already hard-contacted stays (normal block). Doctrine doc gained an "Assist in a lull" section.
+
+Verification: clean headless boot; full GUT 83/83.
+
+## 2026-05-15 — Blockers cover passers (data-driven hero back margin)
+
+User wants soldiers/heroes to also block enemies that have PASSED them, not only incoming. Findings: SoldierData already defaults guard_front_px=120 / guard_back_px=70 (soldiers already cover a 70px back zone; priority rule already prioritizes highest path progress = the passer). Hero ignored its HeroData.guard_back_px (dead field) and hardcoded GUARD_BACK_MARGIN_PX=50. Fix: base_hero `_back_margin()` reads data.guard_back_px when >0 else the const; `_has_leaked_past_anchor(enemy)` follow-through caller now uses it (acquire-side GUARD_ACQUIRE_MARGIN_PX unchanged — separate concern, keeps the no-lurch rule). Authored guard_back_px=70 on all 4 hero .tres (warrior/mage/necromancer/ranger) so heroes catch passers ~consistently with soldiers, modestly (line does not drift rearward; lock-persistence still prevents dropping a current block to chase). No new mechanic — zone-shape only.
+
+Verification: clean headless boot; full GUT.
+
+## 2026-05-15 — Bugfix: hero melee-engage ring anchored wrong
+
+The warm melee-engage ring in BaseHero._draw() was drawn at Vector2.ZERO (hero body) but the zone it represents is measured from _rally_position in _pick_target_in_detection_zone — so once the hero left its anchor the ring no longer matched where melee actually triggers. Radius/value was correct (uses _effective_detection_radius incl. DEFAULT fallback). Fixed: draw fill+stroke at to_local(_rally_position) (same pattern as the move-marker). Cool ranged attack-range ring left body-centered (correct — shots fire from the hero).
+
+Verification: clean headless boot; full GUT.
+
+## 2026-05-15 — Bugfix: lull tripped on wave spawn trickle
+
+Assist-in-lull was firing on the FIRST enemy of every wave (alive_ground==1 while more still spawning), so melee hero + soldiers left their detection/guard zones to chase the first spawn, then yo-yoed back when enemy #2 appeared — most visible on wave 1. Root cause: _update_lull only checked the alive-count band, no spawn-state gate. Fix: lull now also requires _active_spawners<=0 (spawning finished). Added _update_lull() calls on wave-launch (cancels lull when new spawners queued) and in _on_spawning_complete (lets the tail straggler legitimately trigger it). Net: lull = wave winding down to the last enemy, never the spawn trickle.
+
+Verification: clean headless boot; full GUT.
+
+## 2026-05-15 — Audit fixes: respawn cleanup, skill DEAD-guard, lull on game-over
+
+From the 10-agent audit, fixed the cluster that perturbs combat targeting:
+- #1 base_hero._respawn(): now calls _release_block()+_release_claim() (enemies it had blocked resume immediately instead of frozen waiting for the dead hero) and clears _seek_target_enemy/_target_enemy/_assisting/_pending_skill_*/_cast_wind_t/_cast_t/_lunge_t/_flinch_t/_hit_flash_t/_skill_range_preview/_walk_t. Kills ghost-pursuit-on-respawn + frozen-enemy + respawn anim artifacts. _in_lull left signal-owned.
+- #2 _apply_pending_skill(): drops the pending skill if state==DEAD or data==null (was firing a wind-up that outlived the caster on respawn).
+- #3 WaveManager._on_game_over(): clears _alive_ground + _set_lull(false) so a defeat/victory mid-straggler does not leak _in_lull into the next level (autoload survives scene change).
+
+#4 (split-rule exact-tie order) deliberately deferred: the comparison already uses strict < / > so first-seen is preserved; only Area2D iteration order on an exact bc+prog+float-d2 tie could flap, and float-distance exact equality is practically impossible. Documented, not changed.
+
+Verification: clean headless boot; full GUT 83/83.
+
+## 2026-05-15 — Detection ring follows hero during player moves
+
+Follow-up to the anchor-centered melee ring fix. The ring is pinned to _rally_position (correct for auto guard-intercepts so it stays truthful when the hero steps out). But move_to() reseats _rally_position to the tap destination instantly, so on a player move the ring teleported ahead of the still-walking hero. Refinement: while state==MOVING AND _seek_target_enemy==null (player-commanded relocation, not an auto seek), draw the ring at the body (Vector2.ZERO) so the zone travels WITH the hero to its new post; on arrival hero==_rally_position so it coincides seamlessly. Auto guard-intercept (MOVING with _seek_target_enemy set) still draws at the anchor — earlier fix intact. Visual-only.
+
+Verification: clean headless boot.
+
+## 2026-05-15 — Warrior no longer targets flying
+
+Set targets_flying = false on hero_warrior.tres (was using HeroData default true). Warrior is pure melee with no projectile — with the flag false the melee pickers (`if enemy.data.is_flying and not data.targets_flying: continue`) now correctly skip flyers, so the warrior never walks toward an un-blockable flying enemy (the "hero close/chasing/not attacking" symptom, bug #1) for this hero. Other heroes unchanged (broader #1 fix — melee pickers skipping flying unconditionally — still recommended separately).
+
+Verification: clean headless boot; full GUT.
+
+## 2026-05-16 — Balance-testing scope locked to Level 5
+
+Added a new Invariant to balance/BALANCE.md ("Active balance-testing scope — Level 5 only"): balance audits, pressure/DRIFT verification, telemetry review, and tuning iteration target level_5 only. L1–L4 are settled — readouts still print but are not actioned unless the user names that level. Naked Baseline still applies to every campaign level regardless of scope. Rule documents how to lift/retarget when balance work moves to a new level.
+
+Doc-only change; no code or .tres touched.
+
+## 2026-05-15 — Blocker coordination stabilization (GPT plan, refined)
+
+Implemented the refined fix set. Added BaseEnemy.is_engageable_ground() — single shared predicate (data!=null, !is_flying, !bypass_engagement, !DYING) so the flying/bypass/dying rule can no longer drift across call sites (that drift caused the flyer-in-lull regression). Routed through it: engage_combat() (now rejects flying — was the reserve/engage asymmetry), WaveManager _alive_ground append + lone_enemy re-validate (fixes flyers leaking into the lull; the old "is_flying in enemy" was always false), hero _pick_split_target_in_area + _pick_target_in_detection_zone (melee ALWAYS skips flying; targets_flying stays RANGED-only), soldier _try_engage/_scan_aggro + assist branch, hero assist branch. move_to() now _release_claim() immediately (no 1-frame soft-stop leak). _auto_engage_extras() picks by split priority (fewest-claims→progress→nearest) via _pick_split_target_in_area instead of raw overlap order, guard-capped. Added soldier CLAIM_TIMEOUT=4.0 + _claim_age mirroring hero — a soft claim with no hard contact past 4s releases + clears _charge_target/_assisting + RETURNING (prevents assist-toward-unreachable wave soft-lock). get_claim_count() now counts UNIQUE claimers (reserve+block by same unit no longer double-counts). Docs: HeroData guard_back_px comment corrected (it IS read via _back_margin); SoldierData front/back comment fixed to match GuardZone (front=spawn-side/approaching, back=exit-side/passed); leash_range marked LEGACY/UNUSED. 3 GUT tests added (is_engageable_ground truth table, engage_combat rejects flying, get_claim_count unique).
+
+Verification: clean headless boot after every pass; full GUT 86/86.
+
+## 2026-05-15 — Coordination invariants saved to doctrine
+
+Added "Blocker coordination invariants (load-bearing)" subsection to docs/COMBAT_BLOCKING_DOCTRINE.md (under Target Selection, after Assist-in-a-lull): the 6 rules now enforced in code — single is_engageable_ground() predicate, targets_flying ranged-only, get_claim_count unique, mandatory soft-claim watchdog (hero+soldier), move_to immediate release, assist preempted-not-sticky. CLAUDE.md already points here as combat source of truth, so this persists across sessions.
+
+## 2026-05-16 — Sword-swing animation: cadence-scaled, snappier (soldiers + Warrior)
+
+Melee swing existed but was mistuned: a flat LUNGE_DURATION=0.12s decoupled
+from attack_speed made the blade twitch in ~120ms then freeze for the rest of
+a ~1s gap (below mobile perceptual threshold). Full art-director spec applied:
+- New shared statics in UnitVisualDrawer: swing_duration(atk_speed) =
+  clamp(cooldown*0.70, 0.28, 0.55); swing_phase(t01) → {wind_t|strike_t}
+  (single source of truth, ends soldier/hero ctx-block drift);
+  lunge_offset_scale(t) — eased rear-back→fast-commit→settle envelope.
+- base_soldier.gd / base_hero.gd: capture _lunge_dur per swing from
+  swing_duration(eff_atk_speed); all t01 normalizations + squash window
+  (peak ~0.48) + ctx blocks + trail gate routed through the shared helpers.
+- Arm angles widened for a real overhead chop: raised -PI*0.92, impact
+  PI*0.62, follow PI*0.42; raised→impact now ease-out cubic (the "snap"),
+  impact→follow smoothstep. SWORD arc widened to ~150° at body_r+18; trail
+  gate aligned to the strike window [0.30,0.80].
+- visual_soldier_militia.tres: weapon_trail_strength 1.0→1.15 (Knight already
+  tuned in visual_warrior.tres; left as-is so militia stays humbler).
+Verification: clean headless boot; full GUT 86/86 (combat suite 49/49).
+Visual feel needs an in-editor/Test-Range eyeball pass — values are derived
+from code math, not frame-stepped.
+
+## 2026-05-16 - Necromancer visual polish: stronger torso turn
+
+User asked for the Necromancer to look more hand-drawn / premium and for the
+walking torso to turn more. Scoped visual-only pass:
+- UnitVisualDrawer necromancer premium rig: increased moving turn_gain, torso
+  yaw/translation, head lead, cape lag, and robe-local turn deformation so the
+  character reads as pivoting through the walk instead of sliding.
+- visual_necromancer.tres: darker ink/robe palette, brighter soul-purple
+  accent, stronger eye/staff glow, bigger staff finial, stronger weapon trail,
+  and slightly denser cape/shoulder values for a higher-contrast painted read.
+
+No gameplay numbers or targeting behavior changed. Verification attempted:
+`godot` not on PATH; documented Windows Godot 4.6.2 executable reports version
+but crashes with signal 11 on headless boot even with `--rendering-driver
+opengl3`, before script diagnostics. Static diff/line inspection completed;
+needs an in-editor visual eyeball pass.
+
+## 2026-05-16 - Necromancer projectile visual pass
+
+User approved projectile improvements 1-4 after discussion, with no gameplay
+changes requested. Scoped to `projectiles/Arrow.gd` NecroBolt drawing/VFX and
+`projectiles/NecroBolt.tscn` cosmetic exports:
+- Projectile silhouette: NecroBolt now draws as a living soul flame with a
+  smoky violet shell, green core, crescent/bone highlight, eye flicker, jaw
+  line, and tiny orbiting motes.
+- Layered trail: NecroBolt trail gets a dark smoky underlay, existing purple
+  ribbon, thin green soul-thread overlay, and peeling motes along the tail.
+- Flight personality: added visual-only forward/back surge inside
+  `_flight_wander_offset`; hit math still follows `_ground_pos`.
+- Launch staging: launch VFX now contracts rune arcs and wisps toward the staff
+  direction before the bolt leaves, instead of only expanding spokes.
+- NecroBolt.tscn cosmetic values tuned: stronger glow, greener core trail,
+  darker smoky edge, more trail jitter, and denser/slower sparkle particles.
+
+Verification: `git diff --check` passes. Godot headless/editor verification is
+still blocked locally by the same signal-11 crash before script diagnostics;
+needs in-editor visual capture for final tuning.
+
+## 2026-05-16 - Necromancer walk/cast animation pass
+
+Follow-up after user approved items 1 + 2 from the proposal. Still visual-only,
+limited to the Necromancer premium procedural drawer:
+- Added four keyed walk channels (contact, recoil, passing, high point) layered
+  over the smooth gait. Torso/hips, hood, robe hem, shoulders, and staff now
+  consume those channels with different timing so the walk reads more
+  hand-animated instead of a single sine glide.
+- Reworked cast timing to use elapsed release windows: pre-cast coils back and
+  charges the staff/rune, release snaps the torso/staff/hood upward-forward,
+  and recovery adds a smaller counter-settle through robe and staff.
+
+Verification: `git diff --check` passes. Godot editor/headless visual
+verification still blocked locally by the same signal-11 crash on headless boot;
+needs an in-editor recording/screenshot pass for final tuning.
+
+## 2026-05-16 — Ranged heroes can shoot flyers/bypass again (GPT review fix)
+
+Verified GPT's combat-code review against source. Findings: #1 (ranged targeting too strict) was a real high-severity bug — every hero target-acquisition path filtered is_engageable_ground() (a melee-claim predicate rejecting flying+bypass), and data.targets_flying was read nowhere in live combat, so Mage/Ranger/Necromancer could not shoot air at all. #2 (soldier soft-claim) true but self-healed by _sync_claim next frame (cosmetic). #3 (doctrine doc) confirmed stale: guard_back_px IS read via _back_margin().
+
+Changes:
+- base_hero.gd: added _pick_shootable_target_in_area (area wrapper) + pure _pick_shootable_from(list) — ranged gate is DYING + targets_flying only; bypass shootable. Repointed the RANGED-SHOOT tier (was _find_nearest_enemy_in_area, now removed — its only caller). Melee picker _pick_split_target_in_area unchanged (still is_engageable_ground, guards the 2026-05-15 warrior-vs-flying fix).
+- base_enemy.gd: corrected the is_engageable_ground() comment that claimed ranged did not use it (it did).
+- base_soldier.gd: set_blocking_position now calls _release_claim() explicitly (edge release; _sync_claim stays steady-state choke-point).
+- docs/COMBAT_BLOCKING_DOCTRINE.md: fixed guard_back_px staleness + internal contradiction, softened spot-arrival/face-contact wording, added the ranged-vs-melee target-picker contract.
+- tests/unit/test_hero_targeting.gd: new — 11 tests locking both gates and the divergence.
+
+Verification: full GUT headless 95/95 passing, 384 asserts. Editor showed a stale parse-cache error on the test file (old pre-rewrite compilation, line 30) — clears on editor reopen per CORE RULE 17; on-disk file confirmed clean. Manual in-editor play vs a flying-enemy level still recommended to eyeball projectile tracking.
+
+## 2026-05-16 — Follow-up: debug-mirror flying gate + explicit rally-reset test
+
+Two follow-up nits from review, both correct:
+- base_hero.gd _dbg_scan_rejections(): was labelling flying as rejected only when not data.targets_flying, but it mirrors the MELEE acquisition gate (is_engageable_ground) which rejects flyers unconditionally. Misled debugging for Mage/Ranger/Necro near air. Fixed to flag flying always; comment added pointing at the picker contract.
+- tests/unit/test_combat_blocking.gd: added test_set_blocking_position_releases_soft_claim_immediately — exercises the actual set_blocking_position() entry point and asserts the soft claim is unreserved in the same call (locks the explicit _release_claim() added earlier).
+
+Verification: full GUT headless 96/96 passing, 387 asserts.
+
+## 2026-05-16 - Necromancer projectile visual pass (appended)
+
+User approved projectile improvements 1-4 after discussion. Scoped to
+`projectiles/Arrow.gd` NecroBolt drawing/VFX and `projectiles/NecroBolt.tscn`
+cosmetic exports only: living soul-flame silhouette, smoky/green layered trail,
+visual-only flight surge, and launch rune/wisp contraction. No damage,
+targeting, cooldown, or hero behavior changed.
+
+Verification: `git diff --check` passes. Godot headless/editor verification is
+still blocked locally by the same signal-11 crash before script diagnostics;
+needs in-editor visual capture for final tuning.
+
+## 2026-05-16 - Necromancer projectile scale correction (appended)
+
+User feedback: the new NecroBolt read too large; previous projectile was
+clearer. Kept the new identity polish but reduced it to basic-attack scale:
+smaller soul body/halo, much narrower smoky underlay, faint green inner thread,
+fewer/smaller motes, reduced visual surge, smaller launch rune/wisp contraction,
+and lower particle count/size. Gameplay unchanged.
+
+Verification: `git diff --check` passes. Godot visual verification remains
+blocked locally by the known signal-11 headless boot crash; needs in-editor
+eyeball pass.
+
+## 2026-05-16 - Necromancer melee staff swing polish
+
+User approved only item 1 from the front/back + melee plan. Scoped to
+`systems/UnitVisualDrawer.gd` Necromancer premium melee visuals:
+- Reworked the staff strike off existing `strike_t` into wind-up, sweep,
+  impact, and recovery channels.
+- Staff tip now leads the swing with extra high-back / low-front motion while
+  the grip moves less, so it reads as a staff swing instead of a whole-prop
+  slide.
+- Added a subtle tip crescent smear during the sweep and a small staff-tip
+  impact flash/spark. Body movement remains restrained; no gameplay changes.
+
+Verification: `git diff --check` passes. Godot visual verification remains
+blocked locally by the known signal-11 headless boot crash; needs in-editor
+eyeball pass.
+
+## 2026-05-16 - Necromancer front/back facing polish
+
+User approved item 2 from the Necromancer visual plan. Scoped to
+`systems/UnitVisualDrawer.gd` Necromancer premium visuals:
+- Added a `facing_depth` motion channel from existing face direction, split
+  into front-facing and back-facing pose weights.
+- Front-facing now opens the robe/hood read: lower head, wider front panel,
+  more visible chest/pendant, eyes, and staff hands.
+- Back-facing now closes the face/chest read: cape/back panel dominates,
+  hood/face/eyes fade down, and staff/hands tuck upward/back for a clearer
+  away-from-camera silhouette.
+
+No gameplay, targeting, damage, cooldown, or stats changed.
+
+Verification: `git diff --check` passes. Godot headless verification still
+crashes locally with signal 11 before script diagnostics; needs in-editor
+visual eyeball pass.
+
+## 2026-05-16 - Necromancer back cape overlay
+
+User confirmed the cape still read like it lived only behind the hero. Scoped
+to `systems/UnitVisualDrawer.gd` Necromancer premium visuals:
+- Added a back-facing cloak overlay drawn after the robe so the cape becomes
+  visible on top of the torso when the hero turns away.
+- Added a darker shoulder yoke and hand-drawn cloak folds for the upper-back
+  silhouette.
+- Kept the overlay gated by `back_facing`, so front-facing poses still show
+  robe/chest/eyes while back-facing poses emphasize hood/cape.
+
+No gameplay, targeting, damage, cooldown, or stats changed.
+
+Verification: `git diff --check` passes. Godot headless verification remains
+blocked locally by the known signal-11 crash before script diagnostics; needs
+in-editor visual eyeball pass.
+
+## 2026-05-16 - Mage arcane shard projectile identity
+
+User approved the recommended first Mage visual package. Scoped to Mage
+projectile identity and palette only:
+- Mage now points to `projectiles/MageBolt.tscn` instead of the generic
+  `HeroBolt.tscn`.
+- `MageBolt.tscn` keeps the current hero bolt gameplay envelope
+  (`speed = 950.0`, `hit_radius = 28.0`) while switching to the arcane shard
+  renderer and a cyan-white-violet trail.
+- `_draw_arcane_bolt_shape()` now draws a faceted sapphire/cyan shard with a
+  white core, violet rim, cyan crackle, and small gold rune sparks.
+- `visual_mage.tres` now follows the saved premium doctrine direction with a
+  cleaner sapphire robe, cyan staff glow, pale eye glow, and gold highlights.
+
+No intentional gameplay, targeting, damage, cooldown, or balance changes were
+made in this step. Existing unrelated dirty Mage guard/detection values were
+left untouched.
+
+Verification: `git diff --check` passes. Godot headless verification remains
+blocked locally by the known signal-11 crash before script diagnostics; needs
+in-editor visual eyeball pass.
+
+## 2026-05-16 - Premium hero visual doctrine
+
+User asked to save the Necromancer visual style for reuse if the approach is
+expanded to other heroes. Added `docs/HERO_PREMIUM_VISUAL_DOCTRINE.md` as the
+reference style/doctrine:
+- Captures the Necromancer premium draw order, facing rules, motion channels,
+  hand-drawn style rules, weapon/cast/projectile guidance, and review checklist.
+- Defines Necromancer as the current reference implementation rather than
+  prematurely forcing all heroes into a shared framework.
+- Notes the recommended extraction path after a second/third premium hero.
+
+Documentation only; no gameplay or visual code changed in this step.
+
+Verification: `git diff --check` passes.
+
+## 2026-05-16 - Mage hood integration and attack split
+
+User reported the Mage lacked a hood over the head, the head looked separated
+from the torso, and asked whether ranged and melee attack animations were
+separate.
+
+Fix:
+- Added a Mage-premium head/hood renderer: the hood wraps around the head,
+  draws a dark face opening and glowing eyes, and clamps the head lower so it
+  connects to the robe collar instead of floating above the body.
+- Added a Mage-specific hit-flash silhouette so damage flash no longer falls
+  back to the older square torso/head shape.
+- Split Mage attack visuals by resolved attack profile: projectile attacks use
+  a ranged cast mode with no body lunge or melee swing trail, while face-range
+  close attacks keep the melee swing/poke.
+- Added a Mage melee staff renderer so close attacks read as the staff moving
+  with the arm, while ranged attacks keep the upright raised-staff silhouette.
+- Moved the Mage projectile spawn point to the raised staff tip so the bolt
+  originates from the visible casting source.
+
+No gameplay, damage, targeting, cooldown, collision, or balance values changed;
+this is visual-only.
+
+Verification: `git diff --check` passes. Godot headless verification remains
+blocked locally by the known signal-11 crash before script diagnostics; needs
+in-editor visual eyeball pass.
+
+## 2026-05-16 - Necromancer visual review fixes
+
+User asked to fix all review findings from the Necromancer visual pass.
+Scoped to visual/code-cleanup files:
+- Restored `projectiles/NecroBolt.tscn` speed to 850.0 so the projectile
+  polish remains visual-only.
+- Moved the back-facing cape overlay after arms/staff so it can cover the
+  upper-back pose, and changed cape/rear-panel alpha to smoothstep-weighted
+  fade-in to avoid pop.
+- Removed the unused Necromancer feet/old knee IK helper path left behind by
+  the robe-glide approach.
+- Fixed Necro trail mote placement so short trails do not stack both motes on
+  the same point.
+
+No intentional gameplay, targeting, damage, cooldown, or stats changes remain.
+
+Verification: `git diff --check` passes. Godot headless verification remains
+blocked locally by the known signal-11 crash before script diagnostics; needs
+in-editor visual eyeball pass.
+
+## 2026-05-16 - Mage robe silhouette profile
+
+User noticed Mage still read as a square torso after the projectile/palette
+pass. Root cause: Mage used the shared square humanoid body path, which still
+called `draw_rect` for the torso.
+
+Fix:
+- Added `UnitVisualData.RenderProfile.MAGE_PREMIUM` so Mage can opt into a
+  custom silhouette without changing other square-bodied units.
+- `visual_mage.tres` now uses the Mage premium profile.
+- `UnitVisualDrawer` now draws Mage's body as a tapered robe polygon with a
+  wider cloth hem, darker front panel, hood collar, gold highlight stroke, and
+  small cyan rune instead of the generic rectangle.
+
+No gameplay, collision, targeting, damage, cooldown, or balance values changed.
+
+Verification: `git diff --check` passes. Godot headless verification remains
+blocked locally by the known signal-11 crash before script diagnostics; needs
+in-editor visual eyeball pass.
+
+## 2026-05-16 - Mage upright staff and cape
+
+User noted the Mage staff should read higher/upward and suggested a cape.
+Scoped to Mage visual identity:
+- Added a dark sapphire `cape_color` to `visual_mage.tres`, using the existing
+  back-cloth layer behind the robe.
+- Added a Mage-only upright staff renderer for `MAGE_PREMIUM` so the staff
+  rises above the hero with a visible orb/ring instead of hanging down along
+  the generic arm direction.
+- Kept the generic staff path unchanged for non-premium staff users.
+
+No gameplay, collision, targeting, damage, cooldown, or balance values changed.
+
+Verification: `git diff --check` passes. Godot headless verification remains
+blocked locally by the known signal-11 crash before script diagnostics; needs
+in-editor visual eyeball pass.
+
+## 2026-05-16 — Fix hero "stuck between two enemies" livelock
+
+Traced the reported bug: a hero between two enemies sometimes freezes doing nothing. Root cause = CLAIM_TIMEOUT livelock. _sync_claim drops a soft claim that never reaches contact after 4s, but its "recovery" walked back to the anchor and re-acquired — with two enemies the higher-path-progress one is re-picked and the same failure repeats every 4s forever (hero appears stuck, enemies crawl while alternately frozen). The MOVING->COMBAT transition had no self-recovery; CLAIM_TIMEOUT was the only escape and it looped.
+
+Fixes (all in heroes/base_hero.gd):
+- #1 (primary): on CLAIM_TIMEOUT, blacklist that enemy in _giveup_until for GIVEUP_COOLDOWN_MS (2500). Both MELEE pickers (_pick_target_in_detection_zone, _pick_split_target_in_area) skip blacklisted enemies via _is_given_up(). Hero now commits to the OTHER enemy, or holds the anchor free if all blacklisted — never the no-op loop. Ranged (_pick_shootable_from) unaffected. Blacklist self-expires + purges invalid keys.
+- #2 (permanent variant): _prune_dead_blocks() (validity-only, no Area2D) at top of _move_step + IDLE branch. _prune_blocks_out_of_range only ran in COMBAT, so a freed/DYING non-focus block could fill max_block_targets and make _start_block reject everything forever. All shipped heroes are max_block_targets=1, so this affected every hero.
+- #3 (defensive): _effective_engage_radius() floored at MELEE_ENGAGE_DISTANCE so the engage spot can never sit outside the _start_block gate circle. Debug-build print in the CLAIM_TIMEOUT branch (engage_r/dist/overlap) to pin the contact-failure trigger in a live repro.
+
+Note: all 4 hero .tres are max_block_targets=1; doctrine references to warrior=2 were stale.
+
+Verification: full GUT headless 101/101 passing, 400 asserts (6 new tests: give-up set/expiry, null/invalid purge, prune freed, prune DYING+release, engage-radius floor+single-source). The end-to-end picker-skip path needs a live tree+Area2D (not headless-fakeable per this file header) — give-up semantics are locked; behavioural confirmation is the manual repro in the plan. docs/COMBAT_BLOCKING_DOCTRINE.md updated (watchdog must make progress; no stale-block capacity; engage-radius floor).
+
+## 2026-05-16 - Ranged hero close attack at face range
+
+User reported ranged heroes could still fire projectiles while visually in
+melee contact. Root cause: `_resolve_attack_profile()` only switched to the
+authored `close_attack_*` profile when the target was already in
+`_blocked_enemies`. That tied close visual/weapon mode to hard block state, so
+there was a visible gap where Mage/Ranger/Necro could be face-to-face but keep
+shooting because the block had not registered yet.
+
+Fix:
+- Added `_should_use_close_attack(enemy, in_close_range)` and changed
+  `_in_close_combat()` so ranged heroes with authored close attacks use the
+  close poke when a blockable ground target is inside `engage_range_area` OR
+  already hard-blocked.
+- Kept flyers and `bypass_engagement` enemies on projectile attacks even at
+  face range, because they are shootable but not melee-blockable.
+- Updated `HeroData.gd` and `docs/COMBAT_BLOCKING_DOCTRINE.md` so close attack
+  is documented as face-contact weapon mode, separate from the hard stop lock.
+- Added unit coverage for face-range close poke and flyer/bypass exceptions;
+  existing blocking-focus profile tests now use real `BaseEnemy` targets.
+
+Verification: `git diff --check` passes. Godot console binary is present, but
+both full GUT and a plain `--headless --path . --quit` crashed locally with
+signal 11 before script diagnostics, so this needs in-editor/GUT verification
+from a stable Godot session.
+
+## 2026-05-16 - Hero/item behavior refactor research
+
+User asked for a research report on refactoring heroes/items so any hero can
+use weapon-slot items, including ranged heroes using sword power through their
+normal attacks, plus AAA-style item/hero damage interactions.
+
+Added `docs/HERO_ITEM_BEHAVIOR_REFACTOR_REPORT.md`:
+- Recommends keeping any-hero equip as the default and leaving combat behavior
+  hero-authored through `HeroData`.
+- Defines sword-on-ranged behavior as stat/mechanic power flowing through the
+  hero's existing projectile unless a unique item explicitly overrides visuals.
+- Maps damage-taken, on-hit, on-kill, skill-modifier, and command-aura item
+  features onto the existing `AbilityData` / `AbilityHost` architecture.
+- Summarizes external references from Diablo IV, Path of Exile, and Kingdom
+  Rush / Ironhide support guides.
+
+Documentation only; no gameplay scripts, resources, or balance numbers changed.
+
+Verification: `git diff --check` passes.

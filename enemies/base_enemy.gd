@@ -7,6 +7,7 @@ enum State { WALKING, COMBAT, STEALTHED, DYING }
 
 const HP_BAR_SIZE: Vector2 = Vector2(70.0, 10.0)
 const HP_BAR_Y_OFFSET: float = -65.0
+const COMBAT_DEBUG_FONT_SIZE: int = 11
 # Phase 44: brief white overlay on damage so hits read visually.
 const HIT_FLASH_DURATION: float = 0.08
 # Last 150 ms of the melee cooldown renders a red telegraph arc on the
@@ -304,12 +305,10 @@ func engage_combat(blocker: Node) -> bool:
 	# allowed; this function appends to _blockers and returns true iff the
 	# blocker was newly registered. Per-blocker capacity is enforced by the
 	# caller against its own data.max_block_targets.
-	if state == State.DYING or blocker == null:
-		return false
-	# Phase 45f: bypass archetypes (Rushing-Monkey equivalent) refuse every
-	# engagement. Blocker still sees false and won't register this enemy,
-	# so the enemy keeps walking past soldier and hero lines alike.
-	if data != null and "bypass_engagement" in data and data.bypass_engagement:
+	# Reject DYING / null / bypass AND flying via the shared predicate
+	# (flying was previously NOT rejected here — only reserve() was, an
+	# asymmetry that let a flyer be hard-blocked through the assist path).
+	if blocker == null or not is_engageable_ground():
 		return false
 	if _blockers.has(blocker):
 		return false
@@ -365,6 +364,47 @@ func unreserve(by: Node) -> void:
 func is_held() -> bool:
 	# Reserved but not yet in physical COMBAT → standing still, waiting.
 	return not _reservers.is_empty() and _blockers.is_empty()
+
+
+# Single source of truth for "can a melee blocker claim/block/assist this?".
+# Every melee path (engage_combat, hero/soldier MELEE pickers
+# _pick_split_target_in_area / _pick_target_in_detection_zone, assist, the
+# lull registry) routes through this so the flying/bypass/dying rules can
+# never drift apart across call sites again. Ranged shooting MUST NOT use
+# this — it has its own gate in BaseHero._pick_shootable_target_in_area
+# (DYING + targets_flying only; bypass is shootable). Enforced by
+# tests/unit/test_hero_targeting.gd so the two gates can't re-converge.
+func is_engageable_ground() -> bool:
+	if data == null:
+		return false
+	if "is_flying" in data and data.is_flying:
+		return false
+	if "bypass_engagement" in data and data.bypass_engagement:
+		return false
+	return state != State.DYING
+
+
+func get_claim_count() -> int:
+	# Soft reservations and hard blockers both mean "some defender is already
+	# responsible for this enemy". Target picking uses this to spread blockers
+	# across a pack before every unit dogpiles the same not-yet-contacted enemy.
+	var live_reservers: Array[Node] = []
+	for r in _reservers:
+		if r != null and is_instance_valid(r):
+			live_reservers.append(r)
+	if live_reservers.size() != _reservers.size():
+		_reservers = live_reservers
+	_prune_blockers()
+	# Count UNIQUE claimers. A unit that reserved (soft) and then hard-
+	# blocked is in BOTH lists; reserve→block does not unreserve, so a
+	# naive size()+size() double-counts it and the spread logic thinks an
+	# enemy with one defender has two — making a free blocker skip it.
+	var unique: Dictionary = {}
+	for r in _reservers:
+		unique[r] = true
+	for b in _blockers:
+		unique[b] = true
+	return unique.size()
 
 
 func _combat_tick(delta: float) -> void:
@@ -586,7 +626,6 @@ func heal(amount: float) -> void:
 	current_health = mini(_effective_max_health(), current_health + int(ceil(amount)))
 	if current_health != before:
 		queue_redraw()
-		print("[Enemy/heal] %s %d → %d" % [data.enemy_name, before, current_health])
 
 
 func _die() -> void:
@@ -753,6 +792,7 @@ func _draw() -> void:
 		UnitVisualDrawer.draw_marked_skull(self, body_top_y, _status_ring_t)
 	_draw_attack_telegraph(ring_r)
 	_draw_health_bar()
+	_draw_combat_debug()
 
 
 # Cache the strike direction the moment the counter-attack fires, so the
@@ -845,6 +885,66 @@ func _draw_health_bar() -> void:
 	if pct > 0.0:
 		draw_rect(Rect2(origin, Vector2(bar_size.x * pct, bar_size.y)), Color(0.3, 0.9, 0.3))
 	draw_rect(Rect2(origin, bar_size), Color(0, 0, 0), false, 1.0)
+
+
+func _draw_combat_debug() -> void:
+	if not OS.is_debug_build():
+		return
+	if _reservers.is_empty() and _blockers.is_empty() and state != State.COMBAT:
+		return
+	var font: Font = ThemeDB.fallback_font
+	var fs: int = COMBAT_DEBUG_FONT_SIZE
+	var lines: Array[String] = [
+		"E %s hp:%d" % [_state_name(state), current_health],
+		"res:%d blk:%d held:%s" % [
+			_reservers.size(),
+			_blockers.size(),
+			"Y" if is_held() else "n",
+		],
+	]
+	if not _blockers.is_empty():
+		lines.append("focus:%s" % _debug_node_label(_blockers[0]))
+	_draw_debug_lines(font, lines, Vector2(-56.0, -96.0), fs)
+
+
+func _draw_debug_lines(font: Font, lines: Array[String], origin: Vector2, fs: int) -> void:
+	if lines.is_empty():
+		return
+	var max_w: float = 0.0
+	for line in lines:
+		max_w = maxf(max_w, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1.0, fs).x)
+	var line_h: float = float(fs) + 3.0
+	var bg := Rect2(origin + Vector2(-3.0, -float(fs) - 3.0), Vector2(max_w + 6.0, line_h * lines.size() + 6.0))
+	draw_rect(bg, Color(0.02, 0.02, 0.025, 0.72))
+	draw_rect(bg, Color(0.4, 0.85, 1.0, 0.75), false, 1.0)
+	for i in range(lines.size()):
+		draw_string(font, origin + Vector2(0.0, float(i) * line_h), lines[i],
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, fs, Color(0.75, 0.95, 1.0))
+
+
+func _debug_node_label(n) -> String:
+	if n == null or not is_instance_valid(n):
+		return "-"
+	var unit_data = n.get("data")
+	if unit_data != null:
+		if "hero_id" in unit_data:
+			return unit_data.hero_id
+		if "enemy_id" in unit_data:
+			return unit_data.enemy_id
+	return n.name
+
+
+func _state_name(s: int) -> String:
+	match s:
+		State.WALKING:
+			return "WALK"
+		State.COMBAT:
+			return "COMBAT"
+		State.STEALTHED:
+			return "STEALTH"
+		State.DYING:
+			return "DYING"
+	return str(s)
 
 
 func _get_zoom_scale() -> float:

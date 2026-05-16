@@ -54,6 +54,9 @@ var _attack_cooldown: float = 0.0
 
 var _lunge_dir: Vector2 = Vector2.ZERO
 var _lunge_t: float = 0.0
+# Swing duration captured at strike start so the normalization stays stable
+# even if attack_speed changes mid-swing. Cadence-scaled (see swing_duration).
+var _lunge_dur: float = LUNGE_DURATION
 var _hit_flash_t: float = 0.0
 # Animation pipeline parity with BaseHero/BaseEnemy. Drives walk-bob, flinch,
 # breath, hit-stop, direction-aware eyes, and per-soldier skin variation
@@ -74,6 +77,11 @@ const STUCK_TIMEOUT: float = 1.5
 # the enemy's Y *during* the charge instead of snapping to it at the end.
 const APPROACH_Y_PRIORITY: float = 1.0
 const Y_ALIGN_EPS: float = 2.0
+# Assist-in-lull: when WaveManager says only the last engageable enemy
+# remains, an idle soldier may charge it even outside its guard zone, up
+# to this distance (avoids a cross-map sprint on huge maps; generous
+# because by definition nothing else needs blocking). Tunable.
+const ASSIST_MAX_DIST: float = 1100.0
 var _stuck_t: float = 0.0
 var _stuck_last_pos: Vector2 = Vector2.ZERO
 var _flinch_t: float = 0.0
@@ -88,6 +96,18 @@ var _skin_tint: Color = Color.WHITE
 # spotting it in aggro_range. Cleared when the target dies or the soldier
 # successfully engages it (the engagement itself then holds position).
 var _charge_target: BaseEnemy = null
+# True while charging/holding a lone straggler acquired via the combat
+# lull (outside the normal guard zone). Lowest-priority behavior — any
+# normal guarded target or the lull ending preempts it.
+var _assisting: bool = false
+var _in_lull: bool = false
+# Soldier claim watchdog — mirrors BaseHero.CLAIM_TIMEOUT. A soft claim
+# reserves (freezes) an enemy before contact; if contact never happens
+# (path blocked, or an assist chase toward an unreachable straggler) the
+# enemy would stay frozen forever and the wave soft-locks. Drop the claim
+# after this long without a hard engagement.
+const CLAIM_TIMEOUT: float = 4.0
+var _claim_age: float = 0.0
 # Combat Blocking Doctrine — stop-on-claim (same model as BaseHero). The
 # enemy this soldier has committed to is reserved so it halts and waits
 # while the soldier walks over, instead of being chased while moving.
@@ -138,6 +158,21 @@ func _ready() -> void:
 	var tint_amount: float = (v_seed - 0.5) * 0.10
 	_skin_tint = Color(1.0 + tint_amount, 1.0 + tint_amount * 0.6, 1.0 + tint_amount * 0.3, 1.0)
 	_prev_pos = global_position
+	if not EventBus.combat_lull_changed.is_connected(_on_combat_lull_changed):
+		EventBus.combat_lull_changed.connect(_on_combat_lull_changed)
+
+
+func _on_combat_lull_changed(in_lull: bool) -> void:
+	_in_lull = in_lull
+	# Lull ended (more enemies arrived). A soldier still only ASSISTING
+	# (not yet hard-engaged) must drop it and resume normal block-many
+	# duty. One that already hard-locked stays — it's a normal block now.
+	if not in_lull and _assisting and _engaged_enemies.is_empty():
+		_assisting = false
+		_charge_target = null
+		_sync_claim()
+		if state == State.CHARGING:
+			change_state(State.RETURNING)
 
 
 # Read a debug-only soldier-stat multiplier from BalanceOverrides keyed by
@@ -166,6 +201,13 @@ func set_blocking_position(new_pos: Vector2, flag_position: Vector2 = Vector2.IN
 	if flag_position != Vector2.INF:
 		_flag_position = flag_position
 	_release_all_engagements()
+	# Also drop the soft (reserve) claim now, not next frame. _sync_claim would
+	# reconcile it anyway (desired→null after the clears below), but releasing
+	# explicitly means a reserved enemy resumes walking the instant the flag
+	# moves instead of staying frozen for one physics tick. Idempotent; mirrors
+	# _die()'s explicit _release_claim(). _sync_claim stays the steady-state
+	# choke-point — this is only the edge release.
+	_release_claim()
 	_charge_target = null
 	if state != State.DEAD:
 		change_state(State.MOVING)
@@ -213,6 +255,21 @@ func _physics_process(delta: float) -> void:
 	if _ability_host != null:
 		_ability_host.tick(delta)
 	_sync_claim()
+	# Claim watchdog — a soft claim with no hard engagement that drags on
+	# past CLAIM_TIMEOUT means contact will never happen (path blocked /
+	# assist toward an unreachable straggler). Drop it so the reserved
+	# enemy resumes instead of freezing the wave forever.
+	if _claimed_enemy != null and _engaged_enemies.is_empty():
+		_claim_age += delta
+		if _claim_age > CLAIM_TIMEOUT:
+			_release_claim()
+			_charge_target = null
+			_assisting = false
+			_claim_age = 0.0
+			if state == State.CHARGING:
+				change_state(State.RETURNING)
+	else:
+		_claim_age = 0.0
 	# Walk-bob accumulator — ticks in any state where we're actually moving
 	# (MOVING, CHARGING, RETURNING). Idle states use breath instead.
 	var moving_state: bool = state == State.MOVING or state == State.CHARGING or state == State.RETURNING
@@ -296,15 +353,14 @@ func _try_engage() -> void:
 		if not (area is BaseEnemy):
 			continue
 		var enemy: BaseEnemy = area
-		if enemy.data == null or enemy.data.is_flying:
-			continue
-		if enemy.state == BaseEnemy.State.DYING:
+		# Shared predicate: skip flying/bypass/dying/no-data uniformly.
+		if not enemy.is_engageable_ground():
 			continue
 		if _engaged_enemies.has(enemy):
 			continue
 		if not _is_guardable(enemy):
 			continue
-		var bc: int = enemy._blockers.size()
+		var bc: int = enemy.get_claim_count() if enemy.has_method("get_claim_count") else enemy._blockers.size()
 		var prog: float = enemy.get_path_progress() if enemy.has_method("get_path_progress") else 0.0
 		var d2: float = global_position.distance_squared_to(enemy.global_position)
 		if bc < best_block \
@@ -374,13 +430,12 @@ func _scan_aggro_and_maybe_charge() -> void:
 		if not (area is BaseEnemy):
 			continue
 		var enemy: BaseEnemy = area
-		if enemy.data == null or enemy.data.is_flying:
-			continue
-		if enemy.state == BaseEnemy.State.DYING:
+		# Shared predicate: skip flying/bypass/dying/no-data uniformly.
+		if not enemy.is_engageable_ground():
 			continue
 		if not _is_guardable(enemy):
 			continue
-		var bc: int = enemy._blockers.size()
+		var bc: int = enemy.get_claim_count() if enemy.has_method("get_claim_count") else enemy._blockers.size()
 		var prog: float = enemy.get_path_progress() if enemy.has_method("get_path_progress") else 0.0
 		var d2: float = global_position.distance_squared_to(enemy.global_position)
 		if bc < best_block \
@@ -392,7 +447,24 @@ func _scan_aggro_and_maybe_charge() -> void:
 			best = enemy
 	if best != null:
 		_charge_target = best
+		_assisting = false
+		_sync_claim()
 		change_state(State.CHARGING)
+		return
+	# Assist-in-lull fallback (lowest priority): no guardable target AND
+	# only the last engageable enemy remains AND we're free. Charge it
+	# even though it's outside the guard zone, within ASSIST_MAX_DIST.
+	# Reuses the normal charge/engage path; the guard-zone cancel in
+	# _tick_charge is skipped while _assisting.
+	if _in_lull and _engaged_enemies.is_empty() and _charge_target == null:
+		var lone: Node = WaveManager.lone_enemy()
+		if lone != null and is_instance_valid(lone) and lone is BaseEnemy \
+				and lone.is_engageable_ground() \
+				and global_position.distance_to(lone.global_position) <= ASSIST_MAX_DIST:
+			_charge_target = lone
+			_assisting = true
+			_sync_claim()
+			change_state(State.CHARGING)
 
 
 # Combat Ground Line — unit steer that never closes the vertical (lane) gap
@@ -427,6 +499,7 @@ func _tick_charge() -> void:
 	# (continuous — no teleport, CORE RULE 13) so the duel reads on one
 	# ground line. Once aligned, hold position. Don't chase further targets.
 	if not _engaged_enemies.is_empty():
+		_assisting = false  # hard contact made — it's a normal block now
 		var eng: Node = _engaged_enemies[0]
 		var settled: bool = true
 		# Enemy is in _engaged_enemies ⇒ we hard-block it ⇒ it's frozen
@@ -453,13 +526,17 @@ func _tick_charge() -> void:
 	# This is the "no chasing past the guard zone" rule. Once physical
 	# engagement has succeeded the lock holds regardless — that's
 	# _engaged_enemies above, which already short-circuits.
+	# Assist charges deliberately ignore the guard-zone cancel (the lone
+	# straggler is outside the zone by definition). Lull-end / target-loss
+	# still preempts assist via _on_combat_lull_changed and the checks below.
 	if _charge_target != null and is_instance_valid(_charge_target):
-		if not _is_guardable(_charge_target):
+		if not _assisting and not _is_guardable(_charge_target):
 			_charge_target = null
 			change_state(State.RETURNING)
 			return
 	# Lost our chase target before making contact → go home.
 	if _charge_target == null:
+		_assisting = false
 		change_state(State.RETURNING)
 		return
 	# Combat Ground Line — steer at the enemy's exact lane-Y, not its raw
@@ -491,6 +568,7 @@ func _release_all_engagements() -> void:
 		if e != null and is_instance_valid(e):
 			e.release_combat(self)
 	_engaged_enemies.clear()
+	_assisting = false
 
 
 # Combat Blocking Doctrine — stop-on-claim reconciliation (mirrors
@@ -547,23 +625,22 @@ func _start_lunge(target_world_pos: Vector2) -> void:
 	if dir.length_squared() < 0.01:
 		return
 	_lunge_dir = dir.normalized()
-	_lunge_t = LUNGE_DURATION
+	var eff_atk_speed: float = data.attack_speed * _soldier_mult("soldier_attack_speed_mult") if data != null else 1.0
+	_lunge_dur = UnitVisualDrawer.swing_duration(eff_atk_speed)
+	_lunge_t = _lunge_dur
 	queue_redraw()
 
 
 func _lunge_offset() -> Vector2:
 	if _lunge_t <= 0.0:
 		return Vector2.ZERO
-	# Matches BaseHero wind-up curve — rear back, commit, recover.
-	var t: float = 1.0 - (_lunge_t / LUNGE_DURATION)
-	var offset_scale: float = 0.0
-	if t < 0.25:
-		offset_scale = -0.3 * (t / 0.25)
-	elif t < 0.75:
-		offset_scale = -0.3 + 1.3 * ((t - 0.25) / 0.5)
-	else:
-		offset_scale = 1.0 - ((t - 0.75) / 0.25)
-	return _lunge_dir * (LUNGE_DISTANCE * offset_scale)
+	# Matches BaseHero wind-up curve — rear back, snap forward, settle.
+	#   [0.00, 0.32]  0    → -0.30   anticipation (ease-in)
+	#   [0.32, 0.55] -0.30 → +1.00   commit (ease-out — the snap)
+	#   [0.55, 0.78] +1.00 → +0.85   hold near-extended
+	#   [0.78, 1.00] +0.85 → 0       settle (ease-in-out)
+	var t: float = 1.0 - (_lunge_t / maxf(0.0001, _lunge_dur))
+	return _lunge_dir * (LUNGE_DISTANCE * UnitVisualDrawer.lunge_offset_scale(t))
 
 
 func take_damage(amount: float, type: int, source: Node = null) -> float:
@@ -652,11 +729,11 @@ func _draw() -> void:
 		var breath: float = sin(_breath_t * 2.5) * 0.025
 		body_scale.x *= 1.0 + breath
 		body_scale.y *= 1.0 - breath
-	# Impact squash on attack commit — peaks around the strike frame.
+	# Impact squash on attack commit — peaks at the strike frame (~t01 0.48).
 	if _lunge_t > 0.0:
-		var lt: float = 1.0 - (_lunge_t / LUNGE_DURATION)
-		if lt > 0.30 and lt < 0.65:
-			var sq: float = sin((lt - 0.30) / 0.35 * PI) * 0.18
+		var lt: float = 1.0 - (_lunge_t / maxf(0.0001, _lunge_dur))
+		if lt > 0.32 and lt < 0.64:
+			var sq: float = sin((lt - 0.32) / 0.32 * PI) * 0.18
 			body_scale.x *= 1.0 + sq
 			body_scale.y *= 1.0 - sq
 
@@ -670,13 +747,12 @@ func _draw() -> void:
 		var max_hp: int = _effective_max_hp if _effective_max_hp > 0 else (data.max_health if data != null else 1)
 		if max_hp > 0 and float(current_health) / float(max_hp) < 0.30:
 			ctx["low_hp"] = true
-		# Wind-up / strike-arc derived from lunge curve, mirroring BaseHero.
+		# Wind-up / strike-arc derived from lunge curve via the shared phase
+		# mapping (single source of truth — soldier + hero stay in lockstep).
 		if _lunge_t > 0.0:
-			var t01: float = 1.0 - (_lunge_t / LUNGE_DURATION)
-			if t01 < 0.30:
-				ctx["wind_t"] = clampf(t01 / 0.30, 0.0, 1.0)
-			else:
-				ctx["strike_t"] = clampf((t01 - 0.30) / 0.65, 0.0, 1.0)
+			var t01: float = 1.0 - (_lunge_t / maxf(0.0001, _lunge_dur))
+			ctx.merge(UnitVisualDrawer.swing_phase(t01))
+			if ctx.has("strike_t"):
 				ctx["strike_dir"] = _lunge_dir
 
 	# 4. Body draw.
@@ -686,7 +762,7 @@ func _draw() -> void:
 		if _hit_flash_t > 0.0:
 			UnitVisualDrawer.draw_hit_flash(self, data.visual, _hit_flash_t / HIT_FLASH_DURATION, body_offset, body_scale)
 		if _lunge_t > 0.0:
-			var t01: float = 1.0 - (_lunge_t / LUNGE_DURATION)
+			var t01: float = 1.0 - (_lunge_t / maxf(0.0001, _lunge_dur))
 			UnitVisualDrawer.draw_swing_arc_trail(self, data.visual, _lunge_dir, t01)
 	else:
 		# Legacy fallback.

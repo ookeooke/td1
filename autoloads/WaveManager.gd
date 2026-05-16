@@ -39,6 +39,13 @@ var _session_id: int = 0
 # Per-wave alive counts and pending bounties. Enables overlap: wave N+1 can be
 # running while wave N's stragglers still die. Keys are 0-based wave indices.
 var _alive_per_wave: Dictionary = {} # wave_index → int
+# Lull tracking — alive GROUND (engageable, non-flying) enemies. When this
+# falls to LULL_MAX, blockers converge to finish the straggler; the moment
+# it rises, normal block-many/spread resumes. Flying enemies are excluded
+# (melee blockers can't engage them anyway).
+const LULL_MAX: int = 1
+var _alive_ground: Array = []
+var _in_lull: bool = false
 var _pending_bounties: Dictionary = {} # wave_index → int (bounty paid when alive→0)
 # Per-wave spawner-pending count. Bounty for wave N waits until both
 # alive[N] == 0 AND pending_spawners[N] == 0. Without this, a wave with a
@@ -135,6 +142,8 @@ func start(wave_list: Resource, level: Node, early_call_window: float = 0.0,
 	_alive_per_wave.clear()
 	_pending_bounties.clear()
 	_pending_spawners_per_wave.clear()
+	_alive_ground.clear()
+	_set_lull(false)
 	_all_waves_launched = false
 	_current_spawn_window_sec = 0.0
 	_spawn_elapsed_game = 0.0
@@ -327,6 +336,8 @@ func start_endless(level: Node) -> void:
 	_alive_per_wave.clear()
 	_pending_bounties.clear()
 	_pending_spawners_per_wave.clear()
+	_alive_ground.clear()
+	_set_lull(false)
 	_all_waves_launched = false
 	_current_spawn_window_sec = 0.0
 	_spawn_elapsed_game = 0.0
@@ -424,6 +435,9 @@ func _launch_wave(wave: Resource, path_ids: Array) -> void:
 	# across overlapping waves.
 	_active_spawners += wave.spawns.size()
 	_wave_active = true
+	# New spawners → more enemies imminent: cancel any active lull so
+	# blockers immediately resume normal spread/block-many duty.
+	_update_lull()
 	# Initialize per-wave tracking. Bounty is queued here, paid later when
 	# this wave's last enemy dies AND all of this wave's spawners have run.
 	_alive_per_wave[_wave_index] = 0
@@ -571,6 +585,9 @@ func _on_spawning_complete() -> void:
 	if not _wave_active:
 		return
 	_wave_active = false
+	# Spawning done — if it's already down to the last straggler the lull
+	# can now legitimately engage (the spawn-state gate just opened).
+	_update_lull()
 	var completed_wave_idx: int = _wave_index
 	EventBus.wave_spawning_complete.emit(completed_wave_idx + 1)
 	print("[WaveManager] wave %d spawning done (alive=%d)" % [
@@ -694,6 +711,62 @@ func _on_enemy_spawned(enemy: Node, _path_id: String) -> void:
 	# to current _wave_index for ad-hoc spawns (Test Range, debug commands).
 	var wi: int = enemy.get_meta("wave_index", _wave_index) if enemy != null else _wave_index
 	_alive_per_wave[wi] = int(_alive_per_wave.get(wi, 0)) + 1
+	# Only ENGAGEABLE ground enemies feed the lull. The old check read
+	# `enemy.is_flying` — base_enemy has no such property (it's
+	# data.is_flying), so it was always false and EVERY flyer/bypass leaked
+	# into the registry: assist then chased un-blockable flyers and the
+	# count never hit 1 for a real ground straggler. Route through the
+	# shared predicate so it can't drift again.
+	if enemy != null and enemy.has_method("is_engageable_ground") and enemy.is_engageable_ground():
+		if not _alive_ground.has(enemy):
+			_alive_ground.append(enemy)
+	_update_lull()
+
+
+# Alive ground-enemy registry → drives the combat lull. Self-healing:
+# accessors prune freed refs so a stray free can't strand the lull state.
+func alive_ground_count() -> int:
+	_prune_ground()
+	return _alive_ground.size()
+
+
+func lone_enemy() -> Node:
+	# The single remaining ground enemy (assist target), else null. Blockers
+	# read this instead of scanning the "enemies" group. Re-validate
+	# engageability: an enemy already in the registry may have turned DYING
+	# in the frame before _count_enemy_exit removes it — never hand assist
+	# a dying/un-blockable target.
+	_prune_ground()
+	if _alive_ground.size() != 1:
+		return null
+	var e: Node = _alive_ground[0]
+	if e != null and e.has_method("is_engageable_ground") and e.is_engageable_ground():
+		return e
+	return null
+
+
+func _prune_ground() -> void:
+	for i in range(_alive_ground.size() - 1, -1, -1):
+		if not is_instance_valid(_alive_ground[i]):
+			_alive_ground.remove_at(i)
+
+
+func _update_lull() -> void:
+	_prune_ground()
+	var n: int = _alive_ground.size()
+	# A lull is the wave WINDING DOWN to the last straggler — NOT just
+	# "one alive right now". While spawners are still running (_active_
+	# spawners > 0), the first/trickle enemy of a wave also has count 1;
+	# without this gate blockers would abandon their zones and dash at the
+	# first spawn every wave, then yo-yo back. Require spawning finished.
+	_set_lull(n >= 1 and n <= LULL_MAX and _active_spawners <= 0)
+
+
+func _set_lull(value: bool) -> void:
+	if value == _in_lull:
+		return
+	_in_lull = value
+	EventBus.combat_lull_changed.emit(value)
 
 
 func _on_enemy_died(enemy: Node, _gold: int) -> void:
@@ -720,6 +793,8 @@ func _count_enemy_exit(enemy: Node) -> void:
 	if enemy.get_meta("_wave_counted_exit", false):
 		return
 	enemy.set_meta("_wave_counted_exit", true)
+	_alive_ground.erase(enemy)
+	_update_lull()
 	var wi: int = enemy.get_meta("wave_index", -1)
 	if wi < 0:
 		return # untracked spawn (Test Range, etc.) — no bounty owed
@@ -735,6 +810,13 @@ func _on_game_over() -> void:
 	_pending_bounties.clear()
 	_pending_spawners_per_wave.clear()
 	_alive_per_wave.clear()
+	# Audit fix #3: defeat/victory must drop the lull too. Without this
+	# _in_lull stays true (last straggler was alive at game over) and
+	# leaks into the next level — blockers would start it mid-assist
+	# until the first new spawn flips it. WaveManager is an autoload, so
+	# this state survives the scene change unless cleared here.
+	_alive_ground.clear()
+	_set_lull(false)
 
 
 func stop() -> void:
@@ -750,6 +832,8 @@ func stop() -> void:
 	_alive_per_wave.clear()
 	_pending_bounties.clear()
 	_pending_spawners_per_wave.clear()
+	_alive_ground.clear()
+	_set_lull(false)
 	_all_waves_launched = false
 	# Spawn-window tracking — reset so a fresh start() doesn't read stale
 	# state from a previous run (would yield wrong remaining time until the

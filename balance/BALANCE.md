@@ -478,6 +478,20 @@ Gear, talents, and upgrades are *bonuses* that ease a level or unlock 3-star run
 4. Play campaign mode end-to-end
 5. If you can't 1-star, the level is gear-gated — tune it down before merging
 
+### Active balance-testing scope — Level 5 only
+
+Balance testing, auditing, pressure/drift verification, telemetry review, and tuning iteration target **Level 5 only** for now. L1–L4 are settled — do **not** audit, retune, or "fix drift" on them unless the user explicitly names that level.
+
+**Scope:**
+
+- The `balance-scout` agent's `level` / `tower` / `progression` modes operate on `level_5` (`levels/level5_waves.tres`) unless the user names another level.
+- Pressure/`DRIFT` readouts, Naked Baseline runs, and `RunStatsDigest` filtering are read for `level_5`.
+- L1–L4 readouts may still print (BaseLevel always prints) — **read them, don't act on them**. A red `DRIFT` on L2 is not a task unless the user asks.
+
+**Why:** L1–L4 are shipped/grandfathered (the duration rule already grandfathers L1–L3, the procedural-art rule freezes L1–L4). Reskinning or retuning a settled level without scoped re-verification is exactly the regression those rules prevent. Concentrating the balance loop on one in-flight level keeps tuning signal clean and avoids churn on levels that are already in band.
+
+**Lift the restriction** when the user says balance work moves to a new level (then update this rule's level number) or explicitly asks for an L1–L4 pass. Naked Baseline (above) still applies to **every** campaign level regardless of testing scope — that floor is never scoped away.
+
 ---
 
 ## Loot drop curve

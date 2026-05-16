@@ -37,6 +37,12 @@ signal wave_spawning_complete(wave_number)
 # wave_completed: every enemy of wave N is dead/leaked. Bounty pays here.
 signal wave_completed(wave_number)
 signal early_wave_triggered(bonus_gold)
+# combat_lull_changed: true when only the last engageable (ground) enemy
+# remains, false as soon as more arrive. Blockers (soldiers + hero) use it
+# to converge and finish a lone straggler instead of one unit dueling it,
+# while keeping the spread/block-many behavior primary. See
+# docs/COMBAT_BLOCKING_DOCTRINE.md "Assist in a lull".
+signal combat_lull_changed(in_lull)
 # Overlap-only redesign: campaign mode parks before W1 launches so the
 # player can build initial towers. HUD listens to show "Start Wave 1" on
 # the Send Wave button; pressing it fires call_early_wave which kicks off

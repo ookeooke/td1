@@ -525,6 +525,122 @@ func test_soldier_reserves_charge_target_and_releases() -> void:
 	assert_false(enemy.is_held(), "soldier death/despawn frees the claim")
 
 
+func test_set_blocking_position_releases_soft_claim_immediately() -> void:
+	# Rally-flag drag must unreserve the held enemy on the SAME call, not wait
+	# for the next _sync_claim frame — locks the explicit _release_claim() in
+	# set_blocking_position(). Without it the enemy stays frozen one tick.
+	var soldier := BaseSoldier.new()
+	_spawned.append(soldier)
+	soldier.data = SoldierData.new()
+	soldier.state = BaseSoldier.State.MOVING
+	var enemy: BaseEnemy = _enemy_on_path_at(300.0)
+	soldier._charge_target = enemy
+	soldier._sync_claim()
+	assert_true(enemy.is_held(), "precondition: soldier holds the enemy")
+	soldier.set_blocking_position(Vector2(500, 200), Vector2(480, 200))
+	assert_eq(soldier._claimed_enemy, null,
+		"rally reset clears the soft claim in the same call")
+	assert_false(enemy.is_held(),
+		"held enemy resumes immediately on rally reset (no one-frame freeze)")
+
+
+# ── Stuck-between-two-enemies recovery ──────────────────────────────────
+# Regression lock for the CLAIM_TIMEOUT livelock: a hero that times out a soft
+# claim must blacklist THAT enemy briefly so the next acquisition picks a
+# different one, instead of deterministically re-failing on the same target
+# every 4 s (hero appears frozen between two enemies). See
+# docs/COMBAT_BLOCKING_DOCTRINE.md.
+
+func test_giveup_blacklist_set_and_self_expiry() -> void:
+	var hero := BaseHero.new()
+	_spawned.append(hero)
+	hero.data = HeroData.new()
+	var e: BaseEnemy = _make_enemy(1.0)
+	assert_false(hero._is_given_up(e), "fresh enemy is not blacklisted")
+	hero._note_giveup(e)
+	assert_true(hero._is_given_up(e), "timed-out enemy is blacklisted")
+	# Force expiry without sleeping: backdate the entry.
+	hero._giveup_until[e] = Time.get_ticks_msec() - 1
+	assert_false(hero._is_given_up(e), "blacklist self-expires after the cooldown")
+	assert_false(hero._giveup_until.has(e), "expired entry is purged on read")
+
+
+func test_giveup_ignores_null_and_purges_invalid() -> void:
+	var hero := BaseHero.new()
+	_spawned.append(hero)
+	hero.data = HeroData.new()
+	hero._note_giveup(null)  # must not crash / must not add a key
+	assert_eq(hero._giveup_until.size(), 0, "null is never blacklisted")
+	var doomed: BaseEnemy = BaseEnemy.new()
+	doomed.data = EnemyData.new()
+	hero._note_giveup(doomed)
+	assert_eq(hero._giveup_until.size(), 1, "valid enemy recorded")
+	doomed.free()
+	var live: BaseEnemy = _make_enemy(1.0)
+	hero._note_giveup(live)  # purge pass drops the now-freed key
+	assert_false(hero._giveup_until.keys().any(func(k): return not is_instance_valid(k)),
+		"freed enemies are purged from the blacklist")
+
+
+# NOTE: the end-to-end "picker hands back the OTHER enemy" path
+# (_pick_target_in_detection_zone / _pick_split_target_in_area) needs a live
+# scene tree + Area2D pickup, which GUT headless can't fake (see this file's
+# header). The give-up gate in both pickers is a single
+# `if _is_given_up(enemy): continue`; its semantics are fully locked by the
+# two _is_given_up tests above, and the behavioural path is verified manually
+# (repro harness in the plan / SESSIONS).
+
+
+# ── Stale-block capacity prune (permanent-stuck variant) ────────────────
+
+func test_prune_dead_blocks_drops_freed_entry() -> void:
+	var hero := BaseHero.new()
+	_spawned.append(hero)
+	hero.data = HeroData.new()
+	var gone: BaseEnemy = BaseEnemy.new()
+	gone.data = EnemyData.new()
+	hero._blocked_enemies = [gone]
+	gone.free()
+	hero._prune_dead_blocks()
+	assert_eq(hero._blocked_enemies.size(), 0,
+		"freed block is pruned outside COMBAT so capacity can't read falsely full")
+
+
+func test_prune_dead_blocks_releases_dying_entry() -> void:
+	var hero := BaseHero.new()
+	_spawned.append(hero)
+	hero.data = HeroData.new()
+	var dying: BaseEnemy = _enemy_on_path_at(300.0)
+	dying.engage_combat(hero)            # hero is now a blocker on `dying`
+	hero._blocked_enemies = [dying]
+	dying.state = BaseEnemy.State.DYING
+	hero._prune_dead_blocks()
+	assert_false(hero._blocked_enemies.has(dying),
+		"DYING block removed from the capacity list")
+	assert_eq(dying._blockers.size(), 0,
+		"and the enemy is told it is no longer blocked")
+
+
+# ── Engage-radius floor (engage spot can't sit outside the gate circle) ──
+
+func test_effective_engage_radius_floored_and_single_source() -> void:
+	var hero := BaseHero.new()
+	_spawned.append(hero)
+	hero.data = HeroData.new()
+	hero.data.attack_range = 10.0   # tiny → would derive a radius < 30
+	hero.data.engage_radius = 0.0   # unset → falls back to min(atkR, default)
+	var r: float = hero._effective_engage_radius()
+	assert_true(r >= BaseHero.MELEE_ENGAGE_DISTANCE,
+		"engage radius floored at MELEE_ENGAGE_DISTANCE so the spot stays inside the gate")
+	assert_almost_eq(hero.get_effective_engage_radius(), r, 0.001,
+		"get_effective_engage_radius is a thin mirror — one radius, no drift")
+	# And the engage spot is provably within that circle even at the floor.
+	var e: BaseEnemy = _enemy_on_path_at(500.0)
+	var spot: Vector2 = hero._engage_position_for(e)
+	assert_true(e.global_position.distance_to(spot) <= r + 0.01,
+		"engage spot within the (floored) block circle")
+
+
 func test_progress_delta_sign() -> void:
 	# Anchor world point projects onto the horizontal lane at x≈hold.x.
 	# Enemy ahead (higher progress) → positive delta; behind → negative.
@@ -568,10 +684,27 @@ func test_profile_authored_but_not_blocking_is_ranged() -> void:
 	assert_almost_eq(float(prof["damage"]), 10.0, 0.001, "ranged damage path")
 
 
+func test_profile_close_when_blockable_enemy_in_face_range() -> void:
+	var hero: BaseHero = _ranged_hero(4.0, 1.0, 0)
+	var foe: BaseEnemy = _make_fake_enemy_minimal(false, false)
+	hero._target_enemy = foe
+	assert_true(hero._should_use_close_attack(foe, true),
+		"blockable ground enemy at face range uses close poke before hard block registers")
+
+
+func test_profile_close_range_keeps_projectile_for_flying_or_bypass() -> void:
+	var hero: BaseHero = _ranged_hero(4.0, 1.0, 0)
+	var flyer: BaseEnemy = _make_fake_enemy_minimal(true, false)
+	var bypass: BaseEnemy = _make_fake_enemy_minimal(false, true)
+	assert_false(hero._should_use_close_attack(flyer, true),
+		"flyers stay projectile targets even at face range")
+	assert_false(hero._should_use_close_attack(bypass, true),
+		"bypass enemies stay projectile targets even at face range")
+
+
 func test_profile_close_when_blocking_focus() -> void:
 	var hero: BaseHero = _ranged_hero(4.0, 1.0, 0)
-	var foe := Node.new()
-	_spawned.append(foe)
+	var foe: BaseEnemy = _make_fake_enemy_minimal(false, false)
 	hero._target_enemy = foe
 	hero._blocked_enemies = [foe]           # physically engaged
 	var prof: Dictionary = hero._resolve_attack_profile()
@@ -584,8 +717,7 @@ func test_profile_close_when_blocking_focus() -> void:
 
 func test_profile_close_damage_type_inherits_on_negative() -> void:
 	var hero: BaseHero = _ranged_hero(4.0, 1.0, -1)  # -1 → inherit data.damage_type
-	var foe := Node.new()
-	_spawned.append(foe)
+	var foe: BaseEnemy = _make_fake_enemy_minimal(false, false)
 	hero._target_enemy = foe
 	hero._blocked_enemies = [foe]
 	var prof: Dictionary = hero._resolve_attack_profile()
@@ -704,3 +836,36 @@ func _make_fake_enemy_minimal(is_flying: bool, bypass: bool) -> BaseEnemy:
 	enemy.state = BaseEnemy.State.WALKING
 	_spawned.append(enemy)
 	return enemy
+
+
+# ── Shared engageability predicate + claim accounting ───────────────────
+
+func test_is_engageable_ground_truth_table() -> void:
+	var ground: BaseEnemy = _make_fake_enemy_minimal(false, false)
+	assert_true(ground.is_engageable_ground(), "plain ground enemy is engageable")
+	var flyer: BaseEnemy = _make_fake_enemy_minimal(true, false)
+	assert_false(flyer.is_engageable_ground(), "flying is not engageable")
+	var bypass: BaseEnemy = _make_fake_enemy_minimal(false, true)
+	assert_false(bypass.is_engageable_ground(), "bypass is not engageable")
+	var dying: BaseEnemy = _make_fake_enemy_minimal(false, false)
+	dying.state = BaseEnemy.State.DYING
+	assert_false(dying.is_engageable_ground(), "dying is not engageable")
+
+
+func test_engage_combat_rejects_flying() -> void:
+	var flyer: BaseEnemy = _make_fake_enemy_minimal(true, false)
+	var b: Node = _make_blocker_stub("a")
+	assert_false(flyer.engage_combat(b), "flying enemy refuses hard block")
+	assert_ne(flyer.state, BaseEnemy.State.COMBAT, "flyer never enters COMBAT")
+
+
+func test_get_claim_count_counts_unique_claimers() -> void:
+	var enemy: BaseEnemy = _make_enemy(1.0)
+	var unit: Node = _make_blocker_stub("u")
+	enemy.reserve(unit)        # soft claim
+	enemy.engage_combat(unit)  # same unit hard-blocks (reserve NOT cleared)
+	assert_eq(enemy.get_claim_count(), 1,
+		"reserve+block by the same unit counts once, not twice")
+	var other: Node = _make_blocker_stub("v")
+	enemy.engage_combat(other)
+	assert_eq(enemy.get_claim_count(), 2, "distinct claimers counted separately")

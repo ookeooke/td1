@@ -54,7 +54,7 @@ class_name HeroData
 @export var detection_radius_px: float = 0.0
 
 # Ranged-hero close-combat profile. When a ranged hero (projectile_scene
-# set) is physically blocking an enemy at engage_radius, it uses these
+# set) has a blockable ground enemy at face-contact range, it uses these
 # instead of its ranged shot — a weaker melee poke at its own cadence.
 # 0 / 0 / -1 = unauthored → hero keeps shooting point-blank (legacy
 # behavior, zero regression). close_attack_damage_type -1 inherits
@@ -63,9 +63,13 @@ class_name HeroData
 @export var close_attack_speed: float = 0.0
 @export var close_attack_damage_type: int = -1
 
-# Legacy guard-zone fields — superseded by detection_radius_px. Kept on the
-# resource for back-compat with .tres files but no longer read by combat
-# code. May be removed in a later pass.
+# Guard-zone back margin. guard_back_px IS read by combat: BaseHero
+# `_back_margin()` returns it (when > 0) as the follow-through / drop
+# distance past the anchor — how far a hero keeps covering an enemy that
+# slipped past it before giving up (data-driven; 0 falls back to
+# GUARD_BACK_MARGIN_PX). guard_front_px is currently unused by hero combat
+# (acquisition uses the hard-coded GUARD_ACQUIRE_MARGIN_PX); kept for
+# back-compat and possible future authored front-grace.
 @export var guard_front_px: float = 0.0
 @export var guard_back_px: float = 0.0
 @export var auto_seek_radius: float = 0.0

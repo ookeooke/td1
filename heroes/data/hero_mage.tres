@@ -13,7 +13,7 @@
 [ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="12_s_charm"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_frost_nova.tres" id="13_nova"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_meteor.tres" id="14_meteor"]
-[ext_resource type="PackedScene" path="res://projectiles/HeroBolt.tscn" id="15_bolt"]
+[ext_resource type="PackedScene" path="res://projectiles/MageBolt.tscn" id="15_bolt"]
 
 [sub_resource type="Resource" id="MageRegen"]
 script = ExtResource("6_regen")
@@ -66,7 +66,7 @@ hero_id = "hero_mage"
 requires_unlock = true
 max_health = 40
 attack_damage = 1.0
-attack_range = 270.0
+attack_range = 320.0
 engage_radius = 45.0
 attack_speed = 0.6
 move_speed = 180.0
@@ -75,10 +75,11 @@ magic_resist = 0.4
 damage_type = 1
 respawn_time = 35.0
 max_block_targets = 1
-detection_radius_px = 90.0
+detection_radius_px = 100.0
 close_attack_damage = 0.5
 close_attack_speed = 0.7
 close_attack_damage_type = 0
+guard_back_px = 70.0
 skills = Array[Resource]([ExtResource("2_fireball"), ExtResource("4_shield"), ExtResource("13_nova"), ExtResource("14_meteor")])
 starter_skill_ids = Array[String](["fireball", "mana_shield"])
 talents = Array[Resource]([SubResource("Talent_Meditation"), SubResource("Talent_Siphon"), SubResource("Talent_ArcanePower")])

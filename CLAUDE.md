@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [balance/BALANCE.md](balance/BALANCE.md) — design intent for tuning: target g/DPS curves, hardness baselines, the Naked Baseline invariant. Read before any balance change. Folder is dev-only (stripped from production exports).
 - [docs/ITEM_VISUAL_TIERS.md](docs/ITEM_VISUAL_TIERS.md) - item-art visual tier rules. Read before generating or replacing item textures.
 - [docs/ITEM_NAMING.md](docs/ITEM_NAMING.md) - item naming rules. Read before adding or renaming item bases, affixes, or unique-style items.
-- [docs/COMBAT_BLOCKING_DOCTRINE.md](docs/COMBAT_BLOCKING_DOCTRINE.md) — Combat Blocking Doctrine. Source of truth for hero/soldier/enemy battle logic (guard zones, target selection, release conditions, projectile timing). Read before changing base_hero.gd / base_soldier.gd / base_enemy.gd / HeroData.gd / SoldierData.gd or any blocker-related ability.
+- [docs/COMBAT_BLOCKING_DOCTRINE.md](docs/COMBAT_BLOCKING_DOCTRINE.md) — Combat Blocking Doctrine. Source of truth for hero/soldier/enemy battle logic (guard zones, target selection, release conditions, projectile timing). Read before changing base_hero.gd / base_soldier.gd / base_enemy.gd / HeroData.gd / SoldierData.gd or any blocker-related ability. **Its "Blocker coordination invariants (load-bearing — do not regress)" subsection lists the 6 non-negotiable rules — read that first.**
 - [addons/godot_mcp/](addons/godot_mcp/) + `.mcp.json` — Godot MCP Pro v1.13.1 plugin and Claude Code bridge config. Dev-only AI tooling; the plugin is optional and auto-injects 3 `MCP*` autoloads while enabled. Strip before final production ship. Never reference any MCP symbol from game code.
 - [.claude/skills.md](.claude/skills.md) — MCP tool usage playbook auto-loaded by Claude Code each session. Mirror of `addons/godot_mcp/skills.md` from the vendor. Update both sides if either changes.
 - `git log` — diffs and short commit messages.
@@ -398,7 +398,7 @@ Effects modify behavior in `_get_effective_speed()` and state gate checks. Tower
 
 ## Blocking and Capacity
 
-Canonical doctrine lives in [docs/COMBAT_BLOCKING_DOCTRINE.md](docs/COMBAT_BLOCKING_DOCTRINE.md). Read it before changing hero/soldier/enemy combat, blocker movement, target selection, or ranged-vs-close engagement.
+Canonical doctrine lives in [docs/COMBAT_BLOCKING_DOCTRINE.md](docs/COMBAT_BLOCKING_DOCTRINE.md). Read it before changing hero/soldier/enemy combat, blocker movement, target selection, or ranged-vs-close engagement. The **"Blocker coordination invariants (load-bearing — do not regress)"** subsection there is mandatory pre-reading for any blocker change: one shared `BaseEnemy.is_engageable_ground()` gate for every melee path, `targets_flying` is ranged-only, `get_claim_count()` counts unique claimers, every soft claim needs a timeout watchdog, assist is preempted-not-sticky.
 
 Soldiers AND heroes can lock ground enemies into `COMBAT` (enemy stops walking). Flying enemies skip engagement. Detection alone never stops an enemy; only physical engagement through `engage_combat()` does.
 

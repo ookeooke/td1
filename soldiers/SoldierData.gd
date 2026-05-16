@@ -20,6 +20,10 @@ class_name SoldierData
 # Max distance the soldier may drift from its rally slot during a charge
 # before it drops the target and returns home. Anchors the chase to the
 # barracks zone so a fast enemy can't drag troops off the lane.
+# LEGACY / UNUSED: no soldier or hero code reads leash_range (verified —
+# only one .tres still sets it). Soldier chase is bounded by the guard
+# zone (guard_front_px / guard_back_px), not this. Kept for .tres
+# back-compat; safe to remove in a dedicated cleanup pass.
 @export var leash_range: float = 200.0
 # How many enemies this soldier can lock into COMBAT simultaneously. Basic
 # grunts hold one; Paladin-class variants (capacity 2+) can tank a small
@@ -28,8 +32,11 @@ class_name SoldierData
 
 # Combat Blocking Doctrine — guard-zone fields. Soldiers guard their rally
 # slot; they engage enemies inside the zone, never pursue beyond it.
-# Path-projected when possible (front = toward exit, back = toward spawn);
-# falls back to world distance around rally. See docs/COMBAT_BLOCKING_DOCTRINE.md.
+# Path-projected when possible. Matches GuardZone semantics: front_px =
+# AHEAD of the rally point toward SPAWN (enemy still approaching, path
+# delta < 0); back_px = BEHIND toward EXIT (enemy has PASSED, delta > 0).
+# Combined guard band = delta ∈ [-front_px, +back_px]. Falls back to a
+# world-distance ring around rally. See docs/COMBAT_BLOCKING_DOCTRINE.md.
 @export var guard_front_px: float = 120.0
 @export var guard_back_px: float = 70.0
 # Composed passives — heal aura (Paladin), damage block (Shield Bearer),

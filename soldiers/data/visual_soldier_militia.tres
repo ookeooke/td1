@@ -12,6 +12,7 @@ accent_type = 0
 radius = 22.0
 outline_width = 3.5
 weapon_type = 0
+weapon_trail_strength = 1.15
 race = 1
 head_color = Color(0.95, 0.78, 0.62, 1)
 head_radius_ratio = 0.55

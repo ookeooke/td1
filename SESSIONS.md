@@ -4888,3 +4888,104 @@ Verification: 178/178 GUT green, zero `[ContentRegistry/DRIFT]`, clean
 manual step: in-editor visual playtest that each hero attacks correctly
 with its new starter (mechanism proven by tests). Not started: Dragon,
 air-intercept, more platforms.
+
+---
+
+## 2026-05-17 (cont.) — Equipment range/readability pass
+
+Small UI follow-up to make the item-first weapon system legible in the
+inventory/equipment screen.
+
+- Equipment stat layout now includes `Range` in OFFENSE, sourced from the
+  same `BaseHero.compute_stats_for` path as runtime/dressing-room stats.
+- Item details now show a `Weapon Profile` block for weapon bases:
+  melee/projectile, damage type, range, and any authored weapon speed/base
+  damage/close damage. This makes sword behavior explicit: a sword is
+  `Melee - Physical`, `Range 75`; bows/staves/relics show projectile
+  profiles instead.
+- `StatIcon` gained a crosshair glyph for `attack_range`.
+- `test_hero_item_platform_content.gd` now asserts Mage+sword uses sword
+  range 75 and Mage+bow uses bow range 320, locking the "range comes from
+  the weapon profile" rule.
+
+Verification: `git diff --check` clean for touched files. Full GUT command
+attempted with local Godot 4.6.2 console binary, but this machine crashed
+headless with signal 11 before producing test results (same local blocker
+seen earlier in the session).
+
+---
+
+## 2026-05-17 (cont.) — Bow/staff icon fallback fix
+
+Investigated the Ranger/Mage starter weapon icon issue from screenshot.
+Root cause was authored item data, not inventory placement: `base_starter_bow`
+and `base_starter_staff` had `icon_glyph = "generic"` and no `icon_texture`,
+so `ItemIcon` correctly fell back to the brown diamond. Loot versions also
+had misleading `"sword"` glyph fallbacks even though their PNG textures
+usually override them.
+
+Fix:
+- Added procedural `bow` and `staff` glyphs to `ItemGlyph`.
+- Set `base_starter_bow` / `base_hunter_bow` to `icon_glyph = "bow"`.
+- Set `base_starter_staff` / `base_apprentice_staff` to
+  `icon_glyph = "staff"`.
+- Added a content test asserting bow/staff weapon families use family-specific
+  icon glyphs.
+
+Verification: `git diff --check` clean for touched files. Local Godot
+headless still crashes with signal 11 even for `--headless --path . --quit`,
+so visual/GUT verification remains blocked on this machine.
+
+---
+
+## 2026-05-17 (cont.) — Starter bow/staff pictures wired
+
+Copied the user-generated alpha item art from `tmp/imagegen` into real
+runtime paths under `items/art/generated` and wired starter weapons to use
+those textures:
+
+- `base_hunter_bow_rare_tier_alpha.png` copied over
+  `base_hunter_bow_rare_tier.png` and reused as
+  `base_starter_bow_white_tier.png`.
+- `base_apprentice_staff_magic_tier_alpha.png` copied over
+  `base_apprentice_staff_magic_tier.png` and reused as
+  `base_starter_staff_white_tier.png`.
+- `base_starter_bow.tres` and `base_starter_staff.tres` now have
+  `icon_texture` ext_resources, so they no longer rely on procedural glyph
+  fallback in the paperdoll/inventory.
+- Touched copied PNG mtimes after copy so Godot's importer sees them as
+  newer than any existing `.import` cache.
+
+Verification: texture paths exist and `git diff --check` is clean for the
+starter `.tres` edits. Godot visual verification still blocked by the local
+headless signal-11 crash.
+
+---
+
+## 2026-05-17 (cont.) — Dragon flying hero (single-mode MVP)
+
+First hero to author a `HeroBodyProfile` — the first real validation of
+the `_assert_body_profiles` boot-check (passes clean). Single-mode per
+`docs/HERO_MULTIMODE_ARBITRATION.md` (no autonomous air hard-lock; that
+needs the still-design-only multi-mode arbitration rule).
+
+- `heroes/data/hero_dragon.tres`: body_profile (is_flying, blocks_ground
+  false, AIR_FIRST, flight 36), `max_block_targets=0` (the real
+  never-block mechanism, assert-enforced), `detection_radius_px=0`,
+  `targets_flying=true`, role_tags [flying,dragon,ranged,anti_air],
+  Dragon Mastery affinity (+10% skill_power, requires `dragon_gem`),
+  `requires_unlock`, power_tier 3, reuses skill_fireball. Auto-registers
+  via the `heroes/data/` glob (no manual registration).
+- `items/bases/base_dragon_gem.tres` "Ember Gem": COMMON starter, +2
+  implicit, breath = MageBolt/320/MAGIC profile.
+- `heroes/data/visual_dragon.tres`: large floating red body, race NONE
+  (clean body, no humanoid bits — MVP).
+- 8 Dragon content tests + integrated the user's per-family starter art
+  + ItemGlyph staff/bow glyphs and icon test.
+
+Verification: 187/187 GUT green, zero `[ContentRegistry/DRIFT]`, clean
+`.tres` import. Commit a592ac1. Not wired: dragon skill tree
+(`find_skill_tree` null, guarded) + dragon-specific art. Air-intercept
+remains gated behind the multi-mode arbitration design doc. Remaining
+manual step: in-editor visual playtest that the Dragon floats, never
+blocks ground, and prefers flyers (mechanism proven by tests).

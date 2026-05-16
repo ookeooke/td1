@@ -3735,6 +3735,23 @@ Verification:
 
 ---
 
+## 2026-05-17 - Class weapon profile item art batch
+
+Generated a focused four-picture item-art batch from the class weapon profile table: Training Sword, Apprentice Staff, Hunter's Bow, and Bone Relic. Replaced the existing source/final PNGs for the three authored item bases and created a standalone future Bone Relic asset:
+
+- `base_starter_sword` / Training Sword -> `res://items/art/generated/base_starter_sword_white_tier.png`
+- `base_apprentice_staff` / Apprentice Staff -> `res://items/art/generated/base_apprentice_staff_magic_tier.png`
+- `base_hunter_bow` / Hunter's Bow -> `res://items/art/generated/base_hunter_bow_rare_tier.png`
+- Bone Relic future asset -> `res://items/art/generated/base_bone_relic_white_tier.png`
+
+All four follow the project item-art rules: 512x640 transparent PNG final, object-only cutout, bottom-up/3/4-ish framing, no baked background, no baked rarity frame, no text, and readable in the 120x144 equipment-cell framing. `Bone Relic` is art-only in this pass because no `base_bone_relic.tres` item resource exists yet.
+
+Verification:
+- Confirmed all four final PNGs are 512x640 and have transparent corners.
+- Reviewed `tmp/imagegen/class_weapon_profile_contact_sheet.png` at the equipment-cell framing.
+
+---
+
 ## 2026-05-14 - Skills page unification + dead-code cleanup
 
 Replaced the split Skills / Talents tabs in `HeroesHub` with one unified Skills page. The active loadout, passive loadout, mod choice, and skill-tree purchases now live on a single embedded screen with a tab-filtered tree list and a right-side inspector. Rejected Gemini's "Pan & Zoom Web" proposal — trees are intentionally curated at ~25 nodes per hero, so a Diablo-Immortal-style list + tabs + side inspector fits the data better than a Path-of-Exile-scale canvas.
@@ -4836,3 +4853,38 @@ against the real catalog. Remaining: in-editor visual playtest of
 Warrior+sword vs Mage+sword (mechanism proven by tests). Not started:
 Dragon, air-intercept, more platforms — deferred per the implementation
 plan's "smallest slice first" rule.
+
+---
+
+## 2026-05-17 — Per-hero starter weapons wired (item-platform)
+
+Wiring step (no new mechanic). Each hero now has its OWN archetype starter
+weapon, which dissolved the profile-less starter-sword exception — every
+weapon base now carries a WeaponProfileAbility.
+
+- New COMMON starters (drop_weight 0, +2 implicit, parity with starter
+  sword/tunic/charm): `base_starter_staff` (Mage, MageBolt/320/MAGIC),
+  `base_starter_bow` (Ranger, HeroArrow/320/PHYSICAL), `base_bone_relic`
+  (Necro, NecroBolt/320/MAGIC, ships with white-tier art). Staff/bow use
+  procedural glyphs (no starter art existed; project is procedural-first).
+- `base_starter_sword` gained a melee profile (75/PHYSICAL). Warrior
+  unchanged (already melee 75 physical).
+- hero_mage/ranger/necromancer `starter_items` rewired (ext_resource id +
+  array ref renamed s_sword→s_staff/s_bow/s_relic).
+- Behavior-neutral by construction: each starter profile mirrors that
+  hero's HeroData fallback (same projectile/range 320/damage type, +2,
+  weapon_attack_speed 0 keeps hero speed) → level-1 attack byte-identical
+  for Mage/Ranger/Necro. Only new power = the +10% Mastery affinities,
+  symmetric with the already-shipped Warrior Sword Mastery: Mage Staff
+  Mastery I (+10% skill_power), Ranger Bow Mastery I (+10% attack speed),
+  Necro Relic Mastery I (+10% skill_power).
+- `test_hero_item_platform_content.gd` extended: per-hero starter identity,
+  no-ranged-hero-starts-with-sword, 3 masteries active with starters,
+  cross-family still allowed; starter-sword test flipped to expect a
+  melee profile.
+
+Verification: 178/178 GUT green, zero `[ContentRegistry/DRIFT]`, clean
+`.tres` import. Commit f52cc36 (incl. generated item art). Remaining
+manual step: in-editor visual playtest that each hero attacks correctly
+with its new starter (mechanism proven by tests). Not started: Dragon,
+air-intercept, more platforms.

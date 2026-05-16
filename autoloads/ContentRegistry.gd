@@ -140,6 +140,7 @@ func _validate_ids() -> void:
 	_assert_curves()
 	_assert_weapon_profiles()
 	_assert_body_profiles()
+	_assert_traps()
 
 
 # Levels are sub_resources inside level_list.tres (not standalone files), so
@@ -280,6 +281,33 @@ func _assert_body_profiles() -> void:
 			print("[ContentRegistry/DRIFT] hero \"%s\" body is flying but role_tags lacks \"flying\"" % hid)
 		if (not bp.is_flying) and tags.has("flying"):
 			print("[ContentRegistry/DRIFT] hero \"%s\" role_tags has \"flying\" but body is not flying" % hid)
+
+
+# Phase 5 — TrapData lives on PlaceTrapSkillData (hero skills), not a
+# standalone catalog. Validate any authored trap so a lifetime <= arm_time
+# (never triggers) or max_active < 1 surfaces at boot. Warnings only. With
+# no trap skill authored this iterates nothing (no-op, zero DRIFT).
+func _assert_traps() -> void:
+	for h in heroes:
+		if h == null or not ("skills" in h):
+			continue
+		var hid: String = h.hero_id if "hero_id" in h else "?"
+		for sk in h.skills:
+			if sk == null or not ("trap_data" in sk):
+				continue  # not a PlaceTrapSkillData
+			var td = sk.trap_data
+			if td == null:
+				print("[ContentRegistry/DRIFT] hero \"%s\" trap skill has null trap_data" % hid)
+				continue
+			if not ("max_active" in td):
+				print("[ContentRegistry/DRIFT] hero \"%s\" trap_data is not a TrapData" % hid)
+				continue
+			if int(td.max_active) < 1:
+				print("[ContentRegistry/DRIFT] trap \"%s\" max_active < 1 (unusable)" % td.trap_id)
+			if td.lifetime <= td.arm_time:
+				print("[ContentRegistry/DRIFT] trap \"%s\" lifetime %.2f <= arm_time %.2f (never triggers)" % [td.trap_id, td.lifetime, td.arm_time])
+			if td.radius <= 0.0:
+				print("[ContentRegistry/DRIFT] trap \"%s\" radius <= 0 (hits nothing)" % td.trap_id)
 
 
 func _assert_ids(arr: Array, field: String) -> void:

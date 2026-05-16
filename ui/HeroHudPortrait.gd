@@ -226,6 +226,7 @@ func _class_color() -> Color:
 		"hero_mage":    return Color(0.30, 0.25, 0.55)  # arcane purple
 		"hero_ranger":  return Color(0.25, 0.45, 0.30)  # forest green
 		"hero_paladin": return Color(0.55, 0.50, 0.25)  # gilt gold
+		"hero_dragon":  return Color(0.50, 0.18, 0.14)  # ember crimson
 	return Color(0.35, 0.38, 0.45)
 
 
@@ -263,6 +264,21 @@ func _draw_class_glyph(c: Vector2, r: float) -> void:
 				c + Vector2(-r * 0.7, r * 0.1),
 			])
 			draw_colored_polygon(shield, fg)
+		"hero_dragon":
+			# Spread wings — two swept triangles + a small body.
+			var lwing: PackedVector2Array = PackedVector2Array([
+				c + Vector2(0, -r * 0.15),
+				c + Vector2(-r, -r * 0.55),
+				c + Vector2(-r * 0.35, r * 0.5),
+			])
+			var rwing: PackedVector2Array = PackedVector2Array([
+				c + Vector2(0, -r * 0.15),
+				c + Vector2(r, -r * 0.55),
+				c + Vector2(r * 0.35, r * 0.5),
+			])
+			draw_colored_polygon(lwing, fg)
+			draw_colored_polygon(rwing, fg)
+			draw_circle(c + Vector2(0, -r * 0.05), r * 0.18, fg)
 		_:
 			# Generic placeholder — solid disk.
 			draw_circle(c, r * 0.5, fg)

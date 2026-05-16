@@ -1809,8 +1809,33 @@ func _seek_target() -> void:
 # split rule as soldier: fewest blockers → highest path progress → nearest
 # (world distance from hero, not anchor — biases toward the closer threat
 # once the hero is already moving).
+# A hero only pursues a melee target if it can actually block it: positive
+# block capacity AND its body profile permits ground blocking. No-block
+# bodies (flying Dragon, future sniper archetypes) skip melee acquisition
+# entirely and fall straight through to the RANGED-SHOOT tier in
+# _seek_target — they never walk at a ground enemy they can't lock and
+# jitter (P1 fix). Default heroes (max_block_targets >= 1, humanoid body)
+# return true → byte-identical, no behavior change. Pure read, no scene
+# deps — unit-testable.
+func _can_block_ground() -> bool:
+	if data == null:
+		return false
+	var cap: int = int(data.max_block_targets) if "max_block_targets" in data else 1
+	if cap <= 0:
+		return false
+	if data.has_method("get_body_profile"):
+		var bp = data.get_body_profile()
+		if bp != null and "blocks_ground" in bp and not bp.blocks_ground:
+			return false
+	return true
+
+
 func _pick_target_in_detection_zone() -> Node:
 	if data == null:
+		return null
+	# No-block bodies never acquire a melee target (P1 — Dragon was walking
+	# at ground enemies it could never _start_block, wasting time/jitter).
+	if not _can_block_ground():
 		return null
 	var zone_radius: float = _effective_detection_radius()
 	if zone_radius <= 0.0:

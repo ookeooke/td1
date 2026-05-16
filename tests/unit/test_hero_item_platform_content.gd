@@ -387,3 +387,31 @@ func test_dragon_fallback_attack_viable() -> void:
 	var viable: bool = dr.attack_damage > 0.0 and dr.attack_speed > 0.0 \
 		and (dr.projectile_scene != null or dr.attack_range > 0.0)
 	assert_true(viable, "Dragon fallback attack-viable")
+
+
+# ── P1: a no-block hero must NOT acquire/chase a ground melee target ────
+
+func test_dragon_cannot_block_ground_predicate() -> void:
+	var h := BaseHero.new()
+	h.data = _dragon()
+	_dragon_spawned.append(h)
+	assert_false(h._can_block_ground(),
+		"Dragon (max_block_targets=0, blocks_ground=false) cannot block ground")
+	var w := BaseHero.new()
+	w.data = _warrior()
+	_dragon_spawned.append(w)
+	assert_true(w._can_block_ground(),
+		"Warrior still blocks ground (guard unaffected — byte-identical)")
+
+
+func test_dragon_does_not_acquire_ground_target() -> void:
+	# The P1 bug: detection_radius_px=0 resolves to DEFAULT (160), so the
+	# melee picker WOULD return a ground enemy and the Dragon walks at it
+	# forever (cap 0 ⇒ _start_block fails) instead of shooting. The
+	# _can_block_ground() guard short-circuits the picker to null (before
+	# any get_tree() call — scene-free).
+	var h := BaseHero.new()
+	h.data = _dragon()
+	_dragon_spawned.append(h)
+	assert_null(h._pick_target_in_detection_zone(),
+		"Dragon never acquires a melee target → falls through to RANGED-SHOOT")

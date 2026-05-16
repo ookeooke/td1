@@ -4715,3 +4715,47 @@ Added `docs/HERO_ITEM_BEHAVIOR_REFACTOR_REPORT.md`:
 Documentation only; no gameplay scripts, resources, or balance numbers changed.
 
 Verification: `git diff --check` passes.
+
+---
+
+## 2026-05-16 — Hero Platform Architecture (Pure-B), Phases 1–5
+
+Implemented the 5-layer hero-platform refactor (plan: `sleepy-dancing-ullman.md`).
+**Pure-B confirmed**: the equipped weapon owns the attack; hero is the
+platform. Every phase ships as a *verified no-op* — byte-identical until
+content is authored — and is independently committed.
+
+- **Phase 1 (008342d)** — Item-affinity system. `ItemBase.item_tags`,
+  `HeroItemAffinityData`, `base_hero._resolve_affinities()` + pure static
+  `_affinities_to_grant()` matcher, `ContentRegistry._assert_affinities()`,
+  `test_affinity.gd`.
+- **Phase 2 (c5e0493)** — `HeroLevelCurveData` drives the *existing*
+  skill-point/tree system (not a new one). Growth consts → curve;
+  `MetaProgression._points_for_level`; `LoadoutState` slot cap from curve;
+  affinity rank from curve; `_assert_curves()`; `test_level_curve.gd`.
+- **Phase 3 (aeb00f2)** — Weapon owns attack profile. `WeaponProfileAbility`,
+  `_weapon_profile` + `_profile_*` fallbacks, 4 projectile-decision sites
+  unified, base-replace damage (no double-count), `compute_stats_for`/
+  accessors expose weapon stats, HeroesHub:537 raw-read fixed,
+  `_assert_weapon_profiles()` (executable Naked Baseline guard),
+  `test_weapon_profile.gd`.
+- **Phase 4 (a727c12)** — `HeroBodyProfile` + flying. Flying = existing
+  `max_block_targets=0` mechanism (no blocker-machine branch); targeting
+  priority = pure comparator bias (NEAREST default = identical);
+  `_assert_body_profiles()` enforces flag↔mechanism consistency;
+  `test_body_profile.gd` + invariant regression. 6 blocker invariants
+  untouched (`test_combat_blocking.gd` green).
+- **Phase 5 (b450415)** — Trap platform. `TrapData`, script-driven `Trap`
+  (DamageCalculator-routed, shared engageable gate, throttled scan),
+  `PlaceTrapSkillData` (navmesh-snap, max_active), `_assert_traps()`,
+  `test_trap_platform.gd`. Multi-mode arbitration quarantined to
+  `docs/HERO_MULTIMODE_ARBITRATION.md` (design-only, referenced from CLAUDE.md).
+
+Verification: full GUT **145/145 passing** (14 scripts), **zero
+`[ContentRegistry/DRIFT]`**, zero script/parse errors. Backward-compat
+byte-identical by construction. Naked Baseline guarded executably (boot-check
++ tests). No save reshape / no `SAVE_VERSION` bump. Deferred to sign-off:
+all content numbers (tags, profiles, curves, affinity magnitudes, the
+20-hero matrix, dragon/trapper `.tres`) per `balance/BALANCE.md`. Remaining
+manual step: in-editor feature matrix + mobile-aspect UI pass with temp
+authored content.

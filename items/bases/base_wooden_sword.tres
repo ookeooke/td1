@@ -1,8 +1,9 @@
-[gd_resource type="Resource" script_class="ItemBase" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="ItemBase" load_steps=6 format=3]
 
 [ext_resource type="Script" uid="uid://c6r2p8dhvfeh2" path="res://items/ItemBase.gd" id="1_base"]
 [ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="2_mod"]
 [ext_resource type="Texture2D" uid="uid://18gt0svkv0a1" path="res://items/art/generated/base_wooden_sword_white_tier.png" id="3_tex"]
+[ext_resource type="Script" uid="uid://cri7bq4ls2stg" path="res://systems/abilities/WeaponProfileAbility.gd" id="4_wp"]
 
 [sub_resource type="Resource" id="Impl_WoodenSword"]
 script = ExtResource("2_mod")
@@ -10,10 +11,18 @@ ability_id = "impl_wooden_sword"
 trigger = 7
 damage_flat = 1.0
 
+[sub_resource type="Resource" id="Wp_WoodenSword"]
+script = ExtResource("4_wp")
+ability_id = "wp_wooden_sword"
+trigger = 7
+weapon_attack_range = 75.0
+weapon_damage_type = 0
+
 [resource]
 script = ExtResource("1_base")
 base_id = "base_wooden_sword"
 base_name = "Wooden Sword"
+item_tags = Array[String](["weapon", "sword", "melee"])
 slot = 0
 rarity = 0
 icon_glyph = "sword_wooden"
@@ -21,7 +30,7 @@ icon_color = Color(0.65, 0.48, 0.3, 1)
 icon_texture = ExtResource("3_tex")
 hero_restriction = Array[String]([])
 level_requirement = 1
-implicit_abilities = Array[Resource]([SubResource("Impl_WoodenSword")])
+implicit_abilities = Array[Resource]([SubResource("Impl_WoodenSword"), SubResource("Wp_WoodenSword")])
 affix_slots = 0
 allowed_affix_pools = Array[String]([])
 drop_weight = 2.0

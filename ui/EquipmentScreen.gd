@@ -1137,6 +1137,17 @@ func _format_item_details(inst) -> String:
 	else:
 		lines.append("")
 		lines.append("(equipped)")
+	# Phase 3 — affinity teaching line. Tells the player whether THIS item
+	# activates the active hero's weapon-family mastery. Off-family gear is
+	# shown as allowed ("stats still apply"), never as broken.
+	var aff_prev: Dictionary = HeroAffinityPreview.preview_for_item(_cached_hero_id, base, equipped)
+	lines.append("")
+	if bool(aff_prev.get("active", false)):
+		lines.append("[color=#5fcf6a]◆ %s[/color]" % String(aff_prev.get("title", "")))
+	else:
+		lines.append("[color=#9aa9c8]%s[/color]" % String(aff_prev.get("title", "")))
+	for al in aff_prev.get("lines", []):
+		lines.append("  " + String(al))
 	return "\n".join(lines)
 
 

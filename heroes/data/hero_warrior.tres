@@ -13,6 +13,8 @@
 [ext_resource type="Resource" path="res://items/bases/base_starter_tunic.tres" id="11_s_tunic"]
 [ext_resource type="Resource" path="res://items/bases/base_starter_charm.tres" id="12_s_charm"]
 [ext_resource type="Resource" path="res://heroes/data/skills/skill_rally_cry.tres" id="13_rally"]
+[ext_resource type="Script" uid="uid://cmkn2yydoyx0i" path="res://systems/HeroItemAffinityData.gd" id="14_aff"]
+[ext_resource type="Script" uid="uid://dcr0blxdxlte2" path="res://systems/abilities/StatModifierAbility.gd" id="15_mod"]
 
 [sub_resource type="Resource" id="Regen_Ability"]
 script = ExtResource("8_regen")
@@ -57,6 +59,20 @@ star_cost = 3
 prerequisite_id = "warrior_vampiric"
 ability = SubResource("BonusDmg_Ability")
 
+[sub_resource type="Resource" id="SwordMastery_Bonus"]
+script = ExtResource("15_mod")
+ability_id = "warrior_sword_mastery_bonus"
+trigger = 7
+damage_pct = 0.10
+
+[sub_resource type="Resource" id="Aff_SwordMastery"]
+script = ExtResource("14_aff")
+affinity_id = "aff_warrior_sword_mastery"
+display_name = "Sword Mastery"
+required_item_tags = Array[String](["sword"])
+bonus_abilities = Array[Resource]([SubResource("SwordMastery_Bonus")])
+min_affinity_rank = 1
+
 [resource]
 script = ExtResource("1_data")
 hero_name = "Knight"
@@ -74,5 +90,6 @@ skills = Array[Resource]([ExtResource("2_summon"), ExtResource("3_bless"), ExtRe
 starter_skill_ids = Array[String](["summon_soldiers", "bless"])
 talents = Array[Resource]([SubResource("Talent_Endurance"), SubResource("Talent_Vampiric"), SubResource("Talent_HeavyBlows")])
 visual = ExtResource("9_vis")
+item_affinities = Array[Resource]([SubResource("Aff_SwordMastery")])
 starter_items = Array[Resource]([ExtResource("10_s_sword"), ExtResource("11_s_tunic"), ExtResource("12_s_charm")])
 encyclopedia_entry = "Sword-and-board melee hero. Strong armor, tanks ground enemies. Hits flying foes when in range."

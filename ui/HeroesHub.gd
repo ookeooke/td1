@@ -557,6 +557,11 @@ func _refresh_hero_hall() -> void:
 		float(stats.get("attack_speed", 0.0)),
 		int(round(float(stats.get("armor", 0.0)) * 100.0)),
 	]
+	# Phase 3 — weapon-family affinity teaching line. Empty for heroes with
+	# no authored affinities (byte-identical: no extra text appended).
+	var aff_line: String = HeroAffinityPreview.overview_line(hid)
+	if aff_line != "":
+		_hall_stats_label.text += "\n" + aff_line
 	# READY CHECK lines — equipment slot fill, equipped skill count, unspent
 	# skill points to spend in the tree. Slot total honors per-hero
 	# equipment_slots override (Dragon's 3 slots vs humanoid 6).

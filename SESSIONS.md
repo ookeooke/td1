@@ -4573,6 +4573,50 @@ Documentation only; no gameplay or visual code changed in this step.
 
 Verification: `git diff --check` passes.
 
+## 2026-05-16 - Hero item-first platform implementation plan
+
+User clarified the desired direction: heroes are platforms with bonuses and
+skill trees, while items/weapons provide most combat stats/profile; everyone
+can use everything unless explicitly restricted.
+
+Added `docs/HERO_ITEM_PLATFORM_IMPLEMENTATION_PLAN.md` as a detailed handoff
+for another AI:
+- Commits the design decision that equipped weapon profiles define the basic
+  attack while HeroData defines platform identity, fallback, skills, and
+  affinities.
+- Lists what is already implemented in the repo and what is still missing.
+- Provides phased implementation steps for item tags, weapon profiles, Warrior
+  affinities, mobile UI teaching, level curves, damage-taken item effects,
+  trap content, Dragon MVP, and later air-intercept.
+- Includes file-level guidance, test requirements, balance guardrails, and
+  the known local Godot headless crash note.
+
+Documentation only; no gameplay scripts, resources, or balance numbers changed.
+
+Verification: `git diff --check` passes.
+
+## 2026-05-16 - Hero platform system full review
+
+User asked whether the hero platform / affinity / level-up design should be
+implemented wholesale and how it should scale to ~20 heroes including flying
+dragons, trappers, and many variants.
+
+Added `docs/HERO_PLATFORM_SYSTEM_FULL_REVIEW.md`:
+- Recommends the architecture but explicitly says not to implement everything
+  at once.
+- Defines the layered data model: item tags, hero affinities, level curves,
+  future body/combat profiles, dragon MVP, air-intercept follow-up, and trapper
+  platform.
+- Captures mobile UI requirements for Overview, Gear, Mastery, and level-up
+  screens.
+- Gives a phased implementation roadmap starting with Warrior + sword/shield
+  affinity before dragons/trappers/20-hero content.
+- Lists minimum unit tests and balance risks.
+
+Documentation only; no gameplay scripts, resources, or balance numbers changed.
+
+Verification: `git diff --check` passes.
+
 ## 2026-05-16 - Mage hood integration and attack split
 
 User reported the Mage lacked a hood over the head, the head looked separated
@@ -4759,3 +4803,36 @@ all content numbers (tags, profiles, curves, affinity magnitudes, the
 20-hero matrix, dragon/trapper `.tres`) per `balance/BALANCE.md`. Remaining
 manual step: in-editor feature matrix + mobile-aspect UI pass with temp
 authored content.
+
+---
+
+## 2026-05-16 (cont.) — Phase 6 remediation + Warrior-sword content slice
+
+**Phase 6 (b6bf170)** — 3-agent review of Phases 1–5 (logic, invariants,
+integration). Cleared the no-op state; fixed one latent bug: R1 —
+`compute_stats_for` ignored affinity-granted abilities (display would lie
+once a stat affinity was authored, Preventive Bug Rule 1). Shared static
+`_collect_equipped_item_tags` now feeds both runtime `_resolve_affinities`
+and display `compute_stats_for` → parity by construction; regression-locked
+(test failed pre-fix). R2 documented the weapon-facet asymmetry contract
+(damage carries affix ratio; range/speed absolute — user decision). R3
+added equip-chain + parity + in-picker integration tests. R4 `_enforce_cap`
+queued-for-deletion guard. R5 doc-accuracy.
+
+**Content slice (2fa449b)** — first playable vertical slice (Warrior +
+sword). Authored: item_tags on all 7 weapon bases; WeaponProfileAbility on
+the 6 player-equipped weapons (swords melee/75/PHYSICAL, bow HeroArrow/320,
+staff MageBolt/290/MAGIC); `base_starter_sword` left profile-less on
+purpose (shared starter — a profile would melee-lock ranged heroes at
+spawn). Warrior Sword Mastery I (+10% dmg, requires `sword`).
+`HeroAffinityPreview` teaching helper (single-source) wired into
+EquipmentScreen item detail + HeroesHub overview; off-family gear reads as
+allowed. `weapon_base_damage=0` throughout → existing StatModifier
+implicits keep governing damage, zero balance retune (BALANCE.md).
+
+Verification: 168/168 GUT green, zero `[ContentRegistry/DRIFT]`, clean
+`.tres` import. `test_hero_item_platform_content.gd` (16 cases) validates
+against the real catalog. Remaining: in-editor visual playtest of
+Warrior+sword vs Mage+sword (mechanism proven by tests). Not started:
+Dragon, air-intercept, more platforms — deferred per the implementation
+plan's "smallest slice first" rule.

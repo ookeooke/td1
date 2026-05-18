@@ -564,6 +564,35 @@ Without scaling, a Demon Core's 4 affix slots roll the same value range as an Ir
 
 Re-rounded to int when `AffixData.value_is_int = true` so display stays clean.
 
+### Offensive affixes — Phase 2 (2026-05-18, shipped)
+
+Beyond flat/`%` damage, the weapon-offensive pool
+([items/pools/pool_weapon_offensive.tres](../items/pools/pool_weapon_offensive.tres))
+carries four event-based archetypes. Each is an `AbilityData` subclass under
+`systems/abilities/` (trigger `ON_HIT_DEALT`, reads `ctx.amount`, deals a
+secondary `take_damage` packet — same pattern as `OnHitBonusDamageAbility`;
+owner-agnostic). Rolled value is scaled by the per-rarity multiplier above, so
+**`value_max × 2.0` (LEGENDARY) is the real ceiling** — bands are set so the
+legendary roll stays sane.
+
+| Affix | Rolled field | Base band | LEGENDARY (×2) | Fixed template params | Pool weight |
+|---|---|---|---|---|---|
+| `affix_crit` | `crit_chance` | 5–15% | ≤30% | `crit_mult = 1.5` | 0.45 |
+| `affix_cleave` | `cleave_pct` | 12–25% | ≤50% | `radius = 85`, `max_targets = 2` | 0.40 |
+| `affix_execute` | `hp_threshold` | 8–14% | ≤28% | `boss_bonus_pct = 0.10` (bosses immune to the instakill) | 0.35 |
+| `affix_vs_armored` | `bonus_pct` | 12–22% | ≤44% | `match_enemy_id = "armored"` | 0.30 |
+| `affix_vs_flying` | `bonus_pct` | 12–22% | ≤44% | `match_flying = true` | 0.30 |
+| `affix_vs_boss` | `bonus_pct` | 15–25% | ≤50% | `match_boss = true` | 0.30 |
+
+Design intent: weights keep these **rarer than plain `+damage` (0.8) /
+`+damage%` (0.8)** so they read as exciting rolls, not the default. Crit is a
+fixed-`×1.5` chance affix (no double-roll of chance and multiplier). Execute
+never instakills a boss (BaseBoss check) so it's never DOA on a boss but never
+trivializes one. Conditional `vs-X` carry a higher pct because they only fire
+on a subset of enemies. **Budgets vs the per-slot pct ceiling:** all legendary
+maxes sit at/under the doc's ~50%/slot soft cap (crit 30, cleave 50, execute
+28, conditional 44–50). Retune the `value_*` in the `.tres`, not the scripts.
+
 ### Why flat rate, not per-level
 
 Authoring per-level loot tables (with calibrated `drop_chance` per level length) was considered and rejected. The flat-variance choice means *each level naturally tunes itself by length* with zero authoring overhead. If playtesting shows L1/L2 dry-spell frustration, the next lever is a **pity counter** (force-drop on a level that ended with zero trash drops), not per-level tables.

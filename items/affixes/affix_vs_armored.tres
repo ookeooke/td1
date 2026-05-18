@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="AffixData" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://dmke300jq3e47" path="res://items/AffixData.gd" id="1_affix"]
+[ext_resource type="Script" path="res://systems/abilities/ConditionalDamageAbility.gd" id="2_cond"]
+
+[sub_resource type="Resource" id="Tpl_VsArmored"]
+script = ExtResource("2_cond")
+ability_id = "affix_tpl_vs_armored"
+trigger = 2
+bonus_pct = 0.0
+match_flying = false
+match_boss = false
+match_enemy_id = "armored"
+bonus_damage_type = 0
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = "affix_vs_armored"
+display_template = "+{value}% vs Armored"
+value_min = 0.12
+value_max = 0.22
+value_is_int = false
+display_scale = 100.0
+display_decimals = 0
+ability_template = SubResource("Tpl_VsArmored")
+ability_value_property = "bonus_pct"
+allowed_slots = Array[int]([])
+weight = 0.3

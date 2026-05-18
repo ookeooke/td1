@@ -18,10 +18,20 @@ have `overrides_active=true`, zero `naked_baseline=true`, so the Naked Baseline
 invariant is unverifiable. Deferred tuning findings (Artillery DOA, boss
 hardness cliff, Knight base DPS, Demon Core, non-monotonic L1→L6, Iron speed
 unimplemented, War Chest dead-zone) are catalogued in BALANCE.md "Known balance
-issues — 2026-05-18 audit". Next planned: Phase 2 = new offensive affixes
-(crit/cleave/execute/vs-type); Phase 3 = endgame curve past L6 (deferred,
-telemetry-gated). See SESSIONS.md "2026-05-18 — Balance audit + correctness/doc
-resync".
+issues — 2026-05-18 audit". See SESSIONS.md "2026-05-18 — Balance audit +
+correctness/doc resync".
+
+**Phase 2 — new offensive affixes shipped (2026-05-18).** Four event-based
+`AbilityData` subclasses (`CritStrikeAbility`, `CleaveOnHitAbility`,
+`ExecuteAbility`, `ConditionalDamageAbility`) + six `AffixData .tres`
+(crit/cleave/execute/vs_armored/vs_flying/vs_boss) wired into
+`pool_weapon_offensive` (5→11 affixes). All additive, owner-agnostic,
+secondary-`take_damage` pattern; value bands sized for the LootRoller
+LEGENDARY ×2 ceiling; weights keep them rarer than plain +damage. New
+`tests/unit/test_offensive_affixes.gd` (10 tests, all pass); full GUT 203 pass
+/ 0 regressions. **Test Range feel/VFX smoke still pending.** Next: Phase 3 =
+endgame curve past L6 (deferred, telemetry-gated). See SESSIONS.md "2026-05-18
+— Phase 2: new offensive affixes".
 
 **Previously**:
 - **Preventive Bug Rules + `HeroStats` accessor + `InventoryManager._persist()` refactor (2026-05-11)** — Codified four CLAUDE.md rules each tied to a real shipped bug (UI reads hero stats via `HeroStats.effective_for`; every InventoryManager mutator ends with `_persist()`; embedded hero-scoped screens listen to `hero_selected`; load-bearing invariants must be executable). New [heroes/HeroStats.gd](heroes/HeroStats.gd) mirrors the Tower Indicator pattern; HeroesHub dogfoods it. Audit found two additional drift sites (grid-placement, `destroy()`) that also skipped saves — fixed. See SESSIONS.md "2026-05-11 — Preventive Bug Rules".

@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="AffixData" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://dmke300jq3e47" path="res://items/AffixData.gd" id="1_affix"]
+[ext_resource type="Script" path="res://systems/abilities/CritStrikeAbility.gd" id="2_crit"]
+
+[sub_resource type="Resource" id="Tpl_Crit"]
+script = ExtResource("2_crit")
+ability_id = "affix_tpl_crit"
+trigger = 2
+crit_chance = 0.0
+crit_mult = 1.5
+bonus_damage_type = 0
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = "affix_crit"
+display_template = "+{value}% Crit Strike (x1.5)"
+value_min = 0.05
+value_max = 0.15
+value_is_int = false
+display_scale = 100.0
+display_decimals = 0
+ability_template = SubResource("Tpl_Crit")
+ability_value_property = "crit_chance"
+allowed_slots = Array[int]([])
+weight = 0.45

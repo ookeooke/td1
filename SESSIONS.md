@@ -5517,3 +5517,82 @@ panel (currently shows on selection); Skills inspector primary-action pinned
 bottom-right (currently in the scrollable vbox) — both would restructure
 working render code; revisit once the map is play-tested and the legacy Skills
 list is retired. Plan: `~/.claude/plans/dapper-noodling-pizza.md`.
+
+**Follow-up same day — item-parity equip flow.** User flagged that tapping a
+loadout slot dumped a long scrolling skill list (not item-like). Fixed in
+`HeroSkillsPage.gd`: `_render_inspector_active_slot`/`_passive_slot` no longer
+build the AVAILABLE/OWNED list — they just show the equipped skill + Unequip
+(or an empty hint). The skill-map node panel (`_render_inspector_tree_node`)
+gained `_add_equip_controls`: for a learned ACTIVE_RANK/PASSIVE_RANK node it
+shows "Equipped: Slot N / Not equipped", a **slot OptionButton dropdown**, an
+**Equip / Move here** button, and an **Unequip** button when already equipped;
+non-learned skills show "Equip — Learn this first". New `_equip_from_node`
+mirrors `set_equipped_skill/passive` but does NOT clobber `_insp_content_id`
+(so the inspector stays pinned to the node and re-renders in place). Verified
+deterministically: equip `bless` from the node panel → `["bless"]`, node id
+preserved, unequip → `[""]`; the equippability gate correctly rejects
+non-unlocked skills. Compiles clean.
+
+**Bugfix same day — skill nodes not clickable (no detail panel on tap).**
+User reported tapping a skill produced no window (unlike items). Root cause:
+`HeroSkillMap` used per-node child `Button` hit-targets; inside the
+HeroSkillsPage `ScrollContainer` they were left unspawned/zero-sized by a
+container-sizing + setup-recall race (`custom_minimum_size=(0,0)`, 0 buttons,
+nodes still drawn), so taps never landed. Fixed by removing the child-Button
+approach entirely and hit-testing taps on the map Control itself via
+`_gui_input` against `_vm` node positions — scroll-safe (event.position is
+control-local), no child-sizing dependency, and ScreenTouch-only so PC
+mouse+emulated-touch fires exactly once (CLAUDE.md input rule). Verified in
+the embedded HeroesHub→Skills flow: a touch at a node's position selects it,
+emits `node_selected`, and the inspector populates (`mode=3`, panel renders
+specs + slot dropdown + Equip + BUY); tapping empty space selects nothing.
+Removed dead `_spawn_hit_targets`/`_on_node_pressed`.
+
+---
+
+## 2026-05-18 — Phase 2: new offensive affixes (crit / cleave / execute / vs-type)
+
+Follows the Phase 1 balance audit. User direction: make hero gear interesting
+beyond flat "+damage" — chose **new offensive affixes**. All additive content,
+no working script rewritten, no save/ID changes.
+
+Four event-based `AbilityData` subclasses in `systems/abilities/` (trigger
+`ON_HIT_DEALT`, read `ctx.amount`, deal a secondary `take_damage` packet — the
+proven `OnHitBonusDamageAbility`/`LifestealAbility` pattern; owner-agnostic per
+CORE RULE 11, damage routes through `take_damage`→`DamageCalculator` per CORE
+RULE 6):
+- `CritStrikeAbility` — `crit_chance` rolled, fixed `crit_mult = 1.5`; on proc
+  deals `(mult-1)×hit` extra.
+- `CleaveOnHitAbility` — `cleave_pct×hit` to ≤`max_targets` other enemies
+  within `radius`; mirrors the Arrow.gd splash query (one
+  get_nodes_in_group + dist² gate, fired on a discrete hit, never per-frame).
+- `ExecuteAbility` — sub-`hp_threshold` non-boss → finished with TRUE damage;
+  bosses immune to the instakill, take a small fixed `boss_bonus_pct` instead.
+- `ConditionalDamageAbility` — `bonus_pct×hit` if target matches
+  flying/boss/enemy-id-substring; one template, three .tres flavours.
+
+Six `AffixData .tres` in `items/affixes/` (crit, cleave, execute, vs_armored,
+vs_flying, vs_boss) wired into `items/pools/pool_weapon_offensive.tres`
+(5→11 affixes). Value bands set so the LootRoller LEGENDARY ×2.0 ceiling
+stays sane (crit ≤30%, cleave ≤50%, execute ≤28%, conditional ≤44–50%);
+weights (0.30–0.45) keep them rarer than plain +damage (0.8) so they read as
+exciting rolls. BALANCE.md gained a "Offensive affixes — Phase 2" budget table
+(doc leads data, CORE RULE 18).
+
+New GUT file `tests/unit/test_offensive_affixes.gd` (10 tests): .tres→ability
+wiring, pool membership, and behavioural apply() against real BaseEnemy
+(guaranteed crit, 0% crit no-op, execute finishes low-HP non-boss / ignores
+healthy, vs_flying only hits flyers, cleave splashes in-radius + excludes
+primary + skips out-of-range). Caught a real BaseEnemy gotcha: `_ready()`
+recomputes `current_health = _effective_max_health()` (BalanceOverrides debug
+×0.95) so in-tree test enemies must have HP set AFTER add_child — the ability
+itself was correct.
+
+Verification: headless boot clean (ContentRegistry 15→21 affixes, 4 pools, no
+parse/load errors); full GUT 213 tests, **203 pass, 0 regressions** (the 10
+failures are the unchanged pre-existing `test_bug_edge_audit.gd` markers).
+In-editor Test Range smoke not yet run — recommended before relying on the
+feel/VFX of crit/cleave in live combat.
+
+Deferred: Phase 3 (endgame curve past L6) remains telemetry-gated. Plan:
+`~/.claude/plans/atomic-humming-stroustrup.md`.

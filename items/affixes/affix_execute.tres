@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="AffixData" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://dmke300jq3e47" path="res://items/AffixData.gd" id="1_affix"]
+[ext_resource type="Script" path="res://systems/abilities/ExecuteAbility.gd" id="2_exec"]
+
+[sub_resource type="Resource" id="Tpl_Execute"]
+script = ExtResource("2_exec")
+ability_id = "affix_tpl_execute"
+trigger = 2
+hp_threshold = 0.0
+boss_bonus_pct = 0.1
+boss_bonus_damage_type = 0
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = "affix_execute"
+display_template = "Execute below {value}% HP"
+value_min = 0.08
+value_max = 0.14
+value_is_int = false
+display_scale = 100.0
+display_decimals = 0
+ability_template = SubResource("Tpl_Execute")
+ability_value_property = "hp_threshold"
+allowed_slots = Array[int]([])
+weight = 0.35

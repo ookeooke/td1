@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="AffixData" load_steps=3 format=3]
+
+[ext_resource type="Script" uid="uid://dmke300jq3e47" path="res://items/AffixData.gd" id="1_affix"]
+[ext_resource type="Script" path="res://systems/abilities/ConditionalDamageAbility.gd" id="2_cond"]
+
+[sub_resource type="Resource" id="Tpl_VsBoss"]
+script = ExtResource("2_cond")
+ability_id = "affix_tpl_vs_boss"
+trigger = 2
+bonus_pct = 0.0
+match_flying = false
+match_boss = true
+match_enemy_id = ""
+bonus_damage_type = 0
+
+[resource]
+script = ExtResource("1_affix")
+affix_id = "affix_vs_boss"
+display_template = "+{value}% vs Bosses"
+value_min = 0.15
+value_max = 0.25
+value_is_int = false
+display_scale = 100.0
+display_decimals = 0
+ability_template = SubResource("Tpl_VsBoss")
+ability_value_property = "bonus_pct"
+allowed_slots = Array[int]([])
+weight = 0.3

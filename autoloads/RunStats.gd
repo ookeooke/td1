@@ -426,10 +426,17 @@ func _finalize(outcome: String, stars: int) -> void:
 			"damage": tot,
 		})
 	per_tower.sort_custom(func(a, b): return float(a.damage) > float(b.damage))
+	# `towers_total` is the canonical run-level key (all balance consumers read
+	# it). `towers`/`other` are additive aliases so the run-level schema lines
+	# up with the per-wave schema ({hero,soldiers,towers,other}) and readers
+	# that assume per-wave key names don't silently see zero. Append-only — no
+	# schema/SAVE_VERSION bump; existing consumers untouched.
 	_current["damage_by_source"] = {
 		"hero": RunState.round_damage_hero,
 		"soldiers": RunState.round_damage_soldiers,
 		"towers_total": towers_total,
+		"towers": towers_total,
+		"other": 0.0,
 	}
 	_current["damage_by_tower"] = per_tower
 	# Hero progression at end of run — XP earned this run + level achieved.

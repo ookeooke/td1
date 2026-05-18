@@ -4,6 +4,15 @@ Design intent for tuning the game. Single source of truth for **what numbers sho
 
 This file lives under `balance/` because the whole folder is dev-only. The export preset (`export_presets.cfg`) excludes `balance/*` so this doc, the BalanceCalculator, and the Test Range scene never end up in shipped APKs.
 
+> **2026-05-18 resync (doc-only pass):** the per-tower g/DPS table, per-tower
+> status, and mode-multiplier table were stale vs the authored `.tres`/code
+> (CORE RULE 18 violation surfaced by the 5-agent balance audit). They have
+> been recomputed/rewritten from the live files. No gameplay-balance numbers
+> were changed in this pass except `base_wooden_sword.tres` `drop_weight`
+> 2.0→1.0 (applying a decision this doc already recorded). Telemetry is
+> currently blind (all runs override-polluted, zero Naked Baseline) — see the
+> known-issues note below before trusting any win/loss conclusion.
+
 ---
 
 ## Folder layout
@@ -189,39 +198,56 @@ When authoring a new tower / hero / skill / item / upgrade:
 
 Recalibrated `PPT_TO_HARDNESS_FACTOR` from 3,000 → 7,500 so L1 (target_ppt=2) reads ~-1% drift on the audit. **Test stub levels L2/L3/L4 were authored against the old 3,000 factor**, so they currently read under-tuned (red drift) on the audit; that's expected and serves as a worked example of "your stubs need a retune pass after a stat change." Use the Sliders panel to refind right enemy counts.
 
-Below table preserved for historical comparison; numbers are the pre-2026-04-30 state, NOT current.
-
 ### Per-tower g/DPS (read directly from `towers/data/*.tres`)
 
-All values reflect post-tune state as of 2026-04-28 (full upgrade chain authoring pass).
+**Resynced to authored `.tres` 2026-05-18.** Prior versions of this table were
+stale (pre-2026-04-30 fictional values — e.g. it listed Archer L1 as 4.0 dmg /
+1.20 spd / cost 50; the file is 3.5 / 1.05 / 70, and Artillery L1 as 25 dmg;
+the file is 4.0). Every row below is computed directly from the current
+`towers/data/*.tres`. `Cumul $` = running sum of build costs along the upgrade
+path (branch cumul = L1 + L2 + branch, since a branch replaces L3).
+g/DPS = Cumul $ ÷ (Damage × Atk/s). Single-target DPS only — AoE/CC value is
+noted, not folded in.
 
 | Tower | Tier | Build $ | Cumul $ | Damage | Atk/s | DPS | g/DPS cumul | Notes |
 |---|---|---|---|---|---|---|---|---|
-| Archer | L1 | 50 | 50 | 4.0 | 1.20 | 4.80 | **10.4** | physical |
-| Archer | L2 | 75 | 125 | 7.0 | 1.35 | 9.45 | **13.2** | |
-| Archer | L3 main | 120 | 245 | 12.0 | 1.50 | 18.00 | **13.6** | |
-| Archer | L3 Ranger | 140 | 265 | 10.0 | 1.40 | 14.00 | **18.9** | + slow 45% / 1.5s |
-| Archer | L3 Musketeer | 160 | 285 | 22.0 | 0.75 | 16.50 | **17.3** | high-burst single |
-| Mage | L1 | 90 | 90 | 8.0 | 0.70 | 5.60 | **16.1** | magic, 150 splash, hits flying |
-| Mage | L2 | 75 | 165 | 17.0 | 0.85 | 14.45 | **11.4** | "Sage Tower" (authored 2026-04-28) |
-| Mage | L3 main | 120 | 285 | 32.0 | 1.00 | 32.00 | **8.9** | "Wizard Tower" |
-| Mage | L3 Archmage | 140 | 305 | 28.0 | 1.20 | 33.60 | **9.1** | sustained DPS branch |
-| Mage | L3 Necromancer | 160 | 325 | 38.0 | 0.85 | 32.30 | **10.1** | + 0.5s stun branch |
-| Ice | L1 | 85 | 85 | **4.5** | 1.00 | 4.50 | **18.9** | + 30% slow / 1.0s, hits flying — *tuned 2026-04-28: was 3.0/3.0 DPS at 28.3 g/DPS* |
-| Ice | L2 | 100 | 185 | 12.0 | 1.20 | 14.40 | **12.85** | + 50% slow / 1.5s |
-| Ice | L3 main | 130 | 315 | 25.0 | 1.40 | 35.00 | **9.0** | "Blizzard Tower" (authored), + 65% slow / 2.0s |
+| Archer | L1 | 70 | 70 | 3.5 | 1.05 | 3.68 | **19.0** | physical |
+| Archer | L2 | 80 | 150 | 6.5 | 1.30 | 8.45 | **17.8** | "Archer L2" |
+| Archer | L3 main | 120 | 270 | 12.0 | 1.50 | 18.00 | **15.0** | |
+| Archer | L3 Ranger | 150 | 300 | 11.0 | 1.40 | 15.40 | **19.5** | + slow 45% / 1.5s |
+| Archer | L3 Musketeer | 170 | 320 | 25.0 | 0.70 | 17.50 | **18.3** | high-burst single |
+| Mage | L1 | 95 | 95 | 4.5 | 0.75 | 3.38 | **28.1** | magic, hits flying |
+| Mage | L2 | 75 | 170 | 12.5 | 0.85 | 10.63 | **16.0** | "Sage Tower" |
+| Mage | L3 main | 120 | 290 | 32.0 | 1.00 | 32.00 | **9.1** | "Wizard Tower" |
+| Mage | L3 Archmage | 190 | 360 | 28.0 | 1.25 | 35.00 | **10.3** | sustained DPS branch |
+| Mage | L3 Necromancer | 195 | 365 | 38.0 | 0.85 | 32.30 | **11.3** | + 0.5s stun branch |
+| Ice | L1 | 85 | 85 | 4.5 | 1.00 | 4.50 | **18.9** | + 30% slow / 1.0s, hits flying |
+| Ice | L2 | 100 | 185 | 12.0 | 1.20 | 14.40 | **12.8** | "Frostbite" + 50% slow / 1.5s |
+| Ice | L3 main | 130 | 315 | 25.0 | 1.40 | 35.00 | **9.0** | "Blizzard" + 65% slow / 2.0s |
 | Ice | L3 Glacier | 140 | 325 | 24.0 | 1.50 | 36.00 | **9.0** | extreme slow 75% / 2.5s |
 | Ice | L3 Permafrost | 150 | 335 | 30.0 | 1.30 | 39.00 | **8.6** | + 0.4s stun on top of slow |
-| Artillery | L1 | 120 | 120 | 25.0 | 0.40 | 10.00 | **12.0** | 200 AoE, ground only |
-| Artillery | L2 | 75 | 195 | 36.0 | 0.50 | 18.00 | **10.8** | "Cannon" (authored), 200 AoE |
-| Artillery | L3 main | 120 | 315 | 70.0 | 0.60 | 42.00 | **7.5** | "Mortar" (authored) |
-| Artillery | L3 Howitzer | 140 | 335 | 100.0 | 0.40 | 40.00 | **8.4** | nuke-per-shot branch |
-| Artillery | L3 Triple Cannon | 160 | 355 | 30.0 | 1.40 | 42.00 | **8.5** | rapid-AoE branch |
-| Barracks | L1 | 70 | 70 | (block-only) | — | — | — | 3 militia (22 HP) |
-| Barracks | L2 | 90 | 160 | 6.0×3 | 1.10 | 19.80 | **8.1** | 3 elite militia (34 HP, 0.15 armor) |
-| Barracks | L3 | 140 | 300 | 10.0×3 | 1.10 | 33.00 | **9.1** | "Veteran Garrison" — 3 vets (50 HP, 0.25 armor), rally 500px |
+| Artillery | L1 | 130 | 130 | 4.0 | 0.40 | 1.60 | **81.3** | ⚠ DOA — 50 AoE, ground only |
+| Artillery | L2 | 180 | 310 | 7.0 | 0.55 | 3.85 | **80.5** | ⚠ DOA — "Cannon", 90 AoE |
+| Artillery | L3 main | 120 | 430 | 70.0 | 0.60 | 42.00 | **10.2** | "Mortar", 573 range — only viable tier |
+| Artillery | L3 Howitzer | 135 | 445 | 13.0 | 0.40 | 5.20 | **85.6** | ⚠ DOA — nuke-per-shot branch (mislabeled) |
+| Artillery | L3 Triple Cannon | 160 | 470 | 17.0 | 1.25 | 21.25 | **22.1** | rapid-AoE branch |
+| Barracks | L1 | 65 | 65 | (block-only) | — | — | — | militia squad — see `soldiers/data/*.tres` |
+| Barracks | L2 | 90† | 155 | squad | — | ≈ | **≈11.7** | "Elite Barracks" — soldier-squad DPS (derived) |
+| Barracks | L3 | 140† | 295 | squad | — | ≈ | **≈12.8** | "Veteran Garrison" — soldier-squad DPS (derived) |
 
-**Effective AoE bonus for Artillery** (typical mid-game, 3-target hit): cumul g/DPS divides by ~3, putting Artillery L3 main at ~2.5 g/DPS vs 4 enemies — still the best in class for crowd-clearing as designed.
+† Barracks upgrade cost: `TowerData.upgrade_cost_lvl2/3` (90/140) and the
+`BarracksUpg_L2/L3` sub-resource `cost` (100/150) disagree in
+`tower_barracks.tres`; the explicit `upgrade_cost_lvl*` fields are used. Flagged
+as authored data drift (not fixed in this doc-only pass). Barracks g/DPS is
+soldier-squad-derived (no projectile) — figures carried from the 2026-05-18
+balance audit, not recomputed here; verify against `soldiers/data/*.tres`
+before any Barracks tune.
+
+**Effective AoE bonus for Artillery** (typical mid-game, 3-target hit): cumul
+g/DPS divides by ~3. Even so, L1 ≈ 27, L2 ≈ 27, Howitzer ≈ 29 — still far
+outside the L1/L2/branch target bands. **Only Mortar (L3 main, ≈3.4 g/DPS
+post-AoE) is viable; Artillery L1/L2/Howitzer are dead on arrival** and are in
+the deferred-tuning list (not fixed in this doc-only pass).
 
 ### Per-wave hardness (Level 1, from BalanceCalculator)
 
@@ -255,19 +281,25 @@ The philosophy: cost-efficiency improves across upgrades (rewards committing), b
 | L3 main | 7 – 9 | committed-investment payoff |
 | L3 branch | 8 – 10 | similar g/DPS to main, different *kit* (utility, AoE, range, damage type) |
 
-### Per-tower status (post-authoring pass 2026-04-28)
+### Per-tower status (resynced 2026-05-18 — replaces the false "all on target")
 
-All tower upgrade chains are now fully populated. Status against the g/DPS target bands:
+The previous version of this subsection claimed every tier was in band; that
+was a consequence of the stale g/DPS table above and is **not true**. Status
+recomputed against the bands from the live `.tres`:
 
 | Status | Towers / tiers |
 |---|---|
-| ✓ on target (in band) | Archer L1, L2, L3 main · Mage L1, L2, L3 main, Archmage, Necromancer · Ice L1, L2, L3 main, Glacier, Permafrost · Artillery L1, L2, L3 main, Howitzer, Triple Cannon · Barracks L1, L2, L3 |
-| ⚠ off target (slightly over) | **Archer L3 Ranger** — g/DPS 18.9 vs target 8–10. Buff damage 10→22 (DPS 30.8) → cumul g/DPS 10.2. |
-| ⚠ off target (slightly over) | **Archer L3 Musketeer** — g/DPS 17.3 vs target 8–10. Buff damage 22→32 (DPS 24) → cumul g/DPS 11.9 — still slightly over but burst kit justifies. |
+| ✓ in band | Mage L2/L3 main/Archmage/Necromancer · Ice L1/L2/L3 main/Glacier/Permafrost · Artillery L3 Mortar (post-AoE) · Barracks L2/L3 (derived) |
+| ⚠ slightly over (cheap to tune) | Archer L1 19.0 / L2 17.8 / L3 main 15.0 / Ranger 19.5 / Musketeer 18.3 — whole Archer chain ≈2× its bands · Mage L1 28.1 (back-loaded; L3 carries) |
+| ⛔ dead on arrival | **Artillery L1 81.3 · L2 80.5 · Howitzer 85.6** — ~6–8× off; ~27–29 even after the 3× AoE credit |
 
-The Archer branch overshoots are flagged for a follow-up pass once telemetry shows whether players ever pick them; bumping their damage is the easiest tune.
+Deferred to the L5 tuning pass (telemetry-gated): Artillery L1/L2/Howitzer
+retune to band (Mortar is the calibration anchor), Archer-chain trim, and the
+back-loaded Mage L1. Ice and Barracks are the healthy calibration anchors.
 
-The single-best-value tower at full upgrade is now **Artillery L3 main (Mortar)** at 7.5 cumul g/DPS with 200-radius AoE — best in class for crowd-clearing, by design. Compact, even spread across the rest at 8.4–10.2.
+The single-best-value tower at full upgrade is **Artillery L3 main (Mortar)**
+at ≈10.2 raw / ≈3.4 post-AoE cumul g/DPS with 573 range — best in class for
+crowd-clearing, by design.
 
 ### Per-level hardness target curve
 
@@ -285,12 +317,23 @@ Each new campaign level should target a multiple of S₁ ≈ 6,530 (post-tune):
 
 ### Mode multipliers
 
-| Mode | Multiplier | What changes |
+**Resynced to code 2026-05-18.** This table previously documented *design
+intent* ("Heroic +30% enemy HP", "Iron +30% enemy speed") that **is not
+implemented**. Actual behavior (`autoloads/WaveManager.gd:518–520`,
+`autoloads/RunState.gd:59`):
+
+| Mode | Implemented effect | What changes |
 |---|---|---|
-| Campaign | 1.00× | baseline |
-| Heroic | 1.30× | +30% enemy HP — tests defensive depth |
-| Iron | 1.30× + 1 life | +30% enemy speed, 1 life — tests perfect play |
-| Endless wave N | × (1 + 0.08 × N) | linear additive HP per wave (W10 = 1.8×, W30 = 3.4×) |
+| Campaign | baseline | authored counts/intervals/stats |
+| Heroic | `count ×1.5` (ceil), `interval ×0.85` | denser, faster spawns — **no enemy HP/speed/armor multiplier** |
+| Iron | same as Heroic **+ `lives = 1`** | identical spawn scaling to Heroic; only the 1-life rule differs |
+| Endless wave N | `hp ×(1 + 0.08·N)`, `count = 4 + 2·N` | linear additive HP per wave (W10 = 1.8×, W30 = 3.4×) |
+
+> **Design-intent vs implemented (known gap):** the intended distinction —
+> Heroic = +30% enemy HP (defensive depth), Iron = +30% enemy speed (perfect
+> play) — does not exist in code. Heroic and Iron are mechanically identical
+> except Iron's single life. Implementing the HP/speed multipliers is a
+> Phase 3 (endgame-curve) candidate, tracked in SESSIONS.md known-issues.
 
 ---
 
@@ -504,7 +547,7 @@ Drops should be rare and exciting. Target **1–3 pickups per typical level**, w
 |---|---|---|---|
 | Trash drop chance | [items/data/loot_table_default.tres](../items/data/loot_table_default.tres) | `drop_chance = 0.015` | Flat rate. Levels of 48–206 enemies → expected 0.7–3.1 drops. Variance is intentional: short levels are usually dry, long levels reward grinding. |
 | Boss drop chance | [items/data/loot_table_boss_orc.tres](../items/data/loot_table_boss_orc.tres) | `drop_chance = 1.0` | Every boss kill = guaranteed drop. The KR-canonical "you cleared the wave, here's your prize" moment. |
-| Wooden Sword weight | default table entry | `1.0` (was `2.0`) | 0-affix common stays in pool but no longer dominates. Per user direction: "small improvement is still improvement," don't yank it. |
+| Wooden Sword weight | [items/bases/base_wooden_sword.tres](../items/bases/base_wooden_sword.tres) | `1.0` (was `2.0`) | 0-affix common stays in pool but no longer dominates. Per user direction: "small improvement is still improvement," don't yank it. **2026-05-18: this doc was authoritative; `base_wooden_sword.tres` `drop_weight` was still `2.0` and has now been corrected to `1.0` so data matches.** |
 | Demon Core weight | default table entry | `0.08` | ≈0.02% per kill. ~1 in 5000 kills, true mythic. Bosses bias higher (`0.25`). |
 
 ### Per-rarity affix value scaling
@@ -692,6 +735,50 @@ No mainline Kingdom Rush ships fast-forward; Ironhide has refused the request fo
 - Re-run `BalanceCalculator.score_level()` on Level 1 — slower + tougher chasers raises tower DPS efficiency, so hardness will rise. If it overshoots the L1 PPT=2 target band (~15,000), reduce the chaser HP bump from +30 % to +20 %.
 
 ---
+
+## Known balance issues — 2026-05-18 audit (telemetry-gated, NOT yet fixed)
+
+A 5-agent balance audit found the issues below. Per user direction the
+correctness/doc pass shipped first (this resync); the tuning items are
+**deferred to the L5 tuning pass and gated on clean telemetry**.
+
+**Blocker — telemetry is blind.** All 50 runs in `run_stats.json` have
+`overrides_active=true`, **zero `naked_baseline=true`**. The Naked Baseline
+invariant cannot be verified from data. *No win/loss/pacing conclusion is
+authoritative until ≥1 clean Level 5 Naked Baseline run exists* (BalanceOverrides
+off, default `hero_warrior`, empty inventory, no talents/upgrades, Campaign
+mode, 1× speed, played to completion so `naked_baseline=true` is stamped).
+
+**War Chest dead-zone (resolution chain).** `RunState.reset_for_level()`
+(`autoloads/RunState.gd:56–75`) resolves starting gold as:
+`debug per-level override > LevelNodeData.starting_gold (pinned) > STARTING_GOLD + MOD_STARTING_GOLD`.
+Because a pinned `starting_gold` (L5/L6 = 100 in `level_list.tres`) *replaces*
+rather than adds to the baseline, the **War Chest meta-upgrade
+(`MOD_STARTING_GOLD`, the only gold upgrade) is silently dead on every level
+with a pinned start**. Decision deferred: leave the replace as level-author
+control vs. layer War Chest additively on the pin. Resolve during the L5
+tuning pass.
+
+**Deferred tuning findings (with numbers, file refs):**
+- **Artillery DOA** — `towers/data/tower_artillery.tres` L1 g/DPS ≈81, L2 ≈81,
+  Howitzer ≈86 (≈27–29 even after the 3× AoE credit) vs L1 band 16–22 / L2
+  10–13 / branch 8–10. Only Mortar (L3 main) is viable. Telemetry: Artillery
+  376 total dmg vs Mage 13,973.
+- **Boss hardness cliff** — `enemies/data/boss_orc_warlord.tres`
+  700 HP / 0.80 armor / lives_worth 5 ≈ 7,251 hardness each. Every finale wave
+  is 2–5× the prior wave; L5/L6 W10 spawn 4 bosses each (≈38k, ~5× W9).
+- **Knight base DPS ≈1.75** (`hero_warrior.tres` attack_damage 1.75, no
+  attack_speed → 1.0/s) vs this doc's own stated ~6 — the only legal Naked
+  Baseline hero barely contributes.
+- **Demon Core** — `items/bases/base_demon_core.tres` implicit budget far above
+  any tier reference; `loot_table_boss_orc.tres` weight 0.25 makes the
+  strongest item ≈1-in-18 per boss (doc intends "mythic ~1 in 5000").
+- **Non-monotonic campaign hardness** — L1 +83%, L2 −30%, L3 −26%, L4 +34%,
+  L5 +80%, L6 +50% vs the PPT curve; campaign anticlimaxes (L6 ≈78.5k <
+  L5 ≈81.2k despite higher PPT target).
+- **Iron mode speed-mult unimplemented** — see Mode-multipliers gap note above.
+- **Barracks cost-field drift** — `tower_barracks.tres` `upgrade_cost_lvl2/3`
+  (90/140) ≠ `BarracksUpg_L2/L3.cost` (100/150).
 
 ## When to update this file
 

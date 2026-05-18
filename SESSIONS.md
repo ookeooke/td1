@@ -5151,3 +5151,369 @@ legacy lock, perpendicular alternating spread, block_slot_for ordering,
 front-blocker compaction). In-editor playtest (overload a chokepoint so 3+
 soldiers stack one enemy; confirm they fan instead of merging) still
 recommended; not runnable headlessly.
+
+## 2026-05-17 (cont.) - Warrior skill pictograms
+
+User reported many skills lack logos/images when choosing them and asked to
+start with the Warrior.
+
+Fix:
+- Added four Warrior-specific procedural skill glyphs in `SkillGlyph.gd`:
+  `warrior_summon` (banner + helms), `warrior_bless` (radiant shield),
+  `warrior_shield_bash` (impact shield), and `warrior_rally` (war horn).
+- Repointed Warrior skill resources from shared/generic pictograms to the new
+  glyph keys:
+  `skill_summon_soldiers.tres`, `skill_bless.tres`,
+  `skill_shield_bash.tres`, `skill_rally_cry.tres`.
+- Kept this in the existing procedural UI system instead of adding bitmap
+  assets, so SkillBar, HeroesHub skill slots, inspector headers, and skill-tree
+  rows all render the same icon style automatically.
+
+No gameplay, cooldown, damage, skill unlock, or balance values changed.
+
+Verification: `git diff --check` passes for the touched glyph/resource files.
+
+## 2026-05-17 (cont.) - Hero Tuning: expose post-doctrine combat levers
+
+User asked the Hero Tuning panel to expose the stats that "actually matter"
+after the blocking-doctrine + fan-out work. Audited HeroData vs the panel's
+fixed `_HERO_STAT_DEFS`: several load-bearing combat fields were unreachable
+(read straight from `data`, bypassing the override pipeline).
+
+Added as working live + bake sliders (BalanceOverrides keys, identity in
+release so production is byte-identical):
+- `engage_radius` (engage_radius_mult) — block-claim circle; `_effective_
+  engage_radius()` now prefers the computed stat. Relabeled the old misnamed
+  "EngageRng" row → "MeleeDetect" (it was `detection_radius_px`, a different
+  circle) to end the confusion.
+- `max_block_targets` (block_targets_add, int) — new `_effective_max_block_
+  targets()` is the single source for all 3 cap reads; clamped ≥ 0.
+- `respawn_time` (respawn_mult) — `_die()` prefers the computed stat.
+- `guard_back_px` (guard_back_add), `close_attack_damage`/`close_attack_speed`
+  (close_dmg_mult / close_spd_mult).
+- `health_regen` (regen_add) — live-only: no HeroData field (modifier-sourced),
+  so it tunes for playtest feel but is skipped by the bake collector.
+
+Panel plumbing generalized: `_hero_default_for` now uses a `_add` suffix rule
+(0.0) so new keys need no edit; add-mode slider bounds/format/step + bake clamp
+no longer assume the armor 0..0.95 mitigation cap; bake int-rounds
+max_block_targets; `prop ""` rows render + tune but never bake.
+
+Skipped with reasons (told user): heroes have no `attack_splash_radius`
+(skill-driven — already tunable via the per-skill AoE row); no separate flying
+speed (`speed_mult` covers walk+fly); `auto_seek_radius`/`guard_front_px` are
+authored but unused by hero combat.
+
+Verification: GUT 193/193 passing (overrides identity in headless/release →
+no behavioral regression). Doctrine updated (Combat Ground Line — debug-tunable
+note). No BALANCE.md change (these are feel levers with no target bands).
+In-editor pass (open Hero Tuning, drag the new sliders, watch a hero in-level)
+recommended; not runnable headless.
+
+---
+
+## 2026-05-18 — Level 6 "Crossroads" (draft)
+
+New level: two paths entering from opposite corners (top-left `tl_corner`,
+bottom-right `br_corner`) converging at a central base. Built from the
+two-path-converge topology, hand-adjusted to opposite-corner spawns. 8 tower
+spots, HeroSpawn near the convergence. Procedural for now — painted background
+(`levels/backgrounds/level_6_bg.png`) to be supplied by the user, then wired as
+a `MapBackground` Sprite2D (z=-50) per CORE RULE 21.
+
+Files: `levels/Level6.tscn`, `levels/Level6.gd`, `levels/level6_waves.tres`
+(10 waves, dual-boss W10), registered in `ui/world_map/level_list.tres`
+(level_6, gold_budget 2800, starting_gold 100, min_ppt 6, target_ppt 7 —
+harder than L5's 6) and a `level_6` Marker2D on `WorldMapView.tscn`.
+
+Verification: headless boot clean — `ContentRegistry loaded — 6 levels`, no
+DRIFT/parse/script errors. Curve/spot/marker positions are a draft topology;
+hand-tune in the Godot 2D editor against the painting once supplied. Waves are
+a scaled-from-L5 draft — not yet verified against BALANCE.md target bands.
+
+## 2026-05-18 — Whole-codebase bug/edge audit (10 red cases, no fixes)
+
+User asked for a whole-codebase bug hunt + 10 finding cases. 3 parallel Explore
+passes (combat/unit, autoload/save, UI/input) → ~26 candidates → triaged and
+verified against source. Scope (user choice): red tests only, no production
+fixes; highest-severity confirmed, player-reachable.
+
+Delivered:
+- `tests/unit/test_bug_edge_audit.gd` — 10 cases, all **red** (assert the
+  correct contract). Existing 193 tests still green → 203 total, 193 pass /
+  10 fail, no engine errors; each failure message names the bug.
+- `docs/BUG_EDGE_AUDIT_2026-05-18.md` — triaged table (10 confirmed: file:line,
+  repro, severity, fix sketch), rejected false positives (with proof), deferred
+  latent/by-design list, recommended fix order.
+
+Confirmed headline bugs: SceneManager soft-lock on failed change_scene_to_file
+(#6, only hard lock); EquipmentScreen Preventive-Bug-Rule-3 violation — 5 EventBus
+connects, 0 disconnects, no _exit_tree, hero_selected bound as an
+un-disconnectable lambda (#1/#2/#9); MetaProgression.add_hero_xp emits
+hero_leveled_up/hero_xp_gained before committing entry (#3/#4); InventoryManager
+re-persists the legacy "" hero key forever (#7); get_effective_ppt skips but
+never purges stale skill-tree node ids — CORE RULE 20 (#8); TowerRadialMenu
+backdrop double-fires on PC (#5); base_hero asymmetric autoload-signal lifecycle (#10).
+
+Rejected after verification (no test): SkillBar "PC-broken"
+(emulate_touch_from_mouse makes ScreenTouch-only correct), base_hero "respawn
+signal leak" (Godot auto-frees node connections), LootRoller mixed-sign weights
+(filtered before bucketing), WaveManager unknown path (warns + handled), all
+HeroTuning negative-slider edges (debug-only).
+
+No production code changed (explicit user scope). Fix pass deferred — order
+recommended in the audit doc. Tests are regression locks: each flips green when
+its bug is fixed; do not delete.
+
+### 2026-05-18 — Level 6 re-authored to match supplied painting
+
+User supplied `levels/backgrounds/level_6_bg.png` (1672×941, fixed a doubled
+`.png.png` extension). Painting is a worldtree-ring map, NOT opposite corners:
+two top forks, a stone ring around a central magic-tree island, a village base
+on the right. Re-authored per user spec into two crossing routes:
+- `ring_lane`: left top fork → loops the ring → exits east to the village.
+- `outer_lane`: top-right corner → sweeps right+bottom → exits top-left corner.
+Wired `MapBackground` Sprite2D (z=-50, scale 1.2327 to fill map_bounds), traced
+draft Curve2D points, repositioned 8 spots / HeroSpawn / spawn markers, relabeled
+wave path_ids (tl_corner→ring_lane, br_corner→outer_lane; 45 refs).
+
+Verification: headless boot clean — texture imported, `ContentRegistry … 6
+levels`, no errors. Curve/spot positions are a traced draft — hand-tune handles
+in the Godot 2D editor against the painting. NavPoly still full-rect (tree
+island not yet cut). Waves still a scaled-from-L5 draft, unverified vs BALANCE.md.
+
+## 2026-05-18 — Dragon art review (5-lens) + P1 silhouette fixes
+
+Ran 5 parallel art-director reviews of the 100% procedural Dragon hero
+(Silhouette, Palette, Animation, VFX/Attack, Mobile/HUD). Consolidated 19
+severity-ordered findings + implement-ready specs into
+`docs/DRAGON_ART_REVIEW_2026-05-18.md` (cited current values spot-checked
+against source; one cross-lens membrane-color conflict flagged + resolved).
+
+Implemented the recommended step 1 — the coupled P1 wing batch in
+`systems/UnitVisualDrawer.gd`:
+- **S-A** z-order: `_draw_dragon_wings` now draws AFTER body/legs (was painting
+  under the body ellipse — the dragon's defining feature was overpainted).
+- **S-B** rebuilt the wing polygon as a single non-self-intersecting fan
+  (old vertex order self-crossed → bowtie fill instead of a membrane).
+- **S-C** membrane color now `body_col.darkened(0.45)` opaque (was an inline
+  near-body red at 0.82 alpha → near-zero wing/body separation). Hue-locked to
+  body_color per the resolved conflict.
+
+Verification: headless boot clean, exit 0, no parse/script errors. Visual
+confirmation (Level6 dragon at zoom 1.0/0.5/2.0, phone aspect) still pending —
+needs an in-editor screenshot pass. Remaining specs (P1 VFX V-A/V-B, HUD
+H-A/H-B, animation, zoom-scale S-I, P3 polish) tracked in the review doc with
+recommended execution order.
+
+### 2026-05-18 (cont.) — Dragon art review specs implemented (P1 batch + VFX + HUD)
+
+Implemented the review doc's recommended-order fixes:
+- **V-B** (base_hero.gd) — basic-attack charge telegraph. The breath's snout
+  glow used to coincide with / follow the shot (the ranged lunge feeds
+  cast_t/wind_t the same frame the projectile spawns). Added a pure-visual
+  pre-fire ramp driven off `_attack_cooldown` over the last
+  `BREATH_WIND_DURATION=0.18s` before firing, guarded so it never fights the
+  lunge/skill blocks. **Deviation from the doc's V-B:** did NOT defer the
+  projectile (the doc's deferral would shift damage/cooldown timing and risk
+  balance per CORE RULE 1/9). Generic tinted muzzle flash already exists
+  (base_hero.gd:2244) so V-B's muzzle ask was already covered.
+- **V-A** (Arrow.gd + DragonBreath.tscn) — added `Shape.FIRE_BREATH` (=7,
+  appended), `_draw_fire_breath_shape()` (layered flame teardrop, no faceted
+  crystal/white core/rune sparks), `_FireImpactVFX` (scorch + ember scatter +
+  flame puff, no arcane ring). `DragonBreath.tscn shape 5 → 7`. The projectile
+  was literally rendering as the Mage's `ARCANE_BOLT` purple shard recoloured.
+- **H-A/H-B** (HeroHudPortrait.gd) — HUD disk `Color(0.50,0.18,0.14)` →
+  `Color(0.68,0.11,0.08)` (== body_color, fixes the brick-vs-ember mismatch);
+  replaced the symmetric "spread wings" glyph (read as a bird/butterfly) with
+  an asymmetric side-profile dragon (wing + neck + forward head + horn).
+
+Verification: headless boot clean, exit 0, no parse/script errors across
+base_hero.gd / UnitVisualDrawer.gd / Arrow.gd / HeroHudPortrait.gd /
+DragonBreath.tscn. Visual confirmation (in-editor screenshots of the dragon at
+zoom 1.0/0.5/2.0 + phone aspect, and a live breath attack to see charge →
+fire-shape → fire-impact) still PENDING — could not drive a gameplay capture
+headless. Remaining review-doc specs deferred: animation (S-D/E/H), zoom-scale
+S-I, S-F/G head/spines, T-A flight-height, V-C/V-E, S-J hit-flash trim.
+
+### 2026-05-18 (cont.) — Dragon art review: animation + zoom-scale + polish batch
+
+Implemented the P2 + safe-P3 remainder of docs/DRAGON_ART_REVIEW_2026-05-18.md:
+- **S-D/S-E/S-H** (UnitVisualDrawer.gd) — decoupled the wing clock (walk-bob
+  rate) from the tail clock (absolute 2.35 rad/s, non-harmonic) so they no
+  longer phase-lock into a metronome; added `_flap_curve()` (fast 35%
+  downstroke / slow 65% recovery) replacing the symmetric sin flap; tail now a
+  base→tip travelling wave (per-segment phase lag) instead of a rigid swing.
+- **S-I** (UnitVisualDrawer.gd + base_hero.gd) — threaded `ctx["zoom_scale"]`
+  (= 1/zoom, clamped 0.5–2.0) from `_draw()`; dragon `outline_w` and the two
+  bare stroke literals (spine outline, claw lines) now scale by it so strokes
+  stay constant on screen instead of bloating at 0.5x.
+- **S-G** — back spines raised (ridge 0.46→0.50, height 0.16–0.24 → 0.26–0.40)
+  so they break the body's top contour.
+- **V-E (visual only)** — stronger pulsing snout charge (wind_t weight
+  0.55→0.85, mouth radius 0.18+0.16→0.20+0.34, alpha pulse). **Deviation:**
+  did NOT change the shared `CAST_WIND_DURATION` (V-E pt1) — it gates every
+  hero's skill-apply timing; out of dragon scope and balance-risky.
+- **S-J** — hit-flash no longer whites out the wings (largest area); flashes
+  body + tail + head only. Left `HIT_FLASH_DURATION` / re-arm guard unchanged
+  (behaviour change, wants visual verification first).
+- **T-A** — `visual_dragon.tres` flight_height_px 48→70 (confirmed visual-only
+  across balance/combat; range cap 80); fixed the stale "=44" comment in
+  base_hero.gd (Preventive Bug Rule 4).
+
+Verification: headless boot clean (exit 0, no parse/script errors);
+test_combat_blocking.gd 61/61 pass (base_hero.gd changes are pure ctx reads —
+no combat regression). Still PENDING: in-editor visual confirmation (dragon at
+zoom 0.5/1.0/2.0 + phone aspect; live breath charge→fire→impact; flap/tail
+motion). Deferred specs: S-F (head terminus reshape — needs eyeball),
+V-E pt1 (shared cast timing), HIT_FLASH_DURATION/re-arm tuning, S-D hover-vs-
+forward differentiation (optional).
+
+### 2026-05-18 (cont.) — Dragon art: in-game visual verification (MCP)
+
+Closed the "unverified — needs in-editor capture" caveat. Drove the live game
+via the Godot MCP bridge: unlocked + selected hero_dragon, loaded Level6,
+captured frames at zoom 1.0 / 0.5 / 2.2 and during a live wave.
+
+Confirmed working in real gameplay:
+- S-A/S-B/S-C — wings render ON TOP of the body (z-order), as a clean fan
+  (no bowtie), dark membrane clearly distinct from the brighter body. Reads
+  unambiguously as a winged dragon at gameplay zoom.
+- S-D/S-E — wing flap animates and varies frame-to-frame (asymmetric curve
+  live; not the old frozen/metronomic sin).
+- S-I — at zoom 0.5 the dragon stays a clean proportional silhouette; strokes
+  do NOT bloat (zoom-scale threading works).
+- V-A/V-B — dragon engages combat, fires projectiles, deals damage (floating
+  numbers), snout charge glow visible; no crash, no script errors.
+
+Notes: the close-up combat capture ended in Defeat because I called all 10
+waves at once with no towers (test-harness artifact, not a code issue — the
+GameOverScreen + Balance Verdict rendered correctly). Fine-grained aesthetic
+judgement of the fire-shape/charge polish and the deferred specs (S-F head
+reshape, V-E shared cast-timing, hit-flash duration, hover-flap differentiation)
+still want a human eye, but all shipped changes are functionally verified in
+gameplay. Scene stopped cleanly; no runtime state persisted (play session).
+
+### 2026-05-18 (cont.) — Dragon S-F + wing-spar seam fix (visually verified)
+
+- **S-F** (UnitVisualDrawer.gd) — head shifted forward +0.18r and enlarged
+  1.25x about its centroid so it clears the body as a clear horned terminus;
+  neck pts 2-3 +0.10r; jaw shifted to stay attached; horns are now solid
+  back-swept filled triangles (base r*0.10, len r*0.42) instead of 2px lines.
+- **Regression fix** — the S-B wing rebuild left the `root→tip` bone spar
+  near-vertical (rebuilt tip sits at x≈0.10r), which MCP close-up capture
+  exposed as an ugly bright seam bisecting the dragon. Rerouted the spar to
+  follow the wing arm (root→knuckle→tip). Seam confirmed gone.
+
+Verification: headless clean (exit 0); MCP in-game capture at zoom 3.0 — head
+reads as a proper horned terminus, seam eliminated, wings animate, silhouette
+clean. test_combat_blocking.gd unaffected (visual-only). Scene stopped clean.
+
+Remaining (need product decision, NOT implemented): V-E pt1 (raise shared
+CAST_WIND_DURATION 0.15→0.32 — affects EVERY hero's skill windup + deferred
+apply timing) and hit-flash duration/re-arm tuning (changes damage-feedback
+feel game-wide). The optional S-D hover-vs-forward flap differentiation is
+also unbuilt (pure polish). Everything else in the review doc is done +
+verified.
+
+---
+
+## 2026-05-18 — Balance audit + correctness/doc resync (Phase 1 of 3)
+
+Ran a 5-agent balance audit (towers / enemies+waves / heroes+skills /
+progression+economy / items+telemetry) over all balancing data. Consensus:
+big `BALANCE.md` doc drift (CORE RULE 18), blind telemetry (all 50 runs
+override-polluted, zero `naked_baseline`), and several tuning problems.
+Per user direction the work is phased — **fix bugs/docs first, tuning later,
+L5-scoped**. This session = Phase 1 only.
+
+**Done (no gameplay-balance numbers changed except one drop_weight):**
+- `balance/BALANCE.md` — recomputed the per-tower g/DPS table directly from
+  `towers/data/*.tres` (the old table was pre-2026-04-30 fiction: it listed
+  Archer L1 4.0/1.20/$50, file is 3.5/1.05/$70; Artillery L1 25 dmg, file is
+  4.0). Rewrote per-tower status (the "all on target" claim was false — Archer
+  chain ≈2× its bands, Artillery L1/L2/Howitzer DOA at g/DPS ≈81/81/86).
+  Rewrote the mode-multiplier table to the *implemented* behavior (Heroic &
+  Iron both `count×1.5, interval×0.85`; no enemy HP/speed mult exists; only
+  Iron's 1-life differs) with an explicit design-intent-vs-implemented note.
+  Added a top-of-file resync banner + a "Known balance issues — 2026-05-18
+  audit" section cataloguing every deferred finding with numbers/file refs.
+- `items/bases/base_wooden_sword.tres` — `drop_weight` 2.0→1.0 (user decision:
+  the doc was authoritative; the intended change had never been applied to
+  data). Only data edit in Phase 1.
+- `autoloads/RunStats.gd` — run-level `damage_by_source` gained additive
+  `towers` (alias of `towers_total`) + `other` (0.0) keys so it matches the
+  per-wave schema `{hero,soldiers,towers,other}`. Append-only, no schema/
+  SAVE_VERSION bump, no consumer change. (The audit's "rollup zeroes towers"
+  finding was a false alarm — every balance consumer already reads
+  `towers_total`; this just stops the key-name mismatch from misleading
+  future readers, which is exactly what tripped the audit agent.)
+- `STATUS.md` — current-focus entry + telemetry-gate note.
+
+**Deferred (catalogued in BALANCE.md "Known balance issues", NOT fixed):**
+Artillery DOA, boss hardness cliff (`boss_orc_warlord` 700HP/0.8armor/lw5;
+L5/L6 4-boss finales), Knight base DPS ≈1.75 vs intended ~6, Demon Core budget
++ 0.25 boss-table weight, non-monotonic L1→L6 hardness (campaign anticlimaxes:
+L6 ≈78.5k < L5 ≈81.2k), Iron speed-mult unimplemented, War Chest dead-zone
+(pinned `starting_gold` replaces `MOD_STARTING_GOLD` — decision deferred per
+user), Barracks cost-field drift. All gated on a clean L5 Naked Baseline run.
+
+**Next:** Phase 2 = new offensive affixes (crit / cleave / execute / vs-type)
+as event-based `AbilityData` + `AffixData .tres`. Phase 3 = endgame curve past
+L6 (deferred, telemetry-gated). Plan:
+`~/.claude/plans/atomic-humming-stroustrup.md`.
+
+Verification: doc/data/code reads cross-checked against live `.tres`; hand-check
+of recomputed g/DPS rows below; GUT pending.
+
+---
+
+## 2026-05-18 — Unified hero chooser (skill map + master-detail)
+
+5 internet-research scouts (hero-select / equipment / skill-loadout / unified
+design-system / mobile-UX) converged on a master-detail skeleton; user supplied
+a sharper 5-phase plan adding a Path-of-Exile-lite skill map. Doc-first, then
+implemented additively — no working script rewritten, no save/ID changes.
+
+- **`docs/UNIFIED_CHOOSER_DESIGN.md`** — reference spec: unified skeleton,
+  constant-vs-variable contract, the one interaction rule (tap=inspect,
+  button=act, two-step for spend/destructive), skill-map spec, reusable-
+  component table, 15-item mobile UX checklist, per-screen wireframes.
+- **Phase 0 (gate)** — audited `HeroSkillNodeData`/`HeroSkillTreeData`: `kind`
+  + `prerequisite_ids` + `target_id` + `level_required` are rich enough for a
+  deterministic runtime layout. GO, no `.tres` changes.
+- **Phase 1** — `HeroesHub.gd` additive: visible ▲/▼ rail scroll arrows
+  (≥80px, dim at extremes, hide when roster fits) + scroll-selected-into-view
+  on `hero_selected`. No existing sidebar logic changed.
+- **Phase 2** — new `ui/HeroSkillMap.gd`: inspect-only constellation. X =
+  `level_required`, Y = kind lanes, edges = prerequisites; per-node ≥80px
+  transparent Button hit targets (Button.pressed dedupes mouse/touch — no PC
+  double-fire). Emits `node_selected`; commits nothing.
+- **Phase 3** — `HeroSkillsPage.gd` additive: map hosted as default view with a
+  Map/List toggle (legacy tab+list fully preserved behind it). Node tap routes
+  into the EXISTING `_inspect_tree_node` → inspector → unchanged
+  LoadoutState/MetaProgression mutators. Verified: tap inspects but never
+  commits (`purchased_rank 0→0`); toggle flips; hero swap clears selection +
+  rebuilds for the new tree.
+- **Phase 4** — `EquipmentScreen.tscn` only (zero `.gd`): bottom-sheet
+  re-anchored to a fixed right column (`(1404,96) 500×968` @1920); DimBackdrop
+  neutralised (`mouse_filter=IGNORE`, alpha 0) so the grid stays usable. Sell
+  two-step + all action logic untouched.
+- **Phase 5** — `HeroSkillsPage.gd`: two-step arm→confirm on the point-spending
+  BUY (mirrors EquipmentScreen sell-arm; 3s auto-disarm; warm-orange armed
+  colour ≠ gold selection). Equip/unequip stay single-tap (reversible —
+  carve-out per the rule). Verified: `pts 5→5→4`, `rank 0→(armed)0→1`.
+
+Verification: every touched script compiles (MCP validate_script); Phases 1/3/4
+visually + deterministically verified in a running scene; Phase 5 two-step
+verified by scripted arm-then-confirm. GUT: 193/193 functional tests pass; the
+10 failures are all pre-existing markers in the untracked same-day
+`test_bug_edge_audit.gd` (XP-commit ordering, radial menu, SceneManager,
+inventory save, EquipmentScreen connect/disconnect, BaseHero) — none related to
+this work, 0 regressions.
+
+**Deferred (not blocking):** persistent always-visible Equipment placeholder
+panel (currently shows on selection); Skills inspector primary-action pinned
+bottom-right (currently in the scrollable vbox) — both would restructure
+working render code; revisit once the map is play-tested and the legacy Skills
+list is retired. Plan: `~/.claude/plans/dapper-noodling-pizza.md`.

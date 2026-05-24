@@ -88,6 +88,8 @@ var _summary_grid: GridContainer = null
 # the file isn't re-read for every tower-tier label. Cleared on _build_tower_section
 # so a fresh open of the panel re-pulls the latest run history.
 var _history_cache: Array = []
+var _enabled_toggle: CheckButton = null
+
 
 # Wave Editor v2 — enemy-class dropdown, path dropdown, add/remove emitter.
 # Class swaps mutate spawn.enemy_scene in place; structural changes append to
@@ -107,12 +109,14 @@ const _CLASS_TO_SCENE_PATH: Dictionary = {
 }
 var _structurally_dirty_levels: Dictionary = {}   # level_id → wave_list Resource
 
+
 # Cached BalanceModelConfig (effective:theoretical ratio + segment weights).
 # Loaded lazily via _get_model_config; cleared on Reset so designers can edit
 # the .tres and see results without restarting Godot.
 const _BalanceModelConfigScript: GDScript = preload("res://balance/BalanceModelConfig.gd")
 const _MODEL_CONFIG_PATH: String = "res://balance/balance_model_config.tres"
 var _model_config: Resource = null
+
 
 # Naked Baseline tower set — the canonical default starter loadout. Hardcoded
 # (rather than "first 4 of ContentRegistry.towers") so the floor is reproducible
@@ -124,10 +128,12 @@ const _BASELINE_TOWER_IDS: PackedStringArray = [
 
 
 func _ready() -> void:
+	BalanceOverrides.force_read = true
 	back_button.pressed.connect(_on_back)
 	play_button.pressed.connect(_on_play)
 	reset_button.pressed.connect(_on_reset)
 	_add_bake_button()
+	_add_enabled_toggle()
 	_load_levels()
 	_load_slider_values()
 	_connect_sliders()
@@ -136,6 +142,30 @@ func _ready() -> void:
 	_build_hero_section()
 	_build_level_section()
 	_refresh_readout()
+
+	# Temporary debug screenshot automation
+	if OS.get_cmdline_args().has("--mcp-screenshot"):
+		await get_tree().process_frame
+		await get_tree().process_frame
+		# Find first level group (Forest Path) and second level group (Stone Bridge)
+		# Let's expand Stone Bridge [level_2] so we can see the diagnostics table
+		if level_section.get_child_count() > 2:
+			var group = level_section.get_child(2) # child 0 is heading, child 1 is Forest Path, child 2 is Stone Bridge
+			var hdr = group.get_child(0)
+			hdr.pressed.emit()
+			var body = group.get_child(1)
+			# Find timeline toggle button
+			for child in body.get_children():
+				if child is Button and child.text.contains("Show wave timelines"):
+					child.pressed.emit()
+					break
+		
+		# Take screenshot
+		await get_tree().create_timer(1.0).timeout
+		var image = get_viewport().get_texture().get_image()
+		image.save_png("res://balance_sliders_screenshot.png")
+		print("[AUTO_SCREENSHOT] Saved screenshot to res://balance_sliders_screenshot.png")
+		get_tree().quit()
 
 
 # Programmatically inject a "Bake to .tres" button next to Reset. Lives next
@@ -154,6 +184,23 @@ func _add_bake_button() -> void:
 	parent.add_child(bake)
 	parent.move_child(bake, reset_button.get_index() + 1)
 	bake.pressed.connect(_on_bake_pressed)
+
+
+func _add_enabled_toggle() -> void:
+	_enabled_toggle = CheckButton.new()
+	_enabled_toggle.text = "Enable Overrides"
+	_enabled_toggle.tooltip_text = "If disabled, overrides are globally ignored (identity/defaults are used) and Naked Baseline telemetry is unblocked, without losing slider settings."
+	_enabled_toggle.button_pressed = bool(BalanceOverrides.get_value("overrides_enabled"))
+	_enabled_toggle.toggled.connect(func(pressed: bool):
+		BalanceOverrides.set_value("overrides_enabled", pressed)
+		_refresh_readout()
+		_refresh_wave_charts()
+	)
+	var parent: Node = reset_button.get_parent()
+	if parent == null:
+		return
+	parent.add_child(_enabled_toggle)
+	parent.move_child(_enabled_toggle, reset_button.get_index())
 
 
 func _load_levels() -> void:
@@ -177,6 +224,8 @@ func _load_slider_values() -> void:
 	damage_slider.value = float(BalanceOverrides.get_value("damage_mult")) * 100.0
 	gold_slider.value = float(BalanceOverrides.get_value("starting_gold_add"))
 	ppt_slider.value = float(BalanceOverrides.get_value("ppt_override"))
+	if _enabled_toggle != null:
+		_enabled_toggle.button_pressed = bool(BalanceOverrides.get_value("overrides_enabled"))
 	_update_value_labels()
 
 
@@ -356,6 +405,7 @@ func _on_play() -> void:
 	var level_data: Resource = _selected_level()
 	if level_data == null:
 		return
+	BalanceOverrides.force_read = false
 	# Stage the run the same way LoadoutScreen / PauseMenu do: set the level id,
 	# call reset_for_level so override-adjusted starting_gold + lives apply, then
 	# go to Main.tscn (NOT the level scene directly — Main owns the HUD, camera,
@@ -391,6 +441,10 @@ func _do_reset() -> void:
 	_build_hero_section()
 	_build_level_section()
 	_refresh_readout()
+
+
+func _exit_tree() -> void:
+	BalanceOverrides.force_read = false
 
 
 # Class/path swaps + add/remove emitter mutate the in-memory WaveData /
@@ -2022,15 +2076,19 @@ func _add_wave_timeline_block(parent: VBoxContainer, lvl: Resource) -> void:
 # lazily on first toggle expand (see the `built` boxed flag in the caller).
 func _populate_wave_timeline_block(charts_box: VBoxContainer, lvl: Resource,
 		wave_list: WaveList, paths: Array) -> void:
-	# Overview chart at the top — shows level-arc EHP bars + cumulative gold
-	# curve so the spike-vs-rest pacing is visible at a glance before any
-	# per-wave detail card is read.
+	# Compute pressure rows once for this level — shared by the diagnostics
+	# table, overview strip, and every per-wave header below. Cached on the
+	# screen via _pressure_for_level so this stays cheap on slider rerenders.
+	var pressure_rows: Array = _pressure_for_level(lvl, wave_list)
+	# Phase 3 Wave Diagnostics Panel — pacing / tuning / bottleneck / leaks
+	# verdicts per wave. Built FIRST so designers see the summary header
+	# before scrolling into per-wave charts.
+	_build_diagnostics_table(charts_box, lvl, wave_list, pressure_rows)
+	# Overview chart — shows level-arc EHP bars + cumulative gold curve so
+	# the spike-vs-rest pacing is visible at a glance before any per-wave
+	# detail card is read.
 	var overview: Control = _LevelOverviewChartScript.new()
 	charts_box.add_child(overview)
-	# Compute pressure rows once for this level — shared by the overview
-	# strip and every per-wave header below. Cached on the screen via
-	# _pressure_for_level so this stays cheap on slider rerenders.
-	var pressure_rows: Array = _pressure_for_level(lvl, wave_list)
 	overview.set_data(wave_list, lvl, _compute_starting_gold(lvl),
 		_compute_saturation_gold(lvl, wave_list), pressure_rows)
 	_wave_charts.append({
@@ -2349,6 +2407,198 @@ func _add_wave_gold_per_sec_slider(parent: VBoxContainer, wave: WaveData, lvl: R
 	hb.add_child(val_lbl)
 	hb.add_child(meta_lbl)
 	parent.add_child(hb)
+
+
+# ─── Phase 3 Wave Diagnostics Panel ────────────────────────────────────────
+# Per-wave hard/easy verdict table embedded in the wave-timeline block.
+# Columns: Wave | Pacing Δ | Tuning | Bottleneck | EHP sparkline | Leaks.
+# Pacing Δ comes from score_wave() ratio (spike ≥2.0×, dip ≤0.6×). Tuning
+# verdict reuses the existing pressure-system drift from pressure_rows[i]
+# (OVER/UNDER vs the authored wave_pressure_target, ±15% band). Bottleneck
+# is always-on dominant share from wave_demand_vector(wave). Leaks come from
+# RunStatsDigest.level_digest.per_wave (avg) + defeat_wave_counts (died%);
+# both gated on n_runs ≥ 5 to avoid 1-of-3 = 33% noise. Slider edits already
+# trigger _refresh_wave_charts(), which finds the diagnostics entry by its
+# `is_diagnostics` tag and rebuilds the rows in place.
+func _build_diagnostics_table(charts_box: VBoxContainer, lvl: Resource,
+		wave_list: WaveList, pressure_rows: Array) -> void:
+	if wave_list == null or wave_list.waves.is_empty():
+		return
+	var box := VBoxContainer.new()
+	box.set("theme_override_constants/separation", 2)
+	var header := Label.new()
+	header.text = "Wave Diagnostics — pacing / tuning / bottleneck / leaks"
+	header.set("theme_override_font_sizes/font_size", 13)
+	header.modulate = Color(0.9, 0.95, 1.0)
+	box.add_child(header)
+	var rows_grid := GridContainer.new()
+	rows_grid.columns = 6
+	rows_grid.set("theme_override_constants/h_separation", 12)
+	rows_grid.set("theme_override_constants/v_separation", 3)
+	box.add_child(rows_grid)
+	var note := Label.new()
+	note.text = "  Sparkline scaled to this level only — not comparable across levels."
+	note.set("theme_override_font_sizes/font_size", 10)
+	note.modulate = Color(0.55, 0.6, 0.65)
+	box.add_child(note)
+	charts_box.add_child(box)
+	# Register so _refresh_wave_charts rebuilds on slider changes.
+	_wave_charts.append({
+		"is_diagnostics": true,
+		"rows_grid": rows_grid,
+		"wave_list": wave_list,
+		"level_data": lvl,
+	})
+	_populate_diagnostics_rows(rows_grid, lvl, wave_list, pressure_rows)
+
+
+func _populate_diagnostics_rows(rows_grid: GridContainer, lvl: Resource,
+		wave_list: WaveList, pressure_rows: Array) -> void:
+	for c in rows_grid.get_children():
+		c.queue_free()
+	# Column headers
+	for h_text in ["Wave", "Pacing Δ", "Tuning", "Bottleneck", "EHP", "Leaks"]:
+		var lh := Label.new()
+		lh.text = h_text
+		lh.set("theme_override_font_sizes/font_size", 11)
+		lh.modulate = Color(0.7, 0.75, 0.8)
+		rows_grid.add_child(lh)
+	# Telemetry — one fetch per table build.
+	var history: Array = RunStats.get_history()
+	var digest: Dictionary = RunStatsDigest.level_digest(history, String(lvl.level_id))
+	var per_wave_tel: Array = digest.get("per_wave", [])
+	var n_runs: int = int(digest.get("n_runs", 0))
+	var defeat_counts: Dictionary = RunStatsDigest.defeat_wave_counts(
+		history, String(lvl.level_id))
+	# Per-wave hardness + max for sparkline scaling.
+	var hardness: Array = []
+	var max_h: float = 0.0
+	for w in wave_list.waves:
+		var s: float = BalanceCalculator.score_wave(w) if w != null else 0.0
+		hardness.append(s)
+		if s > max_h:
+			max_h = s
+	# Rows
+	for i in range(wave_list.waves.size()):
+		var wave: WaveData = wave_list.waves[i]
+		if wave == null:
+			for _x in range(6):
+				rows_grid.add_child(Label.new())
+			continue
+		var s_cur: float = float(hardness[i])
+		var s_prev: float = float(hardness[i - 1]) if i > 0 else 0.0
+		# Wave
+		var l_wave := Label.new()
+		l_wave.text = "W%d" % (i + 1)
+		rows_grid.add_child(l_wave)
+		# Pacing Δ — ratio vs prior wave
+		var l_pace := Label.new()
+		if s_prev > 0.1:
+			var ratio: float = s_cur / s_prev
+			if ratio >= 2.0:
+				l_pace.text = "%.1f× spike" % ratio
+				l_pace.modulate = Color(1.0, 0.45, 0.4)
+			elif ratio <= 0.6:
+				l_pace.text = "%.1f× dip" % ratio
+				l_pace.modulate = Color(0.55, 0.7, 1.0)
+			else:
+				l_pace.text = "%.2f×" % ratio
+				l_pace.modulate = Color(0.8, 0.82, 0.85)
+		else:
+			l_pace.text = "—"
+			l_pace.modulate = Color(0.55, 0.6, 0.65)
+		l_pace.tooltip_text = "Hardness ratio vs previous wave (BalanceCalculator.score_wave). " \
+			+ "≥2.0× = pacing spike; ≤0.6× = economy/recovery dip."
+		rows_grid.add_child(l_pace)
+		# Tuning — drift vs authored pressure target (pressure_rows[i].drift)
+		var l_tune := Label.new()
+		var tune_color: Color = Color(0.55, 0.6, 0.65)
+		if i < pressure_rows.size():
+			var row: Dictionary = pressure_rows[i]
+			var drift: float = float(row.get("drift", 0.0))
+			var target: float = float(row.get("target", 0.0))
+			if target <= 0.0:
+				l_tune.text = "no target"
+				l_tune.modulate = tune_color
+			elif drift > 0.15:
+				l_tune.text = "OVER %+d%%" % int(round(drift * 100.0))
+				tune_color = Color(1.0, 0.6, 0.3)
+				l_tune.modulate = tune_color
+			elif drift < -0.15:
+				l_tune.text = "UNDER %+d%%" % int(round(drift * 100.0))
+				tune_color = Color(0.95, 0.85, 0.4)
+				l_tune.modulate = tune_color
+			else:
+				l_tune.text = "in band"
+				tune_color = Color(0.45, 0.85, 0.5)
+				l_tune.modulate = tune_color
+		else:
+			l_tune.text = "—"
+			l_tune.modulate = tune_color
+		l_tune.tooltip_text = "Drift = (actual_pressure − target) / target from WaveDamageSimulator. " \
+			+ "±15% in-band; OVER = harder than authored; UNDER = easier."
+		rows_grid.add_child(l_tune)
+		# Bottleneck — dominant demand share from wave_demand_vector
+		var l_bot := Label.new()
+		var demand_vec: Dictionary = BalanceCalculator.wave_demand_vector(wave)
+		l_bot.text = _dominant_demand_label(demand_vec)
+		l_bot.modulate = Color(0.75, 0.8, 0.85)
+		l_bot.tooltip_text = "Dominant EHP bucket: Boss ≥40%, else any bucket ≥50%; " \
+			+ "otherwise Mixed. Tells you which answer the wave needs."
+		rows_grid.add_child(l_bot)
+		# Sparkline — horizontal bar scaled to this level's max wave hardness
+		var spark := Control.new()
+		spark.custom_minimum_size = Vector2(120, 12)
+		var frac: float = (s_cur / max_h) if max_h > 0.0 else 0.0
+		spark.set_meta("frac", frac)
+		spark.set_meta("color", tune_color)
+		spark.draw.connect(func():
+			var bw: float = spark.size.x * float(spark.get_meta("frac", 0.0))
+			spark.draw_rect(Rect2(0, 2, bw, spark.size.y - 4),
+				spark.get_meta("color", Color.WHITE)))
+		rows_grid.add_child(spark)
+		# Leaks — from per-wave telemetry; gated on n_runs ≥ 5
+		var l_leak := Label.new()
+		if n_runs < 5:
+			l_leak.text = "—" if n_runs == 0 else "low data (n=%d)" % n_runs
+			l_leak.modulate = Color(0.45, 0.5, 0.55)
+		else:
+			var leak_str: String = "avg —"
+			for tel in per_wave_tel:
+				if int(tel.get("wave", 0)) == i + 1:
+					leak_str = "avg %.1f" % float(tel.get("leak", 0.0))
+					break
+			var died: int = int(defeat_counts.get(i + 1, 0))
+			if died >= 5:
+				leak_str += " · died %d%%" % int(round(100.0 * float(died) / float(n_runs)))
+			l_leak.text = leak_str
+		l_leak.tooltip_text = "Avg leaks/wave + %% of runs whose lives_zero defeat ended here. " \
+			+ "Both require n_runs ≥ 5 to avoid small-sample noise."
+		rows_grid.add_child(l_leak)
+
+
+# Dominant-bucket label from wave_demand_vector(). Boss gets a lower
+# threshold (40% of total_ehp) because even one boss tends to dominate the
+# wave's character even when raw EHP share is moderate.
+func _dominant_demand_label(vec: Dictionary) -> String:
+	if vec.is_empty():
+		return "—"
+	var total: float = float(vec.get("total_ehp", 0.0))
+	if total <= 0.0:
+		return "—"
+	var boss_share: float = float(vec.get("boss_ehp", 0.0)) / total
+	if boss_share >= 0.4:
+		return "Boss"
+	var fly_share: float = float(vec.get("flying_ehp", 0.0)) / total
+	if fly_share >= 0.5:
+		return "Flying"
+	var arm_share: float = float(vec.get("armored_ehp", 0.0)) / total
+	if arm_share >= 0.5:
+		return "Armored"
+	var mag_share: float = float(vec.get("magic_resist_ehp", 0.0)) / total
+	if mag_share >= 0.5:
+		return "Magic-resist"
+	return "Mixed"
 
 
 # ─── Inter-wave gap card ───────────────────────────────────────────────────
@@ -3853,12 +4103,21 @@ func _refresh_wave_charts() -> void:
 	# so canonical pressure recomputes for every chart in this pass.
 	_pressure_cache.clear()
 	for entry in _wave_charts:
-		var chart: Control = entry.get("chart")
-		if chart == null or not is_instance_valid(chart):
-			continue
 		var wave_list: WaveList = entry.get("wave_list")
 		var lvl: Resource = entry.get("level_data")
 		if wave_list == null or lvl == null:
+			continue
+		# Phase 3 diagnostics table — rebuilt by clearing + repopulating its
+		# rows_grid in place. Branched FIRST because it has no `chart` key.
+		if entry.get("is_diagnostics", false):
+			var rows_grid: GridContainer = entry.get("rows_grid")
+			if rows_grid == null or not is_instance_valid(rows_grid):
+				continue
+			_populate_diagnostics_rows(rows_grid, lvl, wave_list,
+				_pressure_for_level(lvl, wave_list))
+			continue
+		var chart: Control = entry.get("chart")
+		if chart == null or not is_instance_valid(chart):
 			continue
 		# Overview chart has a different signature than per-wave detail charts —
 		# branch so a single _wave_charts array can hold both kinds.

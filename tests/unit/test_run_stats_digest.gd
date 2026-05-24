@@ -59,3 +59,42 @@ func test_defeat_wave_counts_ignores_other_defeat_reasons() -> void:
 func test_defeat_wave_counts_empty_returns_empty() -> void:
 	var d: Dictionary = RunStatsDigest.defeat_wave_counts([], "level_5")
 	assert_eq(d.size(), 0, "empty input → empty dict, no crash")
+
+
+# Regression: a pre-existing line `String(r.get("final_wave_reached", 0))`
+# in level_digest errored at runtime ("Nonexistent 'String' constructor")
+# whenever `final_wave_reached` was an int — which is the real shape every
+# saved run carries. The bug stayed dormant until the Phase 3 Wave
+# Diagnostics Panel started calling level_digest() at panel-open time on
+# real history. Fix was `String(...)` → `str(...)`. This test pins that the
+# function returns cleanly on a realistic run shape.
+func test_level_digest_handles_int_final_wave_reached() -> void:
+	var runs := [
+		{
+			"level_id": "level_5",
+			"outcome": "victory",
+			"final_wave_reached": 10,     # int, as actually saved
+			"defeat_reason": "",
+			"naked_baseline": false,
+			"overrides_active": true,
+			"duration_s": 600.0,
+			"final_gold": 250,
+		},
+		{
+			"level_id": "level_5",
+			"outcome": "defeat",
+			"final_wave_reached": 4,
+			"defeat_reason": "lives_zero",
+			"naked_baseline": false,
+			"overrides_active": true,
+			"duration_s": 180.0,
+			"final_gold": 120,
+		},
+	]
+	var d: Dictionary = RunStatsDigest.level_digest(runs, "level_5")
+	assert_eq(int(d.get("n_runs", 0)), 2,
+		"level_digest aggregates both runs without erroring on int final_wave_reached")
+	var dist: Dictionary = d.get("final_wave_dist", {})
+	# Keys are stringified ints ("10" and "4").
+	assert_eq(int(dist.get("10", 0)), 1, "victory's W10 counted")
+	assert_eq(int(dist.get("4", 0)), 1, "defeat's W4 counted")

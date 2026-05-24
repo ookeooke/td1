@@ -185,7 +185,11 @@ static func level_digest(runs: Array, level_id: String, opts: Dictionary = {}) -
 			if d.tower_events_kinds.has(kind):
 				d.tower_events_kinds[kind] = int(d.tower_events_kinds[kind]) + 1
 		_inc(d.defeat_reasons, String(r.get("defeat_reason", "")))
-		_inc(d.final_wave_dist, String(r.get("final_wave_reached", 0)))
+		# str() — final_wave_reached is an int; GDScript has no String(int)
+		# constructor (only String(String)/StringName), so str() converts.
+		# Pre-existing bug surfaced when the Phase 3 diagnostics panel
+		# started calling level_digest() at open time on real run history.
+		_inc(d.final_wave_dist, str(r.get("final_wave_reached", 0)))
 		d.avg_game_speed += float(r.get("game_speed", 1.0))
 		var trs: Array = r.get("tower_runtime_stats", [])
 		for ts in trs:

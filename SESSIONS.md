@@ -5835,3 +5835,46 @@ follow-up (headless sim that auto-plays L5 with default loadout and
 emits a real `run_stats.json` entry) is still deferred; this MVP makes
 manual playtests much more likely to produce a clean baseline run than
 they were before.
+
+---
+
+## 2026-05-18 — Phase 3b: RunStatsDigest String(int) fix + verification miss
+
+User opened the Godot editor; the Errors panel showed 5 entries my
+headless verification missed. Triage:
+
+| Error | Mine? | Action |
+|---|---|---|
+| `level_digest: Invalid call. Nonexistent 'String' constructor` at `RunStatsDigest.gd:188` — triggered by Phase 3 panel → `_populate_diagnostics_rows` → `_build_diagnostics_table` → `_populate_wave_timeline_block` | Triggered by mine (pre-existing line, dormant until my panel called `level_digest()`) | **FIXED** |
+| `UnitVisualDrawer.gd:2465 UNUSED_PARAMETER cast_t` | No (concurrent WIP) | Skip |
+| `RunStatsDigest.gd:369/370 INTEGER_DIVISION` × 3 (parse-time warnings) | No (pre-existing `_median()` `n / 2` indexing) | Skip |
+
+**Fix:** `balance/report/RunStatsDigest.gd:188` — `String(r.get("final_wave_reached", 0))`
+→ `str(...)`. GDScript 4 has no `String(int)` constructor; `str()` is the
+right conversion. Added a comment documenting the GDScript quirk + the
+fact this was a dormant pre-existing bug.
+
+**Regression test:** `tests/unit/test_run_stats_digest.gd` got a
+`test_level_digest_handles_int_final_wave_reached` case that synthesizes
+realistic runs (int `final_wave_reached`) and asserts `level_digest`
+returns cleanly. Pins the contract so the bug stays dead.
+
+**Why I missed it (verification methodology gap):**
+1. `--headless --quit` only loads autoloads — `level_digest()` is never
+   called at boot.
+2. My scene-instantiation check fired `_ready` on BalanceSliders but did
+   NOT click the wave-timeline toggle. `_populate_wave_timeline_block`
+   only runs on user expand → my Phase 3 code path was never exercised.
+3. My defeat_wave_counts GUT tests used synthesized runs WITHOUT
+   `final_wave_reached` — the field the bug needed.
+4. For UI code reached only via interaction, headless boot + GUT alone
+   is insufficient. Next time: either drive the interaction in a
+   headless script, use `mcp__godot-mcp-pro__get_editor_errors` after an
+   editor reload, or write the GUT test against realistic data shapes.
+
+**Verified:** full GUT **225 tests, 225 pass, 0 failures** (+1 regression
+test). The line-188 path no longer errors when called on real history.
+
+**Out of scope:** the four pre-existing warnings (UnitVisualDrawer
+UNUSED_PARAMETER, RunStatsDigest INTEGER_DIVISION ×3) — concurrent or
+benign code I didn't touch.

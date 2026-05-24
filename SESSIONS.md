@@ -5693,7 +5693,7 @@ math that already exists.
     rebuilds the 6-column grid: **Wave | Pacing Δ | Tuning | Bottleneck |
     EHP sparkline | Leaks**.
   - `_dominant_demand_label(vec)` — Boss ≥40%, else any of
-    Flying/Armored/Magic-resist ≥50%, else "Mixed".
+	Flying/Armored/Magic-resist ≥50%, else "Mixed".
   - `_refresh_wave_charts()` gained an `is_diagnostics` branch that clears
     and repopulates the rows in place — slider edits (existing
     `_refresh_wave_charts` call sites already fire on every override edit)
@@ -5725,7 +5725,7 @@ math that already exists.
    returns `{actual, target, drift, supply, demand, gold_at_start, reason,
    fix}`) — `[i]` indexing works as Gemini assumed.
 10. **Sparkline caveat noted in UI** — footer line "scaled to this level
-    only — not comparable across levels."
+	only — not comparable across levels."
 11. **Cache fetched per-build (`RunStats.get_history()` inside
     `_populate_diagnostics_rows`)** — not coupled to `_build_tower_section`.
     Cheap; can be cached later if profiling shows it matters.
@@ -5772,3 +5772,66 @@ Investigated a critical player bug where starting or editing/restarting the game
 **Verification:**
 - Headless boot log confirms `ContentRegistry` and `UnlockManager` load before `SaveManager` loads the save, and the `loadout has zero usable towers` reset warning is gone.
 - All 218 GUT tests pass cleanly (0 failures).
+
+---
+
+## 2026-05-18 — Baseline Capture mode (LoadoutScreen panel)
+
+Follows the data-acquisition discussion: telemetry is blind because every
+run has `overrides_active=true` and zero `naked_baseline=true`. The cheap
+unblock (per recommendation) is a panel that surfaces the 10 conditions
+`RunStats._is_naked_baseline_run()` requires and auto-fixes the
+non-destructive ones, so players who want to capture a clean run stop
+having to remember the checklist.
+
+**Done (all new files + one additive scene edit):**
+
+- `ui/NakedBaselinePanel.gd` (~250 lines) + `ui/NakedBaselinePanel.tscn` —
+  self-contained widget. Static helpers:
+  - `evaluate() -> Array[Dict{key,label,ok,fixable,hint}]` — runs all 10
+    checks (mode / overrides / hero / towers / items / upgrades /
+    talents / hero_level / skill_nodes / skills) in sync with
+    `RunStats._is_naked_baseline_run`.
+  - `summarize(checks) -> {total, passing, fixable_failing,
+    permanent_failing, ready}` — counts buckets.
+  - `auto_fix() -> int` — non-destructive only: resets hero to Warrior,
+    towers to the default 4, equipped skills to the hero's authored
+    defaults, and calls `BalanceOverrides.reset()`. Never touches
+    equipped items, purchased upgrades, talents, hero level, or skill
+    nodes (those need a Refund UI or fresh save).
+- `ui/LoadoutScreen.tscn` — additive one-node instance under the
+  `Content` VBox (`NakedBaselinePanel` between `ChangeTowersButton` and
+  the floating `StartButton`). No script changes.
+- `tests/unit/test_naked_baseline_panel.gd` (6 tests, all pass):
+  evaluate-returns-10-named-conditions / entries-carry-required-fields /
+  summarize counts / ready when all pass / empty-input-is-ready /
+  auto_fix-corrects-hero-and-towers.
+
+**Caught and fixed during verification:**
+1. `LoadoutState.selected_tower_ids` is typed `Array[String]` — assigning
+   bare `[...]` literals errors at parse. Build the typed array in a
+   `var x: Array[String] = [...]` then assign.
+2. `NakedBaselinePanel` class_name not always populated in pure GUT
+   headless mode; tests use `preload()` instead.
+3. `EventBus.loadout_changed` does not exist (misread a grep). Removed
+   the emit and listener; Reset button explicitly triggers re-evaluate.
+4. `SaveManager.save_game()` inline in `auto_fix()` aborts the function
+   in headless GUT runs; persistence intentionally left to the next
+   state-changing action (Start button → SceneManager save flow).
+
+**Verification:** headless boot clean; full GUT **224 tests, 224 pass,
+0 failures** (+6 new). **In-editor visual verification still pending** —
+open WorldMap → select level → LoadoutScreen → confirm panel renders
+between Change Loadout and Start Battle; Reset resolves the 4 easy
+conditions; permanent-failing conditions flagged with ⚠ + tooltip.
+
+**Out of scope (explicit non-goals):**
+- No destructive auto-reset of items / upgrades / talents / hero level.
+- No "force the run" override — `_is_naked_baseline_run` classifies at
+  finalize.
+
+This is the *cheap* half of the data-capture unblock. The bigger
+follow-up (headless sim that auto-plays L5 with default loadout and
+emits a real `run_stats.json` entry) is still deferred; this MVP makes
+manual playtests much more likely to produce a clean baseline run than
+they were before.

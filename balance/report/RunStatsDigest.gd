@@ -55,6 +55,23 @@ static func runs_for_level(runs: Array, level_id: String, last_n: int = -1) -> A
 	return out
 
 
+# How many runs ended in DEFEAT (lives_zero) at each wave on this level.
+# Returns Dictionary[int wave_num -> int count]. Victories are excluded — they
+# share `final_wave_reached` with defeats but aren't deaths. Use for per-wave
+# "died here %" displays after gating on a sample-size threshold (n_runs >= 5
+# is the recommended floor; 1-of-3 deaths reads as 33% noise otherwise).
+static func defeat_wave_counts(runs: Array, level_id: String) -> Dictionary:
+	var out: Dictionary = {}
+	for r in runs_for_level(runs, level_id):
+		if String(r.get("defeat_reason", "")) != "lives_zero":
+			continue
+		var w: int = int(r.get("final_wave_reached", 0))
+		if w <= 0:
+			continue
+		out[w] = int(out.get(w, 0)) + 1
+	return out
+
+
 # Per-level digest. `opts.naked_only` filters to Naked Baseline runs, `opts.last_n`
 # truncates to the most recent N runs.
 static func level_digest(runs: Array, level_id: String, opts: Dictionary = {}) -> Dictionary:

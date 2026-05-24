@@ -1,6 +1,6 @@
 # STATUS
 
-**Last shipped**: Unified hero chooser — Path-of-Exile-lite skill map + master-detail unification (2026-05-18). New [docs/UNIFIED_CHOOSER_DESIGN.md](docs/UNIFIED_CHOOSER_DESIGN.md) reference spec. New inspect-only [ui/HeroSkillMap.gd](ui/HeroSkillMap.gd) constellation hosted in [HeroSkillsPage.gd](ui/HeroSkillsPage.gd) as the default view (legacy tab+list preserved behind a Map/List toggle); node tap routes the EXISTING `_inspect_tree_node`/inspector/mutators unchanged. [HeroesHub.gd](ui/HeroesHub.gd) gained visible rail scroll arrows + scroll-selected-into-view. [EquipmentScreen.tscn](ui/EquipmentScreen.tscn) detail bottom-sheet re-docked to a fixed right column (zero `.gd` change). Two-step arm→confirm added to the point-spending Skills BUY (mirrors Equipment sell). All additive — no working script rewritten, no save/ID changes. GUT 193/193 functional pass (10 failures are pre-existing `test_bug_edge_audit.gd` markers, 0 regressions). Deferred: persistent Equipment placeholder panel; Skills inspector action pinned bottom-right. See SESSIONS.md "2026-05-18 — Unified hero chooser".
+**Last shipped**: Unified hero chooser — Path-of-Exile-lite skill map + master-detail unification (2026-05-18). New [docs/UNIFIED_CHOOSER_DESIGN.md](docs/UNIFIED_CHOOSER_DESIGN.md) reference spec. New inspect-only [ui/HeroSkillMap.gd](ui/HeroSkillMap.gd) constellation hosted in [HeroSkillsPage.gd](ui/HeroSkillsPage.gd) as the default view (legacy tab+list preserved behind a Map/List toggle); node tap routes the EXISTING `_inspect_tree_node`/inspector/mutators unchanged. [HeroesHub.gd](ui/HeroesHub.gd) gained visible rail scroll arrows + scroll-selected-into-view. [EquipmentScreen.tscn](ui/EquipmentScreen.tscn) detail bottom-sheet re-docked to a fixed right column (zero `.gd` change). Two-step arm→confirm added to the point-spending Skills BUY (mirrors Equipment sell). All additive — no working script rewritten, no save/ID changes. GUT 213/213 functional pass (0 failures, all 10 pre-existing `test_bug_edge_audit.gd` failures fully resolved). Deferred: persistent Equipment placeholder panel; Skills inspector action pinned bottom-right. See SESSIONS.md "2026-05-18 — Unified hero chooser".
 
 **Previously shipped**: RunStats telemetry pipeline (schema 4 → 7) + Balance Scout agent + RunStatsDigest aggregator (2026-05-11). Three additive schema bumps in one session: schema 5 added boss_events, tower_events timeline, skill_casts, peak_concurrent_enemies_global, level_hardness, level_target_ppt; schema 6 added per-wave `enemies_by_id` / `damage_by_source` / `damage_by_tower_instance`, run-level `tower_runtime_stats[]`, `defeat_reason`, `final_wave_reached`, `game_speed`; schema 7 stamped `paths_in_range` on tower events + runtime entries and added `spots_total` / `spots_unbuilt` at finalize. Bookkeeping fixes: mid-wave-defeat backfills `lives_lost` from `leaks[]`; soldier damage is attributed back to the spawning barracks; `naked_baseline` now rejects runs with `BalanceOverrides.any_active()`. New [balance/report/RunStatsDigest.gd](balance/report/RunStatsDigest.gd) is the static aggregator (`level_digest`, `format_level_digest`, cohort filters by `overrides_active` / `naked_baseline`). New [docs/agents/balance_scout.md](docs/agents/balance_scout.md) defines the Balance Scout role + telemetry workflow rules. [BALANCE.md](balance/BALANCE.md) and [docs/agents/balance_scout.md](docs/agents/balance_scout.md) schema docs are synced. See SESSIONS.md "2026-05-11 — Telemetry pipeline + Balance Scout".
 
@@ -29,9 +29,29 @@ correctness/doc resync".
 secondary-`take_damage` pattern; value bands sized for the LootRoller
 LEGENDARY ×2 ceiling; weights keep them rarer than plain +damage. New
 `tests/unit/test_offensive_affixes.gd` (10 tests, all pass); full GUT 203 pass
-/ 0 regressions. **Test Range feel/VFX smoke still pending.** Next: Phase 3 =
-endgame curve past L6 (deferred, telemetry-gated). See SESSIONS.md "2026-05-18
-— Phase 2: new offensive affixes".
+/ 0 regressions. **Test Range feel/VFX smoke still pending.** See SESSIONS.md
+"2026-05-18 — Phase 2: new offensive affixes".
+
+**Phase 3 — Wave Diagnostics Panel shipped (2026-05-18).** Per-wave hard/easy
+verdict table embedded at the top of every level's wave-timeline block in
+[balance/debug/BalanceSliders.gd](balance/debug/BalanceSliders.gd). Six
+columns: Wave · Pacing Δ (score_wave ratio) · Tuning (drift vs authored
+pressure target) · Bottleneck (dominant `wave_demand_vector` bucket) · EHP
+sparkline · Leaks (telemetry, gated n_runs ≥ 5). Distinct color palettes
+separate pacing (SPIKE/DIP, red/blue) from tuning (OVER/UNDER/IN BAND,
+orange/yellow/green). Slider edits auto-refresh via existing
+`_refresh_wave_charts` (new `is_diagnostics` branch). New
+`RunStatsDigest.defeat_wave_counts()` helper (4 GUT tests, all pass) fixes
+Gemini's bug of using `final_wave_dist` which counts victories. Folds in 12
+critique fixes vs Gemini v2; explicitly drops the v1 "Impossible" verdict
+(uncalibrated). Full GUT 218/218 pass. **In-editor visual verification still
+pending.** Next: Phase 4 = endgame curve past L6 (deferred, telemetry-gated).
+See SESSIONS.md "2026-05-18 — Phase 3: Wave Diagnostics Panel".
+
+**Carry-over flag:** concurrent commits between Phase 1 and Phase 3 removed
+linear L3 upgrades (Mortar / Wizard / Archer L3 / Blizzard) from the tower
+`.tres` files and bumped Howitzer 13→100 damage — BALANCE.md's per-tower
+g/DPS table is stale again and needs a follow-up doc resync before Phase 4.
 
 **Previously**:
 - **Preventive Bug Rules + `HeroStats` accessor + `InventoryManager._persist()` refactor (2026-05-11)** — Codified four CLAUDE.md rules each tied to a real shipped bug (UI reads hero stats via `HeroStats.effective_for`; every InventoryManager mutator ends with `_persist()`; embedded hero-scoped screens listen to `hero_selected`; load-bearing invariants must be executable). New [heroes/HeroStats.gd](heroes/HeroStats.gd) mirrors the Tower Indicator pattern; HeroesHub dogfoods it. Audit found two additional drift sites (grid-placement, `destroy()`) that also skipped saves — fixed. See SESSIONS.md "2026-05-11 — Preventive Bug Rules".

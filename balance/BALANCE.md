@@ -12,6 +12,13 @@ This file lives under `balance/` because the whole folder is dev-only. The expor
 > 2.0→1.0 (applying a decision this doc already recorded). Telemetry is
 > currently blind (all runs override-polluted, zero Naked Baseline) — see the
 > known-issues note below before trusting any win/loss conclusion.
+>
+> **2026-05-18 re-resync:** A few hours later, a concurrent "Option A" commit
+> removed the linear L3-main upgrades from Archer / Mage / Ice / Artillery
+> (only L3 branches now) and buffed Artillery Howitzer 13→100 damage (now in
+> band at g/DPS 11.1, no longer DOA). The per-tower g/DPS table and per-tower
+> status above were recomputed accordingly. Artillery L1/L2 are still DOA —
+> that finding stands.
 
 ---
 
@@ -200,37 +207,38 @@ Recalibrated `PPT_TO_HARDNESS_FACTOR` from 3,000 → 7,500 so L1 (target_ppt=2) 
 
 ### Per-tower g/DPS (read directly from `towers/data/*.tres`)
 
-**Resynced to authored `.tres` 2026-05-18.** Prior versions of this table were
-stale (pre-2026-04-30 fictional values — e.g. it listed Archer L1 as 4.0 dmg /
-1.20 spd / cost 50; the file is 3.5 / 1.05 / 70, and Artillery L1 as 25 dmg;
-the file is 4.0). Every row below is computed directly from the current
-`towers/data/*.tres`. `Cumul $` = running sum of build costs along the upgrade
-path (branch cumul = L1 + L2 + branch, since a branch replaces L3).
-g/DPS = Cumul $ ÷ (Damage × Atk/s). Single-target DPS only — AoE/CC value is
-noted, not folded in.
+**Resynced to authored `.tres` 2026-05-18 (re-resync — see changelog).** Prior
+versions were stale (pre-2026-04-30 fictional values; the first 2026-05-18
+resync was overtaken hours later by a concurrent commit that **removed the
+linear L3-main tier** from Archer / Mage / Ice / Artillery and **buffed
+Howitzer damage 13 → 100**, taking it out of DOA territory). Every row below
+is computed directly from the *current* `towers/data/*.tres`. `Cumul $` =
+running sum of build costs along the upgrade path (branch cumul = L1 + L2 +
+branch, since branches replace any L3 main). g/DPS = Cumul $ ÷ (Damage × Atk/s).
+Single-target DPS only — AoE/CC value is noted, not folded in.
+
+> **Structural change:** combat towers no longer have a linear L3 main. After
+> L2 the player picks one of two L3 branches. Branch g/DPS band (8–10) is now
+> the only L3 measurement that matters.
 
 | Tower | Tier | Build $ | Cumul $ | Damage | Atk/s | DPS | g/DPS cumul | Notes |
 |---|---|---|---|---|---|---|---|---|
 | Archer | L1 | 70 | 70 | 3.5 | 1.05 | 3.68 | **19.0** | physical |
 | Archer | L2 | 80 | 150 | 6.5 | 1.30 | 8.45 | **17.8** | "Archer L2" |
-| Archer | L3 main | 120 | 270 | 12.0 | 1.50 | 18.00 | **15.0** | |
 | Archer | L3 Ranger | 150 | 300 | 11.0 | 1.40 | 15.40 | **19.5** | + slow 45% / 1.5s |
 | Archer | L3 Musketeer | 170 | 320 | 25.0 | 0.70 | 17.50 | **18.3** | high-burst single |
 | Mage | L1 | 95 | 95 | 4.5 | 0.75 | 3.38 | **28.1** | magic, hits flying |
 | Mage | L2 | 75 | 170 | 12.5 | 0.85 | 10.63 | **16.0** | "Sage Tower" |
-| Mage | L3 main | 120 | 290 | 32.0 | 1.00 | 32.00 | **9.1** | "Wizard Tower" |
 | Mage | L3 Archmage | 190 | 360 | 28.0 | 1.25 | 35.00 | **10.3** | sustained DPS branch |
 | Mage | L3 Necromancer | 195 | 365 | 38.0 | 0.85 | 32.30 | **11.3** | + 0.5s stun branch |
 | Ice | L1 | 85 | 85 | 4.5 | 1.00 | 4.50 | **18.9** | + 30% slow / 1.0s, hits flying |
 | Ice | L2 | 100 | 185 | 12.0 | 1.20 | 14.40 | **12.8** | "Frostbite" + 50% slow / 1.5s |
-| Ice | L3 main | 130 | 315 | 25.0 | 1.40 | 35.00 | **9.0** | "Blizzard" + 65% slow / 2.0s |
 | Ice | L3 Glacier | 140 | 325 | 24.0 | 1.50 | 36.00 | **9.0** | extreme slow 75% / 2.5s |
 | Ice | L3 Permafrost | 150 | 335 | 30.0 | 1.30 | 39.00 | **8.6** | + 0.4s stun on top of slow |
 | Artillery | L1 | 130 | 130 | 4.0 | 0.40 | 1.60 | **81.3** | ⚠ DOA — 50 AoE, ground only |
 | Artillery | L2 | 180 | 310 | 7.0 | 0.55 | 3.85 | **80.5** | ⚠ DOA — "Cannon", 90 AoE |
-| Artillery | L3 main | 120 | 430 | 70.0 | 0.60 | 42.00 | **10.2** | "Mortar", 573 range — only viable tier |
-| Artillery | L3 Howitzer | 135 | 445 | 13.0 | 0.40 | 5.20 | **85.6** | ⚠ DOA — nuke-per-shot branch (mislabeled) |
-| Artillery | L3 Triple Cannon | 160 | 470 | 17.0 | 1.25 | 21.25 | **22.1** | rapid-AoE branch |
+| Artillery | L3 Howitzer | 135 | 445 | 100.0 | 0.40 | 40.00 | **11.1** | nuke-per-shot branch (post 13→100 buff — viable) |
+| Artillery | L3 Triple Cannon | 160 | 470 | 17.0 | 1.25 | 21.25 | **22.1** | ⚠ rapid-AoE branch — over band |
 | Barracks | L1 | 65 | 65 | (block-only) | — | — | — | militia squad — see `soldiers/data/*.tres` |
 | Barracks | L2 | 90† | 155 | squad | — | ≈ | **≈11.7** | "Elite Barracks" — soldier-squad DPS (derived) |
 | Barracks | L3 | 140† | 295 | squad | — | ≈ | **≈12.8** | "Veteran Garrison" — soldier-squad DPS (derived) |
@@ -281,25 +289,23 @@ The philosophy: cost-efficiency improves across upgrades (rewards committing), b
 | L3 main | 7 – 9 | committed-investment payoff |
 | L3 branch | 8 – 10 | similar g/DPS to main, different *kit* (utility, AoE, range, damage type) |
 
-### Per-tower status (resynced 2026-05-18 — replaces the false "all on target")
+### Per-tower status (re-resynced 2026-05-18 after L3-main removal + Howitzer buff)
 
-The previous version of this subsection claimed every tier was in band; that
-was a consequence of the stale g/DPS table above and is **not true**. Status
-recomputed against the bands from the live `.tres`:
+Recomputed against the bands from the *current* `.tres` (post the concurrent
+"Option A" change that removed linear L3 mains and buffed Howitzer 13→100):
 
 | Status | Towers / tiers |
 |---|---|
-| ✓ in band | Mage L2/L3 main/Archmage/Necromancer · Ice L1/L2/L3 main/Glacier/Permafrost · Artillery L3 Mortar (post-AoE) · Barracks L2/L3 (derived) |
-| ⚠ slightly over (cheap to tune) | Archer L1 19.0 / L2 17.8 / L3 main 15.0 / Ranger 19.5 / Musketeer 18.3 — whole Archer chain ≈2× its bands · Mage L1 28.1 (back-loaded; L3 carries) |
-| ⛔ dead on arrival | **Artillery L1 81.3 · L2 80.5 · Howitzer 85.6** — ~6–8× off; ~27–29 even after the 3× AoE credit |
+| ✓ in band | Mage L2 16.0 / Archmage 10.3 / Necromancer 11.3 · Ice L1 18.9 / L2 12.8 / Glacier 9.0 / Permafrost 8.6 · Artillery Howitzer 11.1 (now viable) · Barracks L2/L3 (derived) |
+| ⚠ slightly over (cheap to tune) | Archer L1 19.0 / L2 17.8 / Ranger 19.5 / Musketeer 18.3 — whole Archer chain ≈2× its bands · Mage L1 28.1 (back-loaded; L3 carries) · Artillery Triple Cannon 22.1 |
+| ⛔ dead on arrival | **Artillery L1 81.3 · L2 80.5** — ~6–8× off; ≈27 even after the 3× AoE credit. Howitzer is no longer DOA after the buff. |
 
-Deferred to the L5 tuning pass (telemetry-gated): Artillery L1/L2/Howitzer
-retune to band (Mortar is the calibration anchor), Archer-chain trim, and the
-back-loaded Mage L1. Ice and Barracks are the healthy calibration anchors.
-
-The single-best-value tower at full upgrade is **Artillery L3 main (Mortar)**
-at ≈10.2 raw / ≈3.4 post-AoE cumul g/DPS with 573 range — best in class for
-crowd-clearing, by design.
+The L1/L2 Artillery DOA finding from the original audit *still stands* — the
+concurrent commit fixed the L3 branch but did not touch L1/L2. Deferred to
+the L5 tuning pass (telemetry-gated): Artillery L1/L2 retune to band
+(Howitzer at 11.1 is now a reasonable calibration anchor), Archer-chain
+trim, back-loaded Mage L1, Triple Cannon trim. Ice and Barracks remain the
+healthy calibration anchors.
 
 ### Per-level hardness target curve
 

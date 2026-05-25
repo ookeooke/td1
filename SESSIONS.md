@@ -5975,3 +5975,82 @@ commits (Phase 3 e83e66a).
 **Deferred for later:** early-call payoff readout, override snapshot
 inspector with per-row clear buttons, boss outcome row in the Diagnostics
 table. None gate the cockpit MVP value.
+
+---
+
+## 2026-05-25 — Phase 3d: Wave Diagnostics visual polish
+
+User asked "can we add more visuals so I understand hard/easy waves?"
+Shipped the full visual pass (A+B+C): three additions that turn the
+diagnostics table from "read text, decode" into "scan colors, know."
+
+**Done — single file `balance/debug/BalanceSliders.gd` (~200 lines added):**
+
+A. **Level heat strip** (new `_add_level_heat_strip` /
+   `_populate_heat_strip` helpers) — one colored cell per wave above
+   the diagnostics table. Composite verdict per cell:
+   `red`     OVER >+30% or Pacing SPIKE ≥2.0×
+   `orange`  OVER +15-30%
+   `yellow`  UNDER <-15%
+   `blue`    Pacing dip ≤0.6×
+   `green`   in band, normal pace
+   `grey`    no signal/no target
+   Cell tooltip carries the full verdicts. Registered in `_wave_charts`
+   with `is_heat_strip:true`; new branch in `_refresh_wave_charts`
+   redraws on slider edits (mirrors the diagnostics-table refresh
+   pattern shipped in Phase 3).
+
+B. **Beefier sparkline + authored-target tick** — replaces the 120×12
+   thin bar with a 160×28 three-layer Control:
+   1. Dark-grey background track
+   2. Current-hardness bar (color = Tuning verdict, length =
+      `score_wave / max_h`)
+   3. White vertical tick at `expected[i] / max_h`
+   `expected[i] = level_total × wave_share[i]` where wave_share comes
+   from `lvl.wave_gold_shares` if authored, else flat `1/n_waves`.
+   Single graphic answers "is this wave OVER its target?" without
+   reading the Tuning column.
+
+C. **Lane mini-bars in Leaks cell** — Leaks column converted from a
+   single Label to a small VBox: existing text line + per-lane HBox
+   rows (`path_id · proportional bar · count`). Bar width scaled to
+   the busiest lane in this wave, bar color cycled from a 5-color
+   palette by path-id index (stable run-to-run). Sorted desc by count.
+   Only renders when `n_runs ≥ 5` (same noise-floor gate as the
+   existing text). New helper `_build_lane_bars(parent, per_lane)`.
+
+**Caught and fixed during implementation:**
+- IDE flagged `_build_lane_bars` and `_add_level_heat_strip` as
+  undefined when I called them before defining — expected; defined
+  immediately after.
+- `_populate_heat_strip`'s `lvl` parameter was unused (the strip
+  doesn't read level data, only wave/pressure_rows); renamed to `_lvl`
+  to silence the warning while keeping the signature consistent with
+  the refresh branch's call site.
+
+**Verification (Phase 3b lesson — drive the toggle):**
+- Headless boot clean.
+- New `scene_check4_temp.gd` loaded BalanceSliders, pressed all 6
+  level toggles, exercised every new helper. Result: 6/6 clean, no
+  SCRIPT ERRORs, no push_error.
+- Full GUT: **225 tests, 224 pass, 1 failure** — same pre-existing
+  `test_bug_edge_audit.gd:test_add_hero_xp_level_committed_before_signal`
+  failure that fails with or without my changes (verified earlier via
+  `git stash`). Zero regressions from Phase 3d.
+
+**Acceptance check (the visual cockpit test):**
+After Phase 3d, "which wave is hard?" can be answered without reading
+text — point at a red cell in the heat strip, look at the same wave's
+sparkline (bar past the white tick), see the lane bars in Leaks
+pointing at the broken path. Three independent visual cues confirming
+each other.
+
+**Out of scope (deferred):**
+- Bottleneck pictograms (icons instead of text labels) — ~80 lines of
+  custom drawing per glyph; not urgent now that the heat strip carries
+  the urgent visual.
+- Click-cell-to-scroll on heat strip cells — needs a ScrollContainer
+  reference threaded through.
+- Cross-level heat overview (one strip per level in the Phase 3c
+  cross-level panel) — defer until the per-level heat strip proves
+  out in real designer use.

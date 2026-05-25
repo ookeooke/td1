@@ -2414,6 +2414,10 @@ func _populate_wave_timeline_block(charts_box: VBoxContainer, lvl: Resource,
 	# table, overview strip, and every per-wave header below. Cached on the
 	# screen via _pressure_for_level so this stays cheap on slider rerenders.
 	var pressure_rows: Array = _pressure_for_level(lvl, wave_list)
+	# Phase 3d level heat strip — at-a-glance per-wave status row above
+	# the diagnostics table. Designers scan colors first, drill into the
+	# table only for the suspicious cells.
+	_add_level_heat_strip(charts_box, lvl, wave_list, pressure_rows)
 	# Phase 3 Wave Diagnostics Panel — pacing / tuning / bottleneck / leaks
 	# verdicts per wave. Built FIRST so designers see the summary header
 	# before scrolling into per-wave charts.
@@ -2754,6 +2758,109 @@ func _add_wave_gold_per_sec_slider(parent: VBoxContainer, wave: WaveData, lvl: R
 # both gated on n_runs ≥ 5 to avoid 1-of-3 = 33% noise. Slider edits already
 # trigger _refresh_wave_charts(), which finds the diagnostics entry by its
 # `is_diagnostics` tag and rebuilds the rows in place.
+# Phase 3d level heat strip — one colored cell per wave, scannable
+# in 2 seconds. Composite verdict per cell:
+#   red    : Tuning OVER >+30%  OR  Pacing SPIKE ≥2.0×
+#   orange : Tuning OVER +15…30%
+#   yellow : Tuning UNDER <-15%
+#   blue   : Pacing dip ≤0.6×
+#   green  : in band, normal pace
+#   grey   : no signal / no target
+# Registered in _wave_charts with is_heat_strip:true so slider edits
+# rebuild via _refresh_wave_charts (matches the diagnostics-table refresh
+# pattern). Cell shows wave number; tooltip carries the full verdicts.
+func _add_level_heat_strip(charts_box: VBoxContainer, lvl: Resource,
+		wave_list: WaveList, pressure_rows: Array) -> void:
+	if wave_list == null or wave_list.waves.is_empty():
+		return
+	var box := VBoxContainer.new()
+	box.set("theme_override_constants/separation", 2)
+	var header := Label.new()
+	header.text = "Level heat — at-a-glance per-wave status"
+	header.set("theme_override_font_sizes/font_size", 13)
+	header.modulate = Color(0.9, 0.95, 1.0)
+	box.add_child(header)
+	var strip := HBoxContainer.new()
+	strip.set("theme_override_constants/separation", 2)
+	box.add_child(strip)
+	charts_box.add_child(box)
+	_wave_charts.append({
+		"is_heat_strip": true,
+		"strip_box": strip,
+		"wave_list": wave_list,
+		"level_data": lvl,
+	})
+	_populate_heat_strip(strip, lvl, wave_list, pressure_rows)
+
+
+func _populate_heat_strip(strip: HBoxContainer, _lvl: Resource,
+		wave_list: WaveList, pressure_rows: Array) -> void:
+	for c in strip.get_children():
+		c.queue_free()
+	# Per-wave hardness for SPIKE/dip detection.
+	var hardness: Array = []
+	for w in wave_list.waves:
+		hardness.append(BalanceCalculator.score_wave(w) if w != null else 0.0)
+	for i in range(wave_list.waves.size()):
+		var wave: WaveData = wave_list.waves[i]
+		if wave == null:
+			continue
+		var s_cur: float = float(hardness[i])
+		var s_prev: float = float(hardness[i - 1]) if i > 0 else 0.0
+		var ratio: float = (s_cur / s_prev) if s_prev > 0.1 else 1.0
+		var drift: float = 0.0
+		var target: float = 0.0
+		var p_reason: String = ""
+		if i < pressure_rows.size():
+			var row: Dictionary = pressure_rows[i]
+			drift = float(row.get("drift", 0.0))
+			target = float(row.get("target", 0.0))
+			p_reason = String(row.get("reason", ""))
+		# Composite verdict → cell color.
+		var color: Color
+		var verdict: String
+		if target <= 0.0:
+			color = Color(0.45, 0.5, 0.55)
+			verdict = "no target"
+		elif drift > 0.30 or ratio >= 2.0:
+			color = Color(1.0, 0.4, 0.35)
+			verdict = "SPIKE" if ratio >= 2.0 else "OVER %+d%%" % int(round(drift * 100.0))
+		elif drift > 0.15:
+			color = Color(1.0, 0.65, 0.3)
+			verdict = "OVER %+d%%" % int(round(drift * 100.0))
+		elif drift < -0.15:
+			color = Color(0.95, 0.85, 0.4)
+			verdict = "UNDER %+d%%" % int(round(drift * 100.0))
+		elif ratio <= 0.6:
+			color = Color(0.55, 0.7, 1.0)
+			verdict = "dip %.1f×" % ratio
+		else:
+			color = Color(0.45, 0.85, 0.5)
+			verdict = "in band"
+		# Cell — PanelContainer with stylebox bg + Label inside.
+		var cell := PanelContainer.new()
+		cell.custom_minimum_size = Vector2(46, 36)
+		var sbox := StyleBoxFlat.new()
+		sbox.bg_color = color
+		sbox.corner_radius_top_left = 3
+		sbox.corner_radius_top_right = 3
+		sbox.corner_radius_bottom_left = 3
+		sbox.corner_radius_bottom_right = 3
+		cell.add_theme_stylebox_override("panel", sbox)
+		var lbl := Label.new()
+		lbl.text = "W%d" % (i + 1)
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl.set("theme_override_font_sizes/font_size", 12)
+		lbl.modulate = Color(0.08, 0.10, 0.14)
+		cell.add_child(lbl)
+		var tip: String = "W%d · %s · hardness %d" % [i + 1, verdict, int(round(s_cur))]
+		if p_reason != "":
+			tip += " · reason: %s" % p_reason
+		cell.tooltip_text = tip
+		strip.add_child(cell)
+
+
 func _build_diagnostics_table(charts_box: VBoxContainer, lvl: Resource,
 		wave_list: WaveList, pressure_rows: Array) -> void:
 	if wave_list == null or wave_list.waves.is_empty():
@@ -2816,6 +2923,24 @@ func _populate_diagnostics_rows(rows_grid: GridContainer, lvl: Resource,
 		hardness.append(s)
 		if s > max_h:
 			max_h = s
+	# Phase 3d — per-wave EXPECTED hardness, used to overlay the target tick
+	# on the sparkline. Derive from level-total × wave_gold_shares when
+	# authored; flat-distribute otherwise. Internally consistent (target
+	# sums to level_total) so over/under reads as "this wave is larger/
+	# smaller than its authored share of the level."
+	var level_total: float = 0.0
+	for s_v in hardness:
+		level_total += float(s_v)
+	var n_waves: int = wave_list.waves.size()
+	var shares: Array = []
+	var raw_shares: Array = []
+	if "wave_gold_shares" in lvl and (lvl.wave_gold_shares as Array).size() == n_waves:
+		raw_shares = (lvl.wave_gold_shares as Array)
+	for i_share in range(n_waves):
+		shares.append(float(raw_shares[i_share]) if not raw_shares.is_empty() else 1.0 / float(max(1, n_waves)))
+	var expected: Array = []
+	for sh in shares:
+		expected.append(level_total * float(sh))
 	# Rows
 	for i in range(wave_list.waves.size()):
 		var wave: WaveData = wave_list.waves[i]
@@ -2884,22 +3009,43 @@ func _populate_diagnostics_rows(rows_grid: GridContainer, lvl: Resource,
 		l_bot.tooltip_text = "Dominant EHP bucket: Boss ≥40%, else any bucket ≥50%; " \
 			+ "otherwise Mixed. Tells you which answer the wave needs."
 		rows_grid.add_child(l_bot)
-		# Sparkline — horizontal bar scaled to this level's max wave hardness
+		# Phase 3d sparkline — 28 px tall, 3 layers:
+		#   1. dark-grey background track
+		#   2. current-hardness bar (color = Tuning verdict)
+		#   3. white target tick at expected[i] / max_h * width
+		# Bar past tick = OVER, short of tick = UNDER, lands on tick = in band.
 		var spark := Control.new()
-		spark.custom_minimum_size = Vector2(120, 12)
+		spark.custom_minimum_size = Vector2(160, 28)
 		var frac: float = (s_cur / max_h) if max_h > 0.0 else 0.0
+		var target_frac: float = (float(expected[i]) / max_h) if max_h > 0.0 else 0.0
 		spark.set_meta("frac", frac)
+		spark.set_meta("target_frac", target_frac)
 		spark.set_meta("color", tune_color)
 		spark.draw.connect(func():
-			var bw: float = spark.size.x * float(spark.get_meta("frac", 0.0))
-			spark.draw_rect(Rect2(0, 2, bw, spark.size.y - 4),
-				spark.get_meta("color", Color.WHITE)))
+			var w_px: float = spark.size.x
+			var h_px: float = spark.size.y
+			# Background track
+			spark.draw_rect(Rect2(0, 4, w_px, h_px - 8), Color(0.18, 0.20, 0.24))
+			# Current hardness bar
+			var bw: float = w_px * float(spark.get_meta("frac", 0.0))
+			spark.draw_rect(Rect2(0, 4, bw, h_px - 8),
+				spark.get_meta("color", Color.WHITE))
+			# Target tick — full-height vertical line
+			var tx: float = w_px * float(spark.get_meta("target_frac", 0.0))
+			spark.draw_line(Vector2(tx, 0), Vector2(tx, h_px),
+				Color(1.0, 1.0, 1.0, 0.85), 2.0))
+		spark.tooltip_text = "Bar = current hardness (color=Tuning verdict). " \
+			+ "White tick = authored target. Bar past tick = OVER, short = UNDER."
 		rows_grid.add_child(spark)
-		# Leaks — from per-wave telemetry; gated on n_runs ≥ 5
+		# Phase 3d Leaks cell — VBox holding text line + per-lane mini-bars.
+		var leak_box := VBoxContainer.new()
+		leak_box.set("theme_override_constants/separation", 1)
 		var l_leak := Label.new()
+		var per_lane_now: Dictionary = lane_leaks.get(i + 1, {})
 		if n_runs < 5:
 			l_leak.text = "—" if n_runs == 0 else "low data (n=%d)" % n_runs
 			l_leak.modulate = Color(0.45, 0.5, 0.55)
+			leak_box.add_child(l_leak)
 		else:
 			var leak_str: String = "avg —"
 			for tel in per_wave_tel:
@@ -2909,22 +3055,71 @@ func _populate_diagnostics_rows(rows_grid: GridContainer, lvl: Resource,
 			var died: int = int(defeat_counts.get(i + 1, 0))
 			if died >= 5:
 				leak_str += " · died %d%%" % int(round(100.0 * float(died) / float(n_runs)))
-			# Phase 3c lane breakdown — append "tl_plank 9× / bl_plank 1×"
-			# when leaks actually concentrate on a lane. Sorted desc by count.
-			var per_lane: Dictionary = lane_leaks.get(i + 1, {})
-			if not per_lane.is_empty():
-				var pairs: Array = []
-				for pid in per_lane.keys():
-					pairs.append([String(pid), int(per_lane[pid])])
-				pairs.sort_custom(func(a, b): return int(a[1]) > int(b[1]))
-				var parts: Array = []
-				for pair in pairs:
-					parts.append("%s %d×" % [pair[0], pair[1]])
-				leak_str += " · " + " / ".join(parts)
 			l_leak.text = leak_str
+			leak_box.add_child(l_leak)
+			# Lane mini-bars — visualizes the same ratio the text-only path
+			# would print ("tl_plank 9× / bl_plank 1×"). Sorted desc by count.
+			if not per_lane_now.is_empty():
+				_build_lane_bars(leak_box, per_lane_now)
 		l_leak.tooltip_text = "Avg leaks/wave + %% of runs whose lives_zero defeat ended here. " \
 			+ "Both require n_runs ≥ 5 to avoid small-sample noise."
-		rows_grid.add_child(l_leak)
+		rows_grid.add_child(leak_box)
+
+
+# Phase 3d — per-lane mini-bars inside the Leaks cell. Renders one HBox
+# row per lane with `label · proportional bar · count`. Bar width = lane
+# count / busiest lane in this wave; color cycled from a small palette
+# by path-id index so lanes get stable distinct colors run-to-run.
+const _LANE_BAR_PALETTE: Array = [
+	Color(0.45, 0.85, 0.95),  # cyan-ish
+	Color(0.95, 0.55, 0.55),  # red-ish
+	Color(0.6, 0.85, 0.5),    # green-ish
+	Color(0.95, 0.75, 0.4),   # orange
+	Color(0.8, 0.65, 0.95),   # violet
+]
+
+func _build_lane_bars(parent: VBoxContainer, per_lane: Dictionary) -> void:
+	if per_lane.is_empty():
+		return
+	# Sort lanes by count desc, stable.
+	var pairs: Array = []
+	for pid in per_lane.keys():
+		pairs.append([String(pid), int(per_lane[pid])])
+	pairs.sort_custom(func(a, b): return int(a[1]) > int(b[1]))
+	var max_count: int = int(pairs[0][1]) if pairs.size() > 0 else 0
+	if max_count <= 0:
+		return
+	for idx in range(pairs.size()):
+		var pid: String = String(pairs[idx][0])
+		var cnt: int = int(pairs[idx][1])
+		var row := HBoxContainer.new()
+		row.set("theme_override_constants/separation", 4)
+		var lbl := Label.new()
+		lbl.text = pid
+		lbl.set("theme_override_font_sizes/font_size", 10)
+		lbl.modulate = Color(0.75, 0.8, 0.85)
+		lbl.custom_minimum_size = Vector2(70, 0)
+		row.add_child(lbl)
+		var bar := Control.new()
+		bar.custom_minimum_size = Vector2(80, 8)
+		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var frac_lane: float = float(cnt) / float(max_count)
+		var color_lane: Color = _LANE_BAR_PALETTE[idx % _LANE_BAR_PALETTE.size()]
+		bar.set_meta("frac", frac_lane)
+		bar.set_meta("color", color_lane)
+		bar.draw.connect(func():
+			var wpx: float = bar.size.x
+			var hpx: float = bar.size.y
+			bar.draw_rect(Rect2(0, 0, wpx, hpx), Color(0.18, 0.20, 0.24))
+			bar.draw_rect(Rect2(0, 0, wpx * float(bar.get_meta("frac", 0.0)), hpx),
+				bar.get_meta("color", Color.WHITE)))
+		row.add_child(bar)
+		var num := Label.new()
+		num.text = "%d" % cnt
+		num.set("theme_override_font_sizes/font_size", 10)
+		num.modulate = Color(0.85, 0.9, 0.95)
+		row.add_child(num)
+		parent.add_child(row)
 
 
 # Dominant-bucket label from wave_demand_vector(). Boss gets a lower
@@ -4464,6 +4659,14 @@ func _refresh_wave_charts() -> void:
 			if rows_grid == null or not is_instance_valid(rows_grid):
 				continue
 			_populate_diagnostics_rows(rows_grid, lvl, wave_list,
+				_pressure_for_level(lvl, wave_list))
+			continue
+		# Phase 3d heat strip — rebuilt the same way (clear + repopulate).
+		if entry.get("is_heat_strip", false):
+			var strip: HBoxContainer = entry.get("strip_box")
+			if strip == null or not is_instance_valid(strip):
+				continue
+			_populate_heat_strip(strip, lvl, wave_list,
 				_pressure_for_level(lvl, wave_list))
 			continue
 		var chart: Control = entry.get("chart")

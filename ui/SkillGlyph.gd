@@ -12,6 +12,76 @@ class_name SkillGlyph
 
 static func draw(ci: CanvasItem, glyph: String, center: Vector2, g: float, white: Color, dark: Color) -> void:
 	match glyph:
+		"warrior_summon":
+			var pole_x: float = center.x - g * 0.55
+			ci.draw_line(Vector2(pole_x, center.y - g * 0.90), Vector2(pole_x, center.y + g * 0.78), white, 3.0)
+			var banner: PackedVector2Array = PackedVector2Array([
+				Vector2(pole_x, center.y - g * 0.85),
+				Vector2(center.x + g * 0.55, center.y - g * 0.68),
+				Vector2(center.x + g * 0.32, center.y - g * 0.34),
+				Vector2(pole_x, center.y - g * 0.44),
+			])
+			ci.draw_colored_polygon(banner, white)
+			ci.draw_line(Vector2(pole_x + g * 0.18, center.y - g * 0.62), Vector2(center.x + g * 0.36, center.y - g * 0.52), dark, 2.0)
+			for s in [-1.0, 1.0]:
+				var helm_c: Vector2 = center + Vector2(s * g * 0.34, g * 0.26)
+				ci.draw_circle(helm_c, g * 0.24, white)
+				ci.draw_rect(Rect2(helm_c + Vector2(-g * 0.24, -g * 0.02), Vector2(g * 0.48, g * 0.26)), white)
+				ci.draw_line(helm_c + Vector2(-g * 0.18, g * 0.08), helm_c + Vector2(g * 0.18, g * 0.08), dark, 2.0)
+		"warrior_bless":
+			for i in 8:
+				var ang: float = TAU * float(i) / 8.0
+				var dir: Vector2 = Vector2(cos(ang), sin(ang))
+				ci.draw_line(center + dir * g * 0.56, center + dir * g * 0.98, white, 2.2)
+			var shield: PackedVector2Array = PackedVector2Array([
+				center + Vector2(-g * 0.44, -g * 0.46),
+				center + Vector2(g * 0.44, -g * 0.46),
+				center + Vector2(g * 0.38, g * 0.12),
+				center + Vector2(0.0, g * 0.72),
+				center + Vector2(-g * 0.38, g * 0.12),
+			])
+			ci.draw_colored_polygon(shield, white)
+			ci.draw_line(center + Vector2(0.0, -g * 0.32), center + Vector2(0.0, g * 0.40), dark, 2.4)
+			ci.draw_line(center + Vector2(-g * 0.24, -g * 0.02), center + Vector2(g * 0.24, -g * 0.02), dark, 2.4)
+		"warrior_shield_bash":
+			var bash_shield: PackedVector2Array = PackedVector2Array([
+				center + Vector2(-g * 0.62, -g * 0.54),
+				center + Vector2(g * 0.16, -g * 0.44),
+				center + Vector2(g * 0.10, g * 0.20),
+				center + Vector2(-g * 0.34, g * 0.72),
+				center + Vector2(-g * 0.66, g * 0.16),
+			])
+			ci.draw_colored_polygon(bash_shield, white)
+			ci.draw_line(center + Vector2(-g * 0.32, -g * 0.34), center + Vector2(-g * 0.30, g * 0.42), dark, 2.6)
+			ci.draw_line(center + Vector2(-g * 0.55, -g * 0.02), center + Vector2(g * 0.02, g * 0.02), dark, 2.6)
+			for i in 3:
+				var y: float = -g * 0.36 + float(i) * g * 0.34
+				var p0: Vector2 = center + Vector2(g * 0.34, y)
+				var p1: Vector2 = center + Vector2(g * 0.94, y + g * 0.05)
+				ci.draw_line(p0, p1, white, 3.4)
+				ci.draw_line(p1, p1 + Vector2(-g * 0.18, -g * 0.12), white, 2.4)
+				ci.draw_line(p1, p1 + Vector2(-g * 0.18, g * 0.12), white, 2.4)
+		"warrior_rally":
+			var bell: PackedVector2Array = PackedVector2Array([
+				center + Vector2(-g * 0.82, -g * 0.30),
+				center + Vector2(-g * 0.38, -g * 0.18),
+				center + Vector2(g * 0.62, -g * 0.52),
+				center + Vector2(g * 0.88, -g * 0.16),
+				center + Vector2(g * 0.86, g * 0.38),
+				center + Vector2(g * 0.58, g * 0.06),
+				center + Vector2(-g * 0.36, g * 0.20),
+				center + Vector2(-g * 0.82, g * 0.18),
+			])
+			ci.draw_colored_polygon(bell, white)
+			ci.draw_line(center + Vector2(g * 0.82, -g * 0.12), center + Vector2(g * 0.80, g * 0.36), dark, 2.8)
+			ci.draw_line(center + Vector2(-g * 0.20, -g * 0.12), center + Vector2(-g * 0.02, g * 0.16), dark, 2.2)
+			ci.draw_line(center + Vector2(g * 0.16, -g * 0.22), center + Vector2(g * 0.34, g * 0.08), dark, 2.2)
+			var pennant: PackedVector2Array = PackedVector2Array([
+				center + Vector2(-g * 0.48, g * 0.30),
+				center + Vector2(-g * 0.02, g * 0.38),
+				center + Vector2(-g * 0.22, g * 0.78),
+			])
+			ci.draw_colored_polygon(pennant, white)
 		"soldiers":
 			for s in [-1.0, 1.0]:
 				var fc: Vector2 = center + Vector2(s * g * 0.45, -g * 0.05)

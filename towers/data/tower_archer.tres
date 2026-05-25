@@ -37,16 +37,6 @@ cost = 80
 sell_value = 60
 tint = Color(1.05, 1, 0.85, 1)
 
-[sub_resource type="Resource" id="ArcherUpg_L3"]
-script = ExtResource("3_upg")
-upgrade_name = "Archer L3"
-damage = 12.0
-attack_range = 438.75
-attack_speed = 1.5
-cost = 120
-sell_value = 120
-tint = Color(1.15, 1, 0.6, 1)
-
 [resource]
 script = ExtResource("1_data")
 tower_name = "Archer Tower"
@@ -58,7 +48,7 @@ attack_range = 265.0000000000002
 attack_speed = 1.05
 cost = 70
 targets_flying = true
-level_upgrades = Array[Resource]([SubResource("ArcherUpg_L2"), SubResource("ArcherUpg_L3")])
+level_upgrades = Array[Resource]([SubResource("ArcherUpg_L2")])
 level_3_branches = Array[Resource]([SubResource("ArcherBranch_Ranger"), SubResource("ArcherBranch_Musketeer")])
 projectile_scene = ExtResource("2_arrow")
 encyclopedia_entry = "Quick, low-damage volleys. Cheap and reliable."

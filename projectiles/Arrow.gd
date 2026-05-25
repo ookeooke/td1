@@ -6,7 +6,7 @@ class_name Arrow
 # MageBolt / ArtilleryShell). Hit detection uses the homing-linear ground
 # position; arc_height lifts the body visually so a shell reads as ballistic
 # without breaking the on-target-arrival timing.
-enum Shape { ARROW, CRYSTAL, ORB, SHELL, HERO_ARROW, ARCANE_BOLT, NECRO_BOLT }
+enum Shape { ARROW, CRYSTAL, ORB, SHELL, HERO_ARROW, ARCANE_BOLT, NECRO_BOLT, FIRE_BREATH }
 
 const _ShellImpactScript := preload("res://vfx/ShellImpactVFX.gd")
 
@@ -308,6 +308,14 @@ func _spawn_impact_vfx(impact_pos: Vector2) -> void:
 			burst.z_index = -1
 			burst._color = proj_color
 			parent.add_child(burst)
+		Shape.FIRE_BREATH:
+			# Fire splash — scorch + ember scatter + flame puff. No expanding
+			# arcane ring or rune flashes (wrong register for dragon fire).
+			var fire := _FireImpactVFX.new()
+			fire.global_position = ground_pos
+			fire.z_index = -1
+			fire._color = proj_color
+			parent.add_child(fire)
 
 
 # Tiny inner VFX classes — kept here so the shape→effect dispatch is local
@@ -480,6 +488,40 @@ class _ArcaneRingVFX extends Node2D:
 		draw_circle(Vector2.ZERO, lerpf(6.0, 2.0, k), core)
 
 
+class _FireImpactVFX extends Node2D:
+	const LIFE: float = 0.30
+	var _t: float = LIFE
+	var _color: Color = Color(1.0, 0.34, 0.08)
+	var _angles: Array = []
+	func _ready() -> void:
+		# 7 embers scattering outward at jittered angles so two impacts differ.
+		var base: float = randf_range(0.0, TAU)
+		for i in 7:
+			_angles.append(base + TAU * float(i) / 7.0 + randf_range(-0.22, 0.22))
+	func _process(delta: float) -> void:
+		_t -= delta
+		if _t <= 0.0:
+			queue_free()
+			return
+		queue_redraw()
+	func _draw() -> void:
+		var k: float = clampf(1.0 - _t / LIFE, 0.0, 1.0)
+		var alpha: float = 1.0 - k
+		# Dark scorch — a flattened ellipse on the ground.
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 0.34))
+		draw_circle(Vector2.ZERO, 18.0, Color(0.15, 0.06, 0.02, 0.5 * alpha))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		# Flame puff — quick expanding bloom.
+		draw_circle(Vector2.ZERO, lerpf(8.0, 22.0, k), Color(1.0, 0.5, 0.12, 0.6 * alpha))
+		# Embers scattering outward, cooling as they fly.
+		var reach: float = lerpf(2.0, 34.0, k)
+		var hot: Color = _color.lerp(Color(1.0, 0.88, 0.45), 0.5)
+		hot.a = alpha
+		for a in _angles:
+			var dir: Vector2 = Vector2.from_angle(float(a))
+			draw_circle(dir * reach, lerpf(3.0, 0.8, k), hot)
+
+
 func _draw() -> void:
 	# Compute current arc-lift fraction (0=ground, 1=apex). Used by ground
 	# shadow rendering and by SHELL's descending-ember pulse. Always 0 on
@@ -573,6 +615,8 @@ func _draw() -> void:
 			_draw_arcane_bolt_shape()
 		Shape.NECRO_BOLT:
 			_draw_necro_bolt_shape()
+		Shape.FIRE_BREATH:
+			_draw_fire_breath_shape()
 
 
 func _draw_arrow_shape() -> void:
@@ -754,6 +798,41 @@ func _draw_necro_bolt_shape() -> void:
 		var a: float = t * (0.7 + float(i) * 0.11) + float(i) * TAU / 3.0
 		var p: Vector2 = Vector2(-6.0 + cos(a) * 5.5, sin(a) * 3.0)
 		draw_circle(p, 1.2 if i == 0 else 0.9, mote_col)
+
+
+func _draw_fire_breath_shape() -> void:
+	# Dragon fire-breath — a layered, flickering flame teardrop. Hot core
+	# biased forward, cooler tongue trailing back to a point. Deliberately
+	# NOT a faceted crystal with a white core + rune sparks (that read as a
+	# wizard bolt); this reads as live fire.
+	var t: float = _time * 9.0
+	var pulse: float = 1.0 + sin(t) * 0.12
+	var flick: float = sin(t * 1.7) * 1.4
+	# Soft outer glow.
+	var outer: Color = proj_color
+	outer.a = 0.55
+	draw_circle(Vector2(-3.0, 0.0), 16.0 * pulse, outer)
+	# Trailing flame tongue — teardrop narrowing to a point behind.
+	var tongue: Color = proj_color.lerp(Color(1.0, 0.62, 0.16), 0.5)
+	tongue.a = 0.9
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(13.0, 0.0),
+		Vector2(2.0, -7.5 * pulse),
+		Vector2(-14.0 + flick, -2.5),
+		Vector2(-22.0 + flick, 0.0),
+		Vector2(-14.0 + flick, 2.5),
+		Vector2(2.0, 7.5 * pulse),
+	]), tongue)
+	# Mid flame.
+	draw_circle(Vector2(2.0, 0.0), 11.0, Color(1.0, 0.62, 0.16, 0.85))
+	# Hot core, forward-biased.
+	draw_circle(Vector2(6.0, 0.0), 6.0, Color(1.0, 0.95, 0.62, 0.95))
+	# Forward lick — keeps direction readable at speed.
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(18.0 + sin(t) * 1.5, 0.0),
+		Vector2(8.0, -5.0),
+		Vector2(8.0, 5.0),
+	]), Color(1.0, 0.86, 0.40, 0.7))
 
 
 func _draw_necro_trail_underlay(points_local: PackedVector2Array) -> void:

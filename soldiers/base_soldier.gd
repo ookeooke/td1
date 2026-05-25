@@ -113,6 +113,13 @@ var _in_lull: bool = false
 # after this long without a hard engagement.
 const CLAIM_TIMEOUT: float = 4.0
 var _claim_age: float = 0.0
+# Stuck-recovery — mirrors BaseHero.GIVEUP_COOLDOWN_MS / _giveup_until. When
+# the watchdog above drops a claim, the timed-out enemy is blacklisted for
+# this many ms so the next acquisition picks a DIFFERENT target instead of
+# deterministically re-failing on the same one every CLAIM_TIMEOUT seconds
+# (doctrine invariant 4 — watchdog must MAKE PROGRESS, not just reset).
+const GIVEUP_COOLDOWN_MS: int = 2500
+var _giveup_until: Dictionary = {}
 # Combat Blocking Doctrine — stop-on-claim (same model as BaseHero). The
 # enemy this soldier has committed to is reserved so it halts and waits
 # while the soldier walks over, instead of being chased while moving.
@@ -271,6 +278,10 @@ func _physics_process(delta: float) -> void:
 	if _claimed_enemy != null and _engaged_enemies.is_empty():
 		_claim_age += delta
 		if _claim_age > CLAIM_TIMEOUT:
+			# Doctrine invariant 4 — blacklist the timed-out enemy so the next
+			# scan picks a DIFFERENT target instead of re-failing on the same
+			# unreachable one every CLAIM_TIMEOUT seconds. Mirrors BaseHero.
+			_note_giveup(_claimed_enemy)
 			_release_claim()
 			_charge_target = null
 			_assisting = false
@@ -367,6 +378,11 @@ func _try_engage() -> void:
 			continue
 		if _engaged_enemies.has(enemy):
 			continue
+		# Stuck-recovery: skip enemies the soft claim recently timed out on so
+		# we don't immediately re-bite the same unreachable target if it walks
+		# into our melee circle.
+		if _is_given_up(enemy):
+			continue
 		if not _is_guardable(enemy):
 			continue
 		var bc: int = enemy.get_claim_count() if enemy.has_method("get_claim_count") else enemy._blockers.size()
@@ -442,6 +458,10 @@ func _scan_aggro_and_maybe_charge() -> void:
 		# Shared predicate: skip flying/bypass/dying/no-data uniformly.
 		if not enemy.is_engageable_ground():
 			continue
+		# Stuck-recovery: don't re-acquire an enemy we just timed out on
+		# (doctrine invariant 4 — watchdog makes progress).
+		if _is_given_up(enemy):
+			continue
 		if not _is_guardable(enemy):
 			continue
 		var bc: int = enemy.get_claim_count() if enemy.has_method("get_claim_count") else enemy._blockers.size()
@@ -469,6 +489,7 @@ func _scan_aggro_and_maybe_charge() -> void:
 		var lone: Node = WaveManager.lone_enemy()
 		if lone != null and is_instance_valid(lone) and lone is BaseEnemy \
 				and lone.is_engageable_ground() \
+				and not _is_given_up(lone) \
 				and global_position.distance_to(lone.global_position) <= ASSIST_MAX_DIST:
 			_charge_target = lone
 			_assisting = true
@@ -604,6 +625,10 @@ func _sync_claim() -> void:
 			and _claimed_enemy.has_method("unreserve"):
 		_claimed_enemy.unreserve(self)
 	_claimed_enemy = desired
+	# Fresh target deserves a fresh watchdog timer — otherwise a swap into a
+	# brand-new charge target inherits the previous (possibly near-expired)
+	# age and gets dropped early. Mirrors BaseHero._sync_claim.
+	_claim_age = 0.0
 	if _claimed_enemy != null and _claimed_enemy.has_method("reserve"):
 		_claimed_enemy.reserve(self)
 
@@ -615,6 +640,34 @@ func _release_claim() -> void:
 			and _claimed_enemy.has_method("unreserve"):
 		_claimed_enemy.unreserve(self)
 	_claimed_enemy = null
+	_claim_age = 0.0
+
+
+# Stuck-recovery — blacklist an enemy the soft claim timed out on. Purges
+# expired/invalid entries opportunistically so the dict can't grow unbounded.
+# Mirror of BaseHero._note_giveup. Doctrine invariant 4 ("watchdog must make
+# progress, not just reset") applies to soldiers as well as heroes.
+func _note_giveup(enemy: Node) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	var now: int = Time.get_ticks_msec()
+	for k in _giveup_until.keys():
+		if not is_instance_valid(k) or _giveup_until[k] <= now:
+			_giveup_until.erase(k)
+	_giveup_until[enemy] = now + GIVEUP_COOLDOWN_MS
+
+
+# True while `enemy` is on the post-timeout cooldown. The melee acquisition
+# paths (_scan_aggro_and_maybe_charge, _try_engage) skip these so the soldier
+# commits to a different threat instead of re-failing on the same one. Self-
+# expiring; invalid keys are purged on read.
+func _is_given_up(enemy: Node) -> bool:
+	if enemy == null or not _giveup_until.has(enemy):
+		return false
+	if _giveup_until[enemy] <= Time.get_ticks_msec():
+		_giveup_until.erase(enemy)
+		return false
+	return true
 
 
 # Drop dead/invalid engagements so _try_engage can pick replacements.

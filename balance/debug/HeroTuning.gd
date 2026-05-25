@@ -25,7 +25,19 @@ const _HERO_STAT_DEFS: Array = [
 	{"key": "attack_speed_mult",  "mode": "mult", "label": "AtkSpeed",   "prop": "attack_speed"},
 	{"key": "damage_mult",        "mode": "mult", "label": "Damage",     "prop": "attack_damage"},
 	{"key": "range_mult",         "mode": "mult", "label": "Range",      "prop": "attack_range"},
-	{"key": "engage_range_mult",  "mode": "mult", "label": "EngageRng",  "prop": "detection_radius_px"},
+	# detection_radius_px is the melee-engage *detection* zone — relabeled
+	# MeleeDetect so it stops being confused with the block-claim circle below.
+	{"key": "engage_range_mult",  "mode": "mult", "label": "MeleeDetect", "prop": "detection_radius_px"},
+	# Combat-feel levers exposed after the blocking-doctrine work. All gated by
+	# BalanceOverrides (identity in release). `prop ""` = live-only, no .tres
+	# home (regen is modifier-sourced); it renders + tunes but never bakes.
+	{"key": "engage_radius_mult", "mode": "mult", "label": "EngageRadius", "prop": "engage_radius"},
+	{"key": "block_targets_add",  "mode": "add",  "label": "BlockTargets", "prop": "max_block_targets"},
+	{"key": "respawn_mult",       "mode": "mult", "label": "Respawn(s)",   "prop": "respawn_time"},
+	{"key": "guard_back_add",     "mode": "add",  "label": "GuardBack",    "prop": "guard_back_px"},
+	{"key": "close_dmg_mult",     "mode": "mult", "label": "CloseDmg",     "prop": "close_attack_damage"},
+	{"key": "close_spd_mult",     "mode": "mult", "label": "CloseSpd",     "prop": "close_attack_speed"},
+	{"key": "regen_add",          "mode": "add",  "label": "HPRegen/s",    "prop": ""},
 ]
 
 # Skill stat keys parallel SkillData fields. aoe_radius is subclass-specific
@@ -58,7 +70,9 @@ const _LIVE_STAT_DEFS: Array = [
 	{"key": "attack_speed",      "label": "Attack Speed", "fmt": "decimal_2_per_s"},
 	{"key": "move_speed",        "label": "Move Speed",   "fmt": "int"},
 	{"key": "attack_range",      "label": "Attack Range", "fmt": "int"},
-	{"key": "melee_engage_range","label": "Melee Eng Rng","fmt": "int"},
+	{"key": "melee_engage_range","label": "Melee Detect", "fmt": "int"},
+	{"key": "engage_radius",     "label": "Engage Radius","fmt": "int"},
+	{"key": "respawn_time",      "label": "Respawn",      "fmt": "seconds"},
 	{"key": "armor",             "label": "Armor",        "fmt": "percent"},
 	{"key": "magic_resist",      "label": "Magic Resist", "fmt": "percent"},
 	{"key": "health_regen",      "label": "HP Regen",     "fmt": "decimal_1_per_s"},
@@ -69,6 +83,7 @@ const _LIVE_STAT_DEFS: Array = [
 
 
 func _ready() -> void:
+	_BalanceOverrides.force_read = true
 	_build_layout()
 	if ContentRegistry.heroes.size() > 0 and ContentRegistry.heroes[0] != null:
 		_selected_hero_id = String(ContentRegistry.heroes[0].hero_id)
@@ -207,9 +222,13 @@ func _build_hero_stats() -> void:
 		return
 	for stat_def in _HERO_STAT_DEFS:
 		var prop: String = String(stat_def.prop)
-		if not (prop in hero):
-			continue
-		var authored: float = float(hero.get(prop))
+		# prop "" = live-only lever with no HeroData field (e.g. regen_add):
+		# baseline is 0, renders + tunes but is skipped by the bake collector.
+		var authored: float = 0.0
+		if prop != "":
+			if not (prop in hero):
+				continue
+			authored = float(hero.get(prop))
 		_add_hero_slider(stat_def, authored)
 
 
@@ -407,6 +426,8 @@ func _format_live_value(fmt: String, value: float) -> String:
 			return "%.2f /s" % value
 		"decimal_1_per_s":
 			return "%.1f /s" % value
+		"seconds":
+			return "%.1fs" % value
 		"percent":
 			return "%d%%" % int(round(value * 100.0))
 		"delta_pct_above_one":
@@ -429,12 +450,26 @@ func _slider_bounds(mode: String, stat_key: String, authored: float, override: f
 			"current": authored * override,
 			"override": override,
 		}
-	# add mode (armor / magic_resist) — slider in absolute clamp 0..0.95.
+	# add mode — slider works in ABSOLUTE space (current = authored + override).
+	# Bounds/step per key; armor/magic_resist keep the 0..0.95 mitigation clamp.
+	var lo: float = 0.0
+	var hi: float = 0.95
+	var st: float = 0.05
+	match stat_key:
+		"block_targets_add":
+			hi = maxf(authored + 8.0, 8.0)
+			st = 1.0
+		"guard_back_add":
+			hi = maxf(authored * 1.5, 400.0)
+			st = 10.0
+		"regen_add":
+			hi = 25.0
+			st = 0.5
 	return {
-		"min": 0.0,
-		"max": 0.95,
-		"step": 0.05,
-		"current": clampf(authored + override, 0.0, 0.95),
+		"min": lo,
+		"max": hi,
+		"step": st,
+		"current": clampf(authored + override, lo, hi),
 		"override": override,
 	}
 
@@ -446,7 +481,11 @@ func _step_for(stat_key: String, authored: float) -> float:
 		"damage_mult":        return 0.25 if authored < 10.0 else 0.5
 		"range_mult":         return 5.0 if authored < 100.0 else 10.0
 		"engage_range_mult":  return 5.0 if authored < 100.0 else 10.0
+		"engage_radius_mult": return 2.0 if authored < 100.0 else 5.0
 		"attack_speed_mult":  return 0.05
+		"close_spd_mult":     return 0.05
+		"close_dmg_mult":     return 0.25 if authored < 10.0 else 0.5
+		"respawn_mult":       return 0.5
 		"cooldown_mult":      return 0.5
 		"aoe_radius_mult":    return 5.0
 	return 1.0
@@ -500,15 +539,23 @@ func _authored_from_info(info: Dictionary, mode: String) -> float:
 
 func _format_value(stat_key: String, mode: String, absolute: float, override: float) -> String:
 	if mode == "add":
+		match stat_key:
+			"block_targets_add": return "%d  (%+d)" % [int(round(absolute)), int(round(override))]
+			"guard_back_add":    return "%dpx  (%+d)" % [int(round(absolute)), int(round(override))]
+			"regen_add":         return "%.1f /s  (%+.1f)" % [absolute, override]
 		return "%.2f  (%+.2f)" % [absolute, override]
 	match stat_key:
-		"hp_mult":           return "%d  (×%.2f)" % [int(round(absolute)), override]
-		"damage_mult":       return "%.1f  (×%.2f)" % [absolute, override]
-		"range_mult":        return "%d  (×%.2f)" % [int(round(absolute)), override]
-		"speed_mult":        return "%d  (×%.2f)" % [int(round(absolute)), override]
-		"attack_speed_mult": return "%.2f  (×%.2f)" % [absolute, override]
-		"cooldown_mult":     return "%.1fs  (×%.2f)" % [absolute, override]
-		"aoe_radius_mult":   return "%d  (×%.2f)" % [int(round(absolute)), override]
+		"hp_mult":            return "%d  (×%.2f)" % [int(round(absolute)), override]
+		"damage_mult":        return "%.1f  (×%.2f)" % [absolute, override]
+		"range_mult":         return "%d  (×%.2f)" % [int(round(absolute)), override]
+		"engage_radius_mult": return "%dpx  (×%.2f)" % [int(round(absolute)), override]
+		"speed_mult":         return "%d  (×%.2f)" % [int(round(absolute)), override]
+		"attack_speed_mult":  return "%.2f  (×%.2f)" % [absolute, override]
+		"close_spd_mult":     return "%.2f  (×%.2f)" % [absolute, override]
+		"close_dmg_mult":     return "%.1f  (×%.2f)" % [absolute, override]
+		"respawn_mult":       return "%.1fs  (×%.2f)" % [absolute, override]
+		"cooldown_mult":      return "%.1fs  (×%.2f)" % [absolute, override]
+		"aoe_radius_mult":    return "%d  (×%.2f)" % [int(round(absolute)), override]
 	return "%.2f  (×%.2f)" % [absolute, override]
 
 
@@ -563,7 +610,12 @@ func _on_reset_pressed() -> void:
 
 
 func _on_back_pressed() -> void:
+	_BalanceOverrides.force_read = false
 	SceneManager.goto("res://ui/WorldMap.tscn")
+
+
+func _exit_tree() -> void:
+	_BalanceOverrides.force_read = false
 
 
 # ── Bake helpers ────────────────────────────────────────────────────────
@@ -589,8 +641,12 @@ func _collect_hero_deltas() -> Array:
 				if authored <= 0.0:
 					continue
 				new_val = authored * override
-			else:
+			elif stat_key == "armor_add" or stat_key == "mag_res_add":
 				new_val = clampf(authored + override, 0.0, 0.95)
+			else:
+				# block_targets_add / guard_back_add — floor 0, no 0.95
+				# mitigation cap. Int rounding handled via int_props.
+				new_val = maxf(0.0, authored + override)
 			out.append({
 				"target": hero, "property": prop, "mode": mode,
 				"override": override, "authored": authored, "new_value": new_val,
@@ -650,7 +706,10 @@ func _unique_skill_count(deltas: Array) -> int:
 
 
 func _apply_hero_bake(deltas: Array) -> void:
-	_apply_bake(deltas, ["max_health"])
+	# max_block_targets is the only new int field; engage_radius / respawn_time
+	# / guard_back_px / close_* are floats. regen_add never reaches here
+	# (prop "" → skipped by _collect_hero_deltas — live-only).
+	_apply_bake(deltas, ["max_health", "max_block_targets"])
 	_BalanceOverrides.reset_hero_overrides()
 
 

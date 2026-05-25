@@ -126,8 +126,16 @@ func _gui_input(event: InputEvent) -> void:
 	# the hero (HeroInputManager gates move_to on is_selected). Camera is
 	# left where the player put it — panning on portrait tap was disruptive
 	# during fights since players tap the portrait to issue a move order.
+	#
+	# Tactical-pause branch: tap while paused → open HeroStatsPanel
+	# (EventBus.hero_inspected). Selecting / moving makes no sense while
+	# the game is frozen, so the same tap repurposes to "inspect".
 	if event is InputEventScreenTouch and event.pressed:
 		accept_event()
+		if get_tree().paused:
+			if _hero != null and is_instance_valid(_hero) and _hero.data != null:
+				EventBus.hero_inspected.emit(_hero.data.hero_id)
+			return
 		if _hero != null and is_instance_valid(_hero):
 			if _hero.has_method("set_selected"):
 				_hero.set_selected(true)
@@ -226,7 +234,7 @@ func _class_color() -> Color:
 		"hero_mage":    return Color(0.30, 0.25, 0.55)  # arcane purple
 		"hero_ranger":  return Color(0.25, 0.45, 0.30)  # forest green
 		"hero_paladin": return Color(0.55, 0.50, 0.25)  # gilt gold
-		"hero_dragon":  return Color(0.50, 0.18, 0.14)  # ember crimson
+		"hero_dragon":  return Color(0.68, 0.11, 0.08)  # ember crimson (== visual_dragon body_color)
 	return Color(0.35, 0.38, 0.45)
 
 
@@ -265,20 +273,33 @@ func _draw_class_glyph(c: Vector2, r: float) -> void:
 			])
 			draw_colored_polygon(shield, fg)
 		"hero_dragon":
-			# Spread wings — two swept triangles + a small body.
-			var lwing: PackedVector2Array = PackedVector2Array([
-				c + Vector2(0, -r * 0.15),
-				c + Vector2(-r, -r * 0.55),
-				c + Vector2(-r * 0.35, r * 0.5),
+			# Side-profile dragon — back-swept wing + curved neck + forward
+			# head + horn. The symmetric two-triangle "spread wings" glyph
+			# read as a generic bird/butterfly at portrait scale; an
+			# asymmetric profile is the universal "dragon at a glance" cue.
+			var wing: PackedVector2Array = PackedVector2Array([
+				c + Vector2(-r * 0.10, r * 0.10),
+				c + Vector2(-r * 0.95, -r * 0.65),
+				c + Vector2(-r * 0.30, -r * 0.05),
+				c + Vector2(-r * 0.80, r * 0.55),
 			])
-			var rwing: PackedVector2Array = PackedVector2Array([
-				c + Vector2(0, -r * 0.15),
-				c + Vector2(r, -r * 0.55),
-				c + Vector2(r * 0.35, r * 0.5),
+			draw_colored_polygon(wing, fg)
+			var body: PackedVector2Array = PackedVector2Array([
+				c + Vector2(-r * 0.30, r * 0.30),
+				c + Vector2(r * 0.10, -r * 0.05),
+				c + Vector2(r * 0.30, r * 0.05),
+				c + Vector2(r * 0.05, r * 0.45),
 			])
-			draw_colored_polygon(lwing, fg)
-			draw_colored_polygon(rwing, fg)
-			draw_circle(c + Vector2(0, -r * 0.05), r * 0.18, fg)
+			draw_colored_polygon(body, fg)
+			var head: PackedVector2Array = PackedVector2Array([
+				c + Vector2(r * 0.25, -r * 0.05),
+				c + Vector2(r * 0.95, -r * 0.20),
+				c + Vector2(r * 0.80, r * 0.12),
+				c + Vector2(r * 0.45, r * 0.18),
+			])
+			draw_colored_polygon(head, fg)
+			# Back-swept horn.
+			draw_line(c + Vector2(r * 0.45, -r * 0.12), c + Vector2(r * 0.15, -r * 0.55), fg, 3.0)
 		_:
 			# Generic placeholder — solid disk.
 			draw_circle(c, r * 0.5, fg)

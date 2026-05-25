@@ -8,7 +8,7 @@
 [sub_resource type="Resource" id="ArtilleryBranch_Howitzer"]
 script = ExtResource("4_upg")
 upgrade_name = "Howitzer"
-damage = 13.0
+damage = 100.0
 attack_range = 350.0
 attack_speed = 0.4
 cost = 135
@@ -36,16 +36,6 @@ sell_value = 60
 aoe_radius = 90.0
 tint = Color(0.95, 0.85, 0.75, 1)
 
-[sub_resource type="Resource" id="ArtilleryUpg_L3"]
-script = ExtResource("4_upg")
-upgrade_name = "Mortar"
-damage = 70.0
-attack_range = 573.125
-attack_speed = 0.6
-cost = 120
-sell_value = 110
-tint = Color(0.85, 0.55, 0.4, 1)
-
 [resource]
 script = ExtResource("1_data")
 tower_name = "Artillery"
@@ -59,7 +49,7 @@ cost = 130
 sell_value = 70
 aoe_radius = 50.0
 body_color = Color(0.6, 0.35, 0.2, 1)
-level_upgrades = Array[Resource]([SubResource("ArtilleryUpg_L2"), SubResource("ArtilleryUpg_L3")])
+level_upgrades = Array[Resource]([SubResource("ArtilleryUpg_L2")])
 level_3_branches = Array[Resource]([SubResource("ArtilleryBranch_Howitzer"), SubResource("ArtilleryBranch_TripleCannon")])
 projectile_scene = ExtResource("2_proj")
 encyclopedia_entry = "Massive ground explosions. Devastating AoE but can't hit flying enemies. Slow reload."

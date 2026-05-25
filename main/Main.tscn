@@ -12,6 +12,11 @@
 [ext_resource type="PackedScene" uid="uid://ct8yuf20wlabe" path="res://ui/PauseMenu.tscn" id="12_pause"]
 [ext_resource type="Script" path="res://ui/WaveCallIndicator.gd" id="16_wavecall"]
 [ext_resource type="Script" path="res://ui/PathPreviewOverlay.gd" id="17_pathpreview"]
+[ext_resource type="Script" path="res://map/EnemyInputManager.gd" id="18_einput"]
+[ext_resource type="PackedScene" uid="uid://b1td1einfo000" path="res://ui/EnemyInfoCard.tscn" id="19_einfo"]
+[ext_resource type="PackedScene" uid="uid://b1td1hpanel00" path="res://ui/HeroStatsPanel.tscn" id="20_hpanel"]
+[ext_resource type="PackedScene" uid="uid://b1td1help0000" path="res://ui/HelpOverlay.tscn" id="21_help"]
+[ext_resource type="PackedScene" uid="uid://b1td1rstats00" path="res://ui/RunStatsPanel.tscn" id="22_rstats"]
 
 [node name="Main" type="Node2D" unique_id=2036122815]
 script = ExtResource("1_main")
@@ -27,6 +32,10 @@ towers_parent_path = NodePath("../Towers")
 grid_manager_path = NodePath("")
 
 [node name="RangePreview" parent="." unique_id=2115949086 instance=ExtResource("6_range")]
+
+[node name="EnemyInputManager" type="Node" parent="."]
+script = ExtResource("18_einput")
+map_path = NodePath("")
 
 [node name="HeroInputManager" type="Node" parent="."]
 script = ExtResource("9_heroinput")
@@ -58,3 +67,11 @@ anchor_bottom = 1.0
 mouse_filter = 2
 
 [node name="PauseMenu" parent="." instance=ExtResource("12_pause")]
+
+[node name="EnemyInfoCard" parent="." instance=ExtResource("19_einfo")]
+
+[node name="HeroStatsPanel" parent="." instance=ExtResource("20_hpanel")]
+
+[node name="HelpOverlay" parent="." instance=ExtResource("21_help")]
+
+[node name="RunStatsPanel" parent="." instance=ExtResource("22_rstats")]

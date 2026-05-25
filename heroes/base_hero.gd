@@ -2230,6 +2230,22 @@ func _attack_step(delta: float) -> void:
 			# it. IDLE → _seek_target re-acquires the next shoot/melee target
 			# or walks back to the anchor. No chase.
 			_seek_target_enemy = null
+			# Doctrine — don't orphan an existing hard block. _auto_engage_extras
+			# may have committed this hero to another enemy while the focus was
+			# a pure shot target; that block already passed the engage-area
+			# overlap gate (a real melee lock). Promote the oldest valid one to
+			# focus and stay in COMBAT instead of dropping to IDLE, where
+			# _pick_target_in_detection_zone could reject it as past the acquire
+			# margin and leave it frozen with no fighter.
+			var promoted: Node = null
+			for be in _blocked_enemies:
+				if be != null and is_instance_valid(be) and be.state != BaseEnemy.State.DYING:
+					promoted = be
+					break
+			if promoted != null:
+				_target_enemy = promoted
+				_attack_cooldown = 0.0
+				return
 			change_state(State.IDLE)
 		return
 	# Capacity-aware multi-block: while in combat with _target_enemy, scan

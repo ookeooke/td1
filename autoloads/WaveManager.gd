@@ -78,10 +78,15 @@ var _default_gold_per_sec: float = 1.0
 # can read "how many seconds left in the current spawn?". Replaces the
 # old countdown-based _in_countdown / _countdown_remaining state.
 # `_spawn_elapsed_game` accumulates `delta` from `_process`, which is scaled
-# by Engine.time_scale and zero during pause — same frame of reference as
-# the spawner's `await create_timer(...).timeout`. Wall-clock-based
-# tracking (Time.get_ticks_msec) was diverging from spawner timing under
-# 2x/3x speed and during pause, breaking the early-call gate.
+# by Engine.time_scale and zero during pause. Spawner timers MUST pass
+# `process_always = false` (Godot 4's default is `true`!) so they share the
+# same frame of reference — both freeze during pause and both scale with
+# Engine.time_scale. Without the explicit `false`, the timers tick in wall-
+# clock through pause and unpause dumps a clump of "queued" spawns; the
+# early-call gate ALSO drifts because `_spawn_elapsed_game` froze while the
+# spawner kept going. Wall-clock tracking (Time.get_ticks_msec) had the
+# inverse drift under 2x/3x; both bugs are fixed by keeping every clock on
+# the same game-time delta.
 var _current_spawn_window_sec: float = 0.0
 var _spawn_elapsed_game: float = 0.0
 # Pre-W1 grace state — campaign mode only. After start(), the wave loop
@@ -479,7 +484,7 @@ func _run_spawner(spawn: Resource, wave_idx_for_spawns: int, spawn_idx: int,
 	if delay_ov >= 0.0:
 		effective_delay = delay_ov
 	if effective_delay > 0.0:
-		await get_tree().create_timer(effective_delay).timeout
+		await get_tree().create_timer(effective_delay, false).timeout
 	# Session guard — bail if this coroutine outlived its run (stop() →
 	# start() happened during the await). Without this, the writes below
 	# would corrupt the fresh run's state. See _session_id declaration.
@@ -553,7 +558,7 @@ func _run_spawner(spawn: Resource, wave_idx_for_spawns: int, spawn_idx: int,
 		if i < count - 1:
 			# Phase 42: spawn jitter breaks uniform spacing.
 			var jitter: float = randf_range(-0.25, 0.25)
-			await get_tree().create_timer(maxf(0.1, interval + jitter)).timeout
+			await get_tree().create_timer(maxf(0.1, interval + jitter), false).timeout
 	_spawner_done(wave_idx_for_spawns)
 
 

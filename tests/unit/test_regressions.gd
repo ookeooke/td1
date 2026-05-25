@@ -109,6 +109,23 @@ func test_status_effect_reapply_refreshes_not_stacks() -> void:
 	assert_eq(enemy._effects["slow"].duration, 5.0, "duration matches the latest reapply")
 
 
+# Code review 2026-05-25: BaseEnemy must tick DoT effects, not only expire
+# their duration. Hero/soldier carriers already did this; enemies need the
+# same contract for tower/hero-applied burn or poison.
+func test_enemy_dot_effect_ticks_damage() -> void:
+	var enemy: BaseEnemy = _track(BaseEnemy.new())
+	enemy.data = ContentRegistry.find_enemy("enemy_basic")
+	assert_not_null(enemy.data, "fixture: enemy_basic must be in registry")
+	add_child_autofree(enemy)
+	enemy.current_health = 100
+
+	var burn: BurnEffect = BurnEffect.new(10.0, 1.0, null, DamageCalculator.DamageType.TRUE)
+	enemy.apply_status_effect(burn)
+	enemy._tick_effects(0.5)
+
+	assert_eq(enemy.current_health, 95, "enemy DoT tick deals dps * tick_interval damage")
+
+
 # Phase 47d-9: TowerUpgradeData fields default to 0 (sentinel for "not
 # overridden"); upgrade-time merge falls back to base TowerData. Without the
 # fallback, upgrading a tower whose base had a slow trait silently lost it.
@@ -302,6 +319,109 @@ func test_runstats_wave_block_tracks_pressure_and_economy() -> void:
 	assert_almost_eq(float(w["damage_total"]), 5.0, 0.001, "per-wave damage should cap obvious overkill")
 	var leak_events: Array = w["leaks"]
 	assert_eq(leak_events.size(), 1)
+
+
+# P1 (2026-05-26): a ranged hero whose focus shot target leaks out of
+# attack_range while _auto_engage_extras had hard-blocked a *different*
+# enemy used to drop to IDLE with that block stranded — frozen enemy, no
+# fighter. The else-branch must promote the oldest valid _blocked_enemies
+# entry to focus and stay in COMBAT instead of orphaning the lock.
+func test_hero_shot_loss_promotes_existing_block() -> void:
+	var hero: BaseHero = _track(BaseHero.new())
+	_add_hero_required_children(hero)
+	add_child_autofree(hero)
+	await get_tree().process_frame
+	hero.data = ContentRegistry.find_hero("hero_mage")
+	assert_not_null(hero.data, "fixture: hero_mage must be in registry")
+
+	var enemy_a: BaseEnemy = _track(BaseEnemy.new())
+	enemy_a.data = ContentRegistry.find_enemy("enemy_basic")
+	add_child_autofree(enemy_a)
+	var enemy_b: BaseEnemy = _track(BaseEnemy.new())
+	enemy_b.data = ContentRegistry.find_enemy("enemy_basic")
+	add_child_autofree(enemy_b)
+	await get_tree().process_frame
+
+	# Pure shot focus on A, hard block on B (mirrors _auto_engage_extras
+	# committing to a second target while the focus is being shot from far).
+	hero._target_enemy = enemy_a
+	hero._blocked_enemies = [enemy_b]
+	enemy_b.engage_combat(hero)
+	hero.change_state(BaseHero.State.COMBAT)
+
+	# attack_range_area has no overlapping areas in this fixture, so the
+	# "enemy left attack range" branch fires for A. A was NOT in
+	# _blocked_enemies → was_blocking is false → falls into the else branch,
+	# which used to go straight to IDLE.
+	hero._attack_step(0.0)
+
+	assert_eq(hero._target_enemy, enemy_b,
+		"hero must promote the existing block to focus instead of orphaning it")
+	assert_eq(hero.state, BaseHero.State.COMBAT,
+		"promoted block keeps the hero in COMBAT — not IDLE")
+	assert_true(hero._blocked_enemies.has(enemy_b),
+		"existing hard block must survive the focus drop")
+	assert_true(enemy_b._blockers.has(hero),
+		"enemy B must still register the hero as a blocker")
+
+
+# P2 (2026-05-26): a soldier whose soft claim times out (path-blocked /
+# unreachable straggler) used to release the claim and then immediately
+# re-pick the same enemy on the next scan, looping forever. Mirror of the
+# hero stuck-recovery blacklist. Doctrine invariant 4 — "watchdog must
+# make progress, not just reset."
+func test_soldier_giveup_blacklist_skips_re_acquire() -> void:
+	var soldier: BaseSoldier = _track(BaseSoldier.new())
+	var enemy: BaseEnemy = _track(BaseEnemy.new())
+	enemy.data = ContentRegistry.find_enemy("enemy_basic")
+	add_child_autofree(enemy)
+	await get_tree().process_frame
+
+	assert_false(soldier._is_given_up(enemy),
+		"fixture: fresh enemy must not be blacklisted")
+	soldier._note_giveup(enemy)
+	assert_true(soldier._is_given_up(enemy),
+		"watchdog must blacklist the timed-out enemy so the next scan picks a different one")
+	# Expire the cooldown manually and confirm the blacklist self-purges.
+	soldier._giveup_until[enemy] = Time.get_ticks_msec() - 1
+	assert_false(soldier._is_given_up(enemy),
+		"blacklist must self-expire so the soldier can re-acquire later")
+
+
+# P3 (2026-05-26): soldier _sync_claim() swapped _claimed_enemy without
+# resetting _claim_age, so a fresh target could inherit a near-expired
+# timer and be dropped immediately. _release_claim had the same gap.
+# Hero already reset; soldier must mirror.
+func test_soldier_sync_claim_resets_claim_age() -> void:
+	var soldier: BaseSoldier = _track(BaseSoldier.new())
+	var enemy_a: BaseEnemy = _track(BaseEnemy.new())
+	enemy_a.data = ContentRegistry.find_enemy("enemy_basic")
+	add_child_autofree(enemy_a)
+	var enemy_b: BaseEnemy = _track(BaseEnemy.new())
+	enemy_b.data = ContentRegistry.find_enemy("enemy_basic")
+	add_child_autofree(enemy_b)
+	await get_tree().process_frame
+
+	soldier._charge_target = enemy_a
+	soldier._sync_claim()
+	assert_eq(soldier._claimed_enemy, enemy_a, "fixture: initial claim is A")
+	# Simulate the watchdog ticking up most of the timeout on A.
+	soldier._claim_age = 3.5
+
+	# Swap to B — the fresh target must get a fresh timer, otherwise the
+	# next physics tick would push _claim_age past CLAIM_TIMEOUT and drop B
+	# before the soldier can reach it.
+	soldier._charge_target = enemy_b
+	soldier._sync_claim()
+	assert_eq(soldier._claimed_enemy, enemy_b, "claim must swap to B")
+	assert_almost_eq(soldier._claim_age, 0.0, 0.0001,
+		"_claim_age must reset to 0 when the claim swaps targets")
+
+	# _release_claim must also reset, mirror of BaseHero.
+	soldier._claim_age = 2.0
+	soldier._release_claim()
+	assert_almost_eq(soldier._claim_age, 0.0, 0.0001,
+		"_claim_age must reset to 0 on _release_claim")
 
 
 func _add_hero_required_children(hero: BaseHero) -> void:

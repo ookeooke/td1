@@ -31,6 +31,7 @@ const _PASSIVE_ACCENT: Color = Color(0.85, 0.55, 1.00, 1.0)
 # pattern in HeroSkillTreeScreen / LoadoutState.
 const _HeroSkillNodeDataScript = preload("res://heroes/HeroSkillNodeData.gd")
 const _SkillGlyphScript = preload("res://ui/SkillGlyph.gd")
+const _SkillMapScript = preload("res://ui/HeroSkillMap.gd")
 
 
 # Small procedural icon Control. Sized via custom_minimum_size; reads its
@@ -94,6 +95,36 @@ var _inspector_vbox: VBoxContainer = null
 var _insp_mode: int = _INSP_NONE
 var _insp_content_id: String = ""
 var _insp_slot_index: int = -1
+
+# Unified-chooser Phase 3 — skill-map view. Additive: the legacy tab+list
+# stays built and reachable via the view toggle until the map is verified.
+var _list_col: VBoxContainer = null
+var _map_scroll: ScrollContainer = null
+var _skill_map: Control = null
+var _view_toggle: Button = null
+var _view_mode: String = "map"   # "map" | "list"
+var _map_hero_id: String = ""
+# Floating detail card (map mode). The legacy/list mode keeps the docked
+# right panel; in map mode the same rendered content shows in a card placed
+# next to the tapped node/slot, so the info reads as part of the map (the
+# right-corner panel felt disconnected from a spatial constellation).
+var _docked_vbox: VBoxContainer = null
+var _float_overlay: Control = null
+var _float_panel: PanelContainer = null
+var _float_vbox: VBoxContainer = null
+const _FLOAT_W: float = 360.0
+const _FLOAT_H: float = 560.0
+const _NODE_GAP: float = 52.0
+var _float_scroll: ScrollContainer = null
+var _float_a: Vector2 = Vector2.ZERO       # anchor (overlay-local) of open card
+var _float_below: bool = false             # place card below anchor vs beside
+var _float_refit_tries: int = 0            # bounded retries for deferred refit
+var _float_close: Button = null            # ✕ on the floating card
+# Two-step confirm for the point-spending BUY action (unified-chooser
+# Phase 5). Mirrors EquipmentScreen's sell-arm: first tap arms, second tap
+# on the same node commits, 3s auto-disarm. Equip/unequip stay single-tap
+# (reversible — single-tap carve-out per the interaction rule).
+var _buy_armed_id: String = ""
 
 
 func _ready() -> void:
@@ -170,6 +201,14 @@ func _build_layout() -> void:
 	reset_btn.pressed.connect(_on_reset_pressed)
 	header.add_child(reset_btn)
 
+	# Map/List view toggle — keeps the legacy list reachable while the
+	# constellation is the default (unified-chooser Phase 3).
+	_view_toggle = Button.new()
+	_view_toggle.focus_mode = Control.FOCUS_NONE
+	_view_toggle.custom_minimum_size = Vector2(124, 40)
+	_view_toggle.pressed.connect(_on_view_toggle)
+	header.add_child(_view_toggle)
+
 	# Active loadout band.
 	_add_section_label(root, "ACTIVE LOADOUT", _ACTIVE_ACCENT)
 	_active_row = HBoxContainer.new()
@@ -195,6 +234,7 @@ func _build_layout() -> void:
 	left.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	left.add_theme_constant_override("separation", 8)
 	body.add_child(left)
+	_list_col = left
 
 	var tab_header := HBoxContainer.new()
 	tab_header.add_theme_constant_override("separation", 12)
@@ -248,6 +288,73 @@ func _build_layout() -> void:
 	_inspector_vbox = VBoxContainer.new()
 	_inspector_vbox.add_theme_constant_override("separation", 8)
 	_inspector_panel.add_child(_inspector_vbox)
+	_docked_vbox = _inspector_vbox
+
+	# Skill-map view — sibling of the legacy list, before the inspector.
+	# Inspect-only: node taps route into the EXISTING _inspect_tree_node
+	# pipeline, so the inspector + all action buttons are reused unchanged.
+	_map_scroll = ScrollContainer.new()
+	_map_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_map_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_skill_map = _SkillMapScript.new()
+	_skill_map.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_skill_map.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_map_scroll.add_child(_skill_map)
+	body.add_child(_map_scroll)
+	body.move_child(_map_scroll, _list_col.get_index() + 1)
+	_skill_map.node_selected.connect(_inspect_tree_node)
+
+	# Floating detail card overlay (map mode). Full-page, input-transparent
+	# except the card itself; sits above `body` so the card draws over the
+	# map. Same content as the docked panel — only the host vbox differs.
+	_float_overlay = Control.new()
+	_float_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_float_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_float_overlay.visible = false
+	add_child(_float_overlay)
+	_float_panel = PanelContainer.new()
+	_float_panel.custom_minimum_size = Vector2(_FLOAT_W, 0)
+	_float_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var fsb := _make_stylebox(_PANEL_BG, _PANEL_BORDER)
+	fsb.content_margin_left = 16
+	fsb.content_margin_right = 16
+	fsb.content_margin_top = 14
+	fsb.content_margin_bottom = 14
+	_float_panel.add_theme_stylebox_override("panel", fsb)
+	_float_panel.visible = false
+	_float_overlay.add_child(_float_panel)
+	# Inner scroll so a tall node (status + cost + requires + equip + buy)
+	# never exceeds the card; fixed width so autowrap labels wrap correctly
+	# (a free-floating PanelContainer otherwise computes height vs ~0 width).
+	_float_scroll = ScrollContainer.new()
+	_float_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_float_panel.add_child(_float_scroll)
+	_float_vbox = VBoxContainer.new()
+	_float_vbox.add_theme_constant_override("separation", 8)
+	_float_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_float_vbox.custom_minimum_size = Vector2(_FLOAT_W - 36.0, 0)
+	_float_scroll.add_child(_float_vbox)
+	# Explicit close affordance — sits above the card at its top-right.
+	# (A full-screen outside-tap catcher would block dragging the map to
+	# pan, so we use ✕ + tap-empty-map instead.)
+	_float_close = Button.new()
+	_float_close.text = "✕"
+	_float_close.focus_mode = Control.FOCUS_NONE
+	_float_close.custom_minimum_size = Vector2(40, 40)
+	_float_close.size = Vector2(40, 40)
+	_float_close.mouse_filter = Control.MOUSE_FILTER_STOP
+	_float_close.visible = false
+	_float_close.pressed.connect(_dismiss_float_card)
+	_float_overlay.add_child(_float_close)
+	# Re-place the card when the map scrolls (node moves on screen).
+	var hsb: HScrollBar = _map_scroll.get_h_scroll_bar()
+	var vsb: VScrollBar = _map_scroll.get_v_scroll_bar()
+	if hsb != null:
+		hsb.value_changed.connect(func(_v: float) -> void: _position_float_card())
+	if vsb != null:
+		vsb.value_changed.connect(func(_v: float) -> void: _position_float_card())
+
+	_apply_view_mode()
 
 
 func _add_section_label(parent: Container, text: String, color: Color) -> void:
@@ -279,6 +386,7 @@ func _refresh_all() -> void:
 	_refresh_tabs()
 	_refresh_nodes()
 	_refresh_inspector()
+	_refresh_skill_map()
 
 
 func _refresh_header() -> void:
@@ -567,7 +675,7 @@ func _make_node_row(node: Resource) -> Control:
 		buy.text = "BUY · %d ★" % int(node.point_cost)
 		buy.disabled = not check.ok
 		buy.add_theme_color_override("font_color", _TEXT if check.ok else _MUTED)
-		buy.pressed.connect(func(): _on_buy(node_id))
+		buy.pressed.connect(func(): _on_buy_pressed(node_id))
 		right.add_child(buy)
 		if not check.ok:
 			var reason := Label.new()
@@ -638,6 +746,7 @@ func _inspect_tree_node(node_id: String) -> void:
 	_insp_mode = _INSP_TREE_NODE
 	_insp_content_id = node_id
 	_insp_slot_index = -1
+	_buy_armed_id = ""  # selecting a different node clears any armed buy
 	var tree: Resource = ContentRegistry.find_skill_tree(_hero_id)
 	if tree != null:
 		var node: Resource = tree.find_node(node_id)
@@ -651,6 +760,68 @@ func _clear_inspector() -> void:
 	_insp_mode = _INSP_NONE
 	_insp_content_id = ""
 	_insp_slot_index = -1
+	_buy_armed_id = ""
+
+
+# ── Skill-map view (unified-chooser Phase 3) ───────────────────────────
+# Toggles between the constellation (default) and the legacy tab+list.
+# Both are always built; only visibility changes, so the legacy path stays
+# fully functional and verifiable until the map is signed off.
+
+func _on_view_toggle() -> void:
+	_view_mode = "list" if _view_mode == "map" else "map"
+	_apply_view_mode()
+
+
+func _apply_view_mode() -> void:
+	var is_map: bool = _view_mode == "map"
+	if _list_col != null:
+		_list_col.visible = not is_map
+	if _map_scroll != null:
+		_map_scroll.visible = is_map
+	if _view_toggle != null:
+		_view_toggle.text = "≣ List view" if is_map else "▦ Map view"
+	# Retarget where the (unchanged) render code draws: docked right panel
+	# for list mode, floating card for map mode.
+	if is_map:
+		_inspector_vbox = _float_vbox
+		if _inspector_panel != null:
+			_inspector_panel.visible = false
+		if _float_overlay != null:
+			_float_overlay.visible = true
+	else:
+		_inspector_vbox = _docked_vbox
+		if _inspector_panel != null:
+			_inspector_panel.visible = true
+		if _float_overlay != null:
+			_float_overlay.visible = false
+	_refresh_inspector()
+	if is_map and _skill_map != null:
+		if _map_hero_id != _hero_id:
+			_map_hero_id = _hero_id
+			_skill_map.setup(_hero_id)
+		if _insp_mode == _INSP_TREE_NODE:
+			_skill_map.set_selected_node(_insp_content_id)
+		else:
+			_skill_map.clear_selection()
+
+
+func _refresh_skill_map() -> void:
+	if _skill_map == null:
+		return
+	if _map_hero_id != _hero_id:
+		# Hero swapped — rebuild nodes/positions for the new tree.
+		_map_hero_id = _hero_id
+		_skill_map.setup(_hero_id)
+	else:
+		# States (purchased / available / locked) are computed live in the
+		# map's _draw from MetaProgression, so a redraw is enough after a
+		# buy / level-up / equip.
+		_skill_map.queue_redraw()
+	if _insp_mode == _INSP_TREE_NODE:
+		_skill_map.set_selected_node(_insp_content_id)
+	else:
+		_skill_map.clear_selection()
 
 
 func _refresh_inspector() -> void:
@@ -667,6 +838,101 @@ func _refresh_inspector() -> void:
 			_render_inspector_passive_slot()
 		_INSP_TREE_NODE:
 			_render_inspector_tree_node()
+	_position_float_card()
+
+
+# Place the floating detail card next to the tapped node (or loadout slot)
+# in map mode; hide it when nothing meaningful is selected. List/Equipment
+# keep the docked panel, so this is a no-op there.
+func _position_float_card() -> void:
+	if _view_mode != "map" or _float_panel == null or _float_overlay == null:
+		return
+	var anchor_g := Vector2.ZERO
+	var below: bool = false
+	var have_anchor: bool = false
+	if _insp_mode == _INSP_TREE_NODE and _insp_content_id != "" \
+			and _skill_map != null and _skill_map.has_node_pos(_insp_content_id):
+		anchor_g = _skill_map.get_global_transform() \
+			* _skill_map.node_pos(_insp_content_id)
+		have_anchor = true
+	elif _insp_mode == _INSP_ACTIVE_SLOT and _active_row != null:
+		var c := _slot_widget(_active_row, _insp_slot_index)
+		if c != null:
+			anchor_g = c.get_global_rect().get_center() \
+				+ Vector2(0, c.get_global_rect().size.y * 0.5)
+			below = true
+			have_anchor = true
+	elif _insp_mode == _INSP_PASSIVE_SLOT and _passive_row != null:
+		var c2 := _slot_widget(_passive_row, _insp_slot_index)
+		if c2 != null:
+			anchor_g = c2.get_global_rect().get_center() \
+				+ Vector2(0, c2.get_global_rect().size.y * 0.5)
+			below = true
+			have_anchor = true
+	if not have_anchor:
+		_float_panel.visible = false
+		if _float_close != null:
+			_float_close.visible = false
+		return
+	_float_a = _float_overlay.get_global_transform().affine_inverse() * anchor_g
+	_float_below = below
+	_float_panel.visible = true
+	# First pass uses the capped height (autowrap content can't be measured
+	# until laid out); _refit shrinks to the real content height next frame.
+	_place_float_card(minf(_FLOAT_H, maxf(160.0, _float_overlay.size.y - 16.0)))
+	_float_refit_tries = 0
+	call_deferred("_refit_float_card")
+
+
+func _refit_float_card() -> void:
+	if _float_panel == null or not _float_panel.visible:
+		return
+	if _float_vbox.size.y <= 1.0:
+		# Layout not settled yet — keep the provisional capped card and
+		# retry next frame rather than collapsing to the min height.
+		_float_refit_tries += 1
+		if _float_refit_tries <= 8:
+			call_deferred("_refit_float_card")
+		return
+	var ov: float = _float_overlay.size.y - 16.0
+	# _float_vbox.size.y is the real laid-out content height by now.
+	var card_h: float = clampf(_float_vbox.size.y + 36.0, 110.0,
+		minf(_FLOAT_H, maxf(160.0, ov)))
+	_place_float_card(card_h)
+
+
+func _place_float_card(card_h: float) -> void:
+	_float_scroll.custom_minimum_size = Vector2(_FLOAT_W - 36.0, card_h)
+	var ov: Vector2 = _float_overlay.size
+	var sz: Vector2 = Vector2(_FLOAT_W, card_h + 24.0)
+	var a: Vector2 = _float_a
+	var pos: Vector2
+	if _float_below:
+		pos = Vector2(a.x - sz.x * 0.5, a.y + 10.0)
+	else:
+		pos = Vector2(a.x + _NODE_GAP, a.y - sz.y * 0.5)
+		if pos.x + sz.x > ov.x - 8.0:
+			pos.x = a.x - _NODE_GAP - sz.x  # flip to the node's left side
+	pos.x = clampf(pos.x, 8.0, maxf(8.0, ov.x - sz.x - 8.0))
+	pos.y = clampf(pos.y, 8.0, maxf(8.0, ov.y - sz.y - 8.0))
+	_float_panel.position = pos
+	if _float_close != null:
+		_float_close.position = pos + Vector2(_FLOAT_W - 46.0, 6.0)
+		_float_close.visible = true
+
+
+# Close the floating card: clear map selection + inspector, which makes
+# _position_float_card hide the panel (and the ✕) on the next refresh.
+func _dismiss_float_card() -> void:
+	if _skill_map != null:
+		_skill_map.set_selected_node("")
+	_inspect_tree_node("")
+
+
+func _slot_widget(row: HBoxContainer, idx: int) -> Control:
+	if row == null or row.get_child_count() == 0:
+		return null
+	return row.get_child(clampi(idx, 0, row.get_child_count() - 1)) as Control
 
 
 func _render_inspector_placeholder() -> void:
@@ -698,23 +964,8 @@ func _render_inspector_active_slot() -> void:
 		unequip_btn.pressed.connect(func(): _equip_active(_insp_slot_index, ""))
 		_inspector_vbox.add_child(unequip_btn)
 	else:
-		_inspector_vbox.add_child(_make_body_label("Empty slot. Tap a skill below to equip."))
-	# Owned-but-unequipped actives list — tap to equip into this slot.
-	_inspector_vbox.add_child(_make_h2_label("AVAILABLE", _MUTED))
-	var unlocked: Array[String] = LoadoutState.get_unlocked_skill_ids(_hero_id)
-	var equipped: Array[String] = LoadoutState.get_equipped_skills(_hero_id)
-	var any_added: bool = false
-	for sid in unlocked:
-		if sid == _insp_content_id:
-			continue
-		var label: String = _skill_name(hero_data, sid)
-		var btn := Button.new()
-		btn.text = ("✓ " if sid in equipped else "+ ") + label
-		btn.pressed.connect(func(): _equip_active(_insp_slot_index, sid))
-		_inspector_vbox.add_child(btn)
-		any_added = true
-	if not any_added:
-		_inspector_vbox.add_child(_make_body_label("(no other skills unlocked yet)"))
+		_inspector_vbox.add_child(_make_body_label(
+			"Empty slot. Tap a learned skill in the map — its panel has a slot picker + Equip."))
 
 
 func _render_inspector_passive_slot() -> void:
@@ -730,27 +981,8 @@ func _render_inspector_passive_slot() -> void:
 		unequip_btn.pressed.connect(func(): _equip_passive(_insp_slot_index, ""))
 		_inspector_vbox.add_child(unequip_btn)
 	else:
-		_inspector_vbox.add_child(_make_body_label("Empty slot. Tap an owned passive below to equip."))
-	# Owned passives — tap to equip into this slot.
-	_inspector_vbox.add_child(_make_h2_label("OWNED", _MUTED))
-	if tree == null:
-		return
-	var equipped: Array[String] = LoadoutState.get_equipped_passives(_hero_id)
-	var any_added: bool = false
-	for pid in tree.get_passive_ids():
-		if pid == _insp_content_id:
-			continue
-		var rank: int = MetaProgression.get_purchased_passive_rank(_hero_id, pid)
-		if rank <= 0:
-			continue
-		var label: String = tree.get_passive_name(pid)
-		var btn := Button.new()
-		btn.text = ("✓ " if pid in equipped else "+ ") + label
-		btn.pressed.connect(func(): _equip_passive(_insp_slot_index, pid))
-		_inspector_vbox.add_child(btn)
-		any_added = true
-	if not any_added:
-		_inspector_vbox.add_child(_make_body_label("(buy a passive in the tree to enable equipping)"))
+		_inspector_vbox.add_child(_make_body_label(
+			"Empty slot. Tap an owned passive in the map — its panel has a slot picker + Equip."))
 
 
 func _render_inspector_tree_node() -> void:
@@ -788,18 +1020,48 @@ func _render_inspector_tree_node() -> void:
 				names.append(String(pid))
 		_inspector_vbox.add_child(_make_kv_label("Requires", ", ".join(names)))
 
+	_add_equip_controls(node, kind)
+
 	if purchased_rank < int(node.rank):
 		var check: Dictionary = MetaProgression.can_purchase_node(_hero_id, _insp_content_id)
+		var armed: bool = (_buy_armed_id == _insp_content_id and check.ok)
 		var buy := Button.new()
-		buy.text = "BUY · %d ★" % int(node.point_cost)
+		buy.focus_mode = Control.FOCUS_NONE
 		buy.disabled = not check.ok
-		buy.pressed.connect(func(): _on_buy(_insp_content_id))
+		if armed:
+			buy.text = "Confirm — spend %d ★" % int(node.point_cost)
+			# Warm orange = armed/confirm, deliberately ≠ the gold selection
+			# colour so the two states never read the same.
+			buy.add_theme_color_override("font_color", Color(1.0, 0.78, 0.42))
+		else:
+			buy.text = "BUY · %d ★" % int(node.point_cost)
+		buy.pressed.connect(func(): _on_buy_pressed(_insp_content_id))
 		_inspector_vbox.add_child(buy)
 		if not check.ok:
 			_inspector_vbox.add_child(_make_kv_label("Why not", String(check.reason)))
 
 
 # ── Actions ───────────────────────────────────────────────────────────
+
+func _on_buy_pressed(node_id: String) -> void:
+	# Two-step confirm — BUY spends skill points, so it needs a deliberate
+	# second tap (same node) to commit. First tap arms + relabels; a 3s
+	# timer auto-disarms so a stray arm doesn't linger. Mirrors the
+	# EquipmentScreen sell-arm pattern.
+	if _buy_armed_id == node_id:
+		_buy_armed_id = ""
+		_on_buy(node_id)
+		return
+	_buy_armed_id = node_id
+	_refresh_inspector()
+	var node_ref: String = node_id
+	var t := get_tree().create_timer(3.0)
+	t.timeout.connect(func() -> void:
+		if _buy_armed_id == node_ref:
+			_buy_armed_id = ""
+			_refresh_inspector()
+	)
+
 
 func _on_buy(node_id: String) -> void:
 	if not MetaProgression.purchase_node(_hero_id, node_id):
@@ -836,6 +1098,93 @@ func _equip_passive(slot_idx: int, passive_id: String) -> void:
 	if LoadoutState.set_equipped_passive(_hero_id, slot_idx, passive_id):
 		_insp_content_id = passive_id
 		_persist()
+
+
+# Item-parity equip UI for the skill-map node panel. ACTIVE_RANK / PASSIVE_RANK
+# nodes whose skill/passive is learned get a slot dropdown + Equip button right
+# here — no scrolling skill list. Other kinds (MOD / SLOT_UNLOCK / CAPSTONE)
+# aren't equippable so this is a no-op for them.
+func _add_equip_controls(node: Resource, kind: int) -> void:
+	var content_id: String = String(node.target_id)
+	var is_passive: bool
+	var equippable: bool
+	var slot_cap: int
+	var equipped: Array[String]
+	if kind == _HeroSkillNodeDataScript.Kind.ACTIVE_RANK:
+		is_passive = false
+		equippable = content_id in LoadoutState.get_unlocked_skill_ids(_hero_id)
+		slot_cap = LoadoutState.get_active_slot_cap(_hero_id)
+		equipped = LoadoutState.get_equipped_skills(_hero_id)
+	elif kind == _HeroSkillNodeDataScript.Kind.PASSIVE_RANK:
+		is_passive = true
+		equippable = MetaProgression.get_purchased_passive_rank(_hero_id, content_id) > 0
+		slot_cap = LoadoutState.get_passive_slot_cap(_hero_id)
+		equipped = LoadoutState.get_equipped_passives(_hero_id)
+	else:
+		return
+	if not equippable:
+		_inspector_vbox.add_child(_make_kv_label("Equip", "Learn this first"))
+		return
+
+	var cur_slot: int = equipped.find(content_id)
+	_inspector_vbox.add_child(_make_kv_label("Equipped",
+		("Slot %d" % (cur_slot + 1)) if cur_slot >= 0 else "Not equipped"))
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var picker := OptionButton.new()
+	picker.focus_mode = Control.FOCUS_NONE
+	picker.custom_minimum_size = Vector2(140, 44)
+	for s in slot_cap:
+		var occ: String = equipped[s] if s < equipped.size() else ""
+		var tag: String = ""
+		if occ == content_id:
+			tag = "  ✓"
+		elif occ != "":
+			tag = "  (in use)"
+		picker.add_item("Slot %d%s" % [s + 1, tag], s)
+	# Default: current slot → else first empty → else slot 1.
+	var sel: int = cur_slot
+	if sel < 0:
+		sel = equipped.find("")
+	if sel < 0 or sel >= slot_cap:
+		sel = 0
+	picker.select(sel)
+	row.add_child(picker)
+
+	var eq_btn := Button.new()
+	eq_btn.focus_mode = Control.FOCUS_NONE
+	eq_btn.custom_minimum_size = Vector2(0, 44)
+	eq_btn.text = "Move here" if cur_slot >= 0 else "Equip"
+	eq_btn.pressed.connect(func() -> void:
+		_equip_from_node(is_passive, picker.get_selected_id(), content_id))
+	row.add_child(eq_btn)
+	_inspector_vbox.add_child(row)
+
+	if cur_slot >= 0:
+		var un := Button.new()
+		un.focus_mode = Control.FOCUS_NONE
+		un.custom_minimum_size = Vector2(0, 44)
+		un.text = "Unequip"
+		un.pressed.connect(func() -> void:
+			_equip_from_node(is_passive, cur_slot, ""))
+		_inspector_vbox.add_child(un)
+
+
+# Equip/unequip from the node panel WITHOUT clobbering _insp_content_id
+# (unlike _equip_active/_equip_passive, which the slot inspector still uses).
+# Keeps the inspector pinned to the same node so it re-renders in place.
+func _equip_from_node(is_passive: bool, slot_idx: int, content_id: String) -> void:
+	if slot_idx < 0:
+		return
+	var ok: bool
+	if is_passive:
+		ok = LoadoutState.set_equipped_passive(_hero_id, slot_idx, content_id)
+	else:
+		ok = LoadoutState.set_equipped_skill(_hero_id, slot_idx, content_id)
+	if ok:
+		_persist()
+		_refresh_all()
 
 
 func _persist() -> void:

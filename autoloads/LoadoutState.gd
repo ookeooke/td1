@@ -612,19 +612,38 @@ func get_effective_ppt() -> float:
 		var legacy_talents: Array = MetaProgression.hero_talents.get(selected_hero_id, [])
 		talent_count = legacy_talents.size()
 		upgrade_count = MetaProgression.purchased_upgrades.size()
-		# Skill-tree nodes — selected hero only.
+		# Skill-tree nodes — selected hero only. Mirrors the purge-on-read
+		# self-heal in get_equipped_skills: stale node_ids (renamed / removed
+		# nodes, or any node_id for a hero whose tree was removed entirely)
+		# are erased from MetaProgression so the dict converges instead of
+		# accumulating forever. Boot guard: skip only when ContentRegistry
+		# hasn't loaded any trees yet (true "registry not ready") — otherwise
+		# a null per-hero tree means every stored node_id is definitively
+		# stale and safe to purge.
 		var per_hero: Dictionary = MetaProgression.hero_skill_nodes.get(selected_hero_id, {})
 		var tree: Resource = ContentRegistry.find_skill_tree(selected_hero_id)
-		if tree != null:
+		var registry_cold: bool = ContentRegistry.skill_trees.is_empty()
+		if not registry_cold and not per_hero.is_empty():
+			var to_purge: Array[String] = []
 			for node_id in per_hero.keys():
-				var node: Resource = tree.find_node(String(node_id))
+				var node: Resource = tree.find_node(String(node_id)) if tree != null else null
 				if node == null:
+					to_purge.append(String(node_id))
 					continue
 				var k: int = int(node.kind)
 				if k == _HeroSkillNodeDataScript.Kind.PASSIVE_RANK \
 						or k == _HeroSkillNodeDataScript.Kind.MOD \
 						or k == _HeroSkillNodeDataScript.Kind.CAPSTONE:
 					node_count += 1
+			if not to_purge.is_empty():
+				for stale_id in to_purge:
+					per_hero.erase(stale_id)
+				MetaProgression.hero_skill_nodes[selected_hero_id] = per_hero
+				# Symmetry with get_equipped_skills' purge-on-read: write the
+				# cleaned dict back to memory, but DON'T persist from a getter.
+				# The next legitimate save site (node purchase, hero swap,
+				# level end) will flush the cleaned form. Keeping disk I/O out
+				# of read paths is what the audit smell flagged.
 	var talent_bonus: float = minf(_PPT_BONUS_CAP, float(talent_count) * _PPT_BONUS_PER_TALENT)
 	var node_bonus: float = minf(_PPT_BONUS_CAP, float(node_count) * _PPT_BONUS_PER_TALENT)
 	var upgrade_bonus: float = minf(_PPT_BONUS_CAP, float(upgrade_count) * _PPT_BONUS_PER_UPGRADE)

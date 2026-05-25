@@ -75,6 +75,7 @@ func _ready() -> void:
 	# hub never opens to a "No hero" wasteland.
 	_ensure_hero_selected()
 	_build_hero_sidebar()
+	_build_scroll_arrows()
 	_build_page_nav()
 	_build_hero_hall()
 	_refresh_meta_gold()
@@ -110,6 +111,10 @@ func _ensure_hero_selected() -> void:
 
 func _connect_events() -> void:
 	EventBus.hero_selected.connect(_on_hero_selected)
+	# Keep the picked hero scrolled into view when switched from anywhere
+	# (sidebar tap, deep-link). Separate connection so _on_hero_selected
+	# stays untouched.
+	EventBus.hero_selected.connect(func(_h: String) -> void: _scroll_selected_into_view())
 	# Skills equipped via HeroSkillsPage — refresh the sidebar badge counter.
 	# HeroSkillsPage rebuilds itself on the same signal; we don't need to
 	# touch the embedded page from here.
@@ -178,6 +183,97 @@ func _refresh_roster_progress() -> void:
 		if btn != null and btn.has_method("setup"):
 			btn.setup(ContentRegistry.find_hero(hid))
 			btn.set_selected(hid == LoadoutState.selected_hero_id)
+
+
+# --- Sidebar scroll affordance (unified-chooser Phase 1) ------------------
+# The hero rail scrolls when the roster outgrows the 140-px column, but a
+# bare ScrollContainer gives no discoverable cue. Add explicit ▲/▼ buttons
+# that page the rail by one hero-button height, dim at the travel limits,
+# and hide entirely when the roster fits without scrolling. Also keep the
+# selected hero scrolled into view on hero switch. Purely additive — no
+# existing sidebar logic changes.
+
+var _scroll_up_btn: Button = null
+var _scroll_down_btn: Button = null
+
+const _SCROLL_STEP: float = HERO_BUTTON_SIZE.y + 8.0  # one button + separation
+
+
+func _build_scroll_arrows() -> void:
+	if _scroll_up_btn != null:
+		return
+	_scroll_up_btn = _make_scroll_arrow("▲")
+	_scroll_down_btn = _make_scroll_arrow("▼")
+	hero_sidebar.add_child(_scroll_up_btn)
+	hero_sidebar.add_child(_scroll_down_btn)
+	# Order inside HeroSidebar VBox: [Up, HeroScroll, Down, Divider, PageNav].
+	hero_sidebar.move_child(_scroll_up_btn, hero_scroll.get_index())
+	hero_sidebar.move_child(_scroll_down_btn, hero_scroll.get_index() + 1)
+	_scroll_up_btn.pressed.connect(_on_scroll_arrow.bind(-1))
+	_scroll_down_btn.pressed.connect(_on_scroll_arrow.bind(1))
+	var sb: VScrollBar = hero_scroll.get_v_scroll_bar()
+	if sb != null:
+		sb.value_changed.connect(func(_v: float) -> void: _update_scroll_arrows())
+		sb.changed.connect(_update_scroll_arrows)
+	call_deferred("_update_scroll_arrows")
+	call_deferred("_scroll_selected_into_view")
+
+
+func _make_scroll_arrow(glyph: String) -> Button:
+	var b := Button.new()
+	b.text = glyph
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(0, 80)  # ≥80px touch target (mobile rule)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.mouse_filter = Control.MOUSE_FILTER_STOP  # consume taps, no pass-through
+	return b
+
+
+func _on_scroll_arrow(dir: int) -> void:
+	var target: float = clampf(
+		float(hero_scroll.scroll_vertical) + float(dir) * _SCROLL_STEP,
+		0.0, _max_scroll())
+	var tw := create_tween()
+	tw.tween_property(hero_scroll, "scroll_vertical", int(round(target)), 0.15) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(_update_scroll_arrows)
+
+
+func _max_scroll() -> float:
+	var sb: VScrollBar = hero_scroll.get_v_scroll_bar()
+	if sb == null:
+		return 0.0
+	return maxf(0.0, sb.max_value - sb.page)
+
+
+func _update_scroll_arrows() -> void:
+	if _scroll_up_btn == null or _scroll_down_btn == null:
+		return
+	var sb: VScrollBar = hero_scroll.get_v_scroll_bar()
+	var overflow: bool = sb != null and sb.max_value > sb.page
+	_scroll_up_btn.visible = overflow
+	_scroll_down_btn.visible = overflow
+	if not overflow:
+		return
+	var pos: float = float(hero_scroll.scroll_vertical)
+	var maxs: float = _max_scroll()
+	_set_arrow_enabled(_scroll_up_btn, pos > 1.0)
+	_set_arrow_enabled(_scroll_down_btn, pos < maxs - 1.0)
+
+
+func _set_arrow_enabled(b: Button, enabled: bool) -> void:
+	b.disabled = not enabled
+	b.modulate = Color(1, 1, 1, 1.0) if enabled else Color(1, 1, 1, 0.35)
+
+
+func _scroll_selected_into_view() -> void:
+	var hid: String = LoadoutState.selected_hero_id
+	if not _hero_cards.has(hid):
+		return
+	var btn: Control = _hero_cards[hid]
+	if btn != null and is_instance_valid(btn):
+		hero_scroll.ensure_control_visible(btn)
+	_update_scroll_arrows()
 
 
 # --- Sidebar page nav (Phase 51) ------------------------------------------

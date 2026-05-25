@@ -177,35 +177,9 @@ func _ready() -> void:
 	EventBus.item_unequipped.connect(_on_item_unequipped)
 	EventBus.inventory_changed.connect(_on_inventory_changed_simple)
 	# Refresh when the active hero changes (e.g. HeroesHub roster swap).
-	# Rebuild slots first — the new hero may expose a different slot set
-	# (Dragon = 3 slots vs humanoid 6) — then refresh stats + paperdoll.
-	# Reset _first_refresh BEFORE ensure_starter_gear: that call can emit
-	# inventory_changed → _on_inventory_changed_simple → _refresh, which
-	# would otherwise compare the new hero's stats against the previous
-	# hero's _last_stats_dict and fire a phantom "you equipped X" toast.
-	# Patches D + F — also reset:
-	#   - sticky details panel (otherwise shows hero-A's item while hero B
-	#     is active, especially in sell mode where _refresh skips the reset)
-	#   - sell-mode + pending sell uid (avoid persisting destructive mode
-	#     across heroes silently)
-	EventBus.hero_selected.connect(func(new_id):
-		_first_refresh = true
-		_last_stats_dict.clear()
-		details_label.text = _DEFAULT_DETAILS_HINT
-		# Phase 52 — clear any selection / sell-arm carrying over from the
-		# previous hero (their item is invisible on the new paperdoll, so the
-		# action row would dangle on a stale uid).
-		_selected_uid = ""
-		_sell_armed_uid = ""
-		_sell_all_armed = false
-		# Phase 54 — also hide the details overlay if it's open.
-		if details_overlay != null:
-			details_overlay.visible = false
-		if new_id != "":
-			InventoryManager.ensure_starter_gear(new_id)
-		_build_slots()
-		_refresh()
-	)
+	# Promoted from an anonymous lambda to a named method so _exit_tree can
+	# disconnect it cleanly per Preventive Bug Rule #3.
+	EventBus.hero_selected.connect(_on_hero_selected)
 	# Phase 52 — selected-item action row + batch sell + meta-gold live update.
 	equip_button.pressed.connect(_on_equip_pressed)
 	lock_button.pressed.connect(_on_lock_pressed)
@@ -242,6 +216,52 @@ const _DEFAULT_DETAILS_HINT: String = "Tap an item to inspect."
 
 func _on_inventory_changed(_hero_id, _slot, _instance) -> void:
 	_refresh()
+
+
+# Rebuild slots first — the new hero may expose a different slot set
+# (Dragon = 3 slots vs humanoid 6) — then refresh stats + paperdoll.
+# Reset _first_refresh BEFORE ensure_starter_gear: that call can emit
+# inventory_changed → _on_inventory_changed_simple → _refresh, which
+# would otherwise compare the new hero's stats against the previous
+# hero's _last_stats_dict and fire a phantom "you equipped X" toast.
+# Patches D + F — also reset:
+#   - sticky details panel (otherwise shows hero-A's item while hero B
+#     is active, especially in sell mode where _refresh skips the reset)
+#   - sell-mode + pending sell uid (avoid persisting destructive mode
+#     across heroes silently)
+func _on_hero_selected(new_id: String) -> void:
+	_first_refresh = true
+	_last_stats_dict.clear()
+	details_label.text = _DEFAULT_DETAILS_HINT
+	# Phase 52 — clear any selection / sell-arm carrying over from the
+	# previous hero (their item is invisible on the new paperdoll, so the
+	# action row would dangle on a stale uid).
+	_selected_uid = ""
+	_sell_armed_uid = ""
+	_sell_all_armed = false
+	# Phase 54 — also hide the details overlay if it's open.
+	if details_overlay != null:
+		details_overlay.visible = false
+	if new_id != "":
+		InventoryManager.ensure_starter_gear(new_id)
+	_build_slots()
+	_refresh()
+
+
+func _exit_tree() -> void:
+	# Preventive Bug Rule #3 — disconnect every EventBus signal connected in
+	# _ready. Godot 4 auto-cleans on free, but the project convention is to be
+	# explicit so embed/teardown order is never ambiguous.
+	if EventBus.item_equipped.is_connected(_on_item_equipped):
+		EventBus.item_equipped.disconnect(_on_item_equipped)
+	if EventBus.item_unequipped.is_connected(_on_item_unequipped):
+		EventBus.item_unequipped.disconnect(_on_item_unequipped)
+	if EventBus.inventory_changed.is_connected(_on_inventory_changed_simple):
+		EventBus.inventory_changed.disconnect(_on_inventory_changed_simple)
+	if EventBus.hero_selected.is_connected(_on_hero_selected):
+		EventBus.hero_selected.disconnect(_on_hero_selected)
+	if EventBus.meta_gold_changed.is_connected(_on_meta_gold_changed):
+		EventBus.meta_gold_changed.disconnect(_on_meta_gold_changed)
 
 
 # Phase 49 — separate handlers for equip vs unequip so we can capture the

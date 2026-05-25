@@ -39,6 +39,7 @@ func _ready() -> void:
 	pause_button.pressed.connect(func(): EventBus.pause_requested.emit())
 	speed_button.pressed.connect(_on_speed_pressed)
 	_refresh_speed_label()
+	_refresh_pause_label(false)
 	_on_gold_changed(RunState.gold)
 	_on_lives_changed(RunState.lives)
 	_refresh_wave()
@@ -47,6 +48,9 @@ func _ready() -> void:
 	EventBus.wave_started.connect(_on_wave_started)
 	EventBus.all_waves_completed.connect(_on_all_waves_completed)
 	EventBus.purchase_denied.connect(_on_purchase_denied)
+	# Pause button glyph flips between ⏸ ("| |") while running and ▶ when
+	# paused, so the same button always reads as "what pressing me will do".
+	EventBus.pause_state_changed.connect(_refresh_pause_label)
 	# Rolling 5s incoming-HP window updated on each spawn; pruned every frame
 	# in _process. Cleared on wave_started so each wave's window is fresh.
 	EventBus.enemy_spawned.connect(_on_enemy_spawned_for_rate)
@@ -112,6 +116,10 @@ func _on_speed_pressed() -> void:
 func _refresh_speed_label() -> void:
 	var spd: float = SPEED_OPTIONS[_speed_idx]
 	speed_button.text = "%dx" % int(spd)
+
+
+func _refresh_pause_label(paused: bool) -> void:
+	pause_button.text = "▶" if paused else "| |"
 
 
 func _refresh_wave() -> void:

@@ -95,7 +95,29 @@ func _ready() -> void:
 	EventBus.enemy_spawned.connect(_on_enemy_spawned_for_encyclopedia)
 	EventBus.tower_built.connect(_on_tower_built_for_encyclopedia)
 	EventBus.hero_spawned.connect(_on_hero_spawned_for_encyclopedia)
+	# Boot-time upgrade cache prime. Previously the cache was only built when
+	# UpgradeTree.tscn opened; a player booting straight into a level got
+	# default multipliers (1.0) and zero bonuses, silently disabling every
+	# purchased meta-upgrade until they visited the menu once. We instantiate
+	# the scene long enough to read its @export upgrades catalog, then free
+	# it. Cheap (~1 ms) and runs once per boot.
+	_prime_upgrade_cache_from_scene()
 	print("[MetaProgression] loaded — %d levels tracked" % level_stars.size())
+
+
+func _prime_upgrade_cache_from_scene() -> void:
+	var scn: PackedScene = load("res://ui/UpgradeTree.tscn")
+	if scn == null:
+		push_warning("[MetaProgression] UpgradeTree.tscn missing — meta-upgrades won't apply until the menu opens")
+		return
+	var inst: Node = scn.instantiate()
+	if inst == null:
+		return
+	var upgrades_list: Array = []
+	if "upgrades" in inst:
+		upgrades_list = inst.upgrades
+	rebuild_upgrade_cache(upgrades_list)
+	inst.free()
 
 
 # Bundles SaveManager.save_game() so every mutator on this autoload persists
@@ -627,6 +649,10 @@ func add_hero_xp(hero_id: String, amount: int) -> int:
 	var xp: int = int(entry.get("xp", 0))
 	var scaled: int = int(ceil(float(amount) * get_upgrade_multiplier(MOD_HERO_XP)))
 	xp += scaled
+	
+	# Commit the updated XP value first before emitting
+	entry["xp"] = xp
+	
 	# Tally per-run XP for the GameOverScreen recap (actual XP banked, post
 	# MOD_HERO_XP — what the player's hero progress dict received).
 	if has_node("/root/RunState"):
@@ -645,6 +671,12 @@ func add_hero_xp(hero_id: String, amount: int) -> int:
 			break
 		xp -= needed
 		lvl += 1
+		
+		# Commit the level and current XP before emitting the level-up signal
+		entry["level"] = lvl
+		entry["xp"] = xp
+		entry["last_synced_level"] = lvl
+		
 		EventBus.hero_leveled_up.emit(lvl)
 		# Phase 1/2 — per-level hero points from the hero's level curve
 		# (default ⇒ +1, historical). Granted via the silent variant so we
@@ -656,11 +688,9 @@ func add_hero_xp(hero_id: String, amount: int) -> int:
 		# the skill-tree UI visibly in sync (the player sees "★ Slot Unlocked"
 		# rows transition from locked to purchased as they hit thresholds).
 		_auto_purchase_slot_unlocks_at_level(hero_id, lvl)
-		# Phase 3R-followup — bump the catch-up cursor inline so a save loaded
-		# fresh after this run won't re-grant points via sync_hero_progression.
-		entry["last_synced_level"] = lvl
 	if lvl >= hero_data.max_level:
 		xp = 0
+		entry["xp"] = xp
 	entry["level"] = lvl
 	entry["xp"] = xp
 	# Persist after the level-up loop so multi-level catch-ups save once,

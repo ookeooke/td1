@@ -33,6 +33,14 @@ func _ready() -> void:
 func _on_game_over() -> void:
 	if _shown:
 		return
+	# Fade-out race guard: PauseMenu's Restart/Quit unpauses the tree and then
+	# starts a 0.3 s SceneManager fade. During that fade, enemies still walk;
+	# if the last life leaks, this handler would pause the tree at L199 and
+	# the WorldMap we're transitioning to would inherit that paused state
+	# (soft-lock). Suppress the game-over screen while a scene change is in
+	# flight — the player already chose to leave.
+	if SceneManager._transitioning:
+		return
 	if RunState.current_mode == "endless":
 		var score: int = RunState.compute_endless_score()
 		var is_best: bool = score > MetaProgression.endless_best_score
@@ -74,6 +82,11 @@ func _on_all_waves_completed() -> void:
 	])
 	if _shown:
 		print("[GameOverScreen] bail — _shown already true")
+		return
+	# Symmetric with _on_game_over: suppress the victory screen if the player
+	# initiated a scene change (Restart/Quit) during the same frame the last
+	# wave finished. Otherwise the tree-pause in _show would carry across.
+	if SceneManager._transitioning:
 		return
 	if RunState.lives <= 0:
 		print("[GameOverScreen] bail — lives <= 0 (defeat path)")

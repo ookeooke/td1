@@ -3,7 +3,7 @@ class_name UnitVisualDrawer
 
 # Static helper that draws a unit body + accent from UnitVisualData.
 # Callers use: UnitVisualDrawer.draw_unit(self, visual, offset)
-# Does NOT draw health bars, status rings, or selection indicators —
+# Does NOT draw health bars or selection indicators —
 # those remain the responsibility of each unit script.
 
 
@@ -165,6 +165,91 @@ static func draw_status_ring(ci: CanvasItem, radius: float, color: Color, dashes
 	for i in d:
 		var start: float = rotation_t + float(i) * slot
 		ci.draw_arc(Vector2.ZERO, radius, start, start + span, 6, color, width)
+
+
+# Persistent blocker status rings. Drawn by BaseHero/BaseSoldier at the feet,
+# before the body, so the condition reads without covering the unit silhouette.
+static func draw_blocker_status_rings(ci: CanvasItem, v: UnitVisualData,
+		effect_ids: Array, t: float, zoom_scale: float = 1.0) -> void:
+	if v == null or effect_ids.is_empty():
+		return
+	var ids: Array = effect_ids.duplicate()
+	ids.sort()
+	var body_r: float = v.radius if v.shape == UnitVisualData.Shape.CIRCLE else maxf(v.body_size.x, v.body_size.y) * 0.5
+	var zs: float = clampf(zoom_scale, 0.65, 1.8)
+	var base_r: float = maxf(14.0, body_r * 0.82)
+	var idx: int = 0
+	for id in ids:
+		var sid: String = String(id)
+		var ring_r: float = base_r + float(idx) * 4.0 * zs
+		match sid:
+			"burn":
+				_draw_burn_status_ring(ci, ring_r, t, zs)
+			"poison":
+				_draw_poison_status_ring(ci, ring_r, t, zs)
+			"slow":
+				_draw_frost_status_ring(ci, ring_r, t, zs)
+			"stun":
+				_draw_stun_status_ring(ci, ring_r, t, zs)
+			_:
+				var c := Color(1.0, 1.0, 1.0, 0.38)
+				draw_status_ring(ci, ring_r, c, 10, t * 1.2, 1.4 * zs)
+		idx += 1
+
+
+static func _draw_burn_status_ring(ci: CanvasItem, radius: float, t: float, zs: float) -> void:
+	var pulse: float = 0.5 + 0.5 * sin(t * 7.0)
+	var glow := Color(1.0, 0.28, 0.06, 0.16 + pulse * 0.08)
+	ci.draw_circle(Vector2.ZERO, radius + 3.0 * zs, glow)
+	var arc_col := Color(1.0, 0.48, 0.10, 0.72)
+	draw_status_ring(ci, radius, arc_col, 11, t * 2.7, 2.1 * zs)
+	for i in 8:
+		var a: float = t * 4.0 + float(i) * TAU / 8.0
+		var lift: float = 1.5 * sin(t * 8.0 + float(i))
+		var p: Vector2 = Vector2(cos(a), sin(a) * 0.42) * (radius + 2.0 * zs)
+		var ember := Color(1.0, 0.78, 0.28, 0.78)
+		ci.draw_circle(p + Vector2(0.0, -lift), (1.3 + pulse * 0.6) * zs, ember)
+
+
+static func _draw_poison_status_ring(ci: CanvasItem, radius: float, t: float, zs: float) -> void:
+	var pulse: float = 0.5 + 0.5 * sin(t * 4.3)
+	var pool := Color(0.20, 0.85, 0.28, 0.13 + pulse * 0.06)
+	ci.draw_circle(Vector2.ZERO, radius + 2.0 * zs, pool)
+	var arc_col := Color(0.38, 1.0, 0.30, 0.62)
+	draw_status_ring(ci, radius, arc_col, 9, -t * 1.8, 1.9 * zs)
+	for i in 6:
+		var a: float = -t * 2.2 + float(i) * TAU / 6.0
+		var p: Vector2 = Vector2(cos(a), sin(a) * 0.46) * (radius - 1.0 * zs)
+		var bubble_alpha: float = 0.42 + 0.22 * sin(t * 5.0 + float(i) * 1.7)
+		ci.draw_arc(p, (2.0 + float(i % 2)) * zs, 0.0, TAU, 8, Color(0.70, 1.0, 0.55, bubble_alpha), 1.1 * zs)
+
+
+static func _draw_frost_status_ring(ci: CanvasItem, radius: float, t: float, zs: float) -> void:
+	var chill := Color(0.40, 0.86, 1.0, 0.16)
+	ci.draw_circle(Vector2.ZERO, radius + 2.5 * zs, chill)
+	var arc_col := Color(0.62, 0.92, 1.0, 0.70)
+	draw_status_ring(ci, radius, arc_col, 12, t * 1.25, 1.8 * zs)
+	for i in 6:
+		var a: float = t * 1.1 + float(i) * TAU / 6.0
+		var dir: Vector2 = Vector2(cos(a), sin(a) * 0.50).normalized()
+		var center: Vector2 = Vector2(cos(a), sin(a) * 0.50) * radius
+		var side: Vector2 = Vector2(-dir.y, dir.x)
+		var shard := Color(0.82, 0.98, 1.0, 0.76)
+		ci.draw_line(center - dir * 3.0 * zs, center + dir * 4.0 * zs, shard, 1.4 * zs, false)
+		ci.draw_line(center, center + side * 2.2 * zs, shard, 1.0 * zs, false)
+
+
+static func _draw_stun_status_ring(ci: CanvasItem, radius: float, t: float, zs: float) -> void:
+	var pulse: float = 0.55 + 0.45 * sin(t * 10.0)
+	var halo := Color(1.0, 0.90, 0.20, 0.12 + pulse * 0.10)
+	ci.draw_circle(Vector2.ZERO, radius + 4.0 * zs, halo)
+	draw_status_ring(ci, radius, Color(1.0, 0.88, 0.18, 0.82), 8, -t * 3.8, 2.0 * zs)
+	for i in 4:
+		var a: float = -t * 5.0 + float(i) * TAU / 4.0
+		var p0: Vector2 = Vector2(cos(a), sin(a) * 0.45) * (radius - 2.0 * zs)
+		var p1: Vector2 = Vector2(cos(a + 0.18), sin(a + 0.18) * 0.45) * (radius + 5.0 * zs)
+		var mid: Vector2 = (p0 + p1) * 0.5 + Vector2(0.0, -3.0 * zs)
+		ci.draw_polyline(PackedVector2Array([p0, mid, p1]), Color(1.0, 0.96, 0.35, 0.88), 1.4 * zs, false)
 
 
 # Death-mark skull glyph drawn above the cursed enemy's head. Position is
@@ -621,20 +706,10 @@ static func _draw_mage_hit_flash(ci: CanvasItem, v: UnitVisualData, col: Color) 
 
 static func _draw_dragon_hit_flash(ci: CanvasItem, v: UnitVisualData, col: Color) -> void:
 	var r: float = _dragon_radius(v)
-	var wing_top: PackedVector2Array = PackedVector2Array([
-		Vector2(-r * 0.36, -r * 0.22),
-		Vector2(-r * 1.42, -r * 1.50),
-		Vector2(-r * 0.18, -r * 2.18),
-		Vector2(r * 0.74, -r * 0.42),
-	])
-	var wing_bot: PackedVector2Array = PackedVector2Array([
-		Vector2(-r * 0.28, r * 0.22),
-		Vector2(-r * 1.24, r * 1.36),
-		Vector2(-r * 0.08, r * 1.84),
-		Vector2(r * 0.62, r * 0.36),
-	])
-	ci.draw_colored_polygon(wing_top, col)
-	ci.draw_colored_polygon(wing_bot, col)
+	# S-J: flash the mass nearest the damage source only — body, tail, head.
+	# The wings (largest area, furthest from impact) are excluded so a
+	# multi-blocked dragon taking frequent counter-hits doesn't strobe its
+	# whole silhouette white at mobile scale.
 	ci.draw_colored_polygon(PackedVector2Array([
 		Vector2(-r * 1.72, r * 0.02),
 		Vector2(-r * 0.48, -r * 0.28),
@@ -654,23 +729,30 @@ static func _draw_dragon_hit_flash(ci: CanvasItem, v: UnitVisualData, col: Color
 static func _draw_dragon_premium(ci: CanvasItem, v: UnitVisualData, walk_t: float, walk_phase: float, ctx: Dictionary, body_col: Color) -> void:
 	var r: float = _dragon_radius(v)
 	var t: float = walk_t if walk_t >= 0.0 else float(Time.get_ticks_msec()) * 0.001
-	var theta: float = t * maxf(2.0, v.walk_bob_speed) + walk_phase
-	var wing_flap: float = sin(theta * 1.65) * r * 0.24
-	var tail_sway: float = sin(theta * 0.82 + 0.6) * r * 0.10
+	# Decoupled clocks (S-D): the wing rides the walk-bob rate; the tail
+	# rides an ABSOLUTE rate that is not a wing harmonic so the two never
+	# visibly phase-lock into a metronome. Wing uses an asymmetric flap
+	# curve (S-E) — fast downstroke, slow recovery.
+	var wing_phase: float = t * (maxf(2.0, v.walk_bob_speed) * 1.65) + walk_phase
+	var tail_phase: float = t * 2.35 + walk_phase * 1.7 + 0.6
+	var wing_flap: float = _flap_curve(wing_phase) * r * 0.24
 	var cast_t: float = clampf(float(ctx.get("cast_t", 0.0)), 0.0, 1.0)
 	var wind_t: float = clampf(float(ctx.get("wind_t", 0.0)), 0.0, 1.0)
 	var face_dir: Vector2 = ctx.get("face", Vector2.RIGHT)
 	var face_x: float = signf(face_dir.x) if face_dir.length_squared() > 0.0001 and absf(face_dir.x) > 0.08 else 1.0
-	var outline_w: float = maxf(2.0, v.outline_width * 0.58)
+	# Zoom-scale (S-I): strokes that should stay constant on screen multiply
+	# by 1/camera.zoom (threaded as ctx.zoom_scale from base_hero), clamped
+	# so they neither vanish at 2x nor bloat unboundedly at 0.5x.
+	var outline_w: float = maxf(2.0, v.outline_width * 0.58) * clampf(float(ctx.get("zoom_scale", 1.0)), 0.5, 2.0)
 	var outline: Color = v.outline_color
 	var belly: Color = v.accent_color.lerp(Color(1.0, 0.92, 0.62, 1.0), 0.28)
 	belly.a = 0.92
-	var membrane: Color = Color(0.92, 0.20, 0.08, 0.82)
+	var membrane: Color = body_col.darkened(0.45)
+	membrane.a = 1.0
 	var bone_col: Color = body_col.lightened(0.18)
 	var glow: Color = v.weapon_glow_color if v.weapon_glow_color.a > 0.0 else v.accent_color
 
-	_draw_dragon_tail(ci, r, face_x, tail_sway, body_col, outline, outline_w)
-	_draw_dragon_wings(ci, r, face_x, wing_flap, membrane, bone_col, outline, outline_w)
+	_draw_dragon_tail(ci, r, face_x, tail_phase, body_col, outline, outline_w)
 
 	var body_pts: PackedVector2Array = _ellipse_points(Vector2(-face_x * r * 0.08, 0.0), r * 0.98, r * 0.46, 18)
 	ci.draw_colored_polygon(body_pts, body_col)
@@ -687,25 +769,34 @@ static func _draw_dragon_premium(ci: CanvasItem, v: UnitVisualData, walk_t: floa
 	belly_line.a = 0.42
 	_draw_closed_polyline(ci, belly_pts, belly_line, maxf(1.2, outline_w * 0.35))
 
-	_draw_dragon_spines(ci, r, face_x, outline, v.highlight_color)
+	_draw_dragon_spines(ci, r, face_x, outline, v.highlight_color, outline_w)
 	_draw_dragon_legs(ci, r, face_x, body_col.darkened(0.08), outline, outline_w)
+	_draw_dragon_wings(ci, r, face_x, wing_flap, membrane, bone_col, outline, outline_w)
 	_draw_dragon_head(ci, r, face_x, body_col, belly, outline, outline_w, glow, cast_t, wind_t)
 
 
-static func _draw_dragon_tail(ci: CanvasItem, r: float, face_x: float, tail_sway: float, body_col: Color, outline: Color, outline_w: float) -> void:
+static func _draw_dragon_tail(ci: CanvasItem, r: float, face_x: float, tail_phase: float, body_col: Color, outline: Color, outline_w: float) -> void:
+	# Travelling wave (S-H): each segment lags the one before it so the tail
+	# whips base→tip instead of swinging as a rigid board. Amplitude falls
+	# off toward the tip (1.0 / 0.8 / 0.7) as before.
+	var amp: float = r * 0.12
+	var s_base: float = sin(tail_phase) * amp
+	var s_mid: float = sin(tail_phase - 0.35) * amp
+	var s_tip: float = sin(tail_phase - 0.7) * amp * 0.8
+	var s_barb: float = sin(tail_phase - 0.9) * amp * 0.7
 	var pts: PackedVector2Array = PackedVector2Array([
 		Vector2(-face_x * r * 0.50, -r * 0.18),
-		Vector2(-face_x * r * 1.48, -r * 0.16 + tail_sway),
-		Vector2(-face_x * r * 2.18, r * 0.06 + tail_sway * 0.8),
-		Vector2(-face_x * r * 1.34, r * 0.22 + tail_sway),
+		Vector2(-face_x * r * 1.48, -r * 0.16 + s_base),
+		Vector2(-face_x * r * 2.18, r * 0.06 + s_tip),
+		Vector2(-face_x * r * 1.34, r * 0.22 + s_mid),
 		Vector2(-face_x * r * 0.42, r * 0.20),
 	])
 	ci.draw_colored_polygon(pts, body_col.darkened(0.06))
 	_draw_closed_polyline(ci, pts, outline, outline_w)
 	var barb: PackedVector2Array = PackedVector2Array([
-		Vector2(-face_x * r * 2.14, r * 0.06 + tail_sway * 0.8),
-		Vector2(-face_x * r * 2.42, -r * 0.18 + tail_sway * 0.7),
-		Vector2(-face_x * r * 2.32, r * 0.28 + tail_sway * 0.7),
+		Vector2(-face_x * r * 2.14, r * 0.06 + s_tip),
+		Vector2(-face_x * r * 2.42, -r * 0.18 + s_barb),
+		Vector2(-face_x * r * 2.32, r * 0.28 + s_barb),
 	])
 	ci.draw_colored_polygon(barb, body_col)
 	_draw_closed_polyline(ci, barb, outline, maxf(1.4, outline_w * 0.55))
@@ -715,51 +806,55 @@ static func _draw_dragon_wings(ci: CanvasItem, r: float, face_x: float, flap: fl
 	for wing_y in [-1.0, 1.0]:
 		var y_sign: float = wing_y
 		var lift: float = flap * -y_sign
-		var root: Vector2 = Vector2(-face_x * r * 0.08, y_sign * r * 0.18)
-		var shoulder: Vector2 = Vector2(face_x * r * 0.28, y_sign * r * 0.08)
-		var knuckle: Vector2 = Vector2(-face_x * r * 0.72, y_sign * (r * 1.08 + lift * 0.38))
-		var tip: Vector2 = Vector2(-face_x * r * 0.20, y_sign * (r * 2.18 + lift))
-		var front_tip: Vector2 = Vector2(face_x * r * 0.88, y_sign * (r * 0.76 + lift * 0.18))
-		var inner_notch: Vector2 = Vector2(face_x * r * 0.38, y_sign * (r * 0.46 + lift * 0.12))
-		var mid_notch: Vector2 = Vector2(-face_x * r * 0.28, y_sign * (r * 1.30 + lift * 0.55))
-		var rear_notch: Vector2 = Vector2(-face_x * r * 0.82, y_sign * (r * 0.76 + lift * 0.22))
+		var root: Vector2 = Vector2(face_x * r * -0.08, y_sign * (r * 0.10))
+		var shoulder: Vector2 = Vector2(face_x * r * 0.34, y_sign * (r * 0.04))
+		var front_tip: Vector2 = Vector2(face_x * r * 0.96, y_sign * (r * 0.70 + lift * 0.18))
+		var tip: Vector2 = Vector2(face_x * r * 0.10, y_sign * (r * 2.30 + lift))
+		var mid_notch: Vector2 = Vector2(face_x * r * -0.34, y_sign * (r * 1.65 + lift * 0.55))
+		var knuckle: Vector2 = Vector2(face_x * r * -0.70, y_sign * (r * 1.10 + lift * 0.38))
+		var rear_notch: Vector2 = Vector2(face_x * r * -0.95, y_sign * (r * 0.70 + lift * 0.22))
 		var wing: PackedVector2Array = PackedVector2Array([
 			root,
-			knuckle,
+			shoulder,
+			front_tip,
 			tip,
 			mid_notch,
-			front_tip,
-			inner_notch,
-			shoulder,
+			knuckle,
+			rear_notch,
 		])
 		var col: Color = membrane if y_sign < 0.0 else membrane.darkened(0.10)
 		ci.draw_colored_polygon(wing, col)
 		_draw_closed_polyline(ci, wing, outline, maxf(2.0, outline_w * 0.55))
+		# Arm bone follows the wing structure (root → knuckle → tip) instead
+		# of a straight root→tip, which sat near-vertical and read as an ugly
+		# seam bisecting the body.
 		ci.draw_line(root, knuckle, bone_col, maxf(2.6, outline_w * 0.52), false)
-		ci.draw_line(knuckle, tip, bone_col, maxf(2.4, outline_w * 0.48), false)
-		ci.draw_line(knuckle, front_tip, bone_col.darkened(0.05), maxf(2.0, outline_w * 0.40), false)
+		ci.draw_line(knuckle, tip, bone_col, maxf(2.2, outline_w * 0.46), false)
 		ci.draw_line(root, shoulder, bone_col.lightened(0.05), maxf(2.8, outline_w * 0.56), false)
+		ci.draw_line(shoulder, front_tip, bone_col.darkened(0.05), maxf(2.0, outline_w * 0.40), false)
 		var crease: Color = outline
 		crease.a = 0.36
+		ci.draw_line(knuckle, tip, crease, maxf(1.2, outline_w * 0.24), false)
 		ci.draw_line(knuckle, mid_notch, crease, maxf(1.2, outline_w * 0.24), false)
-		ci.draw_line(knuckle, rear_notch, crease, maxf(1.2, outline_w * 0.24), false)
 
 
-static func _draw_dragon_spines(ci: CanvasItem, r: float, face_x: float, outline: Color, highlight: Color) -> void:
+static func _draw_dragon_spines(ci: CanvasItem, r: float, face_x: float, outline: Color, highlight: Color, outline_w: float) -> void:
 	var spine_col: Color = highlight if highlight.a > 0.0 else Color(1.0, 0.70, 0.28, 1.0)
 	spine_col.a = maxf(spine_col.a, 0.88)
 	for i in range(5):
 		var k: float = float(i) / 4.0
 		var x: float = lerpf(-face_x * r * 0.52, face_x * r * 0.46, k)
-		var y: float = -r * (0.46 + 0.09 * sin(k * PI))
-		var h: float = r * lerpf(0.16, 0.24, 1.0 - absf(k - 0.5) * 2.0)
+		# S-G: ridge sits higher and spines are taller so they break the
+		# body's top contour at gameplay zoom and survive zoom-out.
+		var y: float = -r * (0.50 + 0.10 * sin(k * PI))
+		var h: float = r * lerpf(0.26, 0.40, 1.0 - absf(k - 0.5) * 2.0)
 		var pts: PackedVector2Array = PackedVector2Array([
 			Vector2(x - face_x * r * 0.06, y + r * 0.05),
 			Vector2(x, y - h),
 			Vector2(x + face_x * r * 0.06, y + r * 0.05),
 		])
 		ci.draw_colored_polygon(pts, spine_col)
-		_draw_closed_polyline(ci, pts, outline, 1.2)
+		_draw_closed_polyline(ci, pts, outline, maxf(1.0, outline_w * 0.3))
 
 
 static func _draw_dragon_legs(ci: CanvasItem, r: float, face_x: float, leg_col: Color, outline: Color, outline_w: float) -> void:
@@ -773,41 +868,54 @@ static func _draw_dragon_legs(ci: CanvasItem, r: float, face_x: float, leg_col: 
 		ci.draw_line(knee, claw, leg_col, maxf(2.4, outline_w * 0.48), false)
 		for c in range(3):
 			var off: float = float(c - 1) * r * 0.06
-			ci.draw_line(claw + Vector2(0.0, off), claw + Vector2(face_x * r * 0.16, off + r * 0.02), Color(1.0, 0.82, 0.52, 1.0), 1.3, false)
+			ci.draw_line(claw + Vector2(0.0, off), claw + Vector2(face_x * r * 0.16, off + r * 0.02), Color(1.0, 0.82, 0.52, 1.0), maxf(1.0, outline_w * 0.3), false)
 
 
 static func _draw_dragon_head(ci: CanvasItem, r: float, face_x: float, head_col: Color, jaw_col: Color, outline: Color, outline_w: float, glow: Color, cast_t: float, wind_t: float) -> void:
 	var neck: PackedVector2Array = PackedVector2Array([
 		Vector2(face_x * r * 0.44, -r * 0.26),
-		Vector2(face_x * r * 1.00, -r * 0.34),
-		Vector2(face_x * r * 1.10, r * 0.10),
+		Vector2(face_x * r * 1.10, -r * 0.34),
+		Vector2(face_x * r * 1.20, r * 0.10),
 		Vector2(face_x * r * 0.42, r * 0.22),
 	])
 	ci.draw_colored_polygon(neck, head_col.darkened(0.04))
 	_draw_closed_polyline(ci, neck, outline, outline_w)
+	# S-F: head shifted forward (+0.18r) and enlarged 1.25x about its centroid
+	# so it clears the body and gives the silhouette a clear horned terminus
+	# opposite the tail (was a small buried nub — tail/head were ambiguous).
 	var head: PackedVector2Array = PackedVector2Array([
-		Vector2(face_x * r * 0.92, -r * 0.46),
-		Vector2(face_x * r * 1.38, -r * 0.40),
-		Vector2(face_x * r * 1.66, -r * 0.18),
-		Vector2(face_x * r * 1.54, r * 0.16),
-		Vector2(face_x * r * 1.16, r * 0.32),
-		Vector2(face_x * r * 0.86, r * 0.10),
+		Vector2(face_x * r * 1.06, -r * 0.555),
+		Vector2(face_x * r * 1.64, -r * 0.48),
+		Vector2(face_x * r * 1.99, -r * 0.205),
+		Vector2(face_x * r * 1.84, r * 0.22),
+		Vector2(face_x * r * 1.36, r * 0.42),
+		Vector2(face_x * r * 0.99, r * 0.145),
 	])
 	ci.draw_colored_polygon(head, head_col)
 	_draw_closed_polyline(ci, head, outline, outline_w)
 	var jaw: PackedVector2Array = PackedVector2Array([
-		Vector2(face_x * r * 1.20, r * 0.02),
-		Vector2(face_x * r * 1.58, -r * 0.06),
-		Vector2(face_x * r * 1.48, r * 0.18),
-		Vector2(face_x * r * 1.18, r * 0.22),
+		Vector2(face_x * r * 1.38, r * 0.02),
+		Vector2(face_x * r * 1.76, -r * 0.06),
+		Vector2(face_x * r * 1.66, r * 0.18),
+		Vector2(face_x * r * 1.36, r * 0.22),
 	])
 	ci.draw_colored_polygon(jaw, jaw_col)
 	_draw_closed_polyline(ci, jaw, outline, maxf(1.2, outline_w * 0.42))
 
-	for side_y in [-1.0, 1.0]:
-		var horn_base: Vector2 = Vector2(face_x * r * 1.08, -r * 0.30 + side_y * r * 0.10)
-		var horn_tip: Vector2 = horn_base + Vector2(-face_x * r * 0.28, -r * 0.34 + side_y * r * 0.03)
-		ci.draw_line(horn_base, horn_tip, Color(1.0, 0.82, 0.52, 1.0), maxf(2.0, outline_w * 0.38), false)
+	# Solid back-swept horns (base r*0.10, length r*0.42) so the head reads
+	# at zoom-out instead of vanishing as 2px hairlines.
+	var horn_col: Color = Color(1.0, 0.82, 0.52, 1.0)
+	for i in [0.0, 1.0]:
+		var anchor: Vector2 = Vector2(face_x * r * (1.18 + 0.20 * i), -r * (0.40 + 0.02 * i))
+		var half: Vector2 = Vector2(face_x * r * 0.05, 0.0)
+		var back: Vector2 = Vector2(-face_x * r * 0.42, -r * 0.30)
+		var horn: PackedVector2Array = PackedVector2Array([
+			anchor - half,
+			anchor + half,
+			anchor + back,
+		])
+		ci.draw_colored_polygon(horn, horn_col)
+		_draw_closed_polyline(ci, horn, outline, 1.4)
 
 	var eye: Vector2 = Vector2(face_x * r * 1.34, -r * 0.18)
 	var eye_col: Color = glow
@@ -816,13 +924,27 @@ static func _draw_dragon_head(ci: CanvasItem, r: float, face_x: float, head_col:
 	eye_halo.a = 0.28
 	ci.draw_circle(eye, r * 0.13, eye_halo)
 	ci.draw_circle(eye, r * 0.045, eye_col)
-	var charge: float = maxf(cast_t, wind_t * 0.55)
+	# V-E (visual): stronger, pulsing snout charge so the breath telegraph
+	# (V-B pre-fire windup + post-fire release) is unmistakable at gameplay
+	# zoom. Dragon-only — does not touch shared cast timing.
+	var charge: float = maxf(cast_t, wind_t * 0.85)
 	if charge > 0.0:
 		var mouth: Vector2 = Vector2(face_x * r * 1.64, -r * 0.04)
+		var pulse: float = 0.78 + 0.22 * sin(float(Time.get_ticks_msec()) * 0.018)
 		var flame: Color = glow
-		flame.a = 0.22 + charge * 0.38
-		ci.draw_circle(mouth, r * (0.18 + charge * 0.16), flame)
-		ci.draw_circle(mouth + Vector2(face_x * r * 0.20, -r * 0.02), r * (0.10 + charge * 0.10), flame.lightened(0.18))
+		flame.a = (0.22 + charge * 0.42) * pulse
+		ci.draw_circle(mouth, r * (0.20 + charge * 0.34), flame)
+		ci.draw_circle(mouth + Vector2(face_x * r * 0.20, -r * 0.02), r * (0.10 + charge * 0.14), flame.lightened(0.18))
+
+
+# S-E: asymmetric flap — fast powered downstroke (~35% of the cycle),
+# slow passive recovery (~65%). Output -1..+1. Replaces a raw sin() so the
+# wing reads as generating lift instead of treading water.
+static func _flap_curve(p: float) -> float:
+	var x: float = fposmod(p, TAU) / TAU
+	if x < 0.35:
+		return -cos(x / 0.35 * PI)
+	return cos((x - 0.35) / 0.65 * PI)
 
 
 static func _dragon_radius(v: UnitVisualData) -> float:
@@ -1132,30 +1254,136 @@ static func _draw_held_weapon(ci: CanvasItem, v: UnitVisualData, shoulder: Vecto
 			# already reads as a fist; nothing to draw.
 			return
 		UnitVisualData.WeaponType.BOW:
-			# Recurve bow held at the hand. Arc body curves forward (convex
-			# face down-range, toward the archer's target); string is a
-			# straight chord on the archer's side. Arc center sits BEHIND
-			# the hand along `-fwd` so the arc bulges forward through the
-			# hand position and ends symmetrically along the `side` axis.
-			var bow_color := Color(0.45, 0.30, 0.18)
-			var string_color := Color(0.92, 0.90, 0.78, 0.85)
-			var arc_radius: float = 26.0
-			var arc_center: Vector2 = hand - fwd * 17.0
-			var center_angle: float = atan2(fwd.y, fwd.x)
-			var half_span: float = PI * 0.45
-			ci.draw_arc(arc_center, arc_radius,
-				center_angle - half_span, center_angle + half_span,
-				14, bow_color, 3.0, false)
-			# String — chord between the two limb tips.
-			var ang_a: float = center_angle - half_span
-			var ang_b: float = center_angle + half_span
-			var tip_a: Vector2 = arc_center + Vector2(cos(ang_a), sin(ang_a)) * arc_radius
-			var tip_b: Vector2 = arc_center + Vector2(cos(ang_b), sin(ang_b)) * arc_radius
-			ci.draw_line(tip_a, tip_b, string_color, 1.5, false)
-			# Nocked arrow — a small forward stub from the hand for the
-			# "ready to fire" silhouette. Drawn only when the hand is roughly
-			# at rest; the swing-arc trail handles the in-flight visual.
-			ci.draw_line(hand - fwd * 3.0, hand + fwd * 12.0, Color(0.55, 0.40, 0.25), 1.8, false)
+			# Recurve bow held at the hand. Built as two polygon-filled limbs
+			# that share a center grip, each ending in a small counter-curve
+			# (the "recurve" — tips bend AWAY from the archer for that classic
+			# fantasy silhouette). String is a chord across both tips.
+			# Geometry: limbs sit on the `side` axis (perpendicular to fwd),
+			# bulging forward (+fwd). Counter-curves at the tips bend back
+			# along -fwd so the silhouette reads as a recurve from any angle.
+			var bow_dark := Color(0.32, 0.20, 0.10)
+			var bow_wood := Color(0.55, 0.36, 0.20)
+			var bow_light := Color(0.75, 0.55, 0.32, 0.85)
+			var string_color := Color(0.95, 0.92, 0.78, 0.90)
+			var grip_wrap := Color(0.18, 0.12, 0.06)
+			# Each limb spans `limb_len` along the side axis; the bow bulges
+			# `belly_depth` forward at mid-limb and recurves back by
+			# `recurve_depth` at the tip. Tuned for the 28-radius archer body.
+			var limb_len: float = 22.0
+			var belly_depth: float = 9.0
+			var recurve_depth: float = 4.5
+			var limb_thickness: float = 3.2
+			# Three control points per limb in (side, fwd) space; mirror for
+			# the second limb. Drawn forward → back to get a clean polygon fan.
+			var sample_count: int = 10
+			# Helper: build one limb's centerline as a quadratic Bezier curve
+			# from the grip outward, then add a small recurve tail.
+			# Returns Array[Vector2] of world-space points.
+			var build_limb: Callable = func(dir_sign: float) -> PackedVector2Array:
+				var pts: PackedVector2Array = PackedVector2Array()
+				# p0 = grip center (the hand), p1 = mid-limb bulge (forward),
+				# p2 = limb tip just before the recurve.
+				var p0: Vector2 = hand
+				var p1: Vector2 = hand + side * (limb_len * 0.50 * dir_sign) + fwd * belly_depth
+				var p2: Vector2 = hand + side * (limb_len * 0.92 * dir_sign) + fwd * (belly_depth * 0.30)
+				# Quadratic Bezier samples.
+				for i in range(sample_count):
+					var t: float = float(i) / float(sample_count - 1)
+					var omt: float = 1.0 - t
+					var p: Vector2 = p0 * (omt * omt) + p1 * (2.0 * omt * t) + p2 * (t * t)
+					pts.append(p)
+				# Recurve tail — bend back toward the archer (-fwd) from p2.
+				var tip: Vector2 = hand + side * (limb_len * dir_sign) - fwd * recurve_depth
+				# Two extra points so the recurve reads as a soft curve, not a kink.
+				pts.append(p2.lerp(tip, 0.55) + fwd * (belly_depth * 0.05))
+				pts.append(tip)
+				return pts
+			var upper_centerline: PackedVector2Array = build_limb.call(-1.0)
+			var lower_centerline: PackedVector2Array = build_limb.call(1.0)
+			# Build a thick polygon for each limb by offsetting the centerline
+			# along its perpendicular. Caps both ends so the limb has a
+			# defined silhouette rather than a tapering line.
+			var build_limb_poly: Callable = func(centerline: PackedVector2Array, thickness: float) -> PackedVector2Array:
+				var n: int = centerline.size()
+				if n < 2:
+					return PackedVector2Array()
+				var left: PackedVector2Array = PackedVector2Array()
+				var right: PackedVector2Array = PackedVector2Array()
+				for i in range(n):
+					var prev_p: Vector2 = centerline[max(0, i - 1)]
+					var next_p: Vector2 = centerline[min(n - 1, i + 1)]
+					var tangent: Vector2 = (next_p - prev_p).normalized()
+					if tangent.length_squared() < 0.001:
+						tangent = (centerline[min(n - 1, i + 1)] - centerline[i]).normalized()
+					var perp: Vector2 = Vector2(-tangent.y, tangent.x)
+					# Taper the limb toward the tip for a more elegant shape.
+					var taper: float = 1.0 - float(i) / float(n - 1) * 0.55
+					var off: Vector2 = perp * (thickness * 0.5 * taper)
+					left.append(centerline[i] + off)
+					right.append(centerline[i] - off)
+				# Stitch into a closed polygon: left edge forward, right edge back.
+				var poly: PackedVector2Array = PackedVector2Array()
+				for p in left:
+					poly.append(p)
+				for i in range(right.size() - 1, -1, -1):
+					poly.append(right[i])
+				return poly
+			var upper_poly: PackedVector2Array = build_limb_poly.call(upper_centerline, limb_thickness)
+			var lower_poly: PackedVector2Array = build_limb_poly.call(lower_centerline, limb_thickness)
+			# Fill each limb (dark wood) + outline.
+			ci.draw_colored_polygon(upper_poly, bow_wood)
+			ci.draw_colored_polygon(lower_poly, bow_wood)
+			ci.draw_polyline(upper_poly, bow_dark, 1.2, true)
+			ci.draw_polyline(lower_poly, bow_dark, 1.2, true)
+			# Highlight strip along the front (target-facing) edge of each limb
+			# for a sheen of polished wood.
+			ci.draw_polyline(upper_centerline, bow_light, 0.9, true)
+			ci.draw_polyline(lower_centerline, bow_light, 0.9, true)
+			# Grip wrap — short dark band centered on the hand, perpendicular
+			# to fwd. Reads as the leather grip the archer holds.
+			ci.draw_line(hand + side * 4.0, hand - side * 4.0, grip_wrap, 5.0, false)
+			ci.draw_circle(hand, 2.6, grip_wrap)
+			# String — chord between the two recurve tips. Slight inward
+			# tension along -fwd at the nocking point creates the classic
+			# "drawn back at the arrow" silhouette.
+			var upper_tip: Vector2 = upper_centerline[upper_centerline.size() - 1]
+			var lower_tip: Vector2 = lower_centerline[lower_centerline.size() - 1]
+			var nock_point: Vector2 = (upper_tip + lower_tip) * 0.5 - fwd * 2.0
+			ci.draw_line(upper_tip, nock_point, string_color, 1.4, false)
+			ci.draw_line(nock_point, lower_tip, string_color, 1.4, false)
+			# Nocked arrow — shaft from the nock point forward past the bow,
+			# with a triangular head at the tip and three fletching flares at
+			# the tail. The full bow geometry shifts each frame with the hand
+			# so the arrow rides naturally with the archer's animation.
+			var arrow_tip: Vector2 = nock_point + fwd * 28.0
+			var arrow_color := Color(0.78, 0.62, 0.40)
+			var arrowhead_color := Color(0.85, 0.85, 0.82)
+			var fletch_color := Color(0.80, 0.30, 0.20, 0.95)
+			# Shaft.
+			ci.draw_line(nock_point, arrow_tip, arrow_color, 1.6, false)
+			# Arrowhead — small triangle past the shaft tip.
+			var head_pts: PackedVector2Array = PackedVector2Array([
+				arrow_tip - side * 2.4,
+				arrow_tip + side * 2.4,
+				arrow_tip + fwd * 5.5,
+			])
+			ci.draw_colored_polygon(head_pts, arrowhead_color)
+			ci.draw_polyline(head_pts, bow_dark, 0.8, true)
+			# Fletching — three small triangles at the tail. Two flank the
+			# shaft (side ±), one points straight back along -fwd so the
+			# silhouette reads as 3D vanes even in 2D.
+			var fl_base: Vector2 = nock_point + fwd * 2.0
+			var fl_back: Vector2 = nock_point - fwd * 1.0
+			var fletch_a: PackedVector2Array = PackedVector2Array([
+				fl_base, fl_back, fl_back + side * 3.0,
+			])
+			var fletch_b: PackedVector2Array = PackedVector2Array([
+				fl_base, fl_back, fl_back - side * 3.0,
+			])
+			ci.draw_colored_polygon(fletch_a, fletch_color)
+			ci.draw_colored_polygon(fletch_b, fletch_color)
+			# Center vane — small dark sliver along -fwd for depth.
+			ci.draw_line(fl_base, fl_back - fwd * 1.5, bow_dark, 1.2, false)
 		_:
 			# SWORD (default) — also serves as a serviceable club for orcs:
 			# rectangular shaft with a pommel and a wider blade body.

@@ -8,7 +8,7 @@ colors = PackedColorArray(1.0, 1.0, 0.76, 0.88, 1.0, 0.40, 0.08, 0.68, 0.45, 0.0
 
 [node name="DragonBreath" type="Node2D"]
 script = ExtResource("1_arrow")
-shape = 5
+shape = 7
 speed = 940.0
 hit_radius = 30.0
 proj_color = Color(1.0, 0.34, 0.08, 1.0)

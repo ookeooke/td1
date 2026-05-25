@@ -55,6 +55,12 @@ func _enter_tree() -> void:
 		input_mgr.map_path = input_mgr.get_path_to(level)
 		var skill_bar: Node = $SkillBar
 		skill_bar.map_path = skill_bar.get_path_to(level)
+		# Tactical-pause enemy inspector — same screen→world transform as
+		# HeroInputManager, separate node so connection order in the EventBus
+		# tap chain (SpotInputManager → EnemyInputManager → HeroInputManager)
+		# keeps tower interactions ahead of inspect, inspect ahead of move-to.
+		var enemy_input: Node = $EnemyInputManager
+		enemy_input.map_path = enemy_input.get_path_to(level)
 	else:
 		push_error("[Main] level %s has no GridManager child" % level.name)
 
@@ -118,6 +124,13 @@ func _process(delta: float) -> void:
 	# Ticks only while unpaused (PROCESS_MODE_INHERIT default means we stop
 	# during tactical pause — matches what the player "feels" as level time).
 	_level_elapsed += delta
+
+
+# Public read for RunStatsPanel (tactical-pause dashboard). Returns accumulated
+# unpaused level time. Stops on victory so the post-win panel mirrors the
+# best-time submission.
+func get_level_elapsed() -> float:
+	return _level_elapsed
 
 
 func _spawn_hero() -> void:

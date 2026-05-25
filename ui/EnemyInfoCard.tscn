@@ -1,0 +1,97 @@
+[gd_scene format=3 uid="uid://b1td1einfo000"]
+
+[ext_resource type="Script" path="res://ui/EnemyInfoCard.gd" id="1_einfo"]
+[ext_resource type="Theme" path="res://ui/theme/game_theme.tres" id="2_theme"]
+
+[node name="EnemyInfoCard" type="CanvasLayer"]
+layer = 10
+follow_viewport_enabled = false
+script = ExtResource("1_einfo")
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+theme = ExtResource("2_theme")
+
+[node name="Panel" type="PanelContainer" parent="Root"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -340.0
+offset_top = 110.0
+offset_right = -20.0
+offset_bottom = 110.0
+grow_horizontal = 0
+
+[node name="Margin" type="MarginContainer" parent="Root/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="VBox" type="VBoxContainer" parent="Root/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HeaderRow" type="HBoxContainer" parent="Root/Panel/Margin/VBox"]
+layout_mode = 2
+
+[node name="NameLabel" type="Label" parent="Root/Panel/Margin/VBox/HeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Enemy"
+theme_override_font_sizes/font_size = 22
+
+[node name="MoreButton" type="Button" parent="Root/Panel/Margin/VBox/HeaderRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 36)
+layout_mode = 2
+text = "More ▾"
+theme_override_font_sizes/font_size = 14
+
+[node name="CloseButton" type="Button" parent="Root/Panel/Margin/VBox/HeaderRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+text = "X"
+theme_override_font_sizes/font_size = 18
+
+[node name="HPLabel" type="Label" parent="Root/Panel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "HP --/--"
+theme_override_font_sizes/font_size = 16
+
+[node name="StatsLabel" type="RichTextLabel" parent="Root/Panel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="EffectsLabel" type="RichTextLabel" parent="Root/Panel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+visible = false
+
+[node name="DescriptionLabel" type="RichTextLabel" parent="Root/Panel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+visible = false

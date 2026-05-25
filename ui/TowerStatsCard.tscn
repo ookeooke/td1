@@ -51,3 +51,21 @@ text = ""
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(0.75, 0.82, 0.95, 0.9)
 theme_override_font_sizes/font_size = 13
+
+[node name="MoreButton" type="Button" parent="Panel/VBox"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 24)
+text = "More ▾"
+theme_override_font_sizes/font_size = 12
+
+[node name="DescriptionLabel" type="RichTextLabel" parent="Panel/VBox"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(260, 0)
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+text = ""
+theme_override_colors/default_color = Color(0.82, 0.86, 0.95, 1)
+theme_override_font_sizes/normal_font_size = 13

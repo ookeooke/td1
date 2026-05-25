@@ -130,6 +130,23 @@ signal inventory_changed()
 signal game_over()
 signal game_won()
 signal pause_requested()
+# Tactical pause — pause has two sub-states (menu-visible vs menu-hidden).
+# `pause_state_changed` fires on every paused⇄running transition so HUD can
+# flip the pause button glyph and inspection panels can auto-close on resume.
+# `pause_menu_visibility_changed` fires when the player hides/re-opens the
+# Restart/Quit card (paused stays true).
+signal pause_state_changed(paused: bool)
+signal pause_menu_visibility_changed(visible: bool)
+# Tactical-pause inspection — fired by EnemyInputManager (tap enemy while
+# paused) and HeroHudPortrait (tap portrait while paused). Listeners open
+# the EnemyInfoCard / HeroStatsPanel respectively.
+signal enemy_inspected(enemy: Node)
+signal hero_inspected(hero_id: String)
+# Tactical-pause modals — fired by PauseMenu card buttons. The modal scenes
+# (HelpOverlay, RunStatsPanel) listen and toggle their own visibility. Decoupled
+# via the bus so PauseMenu doesn't need a NodePath to either modal.
+signal help_overlay_requested()
+signal run_stats_panel_requested()
 signal encyclopedia_entry_unlocked(content_id)
 signal iap_purchase_completed(product_id, unlock_id)
 

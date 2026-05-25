@@ -1,4 +1,4 @@
-﻿extends Node
+extends Node
 
 # Phase 48 — Persistent loot ledger. Pure bookkeeping; stats flow through the
 # hero's modifier stack via AbilityHost.equip_ability (see BaseHero._ready
@@ -111,6 +111,8 @@ func from_save_dict(d: Dictionary) -> void:
 				if entry is Dictionary:
 					shared_inventory.append(_ItemInstanceScript.from_dict(entry))
 	hero_equipment = (d.get("hero_equipment", {}) as Dictionary).duplicate(true)
+	if hero_equipment.has(""):
+		hero_equipment.erase("")
 	starter_gear_granted = (d.get("starter_gear_granted", []) as Array).duplicate()
 	# Phase 49 — first invalidate any placement that's now broken (item's
 	# stored coords assumed an old footprint, or overlap because another base

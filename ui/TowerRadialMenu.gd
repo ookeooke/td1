@@ -563,14 +563,12 @@ func _on_tower_upgraded(tower: Node, _new_level: int) -> void:
 # ── Dismissal ──────────────────────────────────────────────────────────
 
 func _on_backdrop_input(event: InputEvent) -> void:
+	# Touch-only — CLAUDE.md Input Pipeline rule: emulate_touch_from_mouse
+	# makes every PC click fire BOTH MouseButton + ScreenTouch, so handling
+	# both here double-fires _dismiss().
 	if not _actions_enabled:
 		return
-	var is_tap: bool = false
-	if event is InputEventScreenTouch:
-		is_tap = event.pressed
-	elif event is InputEventMouseButton:
-		is_tap = event.pressed and event.button_index == MOUSE_BUTTON_LEFT
-	if is_tap:
+	if event is InputEventScreenTouch and event.pressed:
 		_dismiss()
 
 

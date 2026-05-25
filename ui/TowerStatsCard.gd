@@ -11,6 +11,8 @@ extends Control
 @onready var title_label: Label = %TitleLabel
 @onready var stats_label: RichTextLabel = %StatsLabel
 @onready var meta_label: Label = %MetaLabel
+@onready var more_button: Button = %MoreButton
+@onready var description_label: RichTextLabel = %DescriptionLabel
 
 # AAA-style diff palette: color only the delta so unchanged rows recede and
 # the eye lands on what actually moved. Current value + label + → arrow stay
@@ -24,9 +26,14 @@ var _tower: Node = null
 var _anchor_pos: Vector2 = Vector2.ZERO
 
 
+var _show_description: bool = false
+var _has_description: bool = false
+
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	more_button.pressed.connect(_toggle_description)
 	visible = false
 
 
@@ -37,8 +44,52 @@ func show_for(tower: Node, anchor_pos: Vector2, min_clearance: float) -> void:
 	_tower = tower
 	_anchor_pos = anchor_pos
 	visible = true
+	# Inspect mode is the only flow that surfaces the More toggle; build /
+	# upgrade / sell previews keep the legacy compact layout. Collapse the
+	# description on every new tower so stale state doesn't leak across taps.
+	var desc: String = ""
+	if tower != null and tower.data != null and "encyclopedia_entry" in tower.data:
+		desc = String(tower.data.encyclopedia_entry)
+	_has_description = desc.strip_edges() != ""
+	description_label.text = desc
+	_show_description = false
+	_apply_description_visibility()
 	refresh()
 	await _reposition(min_clearance)
+
+
+func _toggle_description() -> void:
+	_show_description = not _show_description
+	_apply_description_visibility()
+	# Re-fit the card after the description block toggles in/out so the
+	# panel doesn't keep a stale (now-too-tall or too-short) min size.
+	_reposition_quiet()
+
+
+# Inspect-mode-only — preview/sell modes call _set_description_off below
+# explicitly. Build-ring meta_label keeps showing the entry inline as
+# before; the toggle is hidden so the layout stays compact.
+func _apply_description_visibility() -> void:
+	more_button.visible = _has_description
+	description_label.visible = _has_description and _show_description
+	more_button.text = "Less ▴" if _show_description else "More ▾"
+
+
+# Build / upgrade / sell-confirm preview modes call this to keep the toggle
+# row hidden — those flows already inline the description into meta_label.
+func _set_description_off() -> void:
+	_show_description = false
+	_has_description = false
+	more_button.visible = false
+	description_label.visible = false
+
+
+func _reposition_quiet() -> void:
+	# Snapshot of _reposition without the await — used by _toggle_description
+	# where we already have a current min clearance baked into position.y.
+	var panel_size: Vector2 = panel.get_combined_minimum_size()
+	panel.size = panel_size
+	panel.position = -panel_size * 0.5
 
 
 # Build-ring preview mode: show a buildable tower's specs before it exists.
@@ -47,6 +98,7 @@ func show_for_build_preview(data: Resource, anchor_pos: Vector2, min_clearance: 
 	_tower = null
 	_anchor_pos = anchor_pos
 	visible = true
+	_set_description_off()
 	title_label.text = String(data.tower_name)
 	_set_stats_plain(data.get_stats_line())
 	var parts: PackedStringArray = PackedStringArray()
@@ -64,6 +116,7 @@ func show_for_upgrade_preview(current: Node, upgrade: Resource, anchor_pos: Vect
 	_tower = null
 	_anchor_pos = anchor_pos
 	visible = true
+	_set_description_off()
 	var upgrade_name: String = String(upgrade.upgrade_name) if upgrade.upgrade_name != "" else "Upgrade"
 	title_label.text = "Upgrade \u2192 %s" % upgrade_name
 	# Prefer structured per-stat data so we can color gains green / losses red.
@@ -100,6 +153,7 @@ func show_for_sell_confirm(refund: int, anchor_pos: Vector2, min_clearance: floa
 	_tower = null
 	_anchor_pos = anchor_pos
 	visible = true
+	_set_description_off()
 	title_label.text = "Sell tower?"
 	_set_stats_plain("Tap again to confirm")
 	meta_label.text = "Refund: +%dg" % refund

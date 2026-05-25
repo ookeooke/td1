@@ -6054,3 +6054,71 @@ each other.
 - Cross-level heat overview (one strip per level in the Phase 3c
   cross-level panel) — defer until the per-level heat strip proves
   out in real designer use.
+
+---
+
+## 2026-05-25 — Blocker status rings
+
+Added persistent procedural status rings for blockers so enemy archer effects
+are readable on heroes and soldiers during combat. `UnitVisualDrawer` now has a
+shared `draw_blocker_status_rings()` helper with distinct low-cost variants:
+burn ember orbit, poison bubbles, frost shards, and stun zaps. `BaseHero` and
+`BaseSoldier` draw the rings at the feet after the shadow and before the body,
+and queue redraws while effects tick so the rings animate for the full effect
+duration.
+
+Verification: attempted `Godot_v4.6.2-stable_win64_console.exe --headless
+--path . --quit`, but the editor/runtime crashed with signal 11 before script
+verification completed. Static review of the changed call sites was completed;
+in-editor visual smoke is still needed.
+
+---
+
+## 2026-05-25 — Ranged enemy bug review follow-up
+
+Verified the Gemini ranged-enemy fixes in the current tree: DoT reapplication
+now routes through `StatusEffect.refresh()`, ranged target scans are throttled,
+enemy attack range has BalanceSliders coverage, and ranged damage type is an
+inspector enum. One remaining carrier bug was found during review: `BaseEnemy`
+expired timed effects but did not call `tick()`, so burn/poison applied to
+enemies by towers or heroes could preserve their accumulator correctly and still
+deal no damage.
+
+Fixed `BaseEnemy._tick_effects()` to call `tick(self, delta)` when the effect
+supports it, matching `BaseHero` and `BaseSoldier`, and added
+`test_enemy_dot_effect_ticks_damage()` as a regression lock.
+
+---
+
+## 2026-05-26 — Blocker watchdog parity (P1/P2/P3)
+
+Code-review findings against `heroes/base_hero.gd` and
+`soldiers/base_soldier.gd` surfaced three drifts from the
+COMBAT_BLOCKING_DOCTRINE — all real on close reading:
+
+- **P1 (hero, orphaned blocks).** When a ranged hero's pure shot focus left
+  `attack_range`, the `_attack_step` else-branch dropped to IDLE even if
+  `_auto_engage_extras` had already hard-blocked another enemy. `_seek_target`
+  could then reject that block on the leak-acquire margin, leaving the enemy
+  frozen with no fighter. Fixed by promoting the oldest valid
+  `_blocked_enemies` entry to focus and staying in COMBAT.
+- **P2 (soldier, watchdog progress).** Soldier `_sync_claim` watchdog
+  released its timed-out claim but had no blacklist — the next
+  `_scan_aggro_and_maybe_charge` immediately re-picked the same unreachable
+  enemy. Doctrine invariant 4 explicitly requires the watchdog to "make
+  progress, not just reset" (hero already did via `_note_giveup` /
+  `_giveup_until` / `_is_given_up`). Mirrored the hero pattern on the
+  soldier and wired the skip into `_scan_aggro_and_maybe_charge`,
+  `_try_engage`, and the lull-assist fallback.
+- **P3 (soldier, fresh claims inherit stale age).** `_sync_claim` swapped
+  `_claimed_enemy` without resetting `_claim_age`, and `_release_claim`
+  left it intact. A brand-new charge target could inherit a near-expired
+  timer and be dropped before contact. Mirrored hero's reset in both
+  soldier paths.
+
+Verification: full headless GUT suite — 229/229 pass (was 226 + 3 new locks
+in `test_regressions.gd`: `test_hero_shot_loss_promotes_existing_block`,
+`test_soldier_giveup_blacklist_skips_re_acquire`,
+`test_soldier_sync_claim_resets_claim_age`). No `.tres`, scene, autoload,
+or doctrine doc changes — doctrine already lists invariant 4; code is back
+in line with it.

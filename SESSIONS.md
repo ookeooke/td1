@@ -5878,3 +5878,100 @@ test). The line-188 path no longer errors when called on real history.
 **Out of scope:** the four pre-existing warnings (UnitVisualDrawer
 UNUSED_PARAMETER, RunStatsDigest INTEGER_DIVISION ×3) — concurrent or
 benign code I didn't touch.
+
+---
+
+## 2026-05-25 — Phase 3c: Balance Cockpit MVP
+
+Reframes BalanceSliders from a debug panel into a balance cockpit. Driven
+by a live read of the user's 43 L5 runs from `run_stats.json`: the highest-
+value designer signals (win rate, naked-baseline credibility, lane-level
+leak attribution, tower meta-dominance) live one layer above the
+Phase 3 per-wave Diagnostics Table and were completely invisible
+before. User-approved 4-item slice; deferred items (early-call payoff,
+override snapshot inspector, boss outcome row) round it out later.
+
+**Done — all additive, single file pair `balance/debug/BalanceSliders.{gd,tscn}`:**
+
+1. **Trust badge** (global header) — new `ReadoutTrust` label in the
+   tscn, `_refresh_trust_badge()` helper. Three-state colored line:
+   `red`  = 0 naked_baseline runs → "verdicts are directional"
+   `yellow` = 1–4 → "limited baseline data"
+   `green` = ≥5 → "baseline-verified"
+   Format: `Telemetry: 50 runs · 0 naked_baseline · 11 overrides-clean ·
+   last 2026-05-25   ⚠ no Naked Baseline runs — verdicts are directional,
+   not authoritative`.
+
+2. **Cross-level overview panel** + **per-level cohort badge** — new
+   `_add_cross_level_overview()` at the top of `_build_level_section`
+   plus a small badge below each level toggle in `_add_level_subgroup`.
+   Cross-level grid: 7 columns (Level / Runs / Win% / Avg dur / Stamped
+   hardness / Target PPT / Last outcome), row-colored by win bucket
+   (green ≥60%, yellow 40–59%, red <40%, grey if n<5). Per-level
+   badge: `43 runs · 30% W · last ✓ W10 (12 lives, 2026-05-25)`.
+
+3. **Lane breakdown in Diagnostics Leaks column** — extends
+   `_populate_diagnostics_rows` (Phase 3 helper). New
+   `_lane_leaks_for_level()` aggregates `waves[].leaks[].path_id` across
+   the cohort, appended to the existing Leaks cell when `n_runs ≥ 5`:
+   `avg 5.4 leaks · died 19% · tl_plank 9× / bl_plank 1×`. Tells the
+   designer *which lane* needs coverage, not just "this wave is hard."
+
+4. **Tower pick-rate + top-damage badge** — new `_set_tower_meta_badge()`
+   under each tower header in `_add_tower_subgroup`. Format:
+   `Picked 43/43 (100%) · Top dmg: Necromancer (avg 4688/run)` or
+   `Picked 2/43 (5%) ⚠ deprecated — players don't pick this`. Confirms
+   in-UI what the cohort read surfaced about Ice being effectively dead.
+
+New helpers in `BalanceSliders.gd`:
+- `_refresh_trust_badge()` — telemetry credibility one-liner.
+- `_level_cohort_summary(level_id)` — `{n, wins, win_pct, avg_dur_s,
+  last_outcome, last_wave, last_lives, last_ts, hardness_last}`.
+- `_tower_meta_summary()` — `{tower_id -> {picked, total_runs, top_name,
+  top_avg_damage}}`. Walks `loadout.tower_ids` (with per-run dedup) and
+  `damage_by_tower` arrays across the history cache.
+- `_lane_leaks_for_level(level_id)` — `{wave_num -> {path_id -> count}}`.
+- `_add_cross_level_overview(parent)` + `_add_cross_level_row(grid, lvl)`
+  — the 7-column scannable health table.
+- `_set_level_cohort_badge(label, lvl)` — per-level cohort line.
+- `_set_tower_meta_badge(label, tower)` — per-tower meta line.
+
+Helpers kept inline rather than promoted to `RunStatsDigest` until a
+second consumer materializes (e.g. a future BalanceReport tab).
+
+**Verification (Phase 3b lesson applied — drive the toggle, don't just
+instantiate):**
+- Headless boot clean.
+- New scene-check script loads `BalanceSliders.tscn`, presses every
+  level's wave-timeline toggle (6 toggles), waits frames, asserts no
+  SCRIPT ERROR. Exercises all new helpers including
+  `_populate_diagnostics_rows` with the lane breakdown. Result: clean.
+- Full GUT: 225 tests, **224 pass, 1 failure** — the failure is
+  `test_bug_edge_audit.gd:test_add_hero_xp_level_committed_before_signal`,
+  which fails BOTH with and without my changes (verified via
+  `git stash` of my files). Pre-existing concurrent regression in
+  MetaProgression that someone introduced between the unified-chooser
+  commit and now. Zero regressions from Phase 3c itself.
+
+**Cockpit acceptance check (the 5 questions the panel should answer
+without opening any other tool):**
+1. Can I trust this data? → Trust badge ✓
+2. Which levels are players actually clearing? → Cross-level overview ✓
+3. Inside a failing level, which wave kills players? → Diagnostics
+   `died_here` (Phase 3) ✓
+4. Inside a failing wave, which lane is leaking? → Lane breakdown ✓
+5. Which towers do players pick / carry damage? → Tower badges ✓
+
+All five now answerable in one panel. Before this session, only (3)
+was — and only since Phase 3.
+
+**Carry-over flag:** `BalanceSliders.gd` commit bundles a concurrent
+`_ready()` cleanup hunk that removed an earlier "Temporary debug
+screenshot automation" block. That cleanup is not my work; it was
+in-flight from another session and merged here because we touched the
+same file region. Same disclosure pattern as previous BalanceSliders
+commits (Phase 3 e83e66a).
+
+**Deferred for later:** early-call payoff readout, override snapshot
+inspector with per-row clear buttons, boss outcome row in the Diagnostics
+table. None gate the cockpit MVP value.

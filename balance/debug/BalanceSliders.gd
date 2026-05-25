@@ -32,6 +32,7 @@ const BalanceOverrides = preload("res://balance/debug/BalanceOverrides.gd")
 @onready var readout_hardness: Label = %ReadoutHardness
 @onready var readout_gold_dmg: Label = %ReadoutGoldDmg
 @onready var readout_ppt: Label = %ReadoutPpt
+@onready var readout_trust: Label = %ReadoutTrust  # Phase 3c trust badge
 @onready var tower_section: VBoxContainer = %TowerSection
 @onready var level_section: VBoxContainer = %LevelSection
 
@@ -142,30 +143,6 @@ func _ready() -> void:
 	_build_hero_section()
 	_build_level_section()
 	_refresh_readout()
-
-	# Temporary debug screenshot automation
-	if OS.get_cmdline_args().has("--mcp-screenshot"):
-		await get_tree().process_frame
-		await get_tree().process_frame
-		# Find first level group (Forest Path) and second level group (Stone Bridge)
-		# Let's expand Stone Bridge [level_2] so we can see the diagnostics table
-		if level_section.get_child_count() > 2:
-			var group = level_section.get_child(2) # child 0 is heading, child 1 is Forest Path, child 2 is Stone Bridge
-			var hdr = group.get_child(0)
-			hdr.pressed.emit()
-			var body = group.get_child(1)
-			# Find timeline toggle button
-			for child in body.get_children():
-				if child is Button and child.text.contains("Show wave timelines"):
-					child.pressed.emit()
-					break
-		
-		# Take screenshot
-		await get_tree().create_timer(1.0).timeout
-		var image = get_viewport().get_texture().get_image()
-		image.save_png("res://balance_sliders_screenshot.png")
-		print("[AUTO_SCREENSHOT] Saved screenshot to res://balance_sliders_screenshot.png")
-		get_tree().quit()
 
 
 # Programmatically inject a "Bake to .tres" button next to Reset. Lives next
@@ -382,6 +359,175 @@ func _refresh_readout() -> void:
 		readout_ppt.text = "PPT:  target=%d (drift %+.0f%%)   %s (drift %+.0f%%)" % [
 			target_ppt, target_drift, ppt_label, active_drift,
 		]
+	_refresh_trust_badge()
+
+
+# Phase 3c — telegraphs how trustworthy the rest of the panel's data is.
+# A designer who opens this panel needs to know in one glance whether the
+# cohort metrics below are baseline-verified or just directional. Three
+# states keyed off RunStatsDigest.summarize.baseline_runs:
+#   red   = 0 naked_baseline runs ("directional only")
+#   yellow= 1–4 naked_baseline runs ("limited baseline data")
+#   green = ≥5 naked_baseline runs ("baseline-verified")
+# Bonus signal: how many recent runs were override-clean even if not full
+# Naked Baseline — surfaces "you're getting closer" progress.
+func _refresh_trust_badge() -> void:
+	if readout_trust == null:
+		return
+	if _history_cache.is_empty():
+		_history_cache = RunStats.get_history()
+	var history: Array = _history_cache
+	var total: int = history.size()
+	if total == 0:
+		readout_trust.text = "Telemetry:  no runs recorded yet — play a level to populate."
+		readout_trust.modulate = Color(0.55, 0.6, 0.65)
+		return
+	var s: Dictionary = RunStatsDigest.summarize(history)
+	var baseline_n: int = int(s.get("baseline_runs", 0))
+	var clean: int = 0
+	var last_ts: String = ""
+	for r in history:
+		if not bool(r.get("overrides_active", true)):
+			clean += 1
+		var ts: String = String(r.get("timestamp", ""))
+		if ts > last_ts:
+			last_ts = ts
+	var last_short: String = last_ts.substr(0, 10) if last_ts != "" else "—"
+	var verdict: String
+	var color: Color
+	if baseline_n >= 5:
+		verdict = "✓ baseline-verified"
+		color = Color(0.45, 0.95, 0.5)
+	elif baseline_n >= 1:
+		verdict = "⚠ limited baseline data (%d run%s) — verdicts directional" % [
+			baseline_n, "s" if baseline_n != 1 else "",
+		]
+		color = Color(0.95, 0.85, 0.4)
+	else:
+		verdict = "⚠ no Naked Baseline runs — verdicts are directional, not authoritative"
+		color = Color(1.0, 0.55, 0.45)
+	readout_trust.text = "Telemetry:  %d runs · %d naked_baseline · %d overrides-clean · last %s   %s" % [
+		total, baseline_n, clean, last_short, verdict,
+	]
+	readout_trust.modulate = color
+
+
+# ─── Phase 3c — cohort/meta helpers ─────────────────────────────────────
+# These read _history_cache (populated on demand). Cheap inline aggregations;
+# extract to RunStatsDigest only if a second consumer appears.
+
+func _level_cohort_summary(level_id: String) -> Dictionary:
+	if _history_cache.is_empty():
+		_history_cache = RunStats.get_history()
+	var runs: Array = RunStatsDigest.runs_for_level(_history_cache, level_id)
+	var n: int = runs.size()
+	if n == 0:
+		return {"n": 0}
+	var wins: int = 0
+	var dur_sum: float = 0.0
+	var last_outcome: String = ""
+	var last_wave: int = 0
+	var last_lives: int = 0
+	var last_ts: String = ""
+	var hardness_last: float = 0.0
+	for r in runs:
+		if String(r.get("outcome", "")) == "victory":
+			wins += 1
+		dur_sum += float(r.get("duration_s", 0.0))
+		var ts: String = String(r.get("timestamp", ""))
+		if ts > last_ts:
+			last_ts = ts
+			last_outcome = String(r.get("outcome", ""))
+			last_wave = int(r.get("final_wave_reached", 0))
+			last_lives = int(r.get("lives_remaining", 0))
+			hardness_last = float(r.get("level_hardness", 0.0))
+	return {
+		"n": n,
+		"wins": wins,
+		"win_pct": (float(wins) / float(n)) * 100.0,
+		"avg_dur_s": dur_sum / float(n),
+		"last_outcome": last_outcome,
+		"last_wave": last_wave,
+		"last_lives": last_lives,
+		"last_ts": last_ts,
+		"hardness_last": hardness_last,
+	}
+
+
+# Aggregates {tower_id -> {picked, top_name, top_avg_damage}} across runs.
+# pick rate = runs whose loadout.tower_ids contained this id / total runs.
+# top damage = name of the highest-avg-damage tier across runs that DID pick
+# it, plus that average.
+func _tower_meta_summary() -> Dictionary:
+	if _history_cache.is_empty():
+		_history_cache = RunStats.get_history()
+	var total: int = _history_cache.size()
+	var out: Dictionary = {}
+	if total == 0:
+		return out
+	# pick counts
+	for r in _history_cache:
+		var loadout: Dictionary = r.get("loadout", {})
+		var tids: Array = loadout.get("tower_ids", []) if loadout is Dictionary else []
+		var seen: Dictionary = {}  # dedupe within a single run
+		for t in tids:
+			var tid: String = String(t)
+			if tid == "" or seen.has(tid):
+				continue
+			seen[tid] = true
+			if not out.has(tid):
+				out[tid] = {"picked": 0, "tier_damage": {}, "tier_count": {}}
+			out[tid].picked += 1
+	# damage per tier-name
+	for r in _history_cache:
+		var dbt: Array = r.get("damage_by_tower", [])
+		for ent in dbt:
+			var tid: String = String(ent.get("tower_id", ""))
+			var tier_name: String = String(ent.get("name", ""))
+			if tid == "" or not out.has(tid):
+				continue
+			var tm: Dictionary = out[tid]
+			tm.tier_damage[tier_name] = float(tm.tier_damage.get(tier_name, 0.0)) + float(ent.get("damage", 0.0))
+			tm.tier_count[tier_name] = int(tm.tier_count.get(tier_name, 0)) + 1
+	# compute top-tier name + avg
+	for tid in out.keys():
+		var tm: Dictionary = out[tid]
+		var best_name: String = ""
+		var best_avg: float = 0.0
+		for nm in tm.tier_damage.keys():
+			var cnt: int = int(tm.tier_count.get(nm, 0))
+			if cnt <= 0:
+				continue
+			var avg: float = float(tm.tier_damage[nm]) / float(cnt)
+			if avg > best_avg:
+				best_avg = avg
+				best_name = String(nm)
+		tm["top_name"] = best_name
+		tm["top_avg_damage"] = best_avg
+		tm["total_runs"] = total
+	return out
+
+
+# Per-wave lane leak counts across the L5 cohort: {wave_idx -> {path_id -> count}}.
+# Aggregates waves[].leaks[].path_id across all runs for the level.
+func _lane_leaks_for_level(level_id: String) -> Dictionary:
+	if _history_cache.is_empty():
+		_history_cache = RunStats.get_history()
+	var out: Dictionary = {}
+	for r in RunStatsDigest.runs_for_level(_history_cache, level_id):
+		var waves: Array = r.get("waves", [])
+		for w in waves:
+			var wn: int = int(w.get("wave", 0))
+			if wn <= 0:
+				continue
+			var per: Dictionary = out.get(wn, {})
+			for leak in w.get("leaks", []):
+				var pid: String = String(leak.get("path_id", ""))
+				if pid == "":
+					continue
+				per[pid] = int(per.get(pid, 0)) + 1
+			out[wn] = per
+	return out
 
 
 func _on_back() -> void:
@@ -1719,6 +1865,12 @@ func _add_tower_subgroup(tower: TowerData) -> void:
 	hdr.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	hdr.set("theme_override_font_sizes/font_size", 18)
 	hdr.modulate = Color(0.85, 0.95, 1.0)
+	# Phase 3c — meta badge below header: pick-rate + top-damage tier.
+	# Always visible so designers see "is this tower played / carrying?"
+	# before expanding the per-tier sliders.
+	var badge := Label.new()
+	badge.set("theme_override_font_sizes/font_size", 11)
+	_set_tower_meta_badge(badge, tower)
 	var body := VBoxContainer.new()
 	body.set("theme_override_constants/separation", 2)
 	body.visible = false
@@ -1730,8 +1882,50 @@ func _add_tower_subgroup(tower: TowerData) -> void:
 			continue
 		_add_tower_tier_block(body, tower, tier_key)
 	group.add_child(hdr)
+	group.add_child(badge)
 	group.add_child(body)
 	tower_section.add_child(group)
+
+
+# Phase 3c — paints the tower meta badge: pick-rate across all runs +
+# the highest-avg-damage tier name. Flags deprecated towers in red.
+func _set_tower_meta_badge(badge: Label, tower: TowerData) -> void:
+	var meta: Dictionary = _tower_meta_summary()
+	var total: int
+	var entry: Dictionary
+	if meta.has(tower.tower_id):
+		entry = meta[tower.tower_id]
+		total = int(entry.get("total_runs", 0))
+	else:
+		entry = {"picked": 0, "top_name": "", "top_avg_damage": 0.0}
+		# any one entry tells us the total; fall back to history size
+		if _history_cache.is_empty():
+			_history_cache = RunStats.get_history()
+		total = _history_cache.size()
+	if total == 0:
+		badge.text = "    no telemetry yet"
+		badge.modulate = Color(0.55, 0.6, 0.65)
+		return
+	var picked: int = int(entry.get("picked", 0))
+	var pick_pct: float = (float(picked) / float(total)) * 100.0
+	var top_name: String = String(entry.get("top_name", ""))
+	var top_avg: float = float(entry.get("top_avg_damage", 0.0))
+	var color: Color
+	var line: String
+	if pick_pct < 20.0:
+		# Deprecated — players don't pick this.
+		color = Color(1.0, 0.55, 0.45)
+		line = "    Picked %d/%d (%.0f%%) ⚠ deprecated — players don't pick this" % [picked, total, pick_pct]
+	else:
+		color = Color(0.75, 0.85, 0.9)
+		if top_name == "" or top_avg <= 0.0:
+			line = "    Picked %d/%d (%.0f%%)" % [picked, total, pick_pct]
+		else:
+			line = "    Picked %d/%d (%.0f%%) · Top dmg: %s (avg %.0f/run)" % [
+				picked, total, pick_pct, top_name, top_avg,
+			]
+	badge.text = line
+	badge.modulate = color
 
 
 # Returns true when the tower actually authors the given tier — skip absent
@@ -1997,10 +2191,114 @@ func _build_level_section() -> void:
 	heading.set("theme_override_font_sizes/font_size", 22)
 	heading.modulate = Color(1.0, 0.9, 0.5, 1)
 	level_section.add_child(heading)
+	# Phase 3c cross-level overview — one row per registered level so designers
+	# scan L1–L6 health side-by-side before drilling into any single level.
+	_add_cross_level_overview(level_section)
 	for lvl in _levels:
 		if lvl == null or not ("level_id" in lvl) or lvl.level_id == "":
 			continue
 		_add_level_subgroup(lvl)
+
+
+# Phase 3c — scannable L1–L6 health table. Each row: level_id, n_runs,
+# win%, avg duration, last-stamped hardness, target PPT, last outcome.
+# Colored by win% buckets (green/yellow/red/grey). Pure read; reuses the
+# same _history_cache feeding the per-level badges below.
+func _add_cross_level_overview(parent: VBoxContainer) -> void:
+	var panel := PanelContainer.new()
+	parent.add_child(panel)
+	var box := VBoxContainer.new()
+	box.set("theme_override_constants/separation", 2)
+	panel.add_child(box)
+	var hdr := Label.new()
+	hdr.text = "Cross-level health (telemetry — last run per level)"
+	hdr.set("theme_override_font_sizes/font_size", 13)
+	hdr.modulate = Color(0.9, 0.95, 1.0)
+	box.add_child(hdr)
+	var grid := GridContainer.new()
+	grid.columns = 7
+	grid.set("theme_override_constants/h_separation", 12)
+	grid.set("theme_override_constants/v_separation", 2)
+	box.add_child(grid)
+	for col in ["Level", "Runs", "Win%", "Avg dur", "Stamped hard.", "Target PPT", "Last outcome"]:
+		var lh := Label.new()
+		lh.text = col
+		lh.set("theme_override_font_sizes/font_size", 11)
+		lh.modulate = Color(0.7, 0.75, 0.8)
+		grid.add_child(lh)
+	for lvl in _levels:
+		if lvl == null or not ("level_id" in lvl) or lvl.level_id == "":
+			continue
+		_add_cross_level_row(grid, lvl)
+
+
+func _add_cross_level_row(grid: GridContainer, lvl: Resource) -> void:
+	var lid: String = String(lvl.level_id)
+	var sum: Dictionary = _level_cohort_summary(lid)
+	var n: int = int(sum.get("n", 0))
+	# Row-wide colour by win bucket (grey if low data).
+	var row_color: Color
+	if n == 0:
+		row_color = Color(0.55, 0.6, 0.65)  # no data
+	elif n < 5:
+		row_color = Color(0.7, 0.7, 0.75)  # low data
+	else:
+		var wp: float = float(sum.get("win_pct", 0.0))
+		if wp >= 60.0:
+			row_color = Color(0.5, 0.95, 0.55)
+		elif wp >= 40.0:
+			row_color = Color(0.95, 0.85, 0.4)
+		else:
+			row_color = Color(1.0, 0.6, 0.45)
+	# Level
+	var l_lvl := Label.new()
+	l_lvl.text = lid
+	l_lvl.modulate = row_color
+	grid.add_child(l_lvl)
+	# Runs
+	var l_n := Label.new()
+	l_n.text = "%d" % n
+	l_n.modulate = row_color
+	grid.add_child(l_n)
+	# Win%
+	var l_w := Label.new()
+	l_w.text = "—" if n == 0 else "%.0f%%" % float(sum.get("win_pct", 0.0))
+	l_w.modulate = row_color
+	grid.add_child(l_w)
+	# Avg dur
+	var l_d := Label.new()
+	if n == 0:
+		l_d.text = "—"
+	else:
+		var s_dur: float = float(sum.get("avg_dur_s", 0.0))
+		l_d.text = "%dm %ds" % [int(s_dur / 60.0), int(s_dur) % 60]
+	l_d.modulate = row_color
+	grid.add_child(l_d)
+	# Stamped hardness (last)
+	var l_h := Label.new()
+	var hl: float = float(sum.get("hardness_last", 0.0))
+	l_h.text = "—" if hl <= 0.0 else "%d" % int(round(hl))
+	l_h.modulate = row_color
+	grid.add_child(l_h)
+	# Target PPT
+	var l_p := Label.new()
+	var tp: int = int(lvl.target_ppt) if "target_ppt" in lvl else 0
+	l_p.text = "—" if tp <= 0 else "%d" % tp
+	l_p.modulate = row_color
+	grid.add_child(l_p)
+	# Last outcome
+	var l_o := Label.new()
+	if n == 0:
+		l_o.text = "—"
+	else:
+		var oc: String = String(sum.get("last_outcome", ""))
+		var lw: int = int(sum.get("last_wave", 0))
+		var li: int = int(sum.get("last_lives", 0))
+		var ts: String = String(sum.get("last_ts", "")).substr(0, 10)
+		var icon: String = "✓" if oc == "victory" else "✗"
+		l_o.text = "%s W%d (%d lives, %s)" % [icon, lw, li, ts]
+	l_o.modulate = row_color
+	grid.add_child(l_o)
 
 
 func _add_level_subgroup(lvl: Resource) -> void:
@@ -2012,6 +2310,11 @@ func _add_level_subgroup(lvl: Resource) -> void:
 	hdr.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	hdr.set("theme_override_font_sizes/font_size", 18)
 	hdr.modulate = Color(0.85, 0.95, 1.0)
+	# Phase 3c per-level cohort badge — sits BELOW the toggle, always visible
+	# so designers see "is this level winnable?" without expanding the row.
+	var badge := Label.new()
+	badge.set("theme_override_font_sizes/font_size", 11)
+	_set_level_cohort_badge(badge, lvl)
 	var body := VBoxContainer.new()
 	body.set("theme_override_constants/separation", 2)
 	body.visible = false
@@ -2035,8 +2338,39 @@ func _add_level_subgroup(lvl: Resource) -> void:
 	# level_5-only gate was removed once the visual was validated in playtest.
 	_add_wave_timeline_block(body, lvl)
 	group.add_child(hdr)
+	group.add_child(badge)
 	group.add_child(body)
 	level_section.add_child(group)
+
+
+# Phase 3c — paints the cohort badge below each level's toggle header.
+# Compact one-line summary: n_runs · win% · last outcome + date. Color
+# by win% bucket (mirrors cross-level overview row colors).
+func _set_level_cohort_badge(badge: Label, lvl: Resource) -> void:
+	var sum: Dictionary = _level_cohort_summary(String(lvl.level_id))
+	var n: int = int(sum.get("n", 0))
+	if n == 0:
+		badge.text = "    no telemetry yet"
+		badge.modulate = Color(0.55, 0.6, 0.65)
+		return
+	var wp: float = float(sum.get("win_pct", 0.0))
+	var color: Color
+	if n < 5:
+		color = Color(0.7, 0.7, 0.75)
+	elif wp >= 60.0:
+		color = Color(0.5, 0.95, 0.55)
+	elif wp >= 40.0:
+		color = Color(0.95, 0.85, 0.4)
+	else:
+		color = Color(1.0, 0.6, 0.45)
+	var oc: String = String(sum.get("last_outcome", ""))
+	var icon: String = "✓" if oc == "victory" else "✗"
+	var ts: String = String(sum.get("last_ts", "")).substr(0, 10)
+	badge.text = "    %d runs · %.0f%% W · last %s W%d (%d lives, %s)" % [
+		n, wp, icon, int(sum.get("last_wave", 0)),
+		int(sum.get("last_lives", 0)), ts,
+	]
+	badge.modulate = color
 
 
 func _add_wave_timeline_block(parent: VBoxContainer, lvl: Resource) -> void:
@@ -2470,6 +2804,10 @@ func _populate_diagnostics_rows(rows_grid: GridContainer, lvl: Resource,
 	var n_runs: int = int(digest.get("n_runs", 0))
 	var defeat_counts: Dictionary = RunStatsDigest.defeat_wave_counts(
 		history, String(lvl.level_id))
+	# Phase 3c lane breakdown: {wave -> {path_id -> count}} aggregated
+	# across the cohort. Empty dict if no telemetry; the Leaks cell only
+	# adds lane info when n_runs >= 5 to avoid small-sample noise.
+	var lane_leaks: Dictionary = _lane_leaks_for_level(String(lvl.level_id))
 	# Per-wave hardness + max for sparkline scaling.
 	var hardness: Array = []
 	var max_h: float = 0.0
@@ -2571,6 +2909,18 @@ func _populate_diagnostics_rows(rows_grid: GridContainer, lvl: Resource,
 			var died: int = int(defeat_counts.get(i + 1, 0))
 			if died >= 5:
 				leak_str += " · died %d%%" % int(round(100.0 * float(died) / float(n_runs)))
+			# Phase 3c lane breakdown — append "tl_plank 9× / bl_plank 1×"
+			# when leaks actually concentrate on a lane. Sorted desc by count.
+			var per_lane: Dictionary = lane_leaks.get(i + 1, {})
+			if not per_lane.is_empty():
+				var pairs: Array = []
+				for pid in per_lane.keys():
+					pairs.append([String(pid), int(per_lane[pid])])
+				pairs.sort_custom(func(a, b): return int(a[1]) > int(b[1]))
+				var parts: Array = []
+				for pair in pairs:
+					parts.append("%s %d×" % [pair[0], pair[1]])
+				leak_str += " · " + " / ".join(parts)
 			l_leak.text = leak_str
 		l_leak.tooltip_text = "Avg leaks/wave + %% of runs whose lives_zero defeat ended here. " \
 			+ "Both require n_runs ≥ 5 to avoid small-sample noise."

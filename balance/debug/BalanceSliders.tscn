@@ -303,6 +303,13 @@ layout_mode = 2
 text = "PPT:  ?"
 theme_override_font_sizes/font_size = 18
 
+[node name="ReadoutTrust" type="Label" parent="Scroll/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Telemetry: …"
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 2
+
 [node name="TowerSpacer" type="Control" parent="Scroll/Content"]
 custom_minimum_size = Vector2(0, 24)
 layout_mode = 2

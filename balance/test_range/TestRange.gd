@@ -8,14 +8,18 @@
 # via export-preset filter before shipping. See BALANCE.md.
 
 const HERO_TEMPLATE: PackedScene = preload("res://heroes/HeroWarrior.tscn")
-const ENEMY_BASIC: PackedScene = preload("res://enemies/EnemyBasic.tscn")
-const ENEMY_FLYING: PackedScene = preload("res://enemies/EnemyFlying.tscn")
-const ENEMY_ARMORED: PackedScene = preload("res://enemies/EnemyArmored.tscn")
-const ENEMY_SCOUT: PackedScene = preload("res://enemies/EnemyScout.tscn")
-const ENEMY_HEALER: PackedScene = preload("res://enemies/EnemyHealer.tscn")
-const ENEMY_BOSS: PackedScene = preload("res://enemies/bosses/Boss1.tscn")
 
 const STREAM_INTERVAL: float = 0.4
+
+# Dev-panel registry — populated at _ready by scanning res://enemies/ for
+# .tscn files and reading each instance's data.enemy_id. Mirrors the
+# "everything flexible" CORE RULE 22 spirit: a new enemy authored as a
+# .tres + .tscn appears in the Test Range dropdown automatically with zero
+# code edits to this file. Was previously hardcoded (5 enemies + boss),
+# which silently hid every new enemy from the sandbox (Brute, Goblin
+# Archer + the 4 new ranged variants all missed the dropdown).
+const _EnemyClassRegistry := preload("res://enemies/EnemyClassRegistry.gd")
+var _enemy_entries: Array = []   # [{id, name, scene, rank}, ...] in dropdown order
 
 @onready var level: Node2D = $TestRangeMap
 @onready var hero_input: Node = $HeroInputManager
@@ -108,28 +112,58 @@ func _spawn_hero() -> void:
 
 
 func _setup_dev_panel() -> void:
+	_discover_enemy_scenes()
 	enemy_dropdown.clear()
-	enemy_dropdown.add_item("Basic Orc")
-	enemy_dropdown.add_item("Flying Harpy")
-	enemy_dropdown.add_item("Armored Orc")
-	enemy_dropdown.add_item("Goblin Scout")
-	enemy_dropdown.add_item("Healer Shaman")
-	enemy_dropdown.add_item("Boss")
+	for entry in _enemy_entries:
+		enemy_dropdown.add_item(String(entry.name))
 	spawn_one_btn.pressed.connect(_on_spawn_one)
 	spawn_pack_btn.pressed.connect(_on_spawn_pack)
 	reset_stats_btn.pressed.connect(_on_reset_stats)
 	stream_check.toggled.connect(_on_stream_toggled)
 
 
+# Scan res://enemies/ (and res://enemies/bosses/) for .tscn files, peek at
+# each instance's `data.enemy_id` + `data.enemy_name`, and build the
+# dropdown registry sorted by EnemyClassRegistry progression order so basics
+# come first and bosses last. Heavy-ish — one brief instantiate per .tscn —
+# but only runs once per Test Range entry and the dev panel is the only
+# consumer. Drop a new enemy .tscn into res://enemies/ and it shows up
+# automatically on the next Test Range open.
+func _discover_enemy_scenes() -> void:
+	_enemy_entries.clear()
+	for dir_path in ["res://enemies/", "res://enemies/bosses/"]:
+		var d: DirAccess = DirAccess.open(dir_path)
+		if d == null:
+			continue
+		for f in d.get_files():
+			if not f.ends_with(".tscn"):
+				continue
+			var ps: PackedScene = load(dir_path + f)
+			if ps == null:
+				continue
+			var inst: Node = ps.instantiate()
+			var ed: Resource = inst.get("data") if "data" in inst else null
+			var eid: String = String(ed.enemy_id) if ed != null and "enemy_id" in ed else ""
+			var ename: String = String(ed.enemy_name) if ed != null and "enemy_name" in ed and String(ed.enemy_name) != "" else f.get_basename()
+			inst.queue_free()
+			if eid == "":
+				continue
+			var class_key: String = _EnemyClassRegistry.class_key_for_safe(eid)
+			_enemy_entries.append({
+				"id": eid,
+				"name": ename,
+				"scene": ps,
+				"rank": _EnemyClassRegistry.progression_rank(class_key),
+			})
+	# Sort by progression rank (basics first, boss last); ties keep load order.
+	_enemy_entries.sort_custom(func(a, b): return int(a.rank) < int(b.rank))
+
+
 func _selected_enemy_scene() -> PackedScene:
-	match enemy_dropdown.selected:
-		0: return ENEMY_BASIC
-		1: return ENEMY_FLYING
-		2: return ENEMY_ARMORED
-		3: return ENEMY_SCOUT
-		4: return ENEMY_HEALER
-		5: return ENEMY_BOSS
-		_: return ENEMY_BASIC
+	if _enemy_entries.is_empty():
+		return null
+	var idx: int = clampi(enemy_dropdown.selected, 0, _enemy_entries.size() - 1)
+	return _enemy_entries[idx].scene
 
 
 func _spawn_one() -> void:
@@ -137,7 +171,11 @@ func _spawn_one() -> void:
 	if path == null:
 		push_warning("[TestRange] no spawn path")
 		return
-	WaveManager.spawn_enemy(path, "left", _selected_enemy_scene())
+	var scene: PackedScene = _selected_enemy_scene()
+	if scene == null:
+		push_warning("[TestRange] no enemy scene selected")
+		return
+	WaveManager.spawn_enemy(path, "left", scene)
 
 
 func _on_spawn_one() -> void:

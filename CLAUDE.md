@@ -119,6 +119,22 @@ Entry point: `res://ui/MainMenu.tscn`. Design viewport: 1920x1080 (landscape). S
 
 	Adding a new content type (pets, mounts, world-map flags) = one new dict on the appropriate autoload, three helpers (`get_*`, `set_*`, `_default_*_for`), one EventBus signal. Mirrors `LoadoutState.hero_equipped_skills` end-to-end. (See SESSIONS.md "2026-05-01 — GameState split" for the rationale.)
 21. **Painted backgrounds are L5+ only, opt-in via a `MapBackground` Sprite2D child.** When a level scene has a `MapBackground` Sprite2D under its root, BaseLevel auto-suppresses the procedural BG fill, decorations (trees/bushes/flowers), and path strokes — the painting owns those layers. (BG fill must be suppressed because BaseLevel's `_draw()` runs at root z_index=0 and would overdraw any Sprite2D child regardless of the sprite's negative z_index.) Procedural borders stay by default so zoom-out past the painting still looks framed. Adding a `MapBackgroundOverflow` Node sibling also suppresses borders, for paintings that include their own framing past `map_bounds`. Tower spots always render (interactive build cue). **Never retrofit painted backgrounds onto L1–L4** — they stay 100% procedural forever. Reasoning: (a) shipped/balanced levels shouldn't be reskinned without scoped re-verification, (b) the procedural look is the deliberate art direction for early game, (c) keeping the procedural draw branches load-bearing on multiple shipped levels prevents bit-rot. Image lives at `levels/backgrounds/level_<N>_bg.<ext>`; native size 2000×1160 for 1:1 placement against the default `map_bounds`. Set `MapBackground.z_index = -50` so it draws beneath spots.
+22. **Every numeric gameplay knob must be slider-tunable.** When you add a new field to `EnemyData` / `HeroData` / `TowerData` / `TowerUpgradeData` / `SoldierData` / `SkillData` / `LevelNodeData` that affects runtime behavior (damage, range, duration, cooldown, count, multiplier, threshold, etc.), wire it into the [BalanceSliders](balance/debug/BalanceSliders.gd) panel before the feature is "done." This is what lets the designer iterate on numbers in-editor without ever touching a `.tres` or restarting Godot — the core of CORE RULE 18 (BALANCE.md as design intent) and the Naked Baseline workflow.
+
+	**The 4-step pattern** (mirror Goblin Fire Archer's `ranged_burn_dps_mult` for a worked example — `BurnDps` / `BurnDur` rows under "Goblin Fire Archer" in the slider panel):
+
+    1. **Whitelist the override key** in [`BalanceOverrides.gd`](balance/debug/BalanceOverrides.gd). One of `ENEMY_STAT_KEYS` / `TOWER_STAT_KEYS` / `HERO_STAT_KEYS` / `SKILL_STAT_KEYS` / `LEVEL_KEYS_INT` / `LEVEL_KEYS_FLOAT` depending on owner. Without this, `set_*_mult` push_warnings and silently rejects writes.
+	2. **Add a row to the slider DEFS** in [`BalanceSliders.gd`](balance/debug/BalanceSliders.gd) — `_ENEMY_STAT_DEFS` / `_HERO_STAT_DEFS` / tower equivalent. Form `{key, mode, label, prop}` where `mode` ∈ `"mult"` (multiplicative, identity 1.0) or `"add"` (additive, identity 0.0), `prop` is the actual `.tres` field name. Mult mode auto-renders the "—  (no authored value)" placeholder when authored == 0 so non-applicable enemies/heroes stay un-tunable rather than showing a meaningless slider.
+    3. **Add a step formatter** in the matching `_*_step_for` function so the slider granularity matches the field's natural range (HP 1.0/5.0, damage 0.5, attack_speed 0.05, etc.). Default 1.0 is usually too coarse for floats.
+	4. **Apply the mult at the read site** — every place runtime code reads the authored value, multiply (or add) the override before use: `value * BalanceOverrides.get_enemy_mult(enemy_id, "foo_mult")` (or `get_tower_mult` / `get_hero_mult` / etc.). Identity in production (`is_active()` short-circuits to defaults), so this layer is a no-op outside debug. **Without this step the slider visibly moves but has zero effect on the game** — the most common drift, and the one that silently corrupts balance audits because the snapshot records the override as active.
+
+    **Carve-outs (NOT subject to this rule):**
+    - **Structural fields** — scene paths, ability arrays, visual data references, projectile scenes, abilities sub-resources. These select *behavior shape*, not a tunable number.
+    - **Strictly cosmetic fields** — `UnitVisualData` colors / hat / accent, `cape_color`, walk animation params. Tune in the `.tres` directly; no balance impact.
+    - **Stable content IDs** — `enemy_id` / `tower_id` / `hero_id` / `skill_id` (CORE RULE 12). Renames break saves.
+    - **Single-shot bootstrap fields** that only matter at content-author time, never read at runtime past `_ready()`. Rare; verify by grepping every reader before invoking this carve-out.
+
+	**Why this is a load-bearing invariant, not a nice-to-have:** the slider panel is the only mechanism that lets BALANCE.md targets be verified against actual play *without* a code edit + Godot restart per iteration. Every authored field that bypasses it forces the designer back into the .tres-edit-and-restart loop, which is what shipped the original tower balance audit gaps (Artillery / Howitzer / Boss hardness — see BALANCE.md "Known balance issues 2026-05-18"). Slider-tunability is the difference between a balance pass that takes 20 min and one that takes 3 days. Shipped 2026-05-25 after the Goblin Fire Archer's `ranged_burn_dps` / `ranged_burn_duration` initially shipped slider-blind — same drift, smaller scope, same lesson.
 
 ---
 
@@ -133,6 +149,8 @@ These exist because each one is a postmortem of a real bug that shipped. They're
 3. **Embedded hero-scoped screens listen to `EventBus.hero_selected`.** Any Control embedded inside HeroesHub (or any future hub that swaps active hero from a sidebar) that reads `LoadoutState.selected_hero_id` MUST connect `hero_selected → _refresh` in `_ready()` and disconnect in `_exit_tree()`. Reason: standalone screens get embedded later, inheriting a context where the active hero can change underneath them; the cached `_hero_id` at `_ready()` then lies. Reference patterns: [`EquipmentScreen.gd:191`](ui/EquipmentScreen.gd#L191), [`HeroSkillsPage.gd`](ui/HeroSkillsPage.gd) (`_ready` + `_exit_tree`).
 
 4. **Load-bearing invariants must be executable.** If a comment claims something must always be true, prefer an `assert`, guard, test, or `ContentRegistry._validate_ids`-style boot check. Keep comments for rationale (the *why*); don't rely on them to enforce behavior. Reason: a stale "Equipment/Talents already listen to `hero_selected`" comment in HeroesHub.gd hid a real wiring gap for months — both the original author and every subsequent reader trusted the comment over the code.
+
+5. **Path2D nodes must never be invisible (`visible = false`).** In Godot, visibility is hierarchical: if a parent `Path2D` node is hidden in the editor to reduce viewport clutter, all spawned enemies on that lane (instanced as descendants under `PathFollow2D`) inherit the invisible state. This leaves units physically active and collidable but completely hidden visually. Keep all gameplay paths visible.
 
 ---
 
@@ -238,7 +256,11 @@ Level 1 → Level 2 → Level 3: BRANCH CHOICE (A or B, permanent)
 
 **Targeting modes** — per-tower `TargetingMode { FIRST, STRONG, WEAK }`, cycled via the action-ring's target slot.
 
-**Tactical pause** — TowerRadialMenu, TowerPlacer, SpotInputManager, HUD all use `PROCESS_MODE_ALWAYS`. Players can build/upgrade/sell while paused.
+**Tactical pause** — TowerRadialMenu, TowerPlacer, SpotInputManager, HUD, HeroHudPortrait, SkillBar, WaveCallIndicator, EnemyInputManager, EnemyInfoCard, HeroStatsPanel all use `PROCESS_MODE_ALWAYS`. Players can build/upgrade/sell while paused, AND inspect towers / heroes / enemies. Pause has TWO sub-states:
+- **menu-visible** — dim + Resume/Restart/Quit/Hide card + small "PAUSED ≡" badge top-center
+- **menu-hidden** — only the "PAUSED ≡" badge; playfield is fully interactable
+
+Toggle paths: HUD pause button toggles paused state (icon flips ⏸ ↔ ▶); tapping the Dim or the "Hide menu" button drops to menu-hidden; tapping "≡" on the badge restores the menu. `EventBus.pause_state_changed(paused)` + `EventBus.pause_menu_visibility_changed(visible)` are the canonical signals — listen there instead of polling `get_tree().paused`. Two paused-aware carve-outs in the rule "no `paused` guards in input handlers": (1) `EnemyInputManager` only emits `enemy_inspected` while paused (inspect during pause vs. hero-move-to-empty-space during play — no input is *dropped*, just routed differently); (2) `HeroHudPortrait` branches its tap action — paused → `hero_inspected`, running → `set_selected`.
 
 **Unlock API** — `UnlockManager` type-scoped only: `is_hero_unlocked` / `is_tower_unlocked`, plus type-agnostic `unlock(id)`. `ProductData.unlock_type` dispatches in ShopScreen. Three unlock paths: explicit (IAP → `MetaProgression.unlocked_content`), free (`requires_unlock == false`), star-threshold (`UnlockManager._star_thresholds`).
 
@@ -430,12 +452,14 @@ Each level scene must include a `Marker2D` named `HeroSpawn` as a direct child o
 ## Adding New Content — Checklist
 
 **New enemy:**
-1. Create `enemies/data/enemy_foo.tres` (EnemyData) + `visual_foo.tres` (UnitVisualData)
-2. Set `enemy_id = "enemy_foo"` (stable, never rename)
-3. Add abilities as sub-resources if needed (e.g. RegenAbility, explode-on-death)
-4. For flying: set `is_flying = true` (uses EnemyFlying scene). For boss: use BaseBoss + BossPhaseData
-5. Register in `ContentRegistry.gd` → `enemies` array
-6. Reference `enemy_id` in wave `.tres` files
+1. Create `enemies/data/enemy_foo.tres` (EnemyData) + `visual_foo.tres` (UnitVisualData) + `enemies/EnemyFoo.tscn` (BaseEnemy chassis, no subclass unless `_draw()` needs override — see `enemy_flying.gd` / `enemy_healer.gd` as visual-only examples).
+2. Set `enemy_id = "enemy_foo"` (stable, never rename, must equal filename basename — CORE RULE 12).
+3. Add abilities as sub-resources if needed (e.g. RegenAbility, explode-on-death — CORE RULE 11).
+4. For flying: set `is_flying = true` (uses EnemyFlying scene). For boss: use BaseBoss + BossPhaseData. For ranged: set `attack_range > 0` + `ranged_damage` + `ranged_attack_speed` + `ranged_projectile` (Goblin Archer is the reference; see [enemies/data/enemy_goblin_archer.tres](enemies/data/enemy_goblin_archer.tres)).
+5. **No ContentRegistry edit needed.** [`_load_catalog_dir`](autoloads/ContentRegistry.gd) auto-loads every `.tres` in `enemies/data/` with an `enemy_id` field.
+6. Reference the `.tscn` from wave `.tres` files via `enemy_scene = ExtResource("...")`.
+7. **If this enemy is a new visual class** (not a variant of an existing one), update [`enemies/EnemyClassRegistry.gd`](enemies/EnemyClassRegistry.gd) — the single source of truth for the balance-debug class-mapping (colors, sort order, wave-editor dropdown, substring matcher). The "Adding a new enemy class" comment block at the top of that file lists the 4 places to edit. Boot-time validator in `ContentRegistry._validate_enemy_class_keys()` prints `[ContentRegistry/DRIFT]` warnings if any registered enemy fails to resolve — fix until silent. (Variants of an existing class — e.g. a second goblin archer — need no registry edit; they inherit the existing class_key via substring match.)
+8. **If this enemy introduces a new numeric field on `EnemyData`** (a new stat, range, DoT param, etc.), wire it into the slider panel per **CORE RULE 22**. 4 steps: whitelist key in `BalanceOverrides.ENEMY_STAT_KEYS`, add `_ENEMY_STAT_DEFS` entry, add step formatter in `_enemy_step_for`, apply mult at the read site. Without this the designer can't tune the new knob without a .tres edit + restart.
 
 **New tower (one-file add since Phase 47d-1):**
 1. `towers/data/tower_foo.tres` (TowerData) with `tower_id = "tower_foo"` (must match filename), `tower_scene = res://towers/TowerCombat.tscn`, `pictogram` (glyph key into `TowerIconButton._draw_glyph`: `"bow"`, `"star"`, `"cannon"`, `"shield"`, `"snowflake"`, `"generic"`).
@@ -452,6 +476,8 @@ Each level scene must include a `Marker2D` named `HeroSpawn` as a direct child o
 
 Every new tower class MUST implement the full Tower Indicator Interface (CORE RULE 14 + table above). Once implemented, all UI works without modification.
 
+If the tower introduces a new numeric stat (a new mult target, a new field on `TowerData` / `TowerUpgradeData` / `SoldierData`), wire it into the slider panel per **CORE RULE 22**.
+
 **New ability:**
 1. Create `systems/abilities/MyAbility.gd` extending `AbilityData`
 2. Override `apply(owner, ctx)`
@@ -461,6 +487,7 @@ Every new tower class MUST implement the full Tower Indicator Interface (CORE RU
 1. Create `heroes/skills/my_skill_data.gd` extending `SkillData`
 2. Override `apply(hero, target)`
 3. Create `heroes/data/skills/skill_foo.tres` and reference in hero `.tres` → `skills` array
+4. If the skill introduces a new numeric tunable beyond the existing `damage_mult` / `cooldown_mult` / `range_mult` / `aoe_radius_mult` covered by `SKILL_STAT_KEYS`, wire it per **CORE RULE 22**.
 
 **New level (template-based, since Phase 48):**
 
@@ -493,7 +520,7 @@ Levels stay as editor-visible `.tscn` files (CORE RULE: human drags Curve2D hand
 
 **Template invariants** — every template `.tscn` MUST have:
 - Root node attached to `res://levels/BaseLevel.gd` (no per-template script)
-- `Paths` Node2D parent with named Path2D children (the names become wave `path_id` strings)
+- `Paths` Node2D parent with named Path2D children (names become wave `path_id` strings; all Path2D children must be visible so units draw)
 - `TowerSpots` Node2D parent with Marker2D children (names = spot_ids)
 - `HeroSpawn` Marker2D directly under root
 - `SpawnMarkers` Node2D parent with `SpawnMarker.tscn` instances, each `path_id` matching a Path2D node name

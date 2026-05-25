@@ -137,6 +137,31 @@ func _validate_ids() -> void:
 	_assert_ids(affix_pools, "pool_id")
 	_assert_level_ids()
 	_assert_affinities()
+	_validate_enemy_class_keys()
+
+
+# Boot-time check that every registered enemy resolves to a known class key
+# in EnemyClassRegistry. Drift here ships as silent visual misclassification
+# in the balance debug tools (charts color the new enemy as basic gray; the
+# enemy section sorts it into the wrong bucket). Per Preventive Bug Rule 4
+# this used to live as a comment ("don't forget to update the chart
+# mappers") — now it's executable.
+func _validate_enemy_class_keys() -> void:
+	var EnemyClassRegistry = preload("res://enemies/EnemyClassRegistry.gd")
+	for e in enemies:
+		if e == null or not ("enemy_id" in e):
+			continue
+		var eid: String = String(e.enemy_id)
+		if eid == "":
+			continue
+		var key: String = EnemyClassRegistry.class_key_for(eid)
+		if key == "":
+			print("[ContentRegistry/DRIFT] enemy \"%s\" has no recognized class key — add a substring match to EnemyClassRegistry._SUBSTRING_MATCHES (will fall back to \"basic\" in charts/sliders)" % eid)
+			continue
+		if not EnemyClassRegistry.COLORS.has(key):
+			print("[ContentRegistry/DRIFT] enemy \"%s\" matches class_key \"%s\" but EnemyClassRegistry.COLORS has no entry — add the chart color" % [eid, key])
+		if EnemyClassRegistry.KEYS_IN_PROGRESSION_ORDER.find(key) < 0:
+			print("[ContentRegistry/DRIFT] enemy \"%s\" matches class_key \"%s\" but EnemyClassRegistry.KEYS_IN_PROGRESSION_ORDER is missing it — sort order broken" % [eid, key])
 	_assert_curves()
 	_assert_weapon_profiles()
 	_assert_body_profiles()

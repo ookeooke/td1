@@ -24,6 +24,34 @@ class_name EnemyData
 # counter to stacked-rally boss gangs (KR's Yeti / Magma Elemental pattern).
 @export var attack_splash_radius: float = 0.0
 
+# Ranged attack — used by BaseEnemy in WALKING state when attack_range > 0.
+# Enemy halts to fire at the nearest soldier/hero in range; resumes walking
+# once no target is in range. Melee counter-attack (attack_damage /
+# attack_speed) still applies if a blocker engages it — both can coexist on
+# one enemy. Goblin Archer is the first archetype to use this; all existing
+# enemies keep attack_range = 0 so the ranged branch is skipped.
+@export var attack_range: float = 0.0
+@export var ranged_damage: float = 0.0
+@export var ranged_attack_speed: float = 0.0    # shots/sec; cooldown = 1/ranged_attack_speed
+@export var ranged_projectile: PackedScene
+# Inspector-friendly enum (values pinned to DamageCalculator.DamageType).
+# PHYSICAL=0 (armor-mitigated), MAGIC=1 (magic_resist-mitigated), TRUE=2
+# (bypasses all). Default PHYSICAL keeps existing archers' arrows unchanged.
+@export_enum("PHYSICAL:0", "MAGIC:1", "TRUE:2") var ranged_damage_type: int = 0
+# Ranged status payloads — exactly one applies per shot (Arrow.gd has a
+# single _status_effect slot). Priority in _fire_ranged_projectile: burn
+# > poison > slow. Identity 0/0 = no status, archers ship melee-only by
+# default and existing variants stay unchanged. Each archer variant
+# authors ONE of these triplets — pick the type that defines the archetype.
+# Goblin Fire Archer uses burn, Goblin Ice Archer uses slow, Goblin Poison
+# Archer uses poison. CORE RULE 22: each new pair is wired to BalanceSliders.
+@export var ranged_burn_dps: float = 0.0
+@export var ranged_burn_duration: float = 0.0
+@export var ranged_poison_dps: float = 0.0
+@export var ranged_poison_duration: float = 0.0
+@export_range(0.0, 1.0) var ranged_slow_factor: float = 0.0
+@export var ranged_slow_duration: float = 0.0
+
 @export var is_flying: bool = false
 # Phase 45f: dedicated bypass archetype (Rushing-Monkey equivalent). When
 # true, BaseEnemy.engage_combat rejects every blocker, so the enemy walks

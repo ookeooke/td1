@@ -707,6 +707,7 @@ Pre-supply/demand, several `EnemyData` fields were authored but never scored:
 - **`is_boss` + `boss_phases`** — `boss_ehp` × `boss_demand_weight × (1 + phase_count × phase_bonus)`.
 - **`bypass_engagement`** — feeds `bypass_pressure` vs `segment_blocking`.
 - **`attack_damage` × `attack_speed`** — feeds `block_cost` (drain on supply during enemy engagement).
+- **`attack_range` × `ranged_damage` × `ranged_attack_speed`** — new in 2026-05-25 with the Goblin Archer. Ranged enemies drain `block_cost` *without* requiring engagement, so the supply/demand model must account for them in `block_cost` even when no blocker is in melee range. Goblin Archer authored at HP 22 / move 90 / armor 0 / MR 0 / gold 3 / xp 10 / melee 2.0×1.0 / ranged 5.0×0.55 (~2.75 DPS) / range 220 / damage_type PHYSICAL — fragile, kill-on-sight, halts to fire. **Halt-fully model**: archer plants while a soldier/hero is in range, resumes walking when none. First seeded into L3 W2 (4 archers, start_delay 12s). Re-fit `block_cost` weight only after telemetry shows ranged-enemy damage-to-blocker is mispredicted across ≥3 levels.
 
 ### Per-tier tower weights + supply segmentation
 

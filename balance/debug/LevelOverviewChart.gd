@@ -35,17 +35,12 @@ const STRIP_FONT: int = 10
 # ─── Colors (mirror WaveTimelineChart palette so the language is shared) ──
 # Stacked-by-class bars: each wave-bar is segmented by enemy class so the
 # composition is visible at a glance ("W7 is mostly armored, W8 is flyers").
-# Class colors duplicated from WaveTimelineChart.ENEMY_COLORS so this card
-# stays self-contained — six unique scenes max in practice.
-const ENEMY_COLORS: Dictionary = {
-	"basic":   Color(0.65, 0.65, 0.70),
-	"scout":   Color(0.95, 0.90, 0.40),
-	"armored": Color(0.65, 0.45, 0.25),
-	"flying":  Color(0.45, 0.85, 0.95),
-	"healer":  Color(0.45, 0.90, 0.55),
-	"brute":   Color(0.55, 0.30, 0.30),
-	"boss":    Color(0.95, 0.35, 0.55),
-}
+const _EnemyClassRegistry = preload("res://enemies/EnemyClassRegistry.gd")
+
+# Class colors sourced from EnemyClassRegistry — single source of truth
+# across all balance/debug class-mapping. Adding a new enemy class is a
+# one-file change in the registry; this chart picks it up automatically.
+const ENEMY_COLORS: Dictionary = _EnemyClassRegistry.COLORS
 const COL_BAR_OUTLINE: Color = Color(0, 0, 0, 0.35)
 const COL_AVG_LINE: Color = Color(0.85, 0.88, 0.92, 0.50)
 
@@ -408,20 +403,7 @@ func _enemy_class_for(scene: PackedScene) -> String:
 	var path: String = scene.resource_path
 	if _enemy_class_cache.has(path):
 		return String(_enemy_class_cache[path])
-	var lower: String = path.to_lower()
-	var key: String = "basic"
-	if lower.contains("boss"):
-		key = "boss"
-	elif lower.contains("scout"):
-		key = "scout"
-	elif lower.contains("armor"):
-		key = "armored"
-	elif lower.contains("flying"):
-		key = "flying"
-	elif lower.contains("brute"):
-		key = "brute"
-	elif lower.contains("healer"):
-		key = "healer"
+	var key: String = _EnemyClassRegistry.class_key_for_safe(path)
 	_enemy_class_cache[path] = key
 	return key
 

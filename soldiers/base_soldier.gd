@@ -58,6 +58,11 @@ var _lunge_t: float = 0.0
 # even if attack_speed changes mid-swing. Cadence-scaled (see swing_duration).
 var _lunge_dur: float = LUNGE_DURATION
 var _hit_flash_t: float = 0.0
+# Active status effects keyed by id ("burn", "poison", "slow", "stun").
+# Mirrors the BaseEnemy pattern, with persistent foot rings drawn in _draw().
+# Added in 2026-05-25 when the Goblin Fire Archer introduced the first
+# enemy → friendly status effect (burn DoT).
+var _effects: Dictionary = {}
 # Animation pipeline parity with BaseHero/BaseEnemy. Drives walk-bob, flinch,
 # breath, hit-stop, direction-aware eyes, and per-soldier skin variation
 # through UnitVisualDrawer's ctx Dictionary.
@@ -230,6 +235,10 @@ func change_state(new_state: int) -> void:
 func _physics_process(delta: float) -> void:
 	if state == State.DEAD or data == null:
 		return
+	# Status effects tick BEFORE hit-stop so a burn DoT doesn't pause every
+	# time the soldier eats a hit (which would compress the burn window).
+	if not _effects.is_empty():
+		_tick_effects(delta)
 	# Hit-stop — universal freeze for a few frames after every hit. Matches
 	# BaseHero / BaseEnemy behavior so combat reads consistently.
 	if _hit_stop_t > 0.0:
@@ -288,7 +297,7 @@ func _physics_process(delta: float) -> void:
 			# soldiers always arrive on walkable terrain. No nav-agent routing.
 			var to_target: Vector2 = _blocking_position - global_position
 			var dist: float = to_target.length()
-			var step: float = data.move_speed * delta
+			var step: float = _effective_move_speed() * delta
 			# Arrive when within the threshold OR when the next frame would
 			# overshoot the target (prevents oscillation around the slot).
 			if dist <= ARRIVE_THRESHOLD or dist <= step:
@@ -296,7 +305,7 @@ func _physics_process(delta: float) -> void:
 				velocity = Vector2.ZERO
 				change_state(State.BLOCKING)
 			else:
-				velocity = to_target.normalized() * data.move_speed
+				velocity = to_target.normalized() * _effective_move_speed()
 				move_and_slide()
 				# Stuck-detection: if the soldier hasn't moved much since the
 				# last sample and is still in MOVING, count up. Force-block
@@ -331,7 +340,7 @@ func _physics_process(delta: float) -> void:
 				velocity = Vector2.ZERO
 				change_state(State.BLOCKING)
 			else:
-				velocity = to_rally.normalized() * data.move_speed
+				velocity = to_rally.normalized() * _effective_move_speed()
 			move_and_slide()
 
 
@@ -515,7 +524,7 @@ func _tick_charge() -> void:
 			var sp2: Vector2 = _GuardZoneScript.melee_engage_spot(eng.global_position, f2, g2, slot2)
 			var to_sp2: Vector2 = sp2 - global_position
 			if to_sp2.length() > 4.0:
-				velocity = _ground_line_dir(to_sp2) * data.move_speed
+				velocity = _ground_line_dir(to_sp2) * _effective_move_speed()
 				settled = false
 		if settled:
 			velocity = Vector2.ZERO
@@ -559,7 +568,7 @@ func _tick_charge() -> void:
 	if to_target.length() < 3.0:
 		velocity = Vector2.ZERO
 	else:
-		velocity = _ground_line_dir(to_target) * data.move_speed
+		velocity = _ground_line_dir(to_target) * _effective_move_speed()
 	move_and_slide()
 
 
@@ -645,6 +654,56 @@ func _lunge_offset() -> Vector2:
 	return _lunge_dir * (LUNGE_DISTANCE * UnitVisualDrawer.lunge_offset_scale(t))
 
 
+# Active move-speed after status effects (slow). Wraps every read of
+# data.move_speed so an enemy archer's "slow" payload uniformly affects
+# rally-walk, return-walk, and engage-step. Identity when no slow is
+# active; clamps to 0 if some hypothetical effect would push it negative.
+func _effective_move_speed() -> float:
+	if data == null:
+		return 0.0
+	var s: float = data.move_speed
+	if not _effects.is_empty() and _effects.has("slow"):
+		s *= (1.0 - _effects["slow"].slow_factor)
+	return maxf(0.0, s)
+
+
+# Status effect entry point. Mirrors BaseEnemy.apply_status_effect with no
+# VFX (soldiers don't show the dashed ring overlays — keeps the squad
+# silhouette clean). Reapplication routes through StatusEffect.refresh so
+# DoTs (burn/poison) preserve their _tick_accumulator across rapid hits
+# instead of resetting the clock and silently suppressing damage.
+func apply_status_effect(effect) -> void:
+	if effect == null or state == State.DEAD:
+		return
+	if _effects.has(effect.id):
+		_effects[effect.id].refresh(effect)
+		queue_redraw()
+		return
+	_effects[effect.id] = effect
+	effect.apply(self)
+	queue_redraw()
+
+
+# Decrement duration on every active effect; call its tick() each frame (for
+# DoT-style effects like burn that need per-tick callbacks). Remove and call
+# the effect's remove() when duration expires. Mirrors BaseEnemy._tick_effects.
+func _tick_effects(delta: float) -> void:
+	if _effects.is_empty():
+		return
+	var expired: Array[String] = []
+	for id in _effects.keys():
+		var e = _effects[id]
+		if e.has_method("tick"):
+			e.tick(self, delta)
+		e.duration -= delta
+		if e.duration <= 0.0:
+			expired.append(id)
+	for id in expired:
+		_effects[id].remove(self)
+		_effects.erase(id)
+	queue_redraw()
+
+
 func take_damage(amount: float, type: int, source: Node = null) -> float:
 	if state == State.DEAD or data == null:
 		return 0.0
@@ -714,6 +773,9 @@ func _draw() -> void:
 	# (draw_ground_shadow sizes from body_size). Visual-only.
 	if data != null and data.visual != null:
 		UnitVisualDrawer.draw_ground_shadow(self, data.visual)
+		if not _effects.is_empty():
+			UnitVisualDrawer.draw_blocker_status_rings(self, data.visual,
+				_effects.keys(), _breath_t + _walk_phase, _get_zoom_scale())
 
 	# 2. Compose body offset + scale.
 	var lunge_off: Vector2 = _lunge_offset()

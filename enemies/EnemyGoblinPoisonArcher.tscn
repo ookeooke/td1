@@ -1,0 +1,16 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://enemies/base_enemy.gd" id="1_enemy"]
+[ext_resource type="Resource" path="res://enemies/data/enemy_goblin_poison_archer.tres" id="2_data"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_1"]
+radius = 11.0
+
+[node name="EnemyGoblinPoisonArcher" type="Area2D"]
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("1_enemy")
+data = ExtResource("2_data")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_1")

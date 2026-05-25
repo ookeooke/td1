@@ -184,6 +184,10 @@ var _walk_phase: float = 0.0
 # (BaseEnemy.take_damage looks up this property by name on its source).
 const HIT_STOP_DURATION: float = 0.05
 var _hit_stop_t: float = 0.0
+# Active status effects keyed by id ("burn", "poison", "slow", "stun").
+# Mirrors BaseEnemy / BaseSoldier, with persistent foot rings drawn in _draw().
+# Added 2026-05-25 with the Goblin Fire Archer so enemy DoTs can land on the hero.
+var _effects: Dictionary = {}
 # Skill cast pose — when cast_skill fires, arm raises + body briefly
 # stretches for CAST_ANIM_DURATION so casts don't feel instant. The skill
 # effect itself still applies immediately; this is purely cosmetic on top.
@@ -197,6 +201,12 @@ var _cast_dir: Vector2 = Vector2.RIGHT
 # no-ops on invalid input.
 const CAST_WIND_DURATION: float = 0.15
 var _cast_wind_t: float = 0.0
+# Dragon basic-attack charge telegraph window (V-B). The breath projectile
+# fires the instant _attack_cooldown reaches 0; the snout glow ramps over the
+# last this-many seconds BEFORE that as an anticipatory tell. This is a pure
+# visual read of existing combat state — it NEVER defers the projectile or
+# alters damage / cooldown timing (CORE RULE 1/9; balance unaffected).
+const BREATH_WIND_DURATION: float = 0.18
 var _pending_skill_idx: int = -1
 var _pending_skill_target = null
 # Idle breathing — small Y squish pulse while IDLE / COMBAT so a stationary
@@ -370,7 +380,8 @@ func _ready() -> void:
 	_walk_phase = randf() * TAU
 	_prev_pos = global_position
 	# Listen for confirmed taps from GameCamera's gesture classifier.
-	EventBus.map_tap_confirmed.connect(_on_map_tap)
+	if not EventBus.map_tap_confirmed.is_connected(_on_map_tap):
+		EventBus.map_tap_confirmed.connect(_on_map_tap)
 	if not EventBus.combat_lull_changed.is_connected(_on_combat_lull_changed):
 		EventBus.combat_lull_changed.connect(_on_combat_lull_changed)
 	# Deferred so sibling nodes (HUD, Main) have finished _ready() and
@@ -378,6 +389,13 @@ func _ready() -> void:
 	# sibling-order has HUD readying AFTER the hero, so the initial Lv/XP
 	# payload never reaches the HUD label.
 	EventBus.hero_spawned.emit.call_deferred(self)
+
+
+func _exit_tree() -> void:
+	if EventBus.map_tap_confirmed.is_connected(_on_map_tap):
+		EventBus.map_tap_confirmed.disconnect(_on_map_tap)
+	if EventBus.combat_lull_changed.is_connected(_on_combat_lull_changed):
+		EventBus.combat_lull_changed.disconnect(_on_combat_lull_changed)
 
 
 func _seed_base_stats() -> void:
@@ -541,16 +559,24 @@ func _profile_damage() -> float:
 	return _weapon_profile.weapon_base_damage * mult
 
 
+# Hero Tuning close_dmg_mult / close_spd_mult scale the effective close-combat
+# profile regardless of source (weapon profile or authored data). Identity in
+# release. 0-authored heroes stay 0 (×N = 0) — they keep shooting point-blank.
+func _close_tune(stat_key: String) -> float:
+	var hid: String = String(data.hero_id) if data != null and "hero_id" in data else ""
+	return _BalanceOverrides.get_hero_mult(hid, stat_key)
+
+
 func _profile_close_damage() -> float:
 	if _weapon_profile != null and _weapon_profile.close_attack_damage > 0.0:
-		return _weapon_profile.close_attack_damage
-	return data.close_attack_damage if data != null else 0.0
+		return _weapon_profile.close_attack_damage * _close_tune("close_dmg_mult")
+	return (data.close_attack_damage if data != null else 0.0) * _close_tune("close_dmg_mult")
 
 
 func _profile_close_speed() -> float:
 	if _weapon_profile != null and _weapon_profile.close_attack_speed > 0.0:
-		return _weapon_profile.close_attack_speed
-	return data.close_attack_speed if data != null else 0.0
+		return _weapon_profile.close_attack_speed * _close_tune("close_spd_mult")
+	return (data.close_attack_speed if data != null else 0.0) * _close_tune("close_spd_mult")
 
 
 func _profile_close_damage_type() -> int:
@@ -703,6 +729,15 @@ static func compute_base_stats(hero_data: HeroData, level_arg: int) -> Dictionar
 	var raw_eng: float = 0.0
 	if "detection_radius_px" in hero_data:
 		raw_eng = float(hero_data.detection_radius_px)
+	# Combat-feel levers carried through the stat dict so the Hero Tuning UI
+	# (live override) + bake apply uniformly. Identity in release builds.
+	# engage_radius/respawn keep their authored value when no override; 0 for
+	# engage_radius means "derive at runtime" (preserved downstream).
+	var bo_engr: float = _BalanceOverrides.get_hero_mult(hid, "engage_radius_mult")
+	var bo_respawn: float = _BalanceOverrides.get_hero_mult(hid, "respawn_mult")
+	var bo_regen: float = _BalanceOverrides.get_hero_mult(hid, "regen_add")
+	var raw_engr: float = float(hero_data.engage_radius) if "engage_radius" in hero_data else 0.0
+	var raw_respawn: float = float(hero_data.respawn_time) if "respawn_time" in hero_data else 0.0
 	return {
 		"max_health": float(hero_data.max_health) * hp_mult * bo_hp,
 		"damage": hero_data.attack_damage * dmg_mult * MetaProgression.get_upgrade_multiplier(MetaProgression.MOD_HERO_DAMAGE) * bo_dmg,
@@ -712,12 +747,17 @@ static func compute_base_stats(hero_data: HeroData, level_arg: int) -> Dictionar
 		"move_speed": hero_data.move_speed * bo_spd,
 		"attack_range": hero_data.attack_range * bo_rng,
 		"melee_engage_range": raw_eng * bo_eng,
+		# 0 stays 0 (= derive at runtime); authored values scale by the UI mult.
+		"engage_radius": raw_engr * bo_engr,
+		"respawn_time": raw_respawn * bo_respawn,
 		"xp_gain_mult": 1.0,
 		"skill_power": 1.0,
 		# Phase 49 — additive stats. Reflective apply_modifiers() picks up
 		# `<key>_flat` from each modifier source. Default 0.0 so unequipped
-		# heroes regen nothing and have no CDR.
-		"health_regen": 0.0,
+		# heroes regen nothing and have no CDR. regen_add lets the Hero Tuning
+		# UI dial a base out-of-combat regen for playtest feel (no .tres home —
+		# live-only; gear/passives still stack on top via *_flat).
+		"health_regen": 0.0 + bo_regen,
 		"cooldown_reduction": 0.0,
 	}
 
@@ -939,7 +979,14 @@ func get_effective_magic_resist() -> float:
 func get_effective_move_speed() -> float:
 	if data == null:
 		return 0.0
-	return float(current_stats.get("move_speed", data.move_speed))
+	var s: float = float(current_stats.get("move_speed", data.move_speed))
+	# Apply active slow status (Goblin Ice Archer DoT slot). Read from the
+	# same _effects dict that BaseEnemy uses, with the same "slow" key /
+	# slow_factor field, so SlowEffect is one source of truth across all
+	# three carrier types.
+	if not _effects.is_empty() and _effects.has("slow"):
+		s *= (1.0 - _effects["slow"].slow_factor)
+	return s
 
 
 func get_effective_engage_radius() -> float:
@@ -1393,6 +1440,11 @@ func _get_zoom_scale() -> float:
 func _physics_process(delta: float) -> void:
 	if state == State.DEAD or data == null:
 		return
+	# Status effects (burn etc.) tick BEFORE hit-stop so a DoT keeps ticking
+	# while the hero eats hits — otherwise hit-stop would compress the burn
+	# window and the player gets a free moment off the DoT every swing.
+	if not _effects.is_empty():
+		_tick_effects(delta)
 	# Hit-stop — universal freeze on hit. Decrement and bail before any
 	# state machine / movement / animation tick so the world holds frame.
 	if _hit_stop_t > 0.0:
@@ -1820,10 +1872,23 @@ func _seek_target() -> void:
 # jitter (P1 fix). Default heroes (max_block_targets >= 1, humanoid body)
 # return true → byte-identical, no behavior change. Pure read, no scene
 # deps — unit-testable.
+# Authored max_block_targets plus the Hero Tuning block_targets_add override
+# (identity 0 in release). Clamped ≥ 0 — a tuning lever may zero it out
+# ("this hero stops blocking") but never go negative. Single source so the
+# three cap reads (_can_block_ground / _auto_engage_extras / prune) agree.
+func _effective_max_block_targets() -> int:
+	if data == null:
+		return 1
+	var base_cap: int = int(data.max_block_targets) if "max_block_targets" in data else 1
+	var hid: String = String(data.hero_id) if "hero_id" in data else ""
+	var add: int = int(round(_BalanceOverrides.get_hero_mult(hid, "block_targets_add")))
+	return maxi(0, base_cap + add)
+
+
 func _can_block_ground() -> bool:
 	if data == null:
 		return false
-	var cap: int = int(data.max_block_targets) if "max_block_targets" in data else 1
+	var cap: int = _effective_max_block_targets()
 	if cap <= 0:
 		return false
 	if data.has_method("get_body_profile"):
@@ -1937,7 +2002,10 @@ func _can_pursue(enemy) -> bool:
 # separate concern, not the "block those who passed" lever.)
 func _back_margin() -> float:
 	if data != null and "guard_back_px" in data and data.guard_back_px > 0.0:
-		return data.guard_back_px
+		var hid: String = String(data.hero_id) if "hero_id" in data else ""
+		# Hero Tuning guard_back_add (identity 0 in release). Clamped ≥ 0 so a
+		# negative tune can't invert the follow-through into a reject.
+		return maxf(0.0, data.guard_back_px + _BalanceOverrides.get_hero_mult(hid, "guard_back_add"))
 	return GUARD_BACK_MARGIN_PX
 
 
@@ -2062,6 +2130,15 @@ func _snap_to_ground_line(pos: Vector2, slack: float) -> Vector2:
 func _melee_chase_is_doomed(enemy) -> bool:
 	if enemy == null or not is_instance_valid(enemy):
 		return false
+	# Combat Blocking Doctrine — if the enemy is currently halted by any
+	# claimer (soft reservation OR hard block, including this hero's own
+	# approach claim from _sync_claim), it ISN'T actually moving. The
+	# nominal speed comparison below would falsely cancel the chase,
+	# the hero releases the claim, the enemy walks one frame, the hero
+	# re-acquires → jitter loop. Real movement (no claimers) is what the
+	# doomed check is for.
+	if enemy.has_method("get_claim_count") and enemy.get_claim_count() > 0:
+		return false
 	var enemy_spd: float = enemy._effective_speed() if enemy.has_method("_effective_speed") else 0.0
 	if enemy_spd <= get_effective_move_speed():
 		return false
@@ -2112,13 +2189,20 @@ func _engage_position_for(enemy: Node) -> Vector2:
 
 func _attack_step(delta: float) -> void:
 	if _target_enemy == null or not is_instance_valid(_target_enemy):
-		_release_block()
+		# Combat Blocking Doctrine — only the shoot/melee FOCUS just died (or
+		# was freed). Don't blanket-release every block: ranged heroes can be
+		# blocking Enemy B in melee at engage_radius while shooting Enemy A
+		# at attack_range, and A's death must not free B. The next
+		# _prune_blocks_out_of_range / _validity_sweep below handles any
+		# stale entry that's now freed.
 		_target_enemy = null
 		change_state(State.IDLE)
 		return
 	var enemy: BaseEnemy = _target_enemy
 	if enemy.state == BaseEnemy.State.DYING:
-		_release_block()
+		# Narrow release: drop only the dying focus, keep other blocks.
+		if _blocked_enemies.has(enemy):
+			_release_block_of(enemy)
 		_target_enemy = null
 		change_state(State.IDLE)
 		return
@@ -2237,6 +2321,43 @@ func heal(amount: float) -> void:
 	queue_redraw()
 
 
+# Status effect entry point. Mirrors BaseEnemy.apply_status_effect with no
+# VFX (heroes don't show the dashed ring overlays). Reapplication routes
+# through StatusEffect.refresh so DoTs preserve _tick_accumulator across
+# rapid hits — without this, two fire archers shooting the hero at <0.5s
+# intervals dealt zero burn damage (the clock kept resetting).
+func apply_status_effect(effect) -> void:
+	if effect == null or state == State.DEAD:
+		return
+	if _effects.has(effect.id):
+		_effects[effect.id].refresh(effect)
+		queue_redraw()
+		return
+	_effects[effect.id] = effect
+	effect.apply(self)
+	queue_redraw()
+
+
+# Per-frame status effect maintenance. Mirrors BaseEnemy._tick_effects. Calls
+# effect.tick(self, delta) so DoT-style effects (burn) deal damage; decrements
+# `duration`; removes + calls remove() when expired.
+func _tick_effects(delta: float) -> void:
+	if _effects.is_empty():
+		return
+	var expired: Array[String] = []
+	for id in _effects.keys():
+		var e = _effects[id]
+		if e.has_method("tick"):
+			e.tick(self, delta)
+		e.duration -= delta
+		if e.duration <= 0.0:
+			expired.append(id)
+	for id in expired:
+		_effects[id].remove(self)
+		_effects.erase(id)
+	queue_redraw()
+
+
 func take_damage(amount: float, type: int, source: Node = null) -> void:
 	if state == State.DEAD or data == null:
 		return
@@ -2292,6 +2413,10 @@ func _die() -> void:
 	_release_claim()
 	_target_enemy = null
 	_seek_target_enemy = null
+	# Clear active status effects on death. _physics_process bails on DEAD,
+	# so without this an active burn/poison freezes mid-countdown and
+	# resumes ticking on a fresh hero post-respawn. (Code review 2026-05-25.)
+	_effects.clear()
 	if _ability_host != null:
 		_ability_host.trigger_event(_AbilityDataScript.Trigger.ON_DEATH, {})
 	EventBus.hero_died.emit()
@@ -2314,7 +2439,11 @@ func _die() -> void:
 	# (Godot 4.6 default for create_timer's second arg is TRUE — without
 	# this explicit false, the respawn would keep ticking through pause and
 	# the hero could respawn on the GameOver screen.)
-	var wait: float = data.respawn_time if data != null and data.respawn_time > 0.0 else 30.0
+	# Prefer the computed stat (Hero Tuning respawn_mult / bake apply there);
+	# fall back to the authored field, then the 30s default.
+	var wait: float = float(current_stats.get("respawn_time", 0.0))
+	if wait <= 0.0:
+		wait = data.respawn_time if data != null and data.respawn_time > 0.0 else 30.0
 	get_tree().create_timer(wait, false).timeout.connect(_respawn)
 
 
@@ -2413,7 +2542,7 @@ func _start_block(enemy: Node) -> bool:
 		return false
 	if _blocked_enemies.has(enemy):
 		return true
-	var cap: int = data.max_block_targets if data != null else 1
+	var cap: int = _effective_max_block_targets()
 	if _blocked_enemies.size() >= cap:
 		return false
 	# Engage gate — block claim only fires when the enemy is within the
@@ -2444,7 +2573,12 @@ func _start_block(enemy: Node) -> bool:
 func _effective_engage_radius() -> float:
 	var r: float = DEFAULT_ENGAGE_RADIUS
 	if data != null:
-		var authored: float = float(data.engage_radius) if "engage_radius" in data else 0.0
+		# Prefer the computed stat (Hero Tuning engage_radius_mult / bake apply
+		# there) over the raw authored field, mirroring _effective_detection_
+		# radius. 0 still means "derive from attack range".
+		var authored: float = float(current_stats.get("engage_radius", 0.0))
+		if authored <= 0.0 and "engage_radius" in data:
+			authored = float(data.engage_radius)
 		r = authored if authored > 0.0 else minf(get_effective_attack_range(), DEFAULT_ENGAGE_RADIUS)
 	return maxf(r, MELEE_ENGAGE_DISTANCE)
 
@@ -2474,7 +2608,7 @@ func _release_block_of(enemy: Node) -> void:
 # engage_range_area (not attack_range) so ranged heroes don't claim distant
 # enemies that haven't actually closed to face contact yet.
 func _auto_engage_extras() -> void:
-	var cap: int = data.max_block_targets if data != null else 1
+	var cap: int = _effective_max_block_targets()
 	# Pick extra blocks by the SAME split priority as primary acquisition
 	# (fewest claims → highest progress → nearest) instead of raw Area2D
 	# overlap order, so a multi-block hero grabs the most urgent enemies.
@@ -2496,7 +2630,13 @@ func _auto_engage_extras() -> void:
 func _prune_blocks_out_of_range() -> void:
 	if _blocked_enemies.is_empty():
 		return
-	var in_range: Array = attack_range_area.get_overlapping_areas()
+	# Combat Blocking Doctrine — blocks are face-contact locks at engage_radius,
+	# NOT at attack_range. For a ranged hero (attack=350, engage=60) a melee-
+	# blocked enemy knocked/teleported 200 px away stays inside attack_range
+	# but is well outside engage. Using attack_range_area here would let the
+	# hero keep blocking from afar — freezing the enemy on the path. Mirror
+	# _auto_engage_extras which already correctly uses engage_range_area.
+	var in_range: Array = engage_range_area.get_overlapping_areas()
 	# Reverse iteration so in-place removal stays valid. Freed references
 	# are stripped directly (can't round-trip through a typed Array[Node]);
 	# valid-but-disengaging ones go through _release_block_of to notify the
@@ -2593,10 +2733,13 @@ func _draw() -> void:
 		draw_arc(Vector2.ZERO, SELECTION_RING_RADIUS - 8.0, 0, TAU, 24,
 			Color(1.0, 0.85, 0.35, 0.55 * pulse), 1.5 * zs)
 	# Ground shadow under the hero — anchored, doesn't bob with the body.
-	# Race-independent: Dragon (race==NONE, flight_height_px=44) now gets a
+	# Race-independent: Dragon (race==NONE, flight_height_px=70) now gets a
 	# small faint road shadow instead of reading as floating. Visual-only.
 	if data != null and data.visual != null:
 		UnitVisualDrawer.draw_ground_shadow(self, data.visual)
+		if not _effects.is_empty():
+			UnitVisualDrawer.draw_blocker_status_rings(self, data.visual,
+				_effects.keys(), _breath_t, zs)
 
 	# Compose body offset + scale.
 	var lunge_off: Vector2 = _lunge_offset()
@@ -2644,6 +2787,23 @@ func _draw() -> void:
 		# for shared-path units that never read them.
 		ctx["breath_t"] = _breath_t
 		ctx["cape_lag"] = _cape_lag_x
+		# Zoom-scale (S-I): premium drawers multiply constant-on-screen strokes
+		# by this so they don't bloat at 0.5x / vanish at 2x. zs == 1/zoom.
+		ctx["zoom_scale"] = zs
+		# Dragon basic-attack charge telegraph (V-B). Ramp the snout glow over
+		# the last BREATH_WIND_DURATION seconds before the breath fires so the
+		# player gets an anticipatory tell instead of the current fire-frame
+		# release flash. Mutually exclusive with the lunge release-flash and
+		# skill-cast blocks below (guarded on _lunge_t / _cast_t), so the
+		# telegraphs never fight. Pure visual; no projectile deferral.
+		if data != null and data.visual != null \
+				and data.visual.render_profile == UnitVisualData.RenderProfile.DRAGON_PREMIUM \
+				and state == State.COMBAT and _lunge_t <= 0.0 and _cast_t <= 0.0 \
+				and _profile_uses_projectile() \
+				and _attack_cooldown > 0.0 and _attack_cooldown <= BREATH_WIND_DURATION:
+			ctx["wind_t"] = clampf((BREATH_WIND_DURATION - _attack_cooldown) / BREATH_WIND_DURATION, 0.0, 1.0)
+			ctx["cast_t"] = 0.0
+			ctx["strike_dir"] = _facing_dir
 		# Normalised travel speed (0 = still, 1 = full move speed) so the
 		# premium walk can scale stride length with how fast we actually move.
 		var _ems: float = get_effective_move_speed()

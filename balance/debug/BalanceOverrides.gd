@@ -39,12 +39,20 @@ static func _defaults() -> Dictionary:
 		"damage_mult": 1.0,
 		"starting_gold_add": 0,
 		"ppt_override": -1,   # -1 = no override; >=1 = force this PPT for audit
+		"overrides_enabled": true,
 	}
 
 
+static var force_read: bool = false
+
+
 static func is_active() -> bool:
-	# Debug builds only. Exported APKs / production never see overrides.
-	return OS.is_debug_build()
+	if not OS.is_debug_build():
+		return false
+	if force_read:
+		return true
+	_ensure_loaded()
+	return bool(_cached.get("overrides_enabled", true))
 
 
 static func _ensure_loaded() -> void:
@@ -52,7 +60,7 @@ static func _ensure_loaded() -> void:
 		return
 	_loaded = true
 	_cached = _defaults()
-	if not is_active():
+	if not OS.is_debug_build():
 		return
 	if not FileAccess.file_exists(SAVE_PATH):
 		return
@@ -74,7 +82,7 @@ static func _ensure_loaded() -> void:
 
 
 static func _save() -> void:
-	if not is_active():
+	if not OS.is_debug_build():
 		return
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f == null:
@@ -384,6 +392,26 @@ static func get_active_level_overrides() -> Dictionary:
 const ENEMY_STAT_KEYS: Array[String] = [
 	"hp_mult", "armor_add", "mag_res_add",
 	"speed_mult", "damage_mult", "gold_mult",
+	# Ranged-archetype tunables (Goblin Archer). Identity 1.0 for enemies that
+	# don't shoot — every read site is guarded by data.ranged_projectile != null,
+	# so a melee enemy still skips the projectile path entirely. Applied via
+	# get_enemy_mult in base_enemy.gd._fire_ranged_projectile and _ranged_tick.
+	"ranged_damage_mult", "ranged_speed_mult",
+	# Burn DoT tunables (Goblin Fire Archer). Identity 1.0 for enemies whose
+	# ranged arrow doesn't burn. Applied in base_enemy._fire_ranged_projectile
+	# when constructing the BurnEffect attached to the outgoing arrow.
+	"ranged_burn_dps_mult", "ranged_burn_duration_mult",
+	# Poison DoT (Goblin Poison Archer) + slow (Goblin Ice Archer). Same
+	# pattern as burn — identity 1.0 for archers that don't apply the
+	# matching effect; read in base_enemy._build_ranged_status_effect.
+	"ranged_poison_dps_mult", "ranged_poison_duration_mult",
+	"ranged_slow_factor_mult", "ranged_slow_duration_mult",
+	# Ranged detection radius. Applied at base_enemy._ready when the
+	# Area2D shape is built — per-instance, so slider changes affect only
+	# NEW spawns. Already-spawned archers keep their authored range until
+	# they despawn (documented limit; live-resize would require iterating
+	# the enemies group on every slider tick).
+	"attack_range_mult",
 ]
 
 
@@ -465,11 +493,17 @@ const HERO_STAT_KEYS: Array[String] = [
 	"hp_mult", "damage_mult", "range_mult", "engage_range_mult",
 	"speed_mult", "attack_speed_mult",
 	"armor_add", "mag_res_add",
+	# Combat-feel levers exposed after the blocking-doctrine work. Identity
+	# in release (is_active() false) so production behavior is unchanged.
+	"engage_radius_mult", "block_targets_add", "respawn_mult",
+	"guard_back_add", "close_dmg_mult", "close_spd_mult", "regen_add",
 ]
 
 
 static func _hero_default_for(stat: String) -> float:
-	if stat == "armor_add" or stat == "mag_res_add":
+	# Convention: *_add keys are additive (identity 0.0); everything else is
+	# multiplicative (identity 1.0). One suffix rule so new keys need no edit.
+	if stat.ends_with("_add"):
 		return 0.0
 	return 1.0
 

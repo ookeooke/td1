@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="EnemyData" format=3]
+
+[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://enemies/data/visual_goblin_poison_archer.tres" id="2_vis"]
+[ext_resource type="PackedScene" path="res://projectiles/EnemyArrowPoison.tscn" id="3_proj"]
+
+[resource]
+script = ExtResource("1_data")
+enemy_id = "enemy_goblin_poison_archer"
+enemy_name = "Goblin Poison Archer"
+max_health = 22
+move_speed = 90.0
+armor = 0.0
+magic_resist = 0.0
+gold_worth = 4
+xp_worth = 12
+attack_damage = 2.0
+attack_speed = 1.0
+attack_range = 220.0
+ranged_damage = 2.0
+ranged_attack_speed = 0.50
+ranged_projectile = ExtResource("3_proj")
+ranged_damage_type = 0
+ranged_poison_dps = 1.5
+ranged_poison_duration = 4.0
+visual = ExtResource("2_vis")
+encyclopedia_entry = "Skirmisher armed with envenomed shortbow. Halts to loose poison arrows that tick TRUE damage (bypasses armor + magic resist) for 4 seconds. Low burst, high sustain — the worst archer to leave alive."

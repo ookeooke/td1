@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" uid="uid://b1td1boss1scn" path="res://enemies/bosses/Boss1.tscn" id="7_boss"]
 [ext_resource type="PackedScene" path="res://enemies/EnemyBrute.tscn" id="8_brute"]
 [ext_resource type="PackedScene" uid="uid://b1td1healsc02" path="res://enemies/EnemyHealer.tscn" id="9_heal"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyGoblinArcher.tscn" id="10_arch"]
 
 ; ============================================================================
 ; Level 3 — Mountain Pass (ring detour). target_ppt=4 (expected ~12,000) but
@@ -85,9 +86,17 @@ count = 2
 interval = 14.0
 start_delay = 16.0
 
+[sub_resource type="Resource" id="L3_W2_Archer"]
+script = ExtResource("3_spawn")
+path_id = "main"
+enemy_scene = ExtResource("10_arch")
+count = 4
+interval = 4.0
+start_delay = 12.0
+
 [sub_resource type="Resource" id="L3_Wave2"]
 script = ExtResource("2_wave")
-spawns = Array[ExtResource("3_spawn")]([SubResource("L3_W2_BasicA"), SubResource("L3_W2_BasicB"), SubResource("L3_W2_Fly"), SubResource("L3_W2_Armor"), SubResource("L3_W2_Brute")])
+spawns = Array[ExtResource("3_spawn")]([SubResource("L3_W2_BasicA"), SubResource("L3_W2_BasicB"), SubResource("L3_W2_Fly"), SubResource("L3_W2_Armor"), SubResource("L3_W2_Brute"), SubResource("L3_W2_Archer")])
 countdown = 25.0
 bounty = 60
 

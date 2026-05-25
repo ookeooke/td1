@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="UnitVisualData" format=3]
+
+[ext_resource type="Script" uid="uid://uarc3rqaigxt" path="res://systems/UnitVisualData.gd" id="1_vis"]
+
+[resource]
+script = ExtResource("1_vis")
+body_color = Color(0.32, 0.45, 0.55, 1)
+outline_color = Color(0.05, 0.08, 0.12, 1)
+accent_color = Color(0.65, 0.92, 1.0, 1)
+accent_type = 1
+radius = 28.0
+outline_width = 4.0
+weapon_type = 4
+weapon_trail_strength = 1.2
+weapon_glow_color = Color(0.55, 0.85, 1.0, 0.50)
+weapon_glow_strength = 0.65
+race = 3
+head_color = Color(0.42, 0.55, 0.62, 1)
+head_radius_ratio = 0.58
+has_tusks = false
+hat = 4
+hat_color = Color(0.22, 0.30, 0.42, 1)
+leg_color = Color(0.18, 0.22, 0.28, 1)
+arm_color = Color(0.42, 0.55, 0.62, 1)
+highlight_color = Color(0.75, 0.95, 1.0, 0.55)
+highlight_strength = 0.45
+armor_plate_color = Color(0.22, 0.32, 0.38, 0.70)
+shoulder_pad_color = Color(0.12, 0.18, 0.22, 0.95)
+cape_color = Color(0.20, 0.38, 0.50, 0.60)

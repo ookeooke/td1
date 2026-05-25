@@ -50,6 +50,23 @@ var _blockers: Array[Node] = []
 # bypass_engagement enemies ignore reservations (they never stop).
 var _reservers: Array[Node] = []
 var _combat_cooldown: float = 0.0
+
+# Ranged attack state — populated only when data.attack_range > 0 (the
+# Goblin Archer archetype). _ranged_area is an Area2D child built in _ready
+# so the perf rule (Area2D overlap, never distance loops) is upheld. While
+# _ranged_target is non-null the WALKING branch halts path progress —
+# "halt-fully" model: planted until target dies or moves out of range.
+var _ranged_cooldown: float = 0.0
+var _ranged_target: Node = null
+var _ranged_area: Area2D = null
+# Scan throttle — _pick_ranged_target was called every physics frame when
+# _ranged_target was null (60 Hz × N archers = expensive at scale).
+# Cooldown caps it at ~8 Hz which is plenty for halt-then-fire telegraphing.
+const _RANGED_SCAN_INTERVAL: float = 0.12
+var _ranged_scan_cooldown: float = 0.0
+# Effective range cached at _ready so the Area2D radius + the stale-target
+# distance check use the same number (and pick up attack_range_mult).
+var _effective_attack_range: float = 0.0
 # Strike animation state — set by _start_strike(); decays in _physics_process.
 # While > 0, body lunges forward toward _strike_dir then eases back.
 var _strike_t: float = 0.0
@@ -111,6 +128,14 @@ const _AbilityHostScript := preload("res://systems/AbilityHost.gd")
 const _AbilityDataScript := preload("res://systems/AbilityData.gd")
 const _StatusApplyScript := preload("res://vfx/StatusApplyVFX.gd")
 const _WalkDustScript := preload("res://vfx/WalkDustVFX.gd")
+# Status effect scripts cached at class scope (was function-local preload
+# in _build_ranged_status_effect — code review 2026-05-25). CORE RULE 16's
+# shared-class race only affects ContentRegistry catalog arrays, not these
+# RefCounted helpers; cached const is fine and faster than re-preloading
+# per shot.
+const _BurnEffectScript := preload("res://systems/BurnEffect.gd")
+const _PoisonEffectScript := preload("res://systems/PoisonEffect.gd")
+const _SlowEffectScript := preload("res://systems/SlowEffect.gd")
 var _ability_host: RefCounted = null
 
 
@@ -148,6 +173,34 @@ func _ready() -> void:
 	var tint_amount: float = (v_seed - 0.5) * 0.10  # -0.05 .. +0.05
 	_skin_tint = Color(1.0 + tint_amount, 1.0 + tint_amount * 0.6, 1.0 + tint_amount * 0.3, 1.0)
 	_prev_pos = global_position
+	# Ranged attack — build the detection Area2D only for archetypes that
+	# actually shoot (data.attack_range > 0). Keeps the 6 melee enemies
+	# allocation-free. Mask = layer 2 (soldiers + enemies share it; the class
+	# filter in _pick_ranged_target rejects enemies) + layer 4 (heroes).
+	# NB: Godot collision_layer/mask are bitmask values — layer N = bit N-1.
+	# Hero .tscn ships with collision_layer = 8 = bit 3 = LAYER 4 in the editor.
+	# Soldier ships with collision_layer = 2 = bit 1 = LAYER 2. An earlier draft
+	# of this mask used (1 << 7) thinking that meant "layer 8" — it shipped a
+	# subtle bug where archers never targeted the hero, only soldiers.
+	if data != null and data.attack_range > 0.0:
+		# Apply attack_range_mult slider here (CORE RULE 22). Per-instance:
+		# the Area2D radius is baked at spawn so already-spawned archers
+		# keep their authored range; the slider only affects NEW spawns.
+		# Documented limit — live-resizing every Area2D on a slider change
+		# would require iterating the enemies group on every slider tick.
+		var range_mult: float = 1.0
+		if data.enemy_id != "":
+			range_mult = BalanceOverrides.get_enemy_mult(data.enemy_id, "attack_range_mult")
+		_effective_attack_range = data.attack_range * range_mult
+		_ranged_area = Area2D.new()
+		_ranged_area.collision_layer = 0
+		_ranged_area.collision_mask = (1 << 1) | (1 << 3)  # layer 2 (soldiers) + layer 4 (heroes)
+		var cs := CollisionShape2D.new()
+		var cir := CircleShape2D.new()
+		cir.radius = _effective_attack_range
+		cs.shape = cir
+		_ranged_area.add_child(cs)
+		add_child(_ranged_area)
 	queue_redraw()
 
 
@@ -271,7 +324,14 @@ func _physics_process(delta: float) -> void:
 				_breath_t += delta
 				queue_redraw()
 				return
-			_path_follow.progress += _effective_speed() * delta
+			# Ranged attack tick (no-op for melee-only archetypes). When a
+			# target is acquired, _ranged_target is non-null and we skip the
+			# path advance below — "halt-fully" model from the Goblin Archer
+			# design (planted until target dies or moves out of range).
+			if _ranged_area != null:
+				_ranged_tick(delta)
+			if _ranged_target == null:
+				_path_follow.progress += _effective_speed() * delta
 			if _path_follow.progress_ratio >= 1.0:
 				_reach_end()
 			if data != null and data.visual != null:
@@ -469,6 +529,150 @@ func _combat_tick(delta: float) -> void:
 			b.take_damage(dmg, DamageCalculator.DamageType.PHYSICAL, self)
 
 
+# Goblin Archer (and future ranged archetypes). Halts the enemy while a
+# friendly (soldier or hero) is in range, fires projectiles on cadence. Melee
+# COMBAT preempts naturally: while engaged, the WALKING branch isn't running
+# so _ranged_tick doesn't fire and _combat_tick swings the melee fallback.
+func _ranged_tick(delta: float) -> void:
+	if data == null or data.ranged_projectile == null or data.ranged_attack_speed <= 0.0:
+		return
+	# Drop stale target (dead, despawned, or out of range). Uses cached
+	# _effective_attack_range so the slider-tuned range is the single
+	# source of truth for both the Area2D shape and this distance check.
+	if _ranged_target != null:
+		if not is_instance_valid(_ranged_target) or _is_friendly_dead(_ranged_target):
+			_ranged_target = null
+		elif _ranged_target is Node2D \
+				and global_position.distance_squared_to((_ranged_target as Node2D).global_position) > _effective_attack_range * _effective_attack_range:
+			_ranged_target = null
+	# Throttle the overlap scan when no target is acquired — was running
+	# every physics frame (60 Hz × N archers idle in a wave = real cost).
+	# Cooldown caps re-scan at ~8 Hz which is plenty for the halt-then-fire
+	# telegraph; the player can't perceive a 120 ms acquisition delay.
+	if _ranged_target == null:
+		_ranged_scan_cooldown = maxf(0.0, _ranged_scan_cooldown - delta)
+		if _ranged_scan_cooldown > 0.0:
+			return
+		_ranged_scan_cooldown = _RANGED_SCAN_INTERVAL
+		_ranged_target = _pick_ranged_target()
+		if _ranged_target == null:
+			return
+	_ranged_cooldown = maxf(0.0, _ranged_cooldown - delta)
+	if _ranged_cooldown <= 0.0:
+		_fire_ranged_projectile(_ranged_target)
+		var spd_mult: float = BalanceOverrides.get_enemy_mult(data.enemy_id, "ranged_speed_mult") if data.enemy_id != "" else 1.0
+		_ranged_cooldown = 1.0 / maxf(0.01, data.ranged_attack_speed * spd_mult)
+
+
+func _is_friendly_dead(n: Node) -> bool:
+	# Both BaseHero.State.DEAD and BaseSoldier.State.DEAD signal a despawned/
+	# respawning unit — neither should keep an archer planted.
+	if n is BaseHero:
+		return (n as BaseHero).state == BaseHero.State.DEAD
+	if n is BaseSoldier:
+		return (n as BaseSoldier).state == BaseSoldier.State.DEAD
+	return false
+
+
+# Area2D overlap (perf rule — no distance loops), filter by class in code.
+# Soldiers and heroes are PhysicsBody2Ds (CharacterBody2D), so get_overlapping_bodies
+# is the right query — get_overlapping_areas would also pick up other enemies
+# (BaseEnemy extends Area2D) which we explicitly do not want to target.
+func _pick_ranged_target() -> Node:
+	if _ranged_area == null:
+		return null
+	var best: Node = null
+	var best_d2: float = INF
+	for b in _ranged_area.get_overlapping_bodies():
+		if not (b is BaseSoldier or b is BaseHero):
+			continue
+		if _is_friendly_dead(b):
+			continue
+		var d2: float = global_position.distance_squared_to((b as Node2D).global_position)
+		if d2 < best_d2:
+			best_d2 = d2
+			best = b
+	return best
+
+
+# Mirrors BaseHero._attack_step projectile spawn. The shared Arrow script is
+# target-agnostic — it calls target.take_damage(_damage, _type, _source),
+# which both BaseSoldier and BaseHero implement.
+func _fire_ranged_projectile(target: Node) -> void:
+	if data == null or data.ranged_projectile == null or target == null:
+		return
+	if not is_instance_valid(target) or not (target is Node2D):
+		return
+	var proj: Node = data.ranged_projectile.instantiate()
+	if proj == null:
+		return
+	get_tree().current_scene.add_child(proj)
+	if proj is Node2D:
+		(proj as Node2D).global_position = global_position
+	if proj.has_method("setup"):
+		# Apply global damage_mult + per-enemy ranged_damage_mult so the slider
+		# panel can tune ranged threat the same way it tunes melee damage.
+		# Identity in production (BalanceOverrides.is_active() == false).
+		var dmg: float = data.ranged_damage * BalanceOverrides.get_damage_mult()
+		if data.enemy_id != "":
+			dmg *= BalanceOverrides.get_enemy_mult(data.enemy_id, "ranged_damage_mult")
+		# Optional on-hit status payload. Arrow.gd has a single _status_effect
+		# slot so each archer variant gets exactly one. Priority: burn >
+		# poison > slow — pick the first authored type. All effects are
+		# RefCounted; fresh instance per shot so in-flight effects don't
+		# share state. Source = self for damage attribution.
+		# Per-enemy mults (CORE RULE 22) let the slider panel tune DoT
+		# magnitude / duration / slow strength without .tres edits.
+		var status_effect = _build_ranged_status_effect()
+		proj.setup(target, dmg, data.ranged_damage_type, self, status_effect)
+	# Face the target during the shot so the body reads as aiming.
+	var to_t: Vector2 = (target as Node2D).global_position - global_position
+	if to_t.length_squared() > 0.05:
+		_facing_dir = to_t.normalized()
+	queue_redraw()
+
+
+# Builds the on-hit status effect to attach to a ranged projectile, or null
+# for a plain-damage arrow. Priority: burn > poison > slow — the first
+# authored triplet wins. Each archer variant should only author one type;
+# the priority is a safety net. Slider mults applied here (CORE RULE 22).
+func _build_ranged_status_effect():
+	if data == null:
+		return null
+	var eid: String = data.enemy_id
+	# Burn DoT (Goblin Fire Archer).
+	if data.ranged_burn_dps > 0.0 and data.ranged_burn_duration > 0.0:
+		var dps: float = data.ranged_burn_dps
+		var dur: float = data.ranged_burn_duration
+		if eid != "":
+			dps *= BalanceOverrides.get_enemy_mult(eid, "ranged_burn_dps_mult")
+			dur *= BalanceOverrides.get_enemy_mult(eid, "ranged_burn_duration_mult")
+		if dps > 0.0 and dur > 0.0:
+			return _BurnEffectScript.new(dps, dur, self)
+	# Poison DoT (Goblin Poison Archer).
+	if data.ranged_poison_dps > 0.0 and data.ranged_poison_duration > 0.0:
+		var pdps: float = data.ranged_poison_dps
+		var pdur: float = data.ranged_poison_duration
+		if eid != "":
+			pdps *= BalanceOverrides.get_enemy_mult(eid, "ranged_poison_dps_mult")
+			pdur *= BalanceOverrides.get_enemy_mult(eid, "ranged_poison_duration_mult")
+		if pdps > 0.0 and pdur > 0.0:
+			return _PoisonEffectScript.new(pdps, pdur, self)
+	# Slow (Goblin Ice Archer). slow_factor is 0..1 — fraction by which
+	# move speed is reduced. Carrier reads it directly via the existing
+	# "slow" status slot in BaseEnemy / BaseSoldier / BaseHero.
+	if data.ranged_slow_factor > 0.0 and data.ranged_slow_duration > 0.0:
+		var sf: float = data.ranged_slow_factor
+		var sd: float = data.ranged_slow_duration
+		if eid != "":
+			sf *= BalanceOverrides.get_enemy_mult(eid, "ranged_slow_factor_mult")
+			sd *= BalanceOverrides.get_enemy_mult(eid, "ranged_slow_duration_mult")
+		sf = clampf(sf, 0.0, 1.0)
+		if sf > 0.0 and sd > 0.0:
+			return _SlowEffectScript.new(sf, sd)
+	return null
+
+
 # Per-strike damage including global + per-enemy debug multipliers. No-op in
 # production. Centralized so future strike sites stay consistent.
 func _effective_attack_damage() -> float:
@@ -492,18 +696,20 @@ func apply_status_effect(effect) -> void:
 	# Untyped param so this compiles before Godot indexes systems/*.gd class_names.
 	if effect == null or state == State.DYING:
 		return
-	# If the same id is already active, give the old instance a chance to
-	# clean up (visuals, stat modifiers) before the replacement takes over.
-	# remove() is currently empty for slow/stun, but future effects may not be.
-	var refresh: bool = _effects.has(effect.id)
-	if refresh:
-		_effects[effect.id].remove(self)
+	# Reapplication routes through StatusEffect.refresh so DoTs preserve
+	# _tick_accumulator across rapid hits — otherwise a stream of fire
+	# arrows under tick_interval (0.5s) resets the clock every shot and
+	# deals zero burn damage. Refresh defaults to max(duration) for non-DoT
+	# effects (slow/stun), matching the prior take-stronger-wins semantics.
+	if _effects.has(effect.id):
+		_effects[effect.id].refresh(effect)
+		queue_redraw()
+		return
 	_effects[effect.id] = effect
 	effect.apply(self)
 	# First-application VFX — single ring pop in the effect's color so the
-	# moment the slow/stun lands reads. Skipped on refresh (the persistent
-	# rotating status ring already signals "still active") and on clean_view.
-	if not refresh and not VFXSpawner.clean_view:
+	# moment the slow/stun lands reads. Skipped on clean_view.
+	if not VFXSpawner.clean_view:
 		var radius: float = 18.0
 		if data != null and data.visual != null:
 			radius = data.visual.radius
@@ -530,6 +736,8 @@ func _tick_effects(delta: float) -> void:
 	var expired: Array[String] = []
 	for id in _effects.keys():
 		var e = _effects[id]
+		if e.has_method("tick"):
+			e.tick(self, delta)
 		e.duration -= delta
 		if e.duration <= 0.0:
 			expired.append(id)

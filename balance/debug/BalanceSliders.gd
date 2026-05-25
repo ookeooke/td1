@@ -39,19 +39,7 @@ const BalanceOverrides = preload("res://balance/debug/BalanceOverrides.gd")
 const _WaveTimelineChartScript := preload("res://balance/debug/WaveTimelineChart.gd")
 const _LevelOverviewChartScript := preload("res://balance/debug/LevelOverviewChart.gd")
 const _EmitterTimelineStripScript := preload("res://balance/debug/EmitterTimelineStrip.gd")
-
-# Mirror of WaveTimelineChart.ENEMY_COLORS — kept local so the per-emitter
-# timeline strip's tick color matches the bar segment color for that class.
-# Update in lockstep when WaveTimelineChart's palette changes.
-const _EMITTER_STRIP_COLORS: Dictionary = {
-	"basic":   Color(0.65, 0.65, 0.70),
-	"scout":   Color(0.95, 0.90, 0.40),
-	"armored": Color(0.65, 0.45, 0.25),
-	"flying":  Color(0.45, 0.85, 0.95),
-	"healer":  Color(0.45, 0.90, 0.55),
-	"brute":   Color(0.55, 0.30, 0.30),
-	"boss":    Color(0.95, 0.35, 0.55),
-}
+const _EnemyClassRegistry := preload("res://enemies/EnemyClassRegistry.gd")
 
 var _levels: Array = []   # Array[LevelNodeData], populated from level_list.tres
 # WaveTimelineChart entries created per expanded level — refreshed on any
@@ -98,16 +86,13 @@ var _enabled_toggle: CheckButton = null
 # Godot restart discards them. _structurally_dirty_levels tracks level_ids
 # whose wave_list has structural edits so Bake includes them in the save list
 # even when no slider deltas exist.
-const _CLASS_KEYS: PackedStringArray = ["basic", "scout", "armored", "flying", "healer", "brute", "boss"]
-const _CLASS_TO_SCENE_PATH: Dictionary = {
-	"basic": "res://enemies/EnemyBasic.tscn",
-	"scout": "res://enemies/EnemyScout.tscn",
-	"armored": "res://enemies/EnemyArmored.tscn",
-	"flying": "res://enemies/EnemyFlying.tscn",
-	"healer": "res://enemies/EnemyHealer.tscn",
-	"brute": "res://enemies/EnemyBrute.tscn",
-	"boss": "res://enemies/bosses/Boss1.tscn",
-}
+# Wave-editor class registry. Delegates to EnemyClassRegistry so adding a
+# new enemy is a one-file change. _CLASS_KEYS is the iteration order of
+# rows in the bucket-popup; _CLASS_TO_SCENE_PATH is the scene to instantiate
+# for a brand-new WaveSpawn when the "+" creates one. Both are computed
+# from the registry at file-load time.
+const _CLASS_KEYS: Array[String] = _EnemyClassRegistry.KEYS_IN_PROGRESSION_ORDER
+const _CLASS_TO_SCENE_PATH: Dictionary = _EnemyClassRegistry.SCENE_PATHS
 var _structurally_dirty_levels: Dictionary = {}   # level_id → wave_list Resource
 
 
@@ -638,30 +623,39 @@ func _confirm_discard_structural(title: String, ok_text: String, on_discard: Cal
 # mag-res). Mirrors the per-tower section structure so the UX is identical.
 # Stored under BalanceOverrides "enemy_overrides" sub-dict.
 
-# Progression order (lightest / earliest → heaviest / boss). Used to sort the
-# Enemy section so designers scan top-to-bottom in the order enemies are
-# introduced in the campaign. Same constant duplicated in WaveTimelineChart
-# and LevelOverviewChart for the stacked bar segment order — slider list and
-# bar stack mirror each other.
-const _ENEMY_PROGRESSION: Array[String] = [
-	"basic", "scout", "flying", "healer", "armored", "brute", "boss",
-]
+# Progression order + rank delegate to EnemyClassRegistry. Kept as thin
+# wrappers (rather than removed) so the call sites stay readable without
+# every reader needing to know about the registry import path.
+const _ENEMY_PROGRESSION: Array[String] = _EnemyClassRegistry.KEYS_IN_PROGRESSION_ORDER
 
 
-# Returns the progression rank for a given class_key. Unknown keys sort last.
 func _enemy_progression_rank(class_key: String) -> int:
-	var idx: int = _ENEMY_PROGRESSION.find(class_key)
-	return idx if idx >= 0 else _ENEMY_PROGRESSION.size()
+	return _EnemyClassRegistry.progression_rank(class_key)
 
 
 const _ENEMY_STAT_DEFS: Array = [
 	# {key, mode, label, prop} — mode "mult" or "add"; prop is the EnemyData field.
-	{"key": "hp_mult",      "mode": "mult", "label": "HP",     "prop": "max_health"},
-	{"key": "armor_add",    "mode": "add",  "label": "Armor",  "prop": "armor"},
-	{"key": "mag_res_add",  "mode": "add",  "label": "MagRes", "prop": "magic_resist"},
-	{"key": "speed_mult",   "mode": "mult", "label": "Speed",  "prop": "move_speed"},
-	{"key": "damage_mult",  "mode": "mult", "label": "Damage", "prop": "attack_damage"},
-	{"key": "gold_mult",    "mode": "mult", "label": "Gold",   "prop": "gold_worth"},
+	{"key": "hp_mult",            "mode": "mult", "label": "HP",        "prop": "max_health"},
+	{"key": "armor_add",          "mode": "add",  "label": "Armor",     "prop": "armor"},
+	{"key": "mag_res_add",        "mode": "add",  "label": "MagRes",    "prop": "magic_resist"},
+	{"key": "speed_mult",         "mode": "mult", "label": "Speed",     "prop": "move_speed"},
+	{"key": "damage_mult",        "mode": "mult", "label": "Damage",    "prop": "attack_damage"},
+	{"key": "gold_mult",          "mode": "mult", "label": "Gold",      "prop": "gold_worth"},
+	# Ranged-archetype rows (Goblin Archer). The "—  (no authored value)"
+	# placeholder kicks in for melee-only enemies since their ranged_damage /
+	# ranged_attack_speed are 0 — the existing zero-authored guard in
+	# _add_enemy_slider handles it without a per-enemy filter here.
+	{"key": "ranged_damage_mult",        "mode": "mult", "label": "RangedDmg", "prop": "ranged_damage"},
+	{"key": "ranged_speed_mult",         "mode": "mult", "label": "RangedSpd", "prop": "ranged_attack_speed"},
+	# Fire-archer burn DoT rows — fall through to the "no authored value"
+	# placeholder for non-fire archers (their ranged_burn_dps/duration are 0).
+	{"key": "ranged_burn_dps_mult",        "mode": "mult", "label": "BurnDps",   "prop": "ranged_burn_dps"},
+	{"key": "ranged_burn_duration_mult",   "mode": "mult", "label": "BurnDur",   "prop": "ranged_burn_duration"},
+	{"key": "ranged_poison_dps_mult",      "mode": "mult", "label": "PoisonDps", "prop": "ranged_poison_dps"},
+	{"key": "ranged_poison_duration_mult", "mode": "mult", "label": "PoisonDur", "prop": "ranged_poison_duration"},
+	{"key": "ranged_slow_factor_mult",     "mode": "mult", "label": "SlowFactor","prop": "ranged_slow_factor"},
+	{"key": "ranged_slow_duration_mult",   "mode": "mult", "label": "SlowDur",   "prop": "ranged_slow_duration"},
+	{"key": "attack_range_mult",           "mode": "mult", "label": "Range",     "prop": "attack_range"},
 ]
 
 # Phase 3R-followup-3 — per-hero stat overrides. Same shape as enemy defs:
@@ -709,23 +703,10 @@ func _build_enemy_section() -> void:
 		_add_enemy_subgroup(enemy)
 
 
-# Map an enemy_id string to a class-key matching the chart palette. Mirrors
-# WaveTimelineChart._enemy_class_for which works off resource_path.
+# Delegate to EnemyClassRegistry — single source of truth across all the
+# class-mapper sites that used to duplicate this logic.
 func _class_key_for_enemy_id(eid: String) -> String:
-	var lower: String = eid.to_lower()
-	if lower.contains("boss"):
-		return "boss"
-	if lower.contains("scout"):
-		return "scout"
-	if lower.contains("armor"):
-		return "armored"
-	if lower.contains("flying"):
-		return "flying"
-	if lower.contains("brute"):
-		return "brute"
-	if lower.contains("healer"):
-		return "healer"
-	return "basic"
+	return _EnemyClassRegistry.class_key_for_safe(eid)
 
 
 func _add_enemy_subgroup(enemy: Resource) -> void:
@@ -829,10 +810,19 @@ func _add_enemy_slider(parent: VBoxContainer, enemy_id: String, stat_def: Dictio
 
 func _enemy_step_for(stat_key: String, authored: float) -> float:
 	match stat_key:
-		"hp_mult":     return 1.0 if authored < 50.0 else 5.0
-		"speed_mult":  return 5.0
-		"damage_mult": return 0.5 if authored < 20.0 else 1.0
-		"gold_mult":   return 1.0
+		"hp_mult":                   return 1.0 if authored < 50.0 else 5.0
+		"speed_mult":                return 5.0
+		"damage_mult":               return 0.5 if authored < 20.0 else 1.0
+		"gold_mult":                 return 1.0
+		"ranged_damage_mult":        return 0.5 if authored < 20.0 else 1.0
+		"ranged_speed_mult":         return 0.05
+		"ranged_burn_dps_mult":        return 0.5
+		"ranged_burn_duration_mult":   return 0.5
+		"ranged_poison_dps_mult":      return 0.5
+		"ranged_poison_duration_mult": return 0.5
+		"ranged_slow_factor_mult":     return 0.05
+		"ranged_slow_duration_mult":   return 0.25
+		"attack_range_mult":           return 10.0
 	return 1.0
 
 
@@ -2645,14 +2635,7 @@ func _collect_paths_for_lvl(lvl: Resource) -> Array:
 func _class_key_for_spawn(spawn: Resource) -> String:
 	if spawn == null or spawn.enemy_scene == null:
 		return "basic"
-	var lower: String = String(spawn.enemy_scene.resource_path).to_lower()
-	if lower.contains("boss"): return "boss"
-	if lower.contains("scout"): return "scout"
-	if lower.contains("armor"): return "armored"
-	if lower.contains("flying"): return "flying"
-	if lower.contains("brute"): return "brute"
-	if lower.contains("healer"): return "healer"
-	return "basic"
+	return _EnemyClassRegistry.class_key_for_safe(String(spawn.enemy_scene.resource_path))
 
 
 # Per-wave early-call window slider. Resolution chain (top wins):
@@ -3273,7 +3256,7 @@ func _show_bucket_popup(lvl: Resource, wave_list: WaveList,
 		class_lbl.text = class_key
 		class_lbl.set("theme_override_font_sizes/font_size", 12)
 		class_lbl.custom_minimum_size = Vector2(80, 0)
-		var color: Color = _EMITTER_STRIP_COLORS.get(class_key, Color(0.65, 0.65, 0.70))
+		var color: Color = _EnemyClassRegistry.color_for(class_key)
 		class_lbl.modulate = color
 		var count_lbl := Label.new()
 		count_lbl.set("theme_override_font_sizes/font_size", 12)
@@ -3597,7 +3580,7 @@ func _add_emitter_slider(parent: VBoxContainer, spawn: Resource, lvl: Resource,
 	strip_row.add_child(strip)
 	parent.add_child(strip_row)
 	var class_key: String = _class_key_for_spawn(spawn)
-	var color: Color = _EMITTER_STRIP_COLORS.get(class_key, Color(0.65, 0.65, 0.70))
+	var color: Color = _EnemyClassRegistry.color_for(class_key)
 	strips.append({
 		"strip": strip,
 		"spawn": spawn,

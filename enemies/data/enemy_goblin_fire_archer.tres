@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="EnemyData" format=3]
+
+[ext_resource type="Script" path="res://enemies/EnemyData.gd" id="1_data"]
+[ext_resource type="Resource" path="res://enemies/data/visual_goblin_fire_archer.tres" id="2_vis"]
+[ext_resource type="PackedScene" path="res://projectiles/EnemyArrowFire.tscn" id="3_proj"]
+
+[resource]
+script = ExtResource("1_data")
+enemy_id = "enemy_goblin_fire_archer"
+enemy_name = "Goblin Fire Archer"
+max_health = 24
+move_speed = 90.0
+armor = 0.0
+magic_resist = 0.0
+gold_worth = 4
+xp_worth = 12
+attack_damage = 2.0
+attack_speed = 1.0
+attack_range = 220.0
+ranged_damage = 3.0
+ranged_attack_speed = 0.45
+ranged_projectile = ExtResource("3_proj")
+ranged_damage_type = 1
+ranged_burn_dps = 2.0
+ranged_burn_duration = 3.0
+visual = ExtResource("2_vis")
+encyclopedia_entry = "Skirmisher with a pitch-soaked shortbow. Halts to loose fire arrows that ignite soldiers and heroes — burn ticks for 3 seconds after every hit. Fragile but DoT-stacks fast in a sustained engagement. Kill on sight."

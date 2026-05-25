@@ -1,0 +1,501 @@
+[gd_resource type="Resource" script_class="WaveList" format=3]
+
+[ext_resource type="Script" path="res://waves/WaveList.gd" id="1_list"]
+[ext_resource type="Script" path="res://waves/WaveData.gd" id="2_wave"]
+[ext_resource type="Script" path="res://waves/WaveSpawn.gd" id="3_spawn"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyBasic.tscn" id="4_basic"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyFlying.tscn" id="5_fly"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyArmored.tscn" id="6_armor"]
+[ext_resource type="PackedScene" path="res://enemies/bosses/Boss1.tscn" id="7_boss"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyBrute.tscn" id="8_brute"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyScout.tscn" id="9_scout"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyHealer.tscn" id="10_heal"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyGoblinArcher.tscn" id="11_arch"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyGoblinFireArcher.tscn" id="12_farch"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyGoblinIceArcher.tscn" id="13_iarch"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyGoblinPoisonArcher.tscn" id="14_parch"]
+[ext_resource type="PackedScene" path="res://enemies/EnemyDarkCultist.tscn" id="15_cult"]
+
+[sub_resource type="Resource" id="L6_W1_TL"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("4_basic")
+count = 8
+interval = 4.0
+
+[sub_resource type="Resource" id="L6_W1_BR"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("9_scout")
+count = 6
+interval = 3.5
+start_delay = 6.0
+
+[sub_resource type="Resource" id="L6_Wave1"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L6_W1_TL"), SubResource("L6_W1_BR")])
+bounty = 90
+early_call_window_sec = 0.0
+
+[sub_resource type="Resource" id="L6_W2_TL"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("4_basic")
+count = 12
+interval = 3.5
+
+[sub_resource type="Resource" id="L6_W2_BR"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("9_scout")
+count = 10
+interval = 2.0
+start_delay = 8.0
+
+[sub_resource type="Resource" id="L6_W2_BRArmor"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("6_armor")
+count = 2
+interval = 8.0
+start_delay = 18.0
+
+[sub_resource type="Resource" id="L6_Wave2"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L6_W2_TL"), SubResource("L6_W2_BR"), SubResource("L6_W2_BRArmor")])
+countdown = 26.0
+bounty = 100
+early_call_window_sec = 7.0
+
+[sub_resource type="Resource" id="L6_W3_TL"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("4_basic")
+count = 12
+interval = 4.0
+
+[sub_resource type="Resource" id="L6_W3_TLFly"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("5_fly")
+count = 6
+interval = 5.0
+start_delay = 10.0
+
+[sub_resource type="Resource" id="L6_W3_BR"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("9_scout")
+count = 10
+interval = 2.5
+start_delay = 6.0
+
+[sub_resource type="Resource" id="L6_W3_BRArmor"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("6_armor")
+count = 3
+interval = 7.0
+start_delay = 20.0
+
+[sub_resource type="Resource" id="L6_Wave3"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L6_W3_TL"), SubResource("L6_W3_TLFly"), SubResource("L6_W3_BR"), SubResource("L6_W3_BRArmor")])
+countdown = 28.0
+bounty = 112
+early_call_window_sec = 8.0
+
+[sub_resource type="Resource" id="L6_W4_TL"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("4_basic")
+count = 16
+interval = 3.5
+
+[sub_resource type="Resource" id="L6_W4_BRArmor"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("6_armor")
+count = 6
+interval = 7.0
+
+[sub_resource type="Resource" id="L6_W4_BRHeal"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("10_heal")
+count = 2
+interval = 18.0
+start_delay = 14.0
+
+[sub_resource type="Resource" id="L6_W4_TLScouts"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("9_scout")
+count = 8
+interval = 4.0
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L6_W4_BRArcher"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("11_arch")
+count = 3
+interval = 4.5
+start_delay = 18.0
+
+[sub_resource type="Resource" id="L6_Wave4"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L6_W4_TL"), SubResource("L6_W4_BRArmor"), SubResource("L6_W4_BRHeal"), SubResource("L6_W4_TLScouts"), SubResource("L6_W4_BRArcher")])
+countdown = 30.0
+bounty = 124
+early_call_window_sec = 9.0
+
+[sub_resource type="Resource" id="L6_W5_TL"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("4_basic")
+count = 14
+interval = 4.0
+
+[sub_resource type="Resource" id="L6_W5_BRBrutes"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("8_brute")
+count = 3
+interval = 20.0
+start_delay = 8.0
+
+[sub_resource type="Resource" id="L6_W5_BR"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("9_scout")
+count = 14
+interval = 3.0
+start_delay = 4.0
+
+[sub_resource type="Resource" id="L6_W5_TLFly"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("5_fly")
+count = 6
+interval = 4.0
+start_delay = 18.0
+
+[sub_resource type="Resource" id="L6_W5_BRIceArcher"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("13_iarch")
+count = 3
+interval = 4.5
+start_delay = 14.0
+
+[sub_resource type="Resource" id="L6_Wave5"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L6_W5_TL"), SubResource("L6_W5_BRBrutes"), SubResource("L6_W5_BR"), SubResource("L6_W5_TLFly"), SubResource("L6_W5_BRIceArcher")])
+countdown = 32.0
+bounty = 136
+early_call_window_sec = 6.0
+
+[sub_resource type="Resource" id="L6_W6_TL"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("4_basic")
+count = 18
+interval = 3.5
+
+[sub_resource type="Resource" id="L6_W6_BR"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("4_basic")
+count = 18
+interval = 3.5
+start_delay = 2.0
+
+[sub_resource type="Resource" id="L6_W6_BRFly"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("5_fly")
+count = 9
+interval = 5.0
+start_delay = 8.0
+
+[sub_resource type="Resource" id="L6_W6_TLHeal"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("10_heal")
+count = 2
+interval = 16.0
+start_delay = 24.0
+
+[sub_resource type="Resource" id="L6_W6_TLPoisonArcher"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("14_parch")
+count = 3
+interval = 5.0
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L6_Wave6"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L6_W6_TL"), SubResource("L6_W6_BR"), SubResource("L6_W6_BRFly"), SubResource("L6_W6_TLHeal"), SubResource("L6_W6_TLPoisonArcher")])
+countdown = 30.0
+bounty = 148
+early_call_window_sec = 8.0
+
+[sub_resource type="Resource" id="L6_W7_TLBrutes"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("8_brute")
+count = 3
+interval = 22.0
+
+[sub_resource type="Resource" id="L6_W7_BRBrutes"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("8_brute")
+count = 3
+interval = 22.0
+start_delay = 10.0
+
+[sub_resource type="Resource" id="L6_W7_TLArmor"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("6_armor")
+count = 8
+interval = 6.0
+start_delay = 5.0
+
+[sub_resource type="Resource" id="L6_W7_BR"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("4_basic")
+count = 14
+interval = 4.0
+start_delay = 4.0
+
+[sub_resource type="Resource" id="L6_W7_BRHeal"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("10_heal")
+count = 2
+interval = 20.0
+start_delay = 28.0
+
+[sub_resource type="Resource" id="L6_W7_TLArcher"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("11_arch")
+count = 2
+interval = 5.0
+start_delay = 12.0
+
+[sub_resource type="Resource" id="L6_W7_BRArcher"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("11_arch")
+count = 2
+interval = 5.0
+start_delay = 18.0
+
+[sub_resource type="Resource" id="L6_Wave7"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L6_W7_TLBrutes"), SubResource("L6_W7_BRBrutes"), SubResource("L6_W7_TLArmor"), SubResource("L6_W7_BR"), SubResource("L6_W7_BRHeal"), SubResource("L6_W7_TLArcher"), SubResource("L6_W7_BRArcher")])
+countdown = 34.0
+bounty = 160
+early_call_window_sec = 7.0
+
+[sub_resource type="Resource" id="L6_W8_TL"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("4_basic")
+count = 16
+interval = 4.0
+
+[sub_resource type="Resource" id="L6_W8_BR"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("4_basic")
+count = 16
+interval = 4.0
+start_delay = 3.0
+
+[sub_resource type="Resource" id="L6_W8_BRFlySwarm"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("5_fly")
+count = 16
+interval = 4.0
+start_delay = 10.0
+
+[sub_resource type="Resource" id="L6_W8_TLArmor"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("6_armor")
+count = 6
+interval = 9.0
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L6_W8_TLHeal"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("10_heal")
+count = 2
+interval = 22.0
+start_delay = 22.0
+
+[sub_resource type="Resource" id="L6_W8_BRFireArcher"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("12_farch")
+count = 3
+interval = 5.0
+start_delay = 18.0
+
+[sub_resource type="Resource" id="L6_Wave8"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L6_W8_TL"), SubResource("L6_W8_BR"), SubResource("L6_W8_BRFlySwarm"), SubResource("L6_W8_TLArmor"), SubResource("L6_W8_TLHeal"), SubResource("L6_W8_BRFireArcher")])
+countdown = 34.0
+bounty = 172
+early_call_window_sec = 9.0
+
+[sub_resource type="Resource" id="L6_W9_TL"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("4_basic")
+count = 16
+interval = 4.0
+
+[sub_resource type="Resource" id="L6_W9_BR"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("4_basic")
+count = 16
+interval = 4.0
+start_delay = 3.0
+
+[sub_resource type="Resource" id="L6_W9_TLBrutes"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("8_brute")
+count = 4
+interval = 16.0
+start_delay = 12.0
+
+[sub_resource type="Resource" id="L6_W9_BRArmor"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("6_armor")
+count = 7
+interval = 8.0
+start_delay = 8.0
+
+[sub_resource type="Resource" id="L6_W9_BRFly"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("5_fly")
+count = 9
+interval = 5.5
+start_delay = 18.0
+
+[sub_resource type="Resource" id="L6_W9_TLHeal"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("10_heal")
+count = 2
+interval = 24.0
+start_delay = 26.0
+
+[sub_resource type="Resource" id="L6_W9_TLCultist"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("15_cult")
+count = 2
+interval = 8.0
+start_delay = 20.0
+
+[sub_resource type="Resource" id="L6_Wave9"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L6_W9_TL"), SubResource("L6_W9_BR"), SubResource("L6_W9_TLBrutes"), SubResource("L6_W9_BRArmor"), SubResource("L6_W9_BRFly"), SubResource("L6_W9_TLHeal"), SubResource("L6_W9_TLCultist")])
+countdown = 36.0
+bounty = 184
+
+[sub_resource type="Resource" id="L6_W10_Boss"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("7_boss")
+count = 2
+interval = 30.0
+start_delay = 12.0
+
+[sub_resource type="Resource" id="L6_W10_Boss2"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("7_boss")
+count = 2
+interval = 30.0
+start_delay = 26.0
+
+[sub_resource type="Resource" id="L6_W10_TL"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("4_basic")
+count = 16
+interval = 4.5
+
+[sub_resource type="Resource" id="L6_W10_BR"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("4_basic")
+count = 16
+interval = 4.5
+start_delay = 4.0
+
+[sub_resource type="Resource" id="L6_W10_BRBrutes"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("8_brute")
+count = 4
+interval = 20.0
+start_delay = 10.0
+
+[sub_resource type="Resource" id="L6_W10_TLArmor"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("6_armor")
+count = 7
+interval = 9.0
+start_delay = 16.0
+
+[sub_resource type="Resource" id="L6_W10_Fly"]
+script = ExtResource("3_spawn")
+path_id = "outer_lane"
+enemy_scene = ExtResource("5_fly")
+count = 12
+interval = 5.0
+start_delay = 30.0
+
+[sub_resource type="Resource" id="L6_W10_Heal"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("10_heal")
+count = 3
+interval = 22.0
+start_delay = 22.0
+
+[sub_resource type="Resource" id="L6_W10_TLArcher"]
+script = ExtResource("3_spawn")
+path_id = "ring_lane"
+enemy_scene = ExtResource("11_arch")
+count = 4
+interval = 4.5
+start_delay = 20.0
+
+[sub_resource type="Resource" id="L6_Wave10"]
+script = ExtResource("2_wave")
+spawns = Array[ExtResource("3_spawn")]([SubResource("L6_W10_Boss"), SubResource("L6_W10_Boss2"), SubResource("L6_W10_TL"), SubResource("L6_W10_BR"), SubResource("L6_W10_BRBrutes"), SubResource("L6_W10_TLArmor"), SubResource("L6_W10_Fly"), SubResource("L6_W10_Heal"), SubResource("L6_W10_TLArcher")])
+countdown = 44.0
+bounty = 200
+
+[resource]
+script = ExtResource("1_list")
+waves = Array[ExtResource("2_wave")]([SubResource("L6_Wave1"), SubResource("L6_Wave2"), SubResource("L6_Wave3"), SubResource("L6_Wave4"), SubResource("L6_Wave5"), SubResource("L6_Wave6"), SubResource("L6_Wave7"), SubResource("L6_Wave8"), SubResource("L6_Wave9"), SubResource("L6_Wave10")])
